@@ -1,0 +1,1 @@
+{ "name": "location-chat-backend", "version": "1.0.0", "description": "GPS location-based room lookup service", "main": "index.js", "type": "module", "scripts": { "start": "node index.js" }, "dependencies": {} }
