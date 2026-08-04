@@ -2,7 +2,9 @@ import React, { useEffect, useRef, useState } from 'react';
 import Phaser from 'phaser';
 import { io } from 'socket.io-client';
 
-const SOCKET_SERVER_URL = 'http://localhost:4000';
+const SOCKET_SERVER_URL = process.env.NODE_ENV === 'production'
+  ? 'https://location-chat-production.up.railway.app'
+  : 'http://localhost:4000';
 
 export default function SpatialCanvas({ room, profile, onLeave }) {
   const gameRef = useRef(null);

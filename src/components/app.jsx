@@ -131,7 +131,7 @@ function App() {
         <div style={{ height: '100%', display: 'flex', flexDirection: 'column', padding: 20, boxSizing: 'border-box', gap: 12 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #64748b', paddingBottom: 8 }}>
             <div>
-              <div style={{ fontSize: 12, color: '#fbbf24', letterSpacing: 2, textTransform: 'uppercase' }}>Legend of the Local</div>
+              <div style={{ fontSize: 12, color: '#fbbf24', letterSpacing: 2, textTransform: 'uppercase' }}>Side Quest</div>
               <h1 style={{ margin: '4px 0 0', fontSize: 24 }}>{worldTitle}</h1>
             </div>
             <div style={{ textAlign: 'right', fontSize: 12, color: '#cbd5e1' }}>
