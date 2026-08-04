@@ -65,6 +65,7 @@ export default function MapView({ location, rooms, onEnterRoom }) {
   const poiLayerRef = useRef(null);
   const onEnterRoomRef = useRef(onEnterRoom);
   const [poiCount, setPoiCount] = useState(0);
+  const [poiStatus, setPoiStatus] = useState('loading');
 
   // Keep ref current without re-triggering effects
   useEffect(() => { onEnterRoomRef.current = onEnterRoom; });
@@ -128,13 +129,12 @@ export default function MapView({ location, rooms, onEnterRoom }) {
         dist <= room.radiusMeters, () => onEnterRoomRef.current(room.id));
     });
 
-    // Fetch nearby POIs from OpenStreetMap — only once on mount
-    let cancelled = false;
-    fetchNearbyPOIs(lat, lng, 600).then(pois => {
-      if (cancelled || !leafletRef.current) return;
+    // Fetch nearby POIs — use ref check only, not cancelled flag
+    fetchNearbyPOIs(lat, lng, 800).then(pois => {
+      if (!leafletRef.current) return;
       const manualCoords = rooms.filter(r => r.lat).map(r => [r.lat, r.lng]);
       const filtered = pois.filter(poi =>
-        !manualCoords.some(([rlat, rlng]) => getDistanceMeters(poi.lat, poi.lng, rlat, rlng) < 30)
+        !manualCoords.some(([rlat, rlng]) => getDistanceMeters(poi.lat, poi.lng, rlat, rlng) < 40)
       );
       const group = L.layerGroup().addTo(leafletRef.current);
       poiLayerRef.current = group;
@@ -144,12 +144,14 @@ export default function MapView({ location, rooms, onEnterRoom }) {
           dist <= poi.radiusMeters, () => onEnterRoomRef.current(poi.id, poi));
       });
       setPoiCount(filtered.length);
-    });
+      setPoiStatus(filtered.length > 0 ? 'found' : 'none');
+    }).catch(() => setPoiStatus('error'));
 
     return () => {
-      cancelled = true;
-      map.remove();
-      leafletRef.current = null;
+      if (leafletRef.current) {
+        leafletRef.current.remove();
+        leafletRef.current = null;
+      }
       playerMarkerRef.current = null;
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -169,7 +171,10 @@ export default function MapView({ location, rooms, onEnterRoom }) {
       <div style={{ position: 'absolute', bottom: 12, left: 12, zIndex: 1000, background: 'rgba(0,0,0,0.75)', border: '1px solid #334155', borderRadius: 8, padding: '8px 12px', fontFamily: 'Courier New', fontSize: 11, color: '#94a3b8' }}>
         <div style={{ color: '#fbbf24', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 2 }}>Nearby places</div>
         <div>✦ Tap a lit pin to enter</div>
-        {poiCount > 0 && <div style={{ marginTop: 2, color: '#4ade80' }}>{poiCount} places discovered</div>}
+        {poiStatus === 'loading' && <div style={{ marginTop: 2, color: '#60a5fa' }}>Discovering places…</div>}
+        {poiStatus === 'found' && <div style={{ marginTop: 2, color: '#4ade80' }}>{poiCount} places found</div>}
+        {poiStatus === 'none' && <div style={{ marginTop: 2, color: '#f97316' }}>No places found nearby</div>}
+        {poiStatus === 'error' && <div style={{ marginTop: 2, color: '#ef4444' }}>Could not load places</div>}
       </div>
     </div>
   );
