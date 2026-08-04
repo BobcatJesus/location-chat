@@ -27,6 +27,7 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
   const playersRef = useRef({});
   const inputRef = useRef(null);
   const lastMoveAtRef = useRef(0);
+  const dpadRef = useRef({ x: 0, y: 0 }); // touch D-pad state
 
   const [players, setPlayers] = useState([]);
   const [messages, setMessages] = useState([]);
@@ -413,6 +414,10 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
             moveY = speed;
           }
 
+          // D-pad touch input
+          if (dpadRef.current.x !== 0) moveX = dpadRef.current.x * speed;
+          if (dpadRef.current.y !== 0) moveY = dpadRef.current.y * speed;
+
           if (moveX !== 0 || moveY !== 0) {
             const nextX = localPlayerRef.current.x + moveX;
             const nextY = localPlayerRef.current.y + moveY;
@@ -563,6 +568,35 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
       >
         ← Exit
       </button>
+
+      {/* Virtual D-pad — bottom-left, visible on touch devices */}
+      <div style={{ position: 'absolute', bottom: 24, left: 24, zIndex: 50, display: 'grid', gridTemplateColumns: '44px 44px 44px', gridTemplateRows: '44px 44px 44px', gap: 4, userSelect: 'none', touchAction: 'none' }}>
+        {[
+          { label: '▲', dx: 0,  dy: -1, col: 2, row: 1 },
+          { label: '◀', dx: -1, dy:  0, col: 1, row: 2 },
+          { label: '▶', dx:  1, dy:  0, col: 3, row: 2 },
+          { label: '▼', dx: 0,  dy:  1, col: 2, row: 3 },
+        ].map(({ label, dx, dy, col, row }) => (
+          <button
+            key={label}
+            onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); dpadRef.current = { x: dx, y: dy }; }}
+            onPointerUp={() => { dpadRef.current = { x: 0, y: 0 }; }}
+            onPointerLeave={() => { dpadRef.current = { x: 0, y: 0 }; }}
+            style={{
+              gridColumn: col, gridRow: row,
+              width: 44, height: 44,
+              background: 'rgba(15,23,42,0.8)',
+              border: '2px solid rgba(226,180,108,0.5)',
+              color: '#e2b46c', fontSize: 18,
+              cursor: 'pointer', borderRadius: 8,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              WebkitTapHighlightColor: 'transparent',
+            }}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
 
       {/* Bottom-right overlay: nearby travelers + chat */}
       <div style={{ position: 'absolute', bottom: 12, right: 12, width: 280, display: 'flex', flexDirection: 'column', gap: '6px' }}>
