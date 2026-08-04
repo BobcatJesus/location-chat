@@ -1,1 +1,26 @@
-{ "name": "location-chat-backend", "version": "1.0.0", "description": "GPS location-based room lookup service", "main": "index.js", "type": "module", "scripts": { "start": "node index.js" }, "dependencies": {} }
+{
+  "name": "avatar-map-app",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "start": "node server/socket.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "phaser": "^4.2.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "socket.io": "^4.7.5",
+    "socket.io-client": "^4.7.5"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "vite": "^8.2.0"
+  }
+}
