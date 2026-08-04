@@ -4,15 +4,6 @@ import { getDistanceMeters } from '../src/geo.js';
 // Pre-defined GPS-anchored locations
 export const ROOMS = [
   {
-    id: 'starbucks-spring',
-    name: 'Starbucks',
-    lat: 29.8287,
-    lng: -95.4304,
-    radiusMeters: 50,
-    kind: 'gps',
-    contributors: ['system']
-  },
-  {
     id: 'downtown-hub',
     name: 'Downtown Plaza',
     lat: 29.7604,
@@ -43,6 +34,15 @@ export const ROOMS = [
 
 // User-created rooms can be anchored to a GPS position and enriched by contributors.
 export const USER_CREATED_ROOMS = [
+  {
+    id: 'starbucks-spring',
+    name: 'Starbucks',
+    lat: 29.8287,
+    lng: -95.4304,
+    radiusMeters: 50,
+    kind: 'user-created',
+    contributors: ['BobcatJesus']
+  },
   {
     id: 'campfire-circle',
     name: 'Campfire Circle',
