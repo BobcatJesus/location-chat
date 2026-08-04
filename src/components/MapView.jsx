@@ -30,7 +30,7 @@ const POI_TYPES = [
   { tag: 'shop',    value: 'convenience',   emoji: '🏪', color: '#94a3b8', label: 'Store' },
 ];
 
-const POI_RADIUS = 100; // metres — radius for auto-discovered POIs
+const POI_RADIUS = 30; // metres — must be at or near the entrance
 
 // Fetch nearby POIs from OpenStreetMap Overpass API (free, no key)
 async function fetchNearbyPOIs(lat, lng, radiusMeters = 500) {
