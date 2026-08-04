@@ -1,10 +1,22 @@
 import React, { useEffect, useRef, useState } from 'react';
 import Phaser from 'phaser';
 import { io } from 'socket.io-client';
+import ModularAvatar from '../game/entities/ModularAvatar';
 
 const SOCKET_SERVER_URL = process.env.NODE_ENV === 'production'
   ? 'https://location-chat-production.up.railway.app'
   : 'http://localhost:4000';
+
+export const AVATAR_SKINS = [
+  { id: 'blue',   label: 'Ocean',   shirt: 0x3b82f6, pants: 0x1e3a5f, hair: 0x7c4a1e, swatch: '#3b82f6' },
+  { id: 'red',    label: 'Ember',   shirt: 0xe53e3e, pants: 0x4a1a1a, hair: 0x2d1a0e, swatch: '#e53e3e' },
+  { id: 'green',  label: 'Forest',  shirt: 0x16a34a, pants: 0x0a2a10, hair: 0x5c3d1e, swatch: '#16a34a' },
+  { id: 'purple', label: 'Dusk',    shirt: 0x7c3aed, pants: 0x2a0a5a, hair: 0x2d1a0e, swatch: '#7c3aed' },
+  { id: 'orange', label: 'Blaze',   shirt: 0xea580c, pants: 0x3a1a0a, hair: 0x7c4a1e, swatch: '#ea580c' },
+  { id: 'pink',   label: 'Sakura',  shirt: 0xec4899, pants: 0x4a1a2a, hair: 0x7c4a1e, swatch: '#ec4899' },
+  { id: 'teal',   label: 'Tide',    shirt: 0x0891b2, pants: 0x0a2a3a, hair: 0x2d1a0e, swatch: '#0891b2' },
+  { id: 'slate',  label: 'Shadow',  shirt: 0x475569, pants: 0x111827, hair: 0xd1d5db, swatch: '#475569' },
+];
 
 export default function SpatialCanvas({ room, profile, onLeave }) {
   const gameRef = useRef(null);
@@ -45,53 +57,29 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
         const sprite = remotePlayersRef.current.get(socketId);
         sprite.x = player.x;
         sprite.y = player.y;
-        const label = sprite.getData('label');
-        if (label) {
-          label.setPosition(sprite.x, sprite.y - 20);
-        }
+        sprite.syncLabel();
         return;
       }
 
-      // Create pixel art character using container and rectangles
-      const playerGroup = scene.add.container(player.x, player.y);
-      playerGroup.add([
-        scene.add.rectangle(0, -5, 6, 5, 0x64b5f6), // Head (light blue)
-        scene.add.rectangle(0, 2, 8, 6, 0x7dd3fc), // Body (cyan)
-        scene.add.rectangle(-6, 2, 2, 3, 0x60a5fa), // Left arm
-        scene.add.rectangle(4, 2, 2, 3, 0x60a5fa), // Right arm
-        scene.add.rectangle(-3, 8, 2, 3, 0x3b82f6), // Left leg
-        scene.add.rectangle(1, 8, 2, 3, 0x3b82f6) // Right leg
-      ]);
-      
-      playerGroup.setData('name', player.name || 'Traveler');
-      playerGroup.setData('socketId', socketId);
-      
-      const label = scene.add.text(playerGroup.x, playerGroup.y - 20, player.name || 'Traveler', {
-        fontFamily: 'Courier New',
-        fontSize: '10px',
-        color: '#fef3c7',
-        backgroundColor: '#111827',
-        padding: { x: 2, y: 1 },
-        align: 'center'
-      }).setOrigin(0.5);
-      
-      playerGroup.setData('label', label);
-      
-      // Add physics body for collision detection
+      // Remote player — built from ModularAvatar class
+      const playerGroup = new ModularAvatar(scene, player.x, player.y, {
+        skinId: player.skinId || 'red',
+        name: player.name || 'Traveler',
+        isLocal: false,
+      });
+      if (player.photo) playerGroup.attachPhoto(scene, player.photo);
+
       scene.physics.add.existing(playerGroup);
-      playerGroup.body.setCircle(8); // Collision radius
+      playerGroup.body.setCircle(8);
       playerGroup.body.setCollideWorldBounds(true);
       playerGroup.body.setBounce(0);
-      playerGroup.setData('physicsBody', playerGroup.body);
-      
+
       remotePlayersRef.current.set(socketId, playerGroup);
     };
 
     const removeRemoteSprite = (socketId) => {
       const sprite = remotePlayersRef.current.get(socketId);
       if (sprite) {
-        const label = sprite.getData('label');
-        label?.destroy();
         sprite.destroy();
         remotePlayersRef.current.delete(socketId);
       }
@@ -119,6 +107,8 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
         user: {
           id: playerId,
           name: displayName,
+          photo: profile?.profile?.photo || null,
+          skinId: profile?.profile?.skinId || 'blue',
         },
       });
     });
@@ -183,13 +173,15 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
   useEffect(() => {
     const config = {
       type: Phaser.AUTO,
-      width: window.innerWidth,
-      height: window.innerHeight,
+      width: '100%',
+      height: '100%',
       parent: 'phaser-container',
       pixelArt: true,
       scale: {
-        mode: Phaser.Scale.RESIZE,
+        mode: Phaser.Scale.FIT,
         autoCenter: Phaser.Scale.CENTER_BOTH,
+        width: '100%',
+        height: '100%',
       },
       physics: {
         default: 'arcade',
@@ -203,60 +195,159 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
           sceneRef.current = this;
           const W = this.scale.width;
           const H = this.scale.height;
+          const T = 32; // tile size
 
-          // Ground tiles
-          const tileSize = 32;
-          for (let row = 0; row < Math.ceil(H / tileSize); row++) {
-            for (let col = 0; col < Math.ceil(W / tileSize); col++) {
-              const color = (row + col) % 2 === 0 ? 0x2d5a1b : 0x3a7a24;
-              this.add.rectangle(col * tileSize + tileSize / 2, row * tileSize + tileSize / 2, tileSize, tileSize, color);
+          // --- Environment themes per room ---
+          const themes = {
+            'downtown-hub':  { floor1: 0x2a2a2e, floor2: 0x323238, accent: 0x4a4a52, wall: 0x1a1a1e, decor: 0x5c5c6a },
+            'forest-gate':   { floor1: 0x1a3a10, floor2: 0x143008, accent: 0x4a7a20, wall: 0x2d1a08, decor: 0x5a3a10 },
+            'sunset-temple': { floor1: 0x2a1a3a, floor2: 0x1e1228, accent: 0x7a3a6a, wall: 0x4a1a3a, decor: 0x9a5a8a },
+            'campfire-circle': { floor1: 0x2a1a0a, floor2: 0x1e1208, accent: 0x6a3a1a, wall: 0x3a1a08, decor: 0x8a5a2a },
+            'your-room':     { floor1: 0x0a1828, floor2: 0x0c1e30, accent: 0x1a3a5a, wall: 0x0a1020, decor: 0x2a4a6a },
+          };
+          const th = themes[room?.id] || themes['your-room'];
+
+          // Base floor tiles
+          for (let row = 0; row < Math.ceil(H / T); row++) {
+            for (let col = 0; col < Math.ceil(W / T); col++) {
+              const color = (row + col) % 2 === 0 ? th.floor1 : th.floor2;
+              this.add.rectangle(col * T + T / 2, row * T + T / 2, T, T, color);
             }
           }
 
+          // Subtle inner grid lines
+          for (let x = T; x < W; x += T) {
+            this.add.rectangle(x, H / 2, 1, H, th.accent, 0.25);
+          }
+          for (let y = T; y < H; y += T) {
+            this.add.rectangle(W / 2, y, W, 1, th.accent, 0.25);
+          }
+
+          // Room-specific decorations
+          const roomId = room?.id || 'your-room';
+
+          if (roomId === 'downtown-hub') {
+            // Stone path across center
+            for (let i = 2; i < Math.ceil(W / T) - 2; i++) {
+              this.add.rectangle(i * T + T / 2, H / 2, T, T * 3, 0x3a3a42).setAlpha(0.6);
+            }
+            // Street lights
+            [[100, 100], [W - 100, 100], [100, H - 100], [W - 100, H - 100]].forEach(([x, y]) => {
+              this.add.rectangle(x, y + 8, 4, 24, 0x888890);
+              this.add.circle(x, y - 2, 7, 0xffee88).setAlpha(0.9);
+              this.add.circle(x, y - 2, 12, 0xffee88).setAlpha(0.2);
+            });
+            // Benches
+            [[180, 160], [W - 180, 160], [180, H - 160], [W - 180, H - 160]].forEach(([x, y]) => {
+              this.add.rectangle(x, y, 24, 8, 0x8B6914);
+              this.add.rectangle(x, y - 6, 24, 4, 0x6B4A10);
+            });
+
+          } else if (roomId === 'forest-gate') {
+            // Tree clusters
+            const trees = [[80,80],[150,120],[W-90,90],[W-160,70],[60,H-80],[200,H-110],[W-80,H-90],[W-200,H-70],[W/2-100,60],[W/2+80,H-70]];
+            trees.forEach(([x, y]) => {
+              this.add.circle(x, y + 6, 14, 0x1a3a10);
+              this.add.circle(x, y, 18, 0x2d6e1a);
+              this.add.circle(x, y - 4, 13, 0x4a9a2a);
+              this.add.rectangle(x, y + 20, 6, 14, 0x5c3d1e);
+            });
+            // Dirt path
+            for (let i = 0; i < 12; i++) {
+              const px = (W / 13) * (i + 1);
+              this.add.ellipse(px, H / 2, T - 4, T / 2, 0x5c3d1e).setAlpha(0.5);
+            }
+            // Flowers
+            [[200,200],[300,350],[W-200,250],[W/2,150]].forEach(([x,y]) => {
+              this.add.circle(x, y, 4, 0xffaacc);
+              this.add.circle(x, y, 2, 0xffee44);
+            });
+
+          } else if (roomId === 'sunset-temple') {
+            // Stone floor pattern
+            for (let row = 1; row < Math.ceil(H / T) - 1; row++) {
+              for (let col = 1; col < Math.ceil(W / T) - 1; col++) {
+                if ((row + col) % 4 === 0) {
+                  this.add.rectangle(col * T + T / 2, row * T + T / 2, T - 2, T - 2, 0x4a1a6a).setAlpha(0.4);
+                }
+              }
+            }
+            // Pillars
+            [[80,80],[W-80,80],[80,H-80],[W-80,H-80]].forEach(([x,y]) => {
+              this.add.rectangle(x, y, 20, 20, 0x6a2a8a);
+              this.add.rectangle(x, y, 16, 16, 0x8a4aaa);
+              this.add.rectangle(x, y, 8, 8, 0xaa6acc);
+              this.add.circle(x, y, 14, 0xaa6acc).setAlpha(0.15);
+            });
+            // Altar center
+            this.add.circle(W / 2, H / 2, 40, 0x4a1a6a).setAlpha(0.5);
+            this.add.circle(W / 2, H / 2, 28, 0x6a3a8a).setAlpha(0.6);
+            this.add.circle(W / 2, H / 2, 10, 0xcc88ee).setAlpha(0.8);
+
+          } else if (roomId === 'campfire-circle') {
+            // Central fire
+            this.add.circle(W / 2, H / 2, 30, 0x3a1a08).setAlpha(0.8);
+            this.add.circle(W / 2, H / 2, 16, 0xff6600).setAlpha(0.9);
+            this.add.circle(W / 2, H / 2, 10, 0xffaa00);
+            this.add.circle(W / 2, H / 2, 5, 0xffee88);
+            // Glow halo
+            this.add.circle(W / 2, H / 2, 70, 0xff6600).setAlpha(0.06);
+            // Logs
+            this.add.rectangle(W / 2 - 12, H / 2 + 2, 24, 6, 0x5c3d1e).setAngle(20);
+            this.add.rectangle(W / 2 + 8, H / 2 + 2, 24, 6, 0x5c3d1e).setAngle(-30);
+            // Stones ring
+            for (let i = 0; i < 8; i++) {
+              const a = (i / 8) * Math.PI * 2;
+              this.add.circle(W / 2 + Math.cos(a) * 35, H / 2 + Math.sin(a) * 35, 5, 0x6a5a4a);
+            }
+            // Log seats around fire
+            [[W/2-90, H/2-50],[W/2+90, H/2-50],[W/2-90, H/2+50],[W/2+90, H/2+50]].forEach(([x,y]) => {
+              this.add.rectangle(x, y, 30, 12, 0x5c3d1e);
+              this.add.rectangle(x, y - 5, 30, 6, 0x8B6914);
+            });
+
+          } else {
+            // your-room: minimal grid with glowing center
+            this.add.circle(W / 2, H / 2, 80, 0x1a3a5a).setAlpha(0.2);
+            this.add.circle(W / 2, H / 2, 40, 0x2a5a8a).setAlpha(0.15);
+            // Corner markers
+            [[T*2,T*2],[W-T*2,T*2],[T*2,H-T*2],[W-T*2,H-T*2]].forEach(([x,y]) => {
+              this.add.rectangle(x, y, 12, 12, 0x2a4a6a);
+              this.add.rectangle(x, y, 6, 6, 0x4a8aaa);
+            });
+          }
+
           // Border wall
-          const wallColor = 0x5c3d1e;
-          const wallThick = 8;
-          this.add.rectangle(W / 2, wallThick / 2, W, wallThick, wallColor);
-          this.add.rectangle(W / 2, H - wallThick / 2, W, wallThick, wallColor);
-          this.add.rectangle(wallThick / 2, H / 2, wallThick, H, wallColor);
-          this.add.rectangle(W - wallThick / 2, H / 2, wallThick, H, wallColor);
+          const wt = 8;
+          this.add.rectangle(W / 2, wt / 2, W, wt, th.wall);
+          this.add.rectangle(W / 2, H - wt / 2, W, wt, th.wall);
+          this.add.rectangle(wt / 2, H / 2, wt, H, th.wall);
+          this.add.rectangle(W - wt / 2, H / 2, wt, H, th.wall);
+
+          // Inner wall highlight
+          this.add.rectangle(W / 2, wt + 1, W, 2, th.decor).setAlpha(0.4);
+          this.add.rectangle(W / 2, H - wt - 1, W, 2, th.decor).setAlpha(0.4);
 
           // Realm name label
-          this.add.text(16, 12, `⚔ ${room ? room.name : 'Unknown'}`, {
-            fontFamily: 'Courier New',
-            fontSize: '14px',
-            color: '#fef3c7',
-            backgroundColor: '#00000088',
-            padding: { x: 6, y: 3 },
+          this.add.text(16, 12, room?.name || 'Unknown', {
+            fontFamily: 'Courier New', fontSize: '13px',
+            color: '#fef3c7', backgroundColor: '#00000099',
+            padding: { x: 8, y: 4 },
           });
 
           // WASD hint
           this.add.text(W / 2, H - 6, 'WASD / arrows to move', {
-            fontFamily: 'Courier New',
-            fontSize: '10px',
-            color: '#fef3c7aa',
+            fontFamily: 'Courier New', fontSize: '10px',
+            color: '#ffffff55',
           }).setOrigin(0.5, 1);
 
-          // Local player spawns at canvas center
-          const playerGroup = this.add.container(W / 2, H / 2);
-          playerGroup.add([
-            this.add.rectangle(0, -5, 6, 5, 0xfbbf24),
-            this.add.rectangle(0, 2, 8, 6, 0xfde047),
-            this.add.rectangle(-6, 2, 2, 3, 0xfcd34d),
-            this.add.rectangle(4, 2, 2, 3, 0xfcd34d),
-            this.add.rectangle(-3, 8, 2, 3, 0xfbbf24),
-            this.add.rectangle(1, 8, 2, 3, 0xfbbf24),
-          ]);
-
-          // "YOU" label that follows the local player
-          const youLabel = this.add.text(W / 2, H / 2 - 20, 'YOU', {
-            fontFamily: 'Courier New',
-            fontSize: '10px',
-            color: '#fef3c7',
-            backgroundColor: '#00000088',
-            padding: { x: 2, y: 1 },
-          }).setOrigin(0.5);
-          playerGroup.setData('youLabel', youLabel);
+          // Local player — built from ModularAvatar class
+          const playerGroup = new ModularAvatar(this, W / 2, H / 2, {
+            skinId: profile?.profile?.skinId || 'blue',
+            name: profile?.profile?.characterName || 'YOU',
+            isLocal: true,
+          });
+          if (profile?.profile?.photo) playerGroup.attachPhoto(this, profile.profile.photo);
 
           localPlayerRef.current = playerGroup;
 
@@ -264,7 +355,6 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
           playerGroup.body.setCircle(8);
           playerGroup.body.setCollideWorldBounds(true);
           playerGroup.body.setBounce(0);
-          playerGroup.setData('physicsBody', playerGroup.body);
 
           this.input.keyboard.createCursorKeys();
         },
@@ -321,7 +411,9 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
               const youLabel = localPlayerRef.current.getData('youLabel');
               if (youLabel) youLabel.setPosition(localPlayerRef.current.x, localPlayerRef.current.y - 20);
 
+              // Keep photo above label
               localPlayerPosRef.current = { x: localPlayerRef.current.x, y: localPlayerRef.current.y };
+              localPlayerRef.current.syncLabel();
             }
           }
 
@@ -409,10 +501,10 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
   };
 
   return (
-    <div style={{ position: 'relative', width: '100vw', height: '100vh', background: '#111', overflow: 'hidden' }}>
+    <div style={{ position: 'relative', width: '100%', height: '100%', background: '#111', overflow: 'hidden' }}>
 
-      {/* Game canvas — fills the whole screen */}
-      <div id="phaser-container" style={{ position: 'absolute', inset: 0, outline: 'none' }}
+      {/* Game canvas — fills the container */}
+      <div id="phaser-container" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', outline: 'none' }}
         onClick={(e) => e.currentTarget.querySelector('canvas')?.focus()}
         ref={(el) => {
           if (el) {
@@ -420,8 +512,6 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
             if (canvas && !canvas.getAttribute('tabindex')) {
               canvas.setAttribute('tabindex', '0');
               canvas.style.outline = 'none';
-              canvas.style.width = '100%';
-              canvas.style.height = '100%';
             }
           }
         }}
@@ -437,7 +527,7 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
       {/* Top-right: exit button */}
       <button
         onClick={onLeave}
-        style={{ position: 'absolute', top: 10, right: 10, background: '#e2b46c', border: 'none', padding: '6px 14px', fontWeight: 'bold', cursor: 'pointer', fontFamily: 'Courier New' }}
+        style={{ position: 'absolute', top: 10, right: 10, zIndex: 50, background: '#e2b46c', border: 'none', padding: '6px 14px', fontWeight: 'bold', cursor: 'pointer', fontFamily: 'Courier New', whiteSpace: 'nowrap' }}
       >
         ← Exit
       </button>

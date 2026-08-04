@@ -41,6 +41,8 @@ io.on('connection', (socket) => {
     const playerState = {
       id: user?.id || socket.id,
       name: user?.name || `Guest_${socket.id.slice(0, 4)}`,
+      photo: user?.photo || null,
+      skinId: user?.skinId || 'blue',
       x: 640 + spawnOffsetX,
       y: 400 + spawnOffsetY,
     };
