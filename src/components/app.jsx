@@ -296,6 +296,7 @@ function App() {
               /* Map view fills the main area */
               <div style={{ flex: 1, borderRadius: 12, overflow: 'hidden', border: '2px solid #334155', position: 'relative' }}>
                 <MapView
+                  key="world-map"
                   location={location}
                   rooms={getAllRooms().map(r => ({ ...r, radiusMeters: r.radiusMeters || 100 }))}
                   onEnterRoom={handleEnterRoom}

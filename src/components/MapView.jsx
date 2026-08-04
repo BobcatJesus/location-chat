@@ -63,7 +63,11 @@ export default function MapView({ location, rooms, onEnterRoom }) {
   const leafletRef = useRef(null);
   const playerMarkerRef = useRef(null);
   const poiLayerRef = useRef(null);
+  const onEnterRoomRef = useRef(onEnterRoom);
   const [poiCount, setPoiCount] = useState(0);
+
+  // Keep ref current without re-triggering effects
+  useEffect(() => { onEnterRoomRef.current = onEnterRoom; });
 
   const addPin = (map, lat, lng, name, emoji, color, radiusMeters, inRange, onTap) => {
     L.circle([lat, lng], {
@@ -121,29 +125,36 @@ export default function MapView({ location, rooms, onEnterRoom }) {
       const style = ROOM_STYLES[room.id] || { color: '#a78bfa', emoji: '📍' };
       const dist = location ? getDistanceMeters(lat, lng, room.lat, room.lng) : Infinity;
       addPin(map, room.lat, room.lng, room.name, style.emoji, style.color, room.radiusMeters,
-        dist <= room.radiusMeters, () => onEnterRoom(room.id));
+        dist <= room.radiusMeters, () => onEnterRoomRef.current(room.id));
     });
 
-    // Fetch nearby POIs from OpenStreetMap
+    // Fetch nearby POIs from OpenStreetMap — only once on mount
+    let cancelled = false;
     fetchNearbyPOIs(lat, lng, 600).then(pois => {
-      // Deduplicate against manual rooms by proximity
+      if (cancelled || !leafletRef.current) return;
       const manualCoords = rooms.filter(r => r.lat).map(r => [r.lat, r.lng]);
       const filtered = pois.filter(poi =>
         !manualCoords.some(([rlat, rlng]) => getDistanceMeters(poi.lat, poi.lng, rlat, rlng) < 30)
       );
-      const group = L.layerGroup().addTo(map);
+      const group = L.layerGroup().addTo(leafletRef.current);
       poiLayerRef.current = group;
       filtered.forEach(poi => {
         const dist = getDistanceMeters(lat, lng, poi.lat, poi.lng);
         addPin(group, poi.lat, poi.lng, poi.name, poi.emoji, poi.color, poi.radiusMeters,
-          dist <= poi.radiusMeters, () => onEnterRoom(poi.id, poi));
+          dist <= poi.radiusMeters, () => onEnterRoomRef.current(poi.id, poi));
       });
       setPoiCount(filtered.length);
     });
 
-  }, []);
+    return () => {
+      cancelled = true;
+      map.remove();
+      leafletRef.current = null;
+      playerMarkerRef.current = null;
+    };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Update player marker position when GPS moves
+  // Update player marker position when GPS moves — no map rebuild
   useEffect(() => {
     if (!leafletRef.current || !location) return;
     const { latitude: lat, longitude: lng } = location;
