@@ -4,6 +4,15 @@ import { getDistanceMeters } from '../src/geo.js';
 // Pre-defined GPS-anchored locations
 export const ROOMS = [
   {
+    id: 'starbucks-spring',
+    name: 'Starbucks',
+    lat: 29.8287,
+    lng: -95.4304,
+    radiusMeters: 50,
+    kind: 'gps',
+    contributors: ['system']
+  },
+  {
     id: 'downtown-hub',
     name: 'Downtown Plaza',
     lat: 29.7604,

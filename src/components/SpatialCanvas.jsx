@@ -199,6 +199,7 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
 
           // --- Environment themes per room ---
           const themes = {
+            'starbucks-spring': { floor1: 0x00160e, floor2: 0x001a10, accent: 0x00704a, wall: 0x00120a, decor: 0x00704a },
             'downtown-hub':  { floor1: 0x2a2a2e, floor2: 0x323238, accent: 0x4a4a52, wall: 0x1a1a1e, decor: 0x5c5c6a },
             'forest-gate':   { floor1: 0x1a3a10, floor2: 0x143008, accent: 0x4a7a20, wall: 0x2d1a08, decor: 0x5a3a10 },
             'sunset-temple': { floor1: 0x2a1a3a, floor2: 0x1e1228, accent: 0x7a3a6a, wall: 0x4a1a3a, decor: 0x9a5a8a },
@@ -226,7 +227,38 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
           // Room-specific decorations
           const roomId = room?.id || 'your-room';
 
-          if (roomId === 'downtown-hub') {
+          if (roomId === 'starbucks-spring') {
+            // Counter along top wall
+            this.add.rectangle(W / 2, 40, W - 60, 28, 0x3d1a00);
+            this.add.rectangle(W / 2, 40, W - 64, 24, 0x5c2800);
+            // Espresso machines on counter
+            [[120, 35], [200, 35], [280, 35]].forEach(([x, y]) => {
+              this.add.rectangle(x, y, 18, 14, 0x222222);
+              this.add.circle(x, y - 2, 4, 0x444444);
+              this.add.circle(x, y + 5, 3, 0xcc3300).setAlpha(0.8);
+            });
+            // Menu board on top wall
+            this.add.rectangle(W / 2 + 60, 18, 80, 18, 0x1a1a2e);
+            this.add.text(W / 2 + 60, 18, 'MENU', { fontFamily: 'Courier New', fontSize: '8px', color: '#00704a' }).setOrigin(0.5);
+            // Tables
+            [[140, 200], [280, 200], [200, 320], [360, 280]].forEach(([x, y]) => {
+              this.add.circle(x, y, 22, 0x3d2200);
+              this.add.circle(x, y, 18, 0x5c3300);
+              // Chairs
+              [[0, -30], [0, 30], [-30, 0], [30, 0]].forEach(([dx, dy]) => {
+                this.add.circle(x + dx, y + dy, 10, 0x2a1a00);
+                this.add.circle(x + dx, y + dy, 7, 0x4a2e00);
+              });
+            });
+            // Starbucks logo circle on floor
+            this.add.circle(W / 2, H / 2, 28, 0x00704a).setAlpha(0.3);
+            this.add.circle(W / 2, H / 2, 18, 0x00704a).setAlpha(0.2);
+            // Window light patches
+            [[W - 80, 100], [W - 80, 160]].forEach(([x, y]) => {
+              this.add.rectangle(x, y, 32, 48, 0xfff8dc).setAlpha(0.08);
+            });
+
+          } else if (roomId === 'downtown-hub') {
             // Stone path across center
             for (let i = 2; i < Math.ceil(W / T) - 2; i++) {
               this.add.rectangle(i * T + T / 2, H / 2, T, T * 3, 0x3a3a42).setAlpha(0.6);
