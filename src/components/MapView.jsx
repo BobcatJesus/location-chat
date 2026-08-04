@@ -12,14 +12,22 @@ L.Icon.Default.mergeOptions({
 
 // Map OpenStreetMap amenity/tag → emoji + colour
 const POI_TYPES = [
-  { tag: 'amenity', value: 'cafe',        emoji: '☕', color: '#00704a', label: 'Café' },
-  { tag: 'amenity', value: 'restaurant',  emoji: '🍽️', color: '#f59e0b', label: 'Restaurant' },
-  { tag: 'amenity', value: 'bar',         emoji: '🍺', color: '#f97316', label: 'Bar' },
-  { tag: 'amenity', value: 'pub',         emoji: '🍺', color: '#f97316', label: 'Pub' },
-  { tag: 'amenity', value: 'library',     emoji: '📚', color: '#6366f1', label: 'Library' },
-  { tag: 'amenity', value: 'gym',         emoji: '💪', color: '#ec4899', label: 'Gym' },
-  { tag: 'leisure', value: 'park',        emoji: '🌳', color: '#4ade80', label: 'Park' },
-  { tag: 'shop',    value: 'supermarket', emoji: '🛒', color: '#60a5fa', label: 'Supermarket' },
+  { tag: 'amenity', value: 'cafe',          emoji: '☕', color: '#00704a', label: 'Café' },
+  { tag: 'amenity', value: 'restaurant',    emoji: '🍽️', color: '#f59e0b', label: 'Restaurant' },
+  { tag: 'amenity', value: 'fast_food',     emoji: '🍔', color: '#f97316', label: 'Fast Food' },
+  { tag: 'amenity', value: 'bar',           emoji: '🍺', color: '#a855f7', label: 'Bar' },
+  { tag: 'amenity', value: 'pub',           emoji: '🍺', color: '#a855f7', label: 'Pub' },
+  { tag: 'amenity', value: 'library',       emoji: '📚', color: '#6366f1', label: 'Library' },
+  { tag: 'amenity', value: 'gym',           emoji: '💪', color: '#ec4899', label: 'Gym' },
+  { tag: 'amenity', value: 'school',        emoji: '🏫', color: '#60a5fa', label: 'School' },
+  { tag: 'amenity', value: 'place_of_worship', emoji: '⛪', color: '#e2b46c', label: 'Church' },
+  { tag: 'amenity', value: 'pharmacy',      emoji: '💊', color: '#10b981', label: 'Pharmacy' },
+  { tag: 'amenity', value: 'bank',          emoji: '🏦', color: '#64748b', label: 'Bank' },
+  { tag: 'amenity', value: 'fuel',          emoji: '⛽', color: '#ef4444', label: 'Gas Station' },
+  { tag: 'leisure', value: 'park',          emoji: '🌳', color: '#4ade80', label: 'Park' },
+  { tag: 'leisure', value: 'playground',    emoji: '🛝', color: '#fbbf24', label: 'Playground' },
+  { tag: 'shop',    value: 'supermarket',   emoji: '🛒', color: '#60a5fa', label: 'Supermarket' },
+  { tag: 'shop',    value: 'convenience',   emoji: '🏪', color: '#94a3b8', label: 'Store' },
 ];
 
 const POI_RADIUS = 100; // metres — radius for auto-discovered POIs
@@ -130,7 +138,7 @@ export default function MapView({ location, rooms, onEnterRoom }) {
     });
 
     // Fetch nearby POIs — use ref check only, not cancelled flag
-    fetchNearbyPOIs(lat, lng, 800).then(pois => {
+    fetchNearbyPOIs(lat, lng, 1500).then(pois => {
       if (!leafletRef.current) return;
       const manualCoords = rooms.filter(r => r.lat).map(r => [r.lat, r.lng]);
       const filtered = pois.filter(poi =>
