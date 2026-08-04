@@ -1,15 +1,54 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { getDistanceMeters } from '../geo';
 
-// Fix Leaflet default marker icon paths broken by bundlers
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
   iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
   shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
 });
+
+// Map OpenStreetMap amenity/tag → emoji + colour
+const POI_TYPES = [
+  { tag: 'amenity', value: 'cafe',        emoji: '☕', color: '#00704a', label: 'Café' },
+  { tag: 'amenity', value: 'restaurant',  emoji: '🍽️', color: '#f59e0b', label: 'Restaurant' },
+  { tag: 'amenity', value: 'bar',         emoji: '🍺', color: '#f97316', label: 'Bar' },
+  { tag: 'amenity', value: 'pub',         emoji: '🍺', color: '#f97316', label: 'Pub' },
+  { tag: 'amenity', value: 'library',     emoji: '📚', color: '#6366f1', label: 'Library' },
+  { tag: 'amenity', value: 'gym',         emoji: '💪', color: '#ec4899', label: 'Gym' },
+  { tag: 'leisure', value: 'park',        emoji: '🌳', color: '#4ade80', label: 'Park' },
+  { tag: 'shop',    value: 'supermarket', emoji: '🛒', color: '#60a5fa', label: 'Supermarket' },
+];
+
+const POI_RADIUS = 100; // metres — radius for auto-discovered POIs
+
+// Fetch nearby POIs from OpenStreetMap Overpass API (free, no key)
+async function fetchNearbyPOIs(lat, lng, radiusMeters = 500) {
+  const types = POI_TYPES.map(t => `node["${t.tag}"="${t.value}"](around:${radiusMeters},${lat},${lng});`).join('');
+  const query = `[out:json][timeout:10];(${types});out body;`;
+  const url = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`;
+  try {
+    const res = await fetch(url);
+    const data = await res.json();
+    return (data.elements || []).map(el => {
+      const typeInfo = POI_TYPES.find(t => el.tags?.[t.tag] === t.value) || { emoji: '📍', color: '#94a3b8', label: 'Place' };
+      return {
+        id: `osm-${el.id}`,
+        name: el.tags?.name || typeInfo.label,
+        lat: el.lat,
+        lng: el.lon,
+        radiusMeters: POI_RADIUS,
+        kind: 'osm',
+        emoji: typeInfo.emoji,
+        color: typeInfo.color,
+      };
+    });
+  } catch {
+    return [];
+  }
+}
 
 const ROOM_STYLES = {
   'starbucks-spring': { color: '#00704a', emoji: '☕' },
@@ -23,95 +62,86 @@ export default function MapView({ location, rooms, onEnterRoom }) {
   const mapRef = useRef(null);
   const leafletRef = useRef(null);
   const playerMarkerRef = useRef(null);
+  const poiLayerRef = useRef(null);
+  const [poiCount, setPoiCount] = useState(0);
+
+  const addPin = (map, lat, lng, name, emoji, color, radiusMeters, inRange, onTap) => {
+    L.circle([lat, lng], {
+      radius: radiusMeters,
+      color, fillColor: color,
+      fillOpacity: inRange ? 0.15 : 0.05,
+      weight: inRange ? 2 : 1,
+      opacity: inRange ? 0.8 : 0.3,
+      dashArray: inRange ? null : '6',
+    }).addTo(map);
+
+    const pinIcon = L.divIcon({
+      className: '',
+      html: `<div style="display:flex;flex-direction:column;align-items:center;cursor:${inRange ? 'pointer' : 'default'};filter:${inRange ? 'none' : 'grayscale(80%) opacity(0.4)'}">
+        <div style="background:${color};font-size:16px;width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 0 ${inRange ? '10px' : '3px'} ${color}${inRange ? 'cc' : '33'}">${emoji}</div>
+        <div style="background:rgba(0,0,0,0.85);color:#fff;font-size:9px;padding:1px 5px;border-radius:2px;margin-top:1px;white-space:nowrap;font-family:'Courier New',monospace;max-width:90px;overflow:hidden;text-overflow:ellipsis">${name}${inRange ? ' ✦' : ''}</div>
+        <div style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:6px solid rgba(0,0,0,0.85)"></div>
+      </div>`,
+      iconSize: [80, 55],
+      iconAnchor: [40, 55],
+    });
+
+    const marker = L.marker([lat, lng], { icon: pinIcon }).addTo(map);
+    if (inRange && onTap) {
+      marker.on('click', onTap);
+    } else {
+      marker.bindPopup(`<div style="font-family:'Courier New',monospace;font-size:11px;text-align:center"><b>${name}</b><br/><span style="color:#9ca3af">Walk closer to enter</span></div>`);
+    }
+  };
 
   useEffect(() => {
-    if (leafletRef.current) return; // already initialized
+    if (leafletRef.current) return;
 
     const lat = location?.latitude || 29.8368;
     const lng = location?.longitude || -95.4201;
 
-    const map = L.map(mapRef.current, {
-      center: [lat, lng],
-      zoom: 17,
-      zoomControl: false,
-    });
+    const map = L.map(mapRef.current, { center: [lat, lng], zoom: 17, zoomControl: false });
     leafletRef.current = map;
 
-    // Dark-themed OpenStreetMap tiles (no API key needed)
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-      attribution: '© OpenStreetMap © CARTO',
-      maxZoom: 20,
+      attribution: '© OpenStreetMap © CARTO', maxZoom: 20,
     }).addTo(map);
 
     // Player dot
     const playerIcon = L.divIcon({
       className: '',
       html: `<div style="width:16px;height:16px;border-radius:50%;background:#fbbf24;border:3px solid #fff;box-shadow:0 0 0 3px rgba(251,191,36,0.4)"></div>`,
-      iconSize: [16, 16],
-      iconAnchor: [8, 8],
+      iconSize: [16, 16], iconAnchor: [8, 8],
     });
     playerMarkerRef.current = L.marker([lat, lng], { icon: playerIcon }).addTo(map);
 
-    // Room pins + radius circles
+    // Manual rooms
     rooms.forEach(room => {
       if (!room.lat || !room.lng) return;
       const style = ROOM_STYLES[room.id] || { color: '#a78bfa', emoji: '📍' };
       const dist = location ? getDistanceMeters(lat, lng, room.lat, room.lng) : Infinity;
-      const inRange = dist <= room.radiusMeters;
-
-      // Radius circle
-      L.circle([room.lat, room.lng], {
-        radius: room.radiusMeters,
-        color: style.color,
-        fillColor: style.color,
-        fillOpacity: inRange ? 0.15 : 0.05,
-        weight: inRange ? 2 : 1,
-        opacity: inRange ? 0.8 : 0.3,
-        dashArray: inRange ? null : '6',
-      }).addTo(map);
-
-      // Pin
-      const pinIcon = L.divIcon({
-        className: '',
-        html: `<div style="
-          display:flex;flex-direction:column;align-items:center;cursor:pointer;
-          filter:${inRange ? 'none' : 'grayscale(100%) opacity(0.4)'};
-        ">
-          <div style="
-            background:${style.color};color:#fff;font-size:18px;
-            width:36px;height:36px;border-radius:50%;display:flex;align-items:center;
-            justify-content:center;border:3px solid #fff;
-            box-shadow:0 0 ${inRange ? '12px' : '4px'} ${style.color}${inRange ? 'cc' : '44'};
-          ">${style.emoji}</div>
-          <div style="
-            background:rgba(0,0,0,0.8);color:#fff;font-size:10px;
-            padding:2px 6px;border-radius:3px;margin-top:2px;white-space:nowrap;
-            font-family:'Courier New',monospace;border:1px solid ${style.color}55;
-          ">${room.name}${inRange ? ' ✦' : ''}</div>
-          <div style="width:0;height:0;border-left:6px solid transparent;border-right:6px solid transparent;border-top:8px solid rgba(0,0,0,0.8);"></div>
-        </div>`,
-        iconSize: [80, 60],
-        iconAnchor: [40, 60],
-        popupAnchor: [0, -60],
-      });
-
-      const marker = L.marker([room.lat, room.lng], { icon: pinIcon }).addTo(map);
-
-      if (inRange) {
-        marker.on('click', () => onEnterRoom(room.id));
-      } else {
-        marker.bindPopup(
-          `<div style="font-family:'Courier New',monospace;font-size:12px;text-align:center">
-            <strong>${room.name}</strong><br/>
-            ${Math.round(dist)}m away<br/>
-            <span style="color:#9ca3af">(need to be within ${room.radiusMeters}m)</span>
-          </div>`,
-          { className: 'dark-popup' }
-        );
-      }
+      addPin(map, room.lat, room.lng, room.name, style.emoji, style.color, room.radiusMeters,
+        dist <= room.radiusMeters, () => onEnterRoom(room.id));
     });
 
-  }, []); // build once
+    // Fetch nearby POIs from OpenStreetMap
+    fetchNearbyPOIs(lat, lng, 600).then(pois => {
+      // Deduplicate against manual rooms by proximity
+      const manualCoords = rooms.filter(r => r.lat).map(r => [r.lat, r.lng]);
+      const filtered = pois.filter(poi =>
+        !manualCoords.some(([rlat, rlng]) => getDistanceMeters(poi.lat, poi.lng, rlat, rlng) < 30)
+      );
+      const group = L.layerGroup().addTo(map);
+      poiLayerRef.current = group;
+      filtered.forEach(poi => {
+        const dist = getDistanceMeters(lat, lng, poi.lat, poi.lng);
+        addPin(group, poi.lat, poi.lng, poi.name, poi.emoji, poi.color, poi.radiusMeters,
+          dist <= poi.radiusMeters, () => onEnterRoom(poi.id));
+      });
+      setPoiCount(filtered.length);
+    });
+
+  }, []);
 
   // Update player marker position when GPS moves
   useEffect(() => {
@@ -126,9 +156,9 @@ export default function MapView({ location, rooms, onEnterRoom }) {
       <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
       {/* Legend */}
       <div style={{ position: 'absolute', bottom: 12, left: 12, zIndex: 1000, background: 'rgba(0,0,0,0.75)', border: '1px solid #334155', borderRadius: 8, padding: '8px 12px', fontFamily: 'Courier New', fontSize: 11, color: '#94a3b8' }}>
-        <div style={{ color: '#fbbf24', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 2 }}>Rooms nearby</div>
+        <div style={{ color: '#fbbf24', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 2 }}>Nearby places</div>
         <div>✦ Tap a lit pin to enter</div>
-        <div style={{ marginTop: 2 }}>Dashed = out of range</div>
+        {poiCount > 0 && <div style={{ marginTop: 2, color: '#4ade80' }}>{poiCount} places discovered</div>}
       </div>
     </div>
   );
