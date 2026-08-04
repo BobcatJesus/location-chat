@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import RetroAuthModal from './RetroAuthModal';
 import SpatialCanvas from './SpatialCanvas';
+import MapView from './MapView';
 import { AVATAR_SKINS } from './SpatialCanvas';
 import { useGeofencedMap } from '../hooks/UseGeofencingApp';
 import { createUserRoom, findRoomByLocation, getAllRooms } from '../../rooms/rooms.js';
@@ -289,132 +290,25 @@ function App() {
 
           <div style={{ display: 'flex', gap: 16, flex: 1, minHeight: 0 }}>
             {activeScene === 'world' ? (
-              <div style={{ flex: 1, border: '2px solid #334155', borderRadius: 12, padding: 12, background: '#111827', boxShadow: 'inset 0 0 0 2px rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
-                  <div style={{ fontSize: 12, color: '#fbbf24', textTransform: 'uppercase', letterSpacing: 2 }}>Choose Your Realm</div>
-                  <button
-                    onClick={handleCreateRoom}
-                    style={{ border: '1px solid #fbbf24', background: 'transparent', color: '#fef3c7', padding: '6px 10px', borderRadius: 6, cursor: 'pointer' }}
-                  >
-                    Contribute this spot
-                  </button>
-                </div>
-                {isLocating && (
-                  <div style={{ border: '1px dashed #64748b', borderRadius: 8, padding: 10, color: '#cbd5e1', fontSize: 13 }}>
-                    Scanning for your current position… this can take a moment if GPS is still locking on.
-                  </div>
-                )}
-                <div style={{ display: 'grid', gap: 8 }}>
-                  {roomCards.map((room) => {
-                    const isActive = room.id === activeRoom.id;
-                    // GPS rooms are blocked if location is known and you're outside radius
-                    const allRooms = getAllRooms();
-                    const roomDef = allRooms.find(r => r.id === room.id);
-                    const isGpsBlocked = roomDef?.kind === 'gps' && location
-                      ? getDistanceMeters(location.latitude, location.longitude, roomDef.lat, roomDef.lng) > roomDef.radiusMeters
-                      : false;
-                    return (
-                      <div
-                        key={room.id}
-                        onClick={() => handleEnterRoom(room.id)}
-                        style={{
-                          border: `1px solid ${isActive ? room.accent : '#1e293b'}`,
-                          borderRadius: 10,
-                          padding: '12px 14px',
-                          background: isActive ? room.bg : '#0a0f1a',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          gap: 12,
-                          cursor: 'pointer',
-                          boxShadow: isActive ? `0 0 12px ${room.accent}33, inset 0 0 0 1px ${room.accent}22` : 'none',
-                          transition: 'all 0.15s ease',
-                          opacity: isGpsBlocked ? 0.45 : 1,
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                          <div style={{
-                            width: 42, height: 42, borderRadius: 8, fontSize: 22,
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            background: `${room.accent}18`, border: `1px solid ${room.accent}33`,
-                            flexShrink: 0,
-                          }}>
-                            {room.icon}
-                          </div>
-                          <div>
-                            <div style={{ fontWeight: 'bold', fontSize: 14, color: isActive ? room.accent : '#e2e8f0' }}>{room.name}</div>
-                            <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>{room.blurb}</div>
-                          </div>
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, flexShrink: 0 }}>
-                          <div style={{ fontSize: 10, color: room.status.includes('here') ? '#4ade80' : isGpsBlocked ? '#475569' : room.accent, fontWeight: 'bold', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-                            {isGpsBlocked ? '🔒 out of range' : room.status}
-                          </div>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleEnterRoom(room.id); }}
-                            style={{
-                              border: `1px solid ${isGpsBlocked ? '#334155' : room.accent}`,
-                              background: isActive ? room.accent : 'transparent',
-                              color: isActive ? '#000' : isGpsBlocked ? '#475569' : room.accent,
-                              padding: '4px 12px', borderRadius: 5, cursor: isGpsBlocked ? 'not-allowed' : 'pointer',
-                              fontSize: 12, fontWeight: 'bold', fontFamily: 'monospace',
-                              letterSpacing: '0.05em',
-                            }}
-                          >
-                            Enter
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+              /* Map view fills the main area */
+              <div style={{ flex: 1, borderRadius: 12, overflow: 'hidden', border: '2px solid #334155', position: 'relative' }}>
+                <MapView
+                  location={location}
+                  rooms={getAllRooms().map(r => ({ ...r, radiusMeters: r.radiusMeters || 100 }))}
+                  onEnterRoom={handleEnterRoom}
+                />
+                {/* Your Room button — always accessible */}
+                <button
+                  onClick={() => handleEnterRoom('your-room')}
+                  style={{ position: 'absolute', top: 12, left: 12, zIndex: 1000, background: '#fbbf24', border: 'none', padding: '8px 14px', fontWeight: 'bold', cursor: 'pointer', fontFamily: 'Courier New', fontSize: 12, boxShadow: '2px 2px 0 #000' }}>
+                  📍 Your Room
+                </button>
               </div>
             ) : (
-              <div style={{ flex: 1, border: '2px solid #334155', borderRadius: 12, padding: 12, background: '#111827', boxShadow: 'inset 0 0 0 2px rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ fontSize: 12, color: '#fbbf24', textTransform: 'uppercase', letterSpacing: 2 }}>Live Room</div>
-                  <button
-                    onClick={() => setActiveScene('world')}
-                    style={{ border: '1px solid #fbbf24', background: 'transparent', color: '#fef3c7', padding: '6px 10px', borderRadius: 6, cursor: 'pointer' }}
-                  >
-                    Back to rooms
-                  </button>
-                </div>
-                <div style={{ flex: 1, border: '1px solid #475569', borderRadius: 10, padding: 12, background: 'linear-gradient(180deg, #1f2937 0%, #111827 100%)' }}>
-                  <SpatialCanvas room={activeRoom} profile={profile} onLeave={() => setActiveScene('world')} />
-                </div>
+              <div style={{ flex: 1, border: '2px solid #334155', borderRadius: 12, overflow: 'hidden', position: 'relative' }}>
+                <SpatialCanvas room={activeRoom} profile={profile} onLeave={() => setActiveScene('world')} />
               </div>
             )}
-
-            <div style={{ width: 280, display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div style={{ border: `2px solid ${activeRoomScene.accent}`, borderRadius: 12, padding: 12, background: '#0f172a' }}>
-                <div style={{ fontSize: 12, color: '#fbbf24', textTransform: 'uppercase', letterSpacing: 2, marginBottom: 8 }}>Room Scene</div>
-                <div style={{ fontSize: 18, fontWeight: 'bold', marginBottom: 6 }}>{activeRoomScene.title}</div>
-                <div style={{ margin: '8px 0', padding: '10px', borderRadius: 8, background: '#111827', fontFamily: 'monospace', fontSize: 20, letterSpacing: 2, color: '#fef3c7', whiteSpace: 'pre' }}>
-                  {activeRoomScene.tile}
-                </div>
-                <div style={{ fontSize: 13, lineHeight: 1.5, color: '#cbd5e1' }}>{activeRoomScene.mood}</div>
-              </div>
-
-              <div style={{ border: '1px solid #475569', borderRadius: 12, padding: 12, background: '#0f172a' }}>
-                <div style={{ fontSize: 12, color: '#fbbf24', textTransform: 'uppercase', letterSpacing: 2, marginBottom: 6 }}>Current Quest</div>
-                <div style={{ fontSize: 14 }}>
-                  {activeRoomSummary}
-                </div>
-              </div>
-
-              <div style={{ border: '1px solid #475569', borderRadius: 12, padding: 12, background: '#0f172a' }}>
-                <div style={{ fontSize: 12, color: '#fbbf24', textTransform: 'uppercase', letterSpacing: 2, marginBottom: 8 }}>Location Status</div>
-                <div style={{ fontSize: 13, lineHeight: 1.6 }}>
-                  <div><strong>Status:</strong> {isLocating ? 'Locating...' : isInsideVenue ? 'Inside verified venue' : 'Outside venue'}</div>
-                  <div><strong>GPS:</strong> {location ? `${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}` : 'Waiting for location'}</div>
-                  <div><strong>Venue:</strong> {currentVenue?.name || 'No venue detected'}</div>
-                  <div><strong>Room Match:</strong> {roomMatch ? roomMatch.room.name : 'No room nearby'}</div>
-                  <div><strong>Present Distance:</strong> {presentDistance !== null ? `${Math.round(presentDistance)}m` : '—'}</div>
-                  {error && <div style={{ color: '#fca5a5', marginTop: 6 }}>{error}</div>}
-                </div>
-              </div>
-            </div>
           </div>
         </div>
       )}
