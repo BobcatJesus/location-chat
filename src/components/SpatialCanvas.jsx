@@ -201,13 +201,23 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
           // --- Environment themes per room ---
           const themes = {
             'starbucks-spring': { floor1: 0x00160e, floor2: 0x001a10, accent: 0x00704a, wall: 0x00120a, decor: 0x00704a },
+            'cafe':    { floor1: 0x1a0f00, floor2: 0x221400, accent: 0x8B6914, wall: 0x110a00, decor: 0xc8a000 },
+            'restaurant': { floor1: 0x1a0a0a, floor2: 0x200c0c, accent: 0x9a2020, wall: 0x100505, decor: 0xcc4444 },
+            'bar':     { floor1: 0x0a0a1a, floor2: 0x0c0c22, accent: 0x4400cc, wall: 0x060614, decor: 0x8800ff },
+            'pub':     { floor1: 0x0a0a1a, floor2: 0x0c0c22, accent: 0x4400cc, wall: 0x060614, decor: 0x8800ff },
+            'park':    { floor1: 0x0a1a08, floor2: 0x0c1e0a, accent: 0x2d6e1a, wall: 0x061006, decor: 0x4a9a2a },
+            'leisure': { floor1: 0x0a1a08, floor2: 0x0c1e0a, accent: 0x2d6e1a, wall: 0x061006, decor: 0x4a9a2a },
+            'library': { floor1: 0x1a1000, floor2: 0x201400, accent: 0x8B6400, wall: 0x100c00, decor: 0xc8a000 },
+            'gym':     { floor1: 0x0a0a10, floor2: 0x0c0c16, accent: 0x1a8aff, wall: 0x060608, decor: 0x44aaff },
+            'supermarket': { floor1: 0x101018, floor2: 0x14141e, accent: 0x2255cc, wall: 0x080810, decor: 0x4488ff },
+            'shop':    { floor1: 0x101018, floor2: 0x14141e, accent: 0x2255cc, wall: 0x080810, decor: 0x4488ff },
             'downtown-hub':  { floor1: 0x2a2a2e, floor2: 0x323238, accent: 0x4a4a52, wall: 0x1a1a1e, decor: 0x5c5c6a },
             'forest-gate':   { floor1: 0x1a3a10, floor2: 0x143008, accent: 0x4a7a20, wall: 0x2d1a08, decor: 0x5a3a10 },
             'sunset-temple': { floor1: 0x2a1a3a, floor2: 0x1e1228, accent: 0x7a3a6a, wall: 0x4a1a3a, decor: 0x9a5a8a },
             'campfire-circle': { floor1: 0x2a1a0a, floor2: 0x1e1208, accent: 0x6a3a1a, wall: 0x3a1a08, decor: 0x8a5a2a },
             'your-room':     { floor1: 0x0a1828, floor2: 0x0c1e30, accent: 0x1a3a5a, wall: 0x0a1020, decor: 0x2a4a6a },
           };
-          const th = themes[room?.id] || themes['your-room'];
+          const th = themes[room?.id] || themes[room?.amenity] || themes[room?.type] || themes['your-room'];
 
           // Base floor tiles
           for (let row = 0; row < Math.ceil(H / T); row++) {
@@ -228,7 +238,9 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
           // Room-specific decorations
           const roomId = room?.id || 'your-room';
 
-          if (roomId === 'starbucks-spring') {
+          const roomType = room?.amenity || room?.type || roomId;
+
+          if (roomId === 'starbucks-spring' || roomType === 'cafe') {
             // Counter along top wall
             this.add.rectangle(W / 2, 40, W - 60, 28, 0x3d1a00);
             this.add.rectangle(W / 2, 40, W - 64, 24, 0x5c2800);
@@ -338,6 +350,54 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
               this.add.rectangle(x, y, 30, 12, 0x5c3d1e);
               this.add.rectangle(x, y - 5, 30, 6, 0x8B6914);
             });
+
+          } else if (roomType === 'restaurant') {
+            [[W/2-100,H/2-60],[W/2+80,H/2-60],[W/2-100,H/2+60],[W/2+80,H/2+60],[W/2,H/2+10]].forEach(([x,y]) => {
+              this.add.rectangle(x,y,40,28,0x3a1a00); this.add.rectangle(x,y,36,24,0x5c2800);
+              this.add.circle(x,y-6,4,0xffcc44).setAlpha(0.9); this.add.circle(x,y-6,8,0xffaa00).setAlpha(0.2);
+              [[x-12,y+6],[x+12,y+6],[x-12,y-6],[x+12,y-6]].forEach(([cx,cy]) => { this.add.circle(cx,cy,8,0x2a1400); this.add.circle(cx,cy,5,0x3d1e00); });
+            });
+            this.add.rectangle(W/2,30,W-40,18,0x2a1200);
+            this.add.circle(W/2,H/2,60,0xff6600).setAlpha(0.04);
+
+          } else if (roomType === 'bar' || roomType === 'pub') {
+            this.add.rectangle(W/2,50,W-40,24,0x1a1a2e); this.add.rectangle(W/2,50,W-44,20,0x2a2a44);
+            for (let i=0;i<6;i++) { const bx=80+i*80; this.add.circle(bx,72,8,0x333355); this.add.rectangle(bx,78,4,10,0x222240); }
+            this.add.circle(W-60,90,20,0x8800ff).setAlpha(0.15); this.add.circle(W-60,90,12,0x8800ff).setAlpha(0.3);
+            this.add.text(W-60,90,'BAR',{fontFamily:'Courier New',fontSize:'8px',color:'#cc44ff'}).setOrigin(0.5);
+            [[120,H/2],[240,H/2],[W/2,H/2],[W-180,H/2]].forEach(([x,y]) => { this.add.circle(x,y,16,0x1a1a2e); this.add.circle(x,y,10,0x4400cc).setAlpha(0.4); });
+
+          } else if (roomType === 'park' || roomType === 'leisure') {
+            this.add.rectangle(W/2,H/2,W*0.3,H,0x1a3a10).setAlpha(0.4);
+            [[60,60],[W-70,70],[80,H-80],[W-80,H-80],[W/2-60,80],[W/2+80,H-70]].forEach(([x,y]) => {
+              this.add.circle(x,y+6,12,0x1a3a10); this.add.circle(x,y,16,0x2d6e1a); this.add.circle(x,y-4,11,0x4a9a2a); this.add.rectangle(x,y+18,5,12,0x5c3d1e);
+            });
+            [[160,H/2-30],[W-160,H/2+40]].forEach(([x,y]) => { this.add.rectangle(x,y,28,7,0x8B6914); this.add.rectangle(x,y-5,28,4,0x6B4A10); });
+
+          } else if (roomType === 'library') {
+            for (let i=0;i<4;i++) {
+              const sy=60+i*90;
+              this.add.rectangle(36,sy,32,70,0x3d1a00); this.add.rectangle(36,sy,28,66,0x5c2800);
+              [0x8B0000,0x00448B,0x006400,0x4B0082,0x8B4513].forEach((bc,b) => { this.add.rectangle(22+b*4,sy-20+b*8,3,18+b*3,bc); });
+            }
+            [[W/2-60,H/2],[W/2+60,H/2],[W/2,H/2+80]].forEach(([x,y]) => {
+              this.add.rectangle(x,y,50,24,0x3d2200); this.add.rectangle(x,y,46,20,0x5c3300); this.add.circle(x,y-4,5,0xffee88).setAlpha(0.6);
+            });
+
+          } else if (roomType === 'gym' || roomType === 'fitness_centre') {
+            for (let row=0;row<Math.ceil(H/40);row++) for (let col=0;col<Math.ceil(W/40);col++) if((row+col)%4===0) this.add.rectangle(col*40+20,row*40+20,38,38,0x1a1aff).setAlpha(0.04);
+            [[100,120],[220,120],[340,120]].forEach(([x,y]) => { this.add.rectangle(x,y,50,30,0x1a1a2e); this.add.rectangle(x,y,44,10,0x0055ff).setAlpha(0.5); });
+            this.add.rectangle(W-60,H/2,24,100,0x222233);
+            for (let i=0;i<4;i++) this.add.circle(W-60,H/2-40+i*26,10,0x444466);
+            this.add.circle(W/2,H/2,50,0x1a8aff).setAlpha(0.06);
+
+          } else if (roomType === 'supermarket' || roomType === 'shop') {
+            this.add.rectangle(W/2,35,W-40,24,0x14141e); this.add.rectangle(W/2,35,W-44,20,0x1e1e2e);
+            for (let i=0;i<3;i++) {
+              const ax=100+i*110;
+              this.add.rectangle(ax,H/2,28,H*0.6,0x14141e); this.add.rectangle(ax,H/2,24,H*0.6-4,0x1e1e2e);
+              [0xff4444,0x44ff44,0x4444ff,0xffff44,0xff44ff].forEach((sc,s) => this.add.rectangle(ax,H/2-80+s*36,20,6,sc).setAlpha(0.6));
+            }
 
           } else {
             // your-room: minimal grid with glowing center

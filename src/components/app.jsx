@@ -16,6 +16,7 @@ function App() {
   const [editingProfile, setEditingProfile] = useState(false);
   const [editForm, setEditForm] = useState({ characterName: '', photo: null });
   const editFileRef = React.useRef(null);
+  const [osmRoom, setOsmRoom] = useState(null); // active OSM POI meta
 
   const openEditProfile = () => {
     setEditForm({
@@ -163,9 +164,9 @@ function App() {
         };
   const presentDistance = roomMatch ? roomMatch.distance : null;
 
-  const handleEnterRoom = (roomId) => {
-    // your-room and community rooms are always accessible
-    if (roomId !== 'your-room') {
+  const handleEnterRoom = (roomId, poiMeta = null) => {
+    // GPS rooms are blocked if you're outside radius
+    if (roomId !== 'your-room' && !poiMeta) {
       const allRooms = getAllRooms();
       const target = allRooms.find(r => r.id === roomId);
       if (target && target.kind === 'gps' && location) {
@@ -177,6 +178,8 @@ function App() {
         }
       }
     }
+    if (poiMeta) setOsmRoom(poiMeta);
+    else setOsmRoom(null);
     setSelectedRoom(roomId);
     setActiveScene('room');
   };
@@ -306,7 +309,7 @@ function App() {
               </div>
             ) : (
               <div style={{ flex: 1, border: '2px solid #334155', borderRadius: 12, overflow: 'hidden', position: 'relative' }}>
-                <SpatialCanvas room={activeRoom} profile={profile} onLeave={() => setActiveScene('world')} />
+                <SpatialCanvas room={osmRoom ? { ...osmRoom, id: osmRoom.id } : activeRoom} profile={profile} onLeave={() => { setActiveScene('world'); setOsmRoom(null); }} />
               </div>
             )}
           </div>

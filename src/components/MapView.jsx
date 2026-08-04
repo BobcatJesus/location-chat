@@ -136,7 +136,7 @@ export default function MapView({ location, rooms, onEnterRoom }) {
       filtered.forEach(poi => {
         const dist = getDistanceMeters(lat, lng, poi.lat, poi.lng);
         addPin(group, poi.lat, poi.lng, poi.name, poi.emoji, poi.color, poi.radiusMeters,
-          dist <= poi.radiusMeters, () => onEnterRoom(poi.id));
+          dist <= poi.radiusMeters, () => onEnterRoom(poi.id, poi));
       });
       setPoiCount(filtered.length);
     });
