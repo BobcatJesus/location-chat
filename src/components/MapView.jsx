@@ -199,11 +199,38 @@ export default function MapView({ location, rooms, onEnterRoom }) {
     const socket = io(SOCKET_SERVER_URL, { transports: ['websocket'] });
     socket.on('room_counts', (counts) => {
       roomCountsRef.current = counts;
-      // Refresh labels on all named-room pins
+      const pos = playerMarkerRef.current?.getLatLng();
+      if (pos) updateAllPins(pos.lat, pos.lng);
+    });
+    socket.on('community_location_added', (loc) => {
+      if (!leafletRef.current) return;
+      addPin(leafletRef.current, loc.lat, loc.lng, loc.name, loc.emoji || '📍', loc.color || '#f97316', loc.radius || 50,
+        async () => {
+          const footprint = await fetchBuildingFootprint(loc.lat, loc.lng);
+          onEnterRoomRef.current(loc.id, footprint ? { ...loc, footprint } : null);
+        }, false, loc.id);
       const pos = playerMarkerRef.current?.getLatLng();
       if (pos) updateAllPins(pos.lat, pos.lng);
     });
     return () => socket.disconnect();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fetch existing community locations on mount
+  useEffect(() => {
+    fetch(`${SOCKET_SERVER_URL}/api/community-locations`)
+      .then(r => r.json())
+      .then(locs => {
+        if (!leafletRef.current) return;
+        locs.forEach(loc => {
+          addPin(leafletRef.current, loc.lat, loc.lng, loc.name, loc.emoji || '📍', loc.color || '#f97316', loc.radius || 50,
+            async () => {
+              const footprint = await fetchBuildingFootprint(loc.lat, loc.lng);
+              onEnterRoomRef.current(loc.id, footprint ? { ...loc, footprint } : null);
+            }, false, loc.id);
+        });
+        const pos = playerMarkerRef.current?.getLatLng();
+        if (pos) updateAllPins(pos.lat, pos.lng);
+      }).catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Build icon HTML based on current in-range state

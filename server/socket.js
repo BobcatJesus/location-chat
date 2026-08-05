@@ -20,8 +20,21 @@ async function initDb() {
       placed_by TEXT NOT NULL,
       data JSONB NOT NULL
     )
-  `);
-  console.log('✅ Postgres decorations table ready');
+  `);  await pool.query(`
+    CREATE TABLE IF NOT EXISTS community_locations (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      lat DOUBLE PRECISION NOT NULL,
+      lng DOUBLE PRECISION NOT NULL,
+      radius INTEGER DEFAULT 50,
+      category TEXT DEFAULT 'social',
+      emoji TEXT DEFAULT '\ud83d\udccd',
+      color TEXT DEFAULT '#f97316',
+      creator TEXT,
+      description TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);  console.log('✅ Postgres decorations table ready');
 }
 
 async function loadDecorations() {
@@ -48,6 +61,7 @@ async function deleteDecoration(id) {
 }
 
 const app = express();
+app.use(express.json());
 const server = http.createServer(app);
 
 // 1. Initialize Socket.io with permissive CORS for development/mobile testing
@@ -214,6 +228,31 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Community locations REST API
+app.get('/api/community-locations', async (req, res) => {
+  if (!pool) return res.json([]);
+  try {
+    const { rows } = await pool.query('SELECT * FROM community_locations ORDER BY created_at DESC LIMIT 1000');
+    res.json(rows);
+  } catch { res.json([]); }
+});
+
+app.post('/api/community-locations', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'No database' });
+  const { id, name, lat, lng, radius, category, emoji, color, creator, description } = req.body;
+  if (!id || !name || !lat || !lng) return res.status(400).json({ error: 'Missing fields' });
+  try {
+    await pool.query(
+      'INSERT INTO community_locations (id, name, lat, lng, radius, category, emoji, color, creator, description) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT (id) DO NOTHING',
+      [id, name, lat, lng, radius || 50, category || 'social', emoji || '\ud83d\udccd', color || '#f97316', creator || 'anonymous', description || '']
+    );
+    const location = { id, name, lat, lng, radius: radius || 50, category, emoji, color, creator, description };
+    io.emit('community_location_added', location);
+    res.json(location);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.use(express.static(path.join(__dirname, '../dist')));
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '../dist/index.html'));

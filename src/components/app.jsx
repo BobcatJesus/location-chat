@@ -19,6 +19,8 @@ function App() {
   const [osmRoom, setOsmRoom] = useState(null);
   const [creatingRoom, setCreatingRoom] = useState(false);
   const [newRoomName, setNewRoomName] = useState('');
+  const [newRoomCategory, setNewRoomCategory] = useState('social');
+  const [newRoomPublic, setNewRoomPublic] = useState(false);
   const [inviteToast, setInviteToast] = useState(null);
 
   const openEditProfile = () => {
@@ -93,21 +95,54 @@ function App() {
   const handleCreateRoom = () => {
     if (!location) return;
     setNewRoomName('');
+    setNewRoomCategory('social');
+    setNewRoomPublic(false);
     setCreatingRoom(true);
   };
 
-  const confirmCreateRoom = () => {
+  const COMMUNITY_CATEGORIES = [
+    { id: 'social',    emoji: '🔥', label: 'Social',    color: '#f97316' },
+    { id: 'nature',    emoji: '🌲', label: 'Nature',    color: '#16a34a' },
+    { id: 'trail',     emoji: '🥾', label: 'Trail',     color: '#a16207' },
+    { id: 'culture',   emoji: '🏛️', label: 'Culture',   color: '#7c3aed' },
+    { id: 'spiritual', emoji: '🙏', label: 'Spiritual', color: '#d97706' },
+    { id: 'water',     emoji: '🏖️', label: 'Water',     color: '#0369a1' },
+    { id: 'arts',      emoji: '🎭', label: 'Arts',      color: '#e11d48' },
+    { id: 'sport',     emoji: '🏃', label: 'Sport',     color: '#0891b2' },
+  ];
+
+  const SOCKET_SERVER_URL = process.env.NODE_ENV === 'production'
+    ? 'https://location-chat-production.up.railway.app'
+    : 'http://localhost:4000';
+
+  const confirmCreateRoom = async () => {
     const contributorName = profile?.profile?.characterName || profile?.mode || 'guest';
     const ownerId = profile?.profile?.email || profile?.mode || 'guest';
     const roomName = newRoomName.trim() || `${contributorName}'s Spot`;
+    const cat = COMMUNITY_CATEGORIES.find(c => c.id === newRoomCategory) || COMMUNITY_CATEGORIES[0];
+    const roomId = `user-${Date.now()}`;
+
+    if (newRoomPublic) {
+      // Save to server so everyone can discover it
+      try {
+        await fetch(`${SOCKET_SERVER_URL}/api/community-locations`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: roomId, name: roomName,
+            lat: location.latitude, lng: location.longitude,
+            radius: 60, category: cat.id,
+            emoji: cat.emoji, color: cat.color,
+            creator: contributorName, description: '',
+          }),
+        });
+      } catch {}
+    }
+
     const newRoom = createUserRoom({
-      id: `user-${Date.now()}`,
-      name: roomName,
-      lat: location.latitude,
-      lng: location.longitude,
-      radiusMeters: 60,
-      contributor: contributorName,
-      ownerId,
+      id: roomId, name: roomName,
+      lat: location.latitude, lng: location.longitude,
+      radiusMeters: 60, contributor: contributorName, ownerId,
     });
     setCreatingRoom(false);
     setSelectedRoom(newRoom.id);
@@ -258,19 +293,38 @@ function App() {
       {/* Create room name prompt */}
       {creatingRoom && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', zIndex: 10001, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setCreatingRoom(false)}>
-          <div onClick={e => e.stopPropagation()} style={{ background: '#0f172a', border: '4px solid #fbbf24', padding: 28, maxWidth: 320, width: '100%', margin: 16, boxShadow: '8px 8px 0 #000', fontFamily: 'Courier New, monospace' }}>
-            <div style={{ color: '#fbbf24', fontSize: 13, textTransform: 'uppercase', letterSpacing: 2, marginBottom: 16 }}>📍 Name Your Space</div>
+          <div onClick={e => e.stopPropagation()} style={{ background: '#0f172a', border: '4px solid #fbbf24', padding: 28, maxWidth: 340, width: '100%', margin: 16, boxShadow: '8px 8px 0 #000', fontFamily: 'Courier New, monospace' }}>
+            <div style={{ color: '#fbbf24', fontSize: 13, textTransform: 'uppercase', letterSpacing: 2, marginBottom: 16 }}>📍 Create a Place</div>
             <input
               autoFocus
               type="text"
-              placeholder="e.g. Rooftop Hangout"
+              placeholder="Name this place…"
               value={newRoomName}
               onChange={e => setNewRoomName(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && confirmCreateRoom()}
               maxLength={32}
-              style={{ width: '100%', boxSizing: 'border-box', background: '#000', border: '2px solid #475569', padding: '10px 12px', color: '#f8fafc', fontFamily: 'Courier New, monospace', fontSize: 14, outline: 'none', marginBottom: 16 }}
+              style={{ width: '100%', boxSizing: 'border-box', background: '#000', border: '2px solid #475569', padding: '10px 12px', color: '#f8fafc', fontFamily: 'Courier New, monospace', fontSize: 14, outline: 'none', marginBottom: 14 }}
             />
-            <div style={{ fontSize: 10, color: '#64748b', marginBottom: 16 }}>This room will be anchored to your current GPS position. Only you can see it unless you share an invite link.</div>
+            {/* Category picker */}
+            <div style={{ fontSize: 10, color: '#64748b', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 }}>Category</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
+              {COMMUNITY_CATEGORIES.map(cat => (
+                <button key={cat.id} onClick={() => setNewRoomCategory(cat.id)}
+                  style={{ background: newRoomCategory === cat.id ? cat.color : '#1e293b', border: `2px solid ${newRoomCategory === cat.id ? cat.color : '#334155'}`, color: '#fff', padding: '4px 10px', fontFamily: 'Courier New, monospace', fontSize: 11, cursor: 'pointer', borderRadius: 4 }}>
+                  {cat.emoji} {cat.label}
+                </button>
+              ))}
+            </div>
+            {/* Public toggle */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, padding: '10px 12px', background: '#1e293b', border: `2px solid ${newRoomPublic ? '#16a34a' : '#334155'}`, cursor: 'pointer' }} onClick={() => setNewRoomPublic(p => !p)}>
+              <div style={{ width: 36, height: 20, background: newRoomPublic ? '#16a34a' : '#475569', borderRadius: 10, position: 'relative', transition: 'background 0.2s' }}>
+                <div style={{ position: 'absolute', top: 2, left: newRoomPublic ? 18 : 2, width: 16, height: 16, background: '#fff', borderRadius: '50%', transition: 'left 0.2s' }} />
+              </div>
+              <div>
+                <div style={{ color: newRoomPublic ? '#4ade80' : '#94a3b8', fontSize: 12, fontWeight: 'bold' }}>{newRoomPublic ? '🌍 Community — visible to everyone' : '🔒 Private — only you'}</div>
+                <div style={{ color: '#475569', fontSize: 10 }}>{newRoomPublic ? 'Appears on all users\' maps' : 'Share via invite link to add others'}</div>
+              </div>
+            </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <button onClick={confirmCreateRoom} style={{ flex: 1, padding: '10px 0', background: '#16a34a', border: '2px solid #000', boxShadow: '2px 2px 0 #000', color: '#fff', fontWeight: 'bold', fontFamily: 'Courier New, monospace', fontSize: 12, cursor: 'pointer', textTransform: 'uppercase' }}>
                 Create
