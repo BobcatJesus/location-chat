@@ -135,7 +135,7 @@ function App() {
       }
       // Save to server so everyone can discover it
       try {
-        await fetch(`${SOCKET_SERVER_URL}/api/community-locations`, {
+        const resp = await fetch(`${SOCKET_SERVER_URL}/api/community-locations`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -146,8 +146,17 @@ function App() {
             creator: contributorName, description: '',
           }),
         });
-        localStorage.setItem('sidequest_loc_ts', Date.now().toString());
-      } catch {}
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({}));
+          setGpsToast(`Community save failed: ${err.error || resp.status}`);
+          setTimeout(() => setGpsToast(null), 5000);
+        } else {
+          localStorage.setItem('sidequest_loc_ts', Date.now().toString());
+        }
+      } catch (e) {
+        setGpsToast(`Community save error: ${e.message}`);
+        setTimeout(() => setGpsToast(null), 5000);
+      }
     }
 
     const newRoom = createUserRoom({
