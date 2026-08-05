@@ -1,7 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import { io } from 'socket.io-client';
 import { getDistanceMeters } from '../geo';
+
+const SOCKET_SERVER_URL = process.env.NODE_ENV === 'production'
+  ? 'https://location-chat-production.up.railway.app'
+  : 'http://localhost:4000';
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -108,11 +113,12 @@ export default function MapView({ location, rooms, onEnterRoom }) {
   const leafletRef = useRef(null);
   const playerMarkerRef = useRef(null);
   const onEnterRoomRef = useRef(onEnterRoom);
-  const allPinsRef = useRef([]); // [{ marker, circle, lat, lng, radiusMeters, name, emoji, color, onTap }]
+  const allPinsRef = useRef([]);
   const [poiCount, setPoiCount] = useState(0);
   const [poiStatus, setPoiStatus] = useState('loading');
   const poiLoadedRef = useRef(false);
-  const lastFetchPosRef = useRef(null); // {lat, lng} of last successful POI fetch
+  const lastFetchPosRef = useRef(null);
+  const roomCountsRef = useRef({});
 
   const loadPOIs = (lat, lng) => {
     if (!leafletRef.current) return;
@@ -148,12 +154,24 @@ export default function MapView({ location, rooms, onEnterRoom }) {
 
   useEffect(() => { onEnterRoomRef.current = onEnterRoom; });
 
+  // Subscribe to live room counts from the server
+  useEffect(() => {
+    const socket = io(SOCKET_SERVER_URL, { transports: ['websocket'] });
+    socket.on('room_counts', (counts) => {
+      roomCountsRef.current = counts;
+      // Refresh labels on all named-room pins
+      const pos = playerMarkerRef.current?.getLatLng();
+      if (pos) updateAllPins(pos.lat, pos.lng);
+    });
+    return () => socket.disconnect();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Build icon HTML based on current in-range state
-  const makeIcon = (emoji, color, name, inRange) => L.divIcon({
+  const makeIcon = (emoji, color, name, inRange, count) => L.divIcon({
     className: '',
     html: `<div style="display:flex;flex-direction:column;align-items:center;cursor:${inRange ? 'pointer' : 'default'};filter:${inRange ? 'none' : 'grayscale(80%) opacity(0.4)'}">
       <div style="background:${color};font-size:16px;width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 0 ${inRange ? '10px' : '3px'} ${color}${inRange ? 'cc' : '33'}">${emoji}</div>
-      <div style="background:rgba(0,0,0,0.85);color:#fff;font-size:9px;padding:1px 5px;border-radius:2px;margin-top:1px;white-space:nowrap;font-family:'Courier New',monospace;max-width:90px;overflow:hidden;text-overflow:ellipsis">${name}${inRange ? ' ✦' : ''}</div>
+      <div style="background:rgba(0,0,0,0.85);color:#fff;font-size:9px;padding:1px 5px;border-radius:2px;margin-top:1px;white-space:nowrap;font-family:'Courier New',monospace;max-width:90px;overflow:hidden;text-overflow:ellipsis">${name}${inRange ? ' ✦' : ''}${count ? ` · 👤${count}` : ''}</div>
       <div style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:6px solid rgba(0,0,0,0.85)"></div>
     </div>`,
     iconSize: [80, 55], iconAnchor: [40, 55],
@@ -164,6 +182,7 @@ export default function MapView({ location, rooms, onEnterRoom }) {
     allPinsRef.current.forEach(pin => {
       const dist = getDistanceMeters(playerLat, playerLng, pin.lat, pin.lng);
       const inRange = dist <= pin.radiusMeters;
+      const count = roomCountsRef.current[pin.roomId] || 0;
       const el = pin.marker.getElement();
       if (el) {
         el.style.filter = inRange ? 'none' : 'grayscale(80%) opacity(0.4)';
@@ -171,7 +190,7 @@ export default function MapView({ location, rooms, onEnterRoom }) {
         const dot = el.querySelector('div > div:first-child');
         if (dot) dot.style.boxShadow = inRange ? `0 0 10px ${pin.color}cc` : `0 0 3px ${pin.color}33`;
         const label = el.querySelector('div > div:nth-child(2)');
-        if (label) label.textContent = pin.name + (inRange ? ' ✦' : '');
+        if (label) label.textContent = pin.name + (inRange ? ' ✦' : '') + (count ? ` · 👤${count}` : '');
       }
       pin.circle.setStyle({
         fillOpacity: inRange ? 0.15 : 0.05,
@@ -182,9 +201,10 @@ export default function MapView({ location, rooms, onEnterRoom }) {
     });
   };
 
-  const addPin = (layer, lat, lng, name, emoji, color, radiusMeters, onTap, isOSM = false) => {
+  const addPin = (layer, lat, lng, name, emoji, color, radiusMeters, onTap, isOSM = false, roomId = null) => {
     const dist = location ? getDistanceMeters(location.latitude, location.longitude, lat, lng) : Infinity;
     const inRange = dist <= radiusMeters;
+    const count = roomCountsRef.current[roomId] || 0;
 
     const circle = L.circle([lat, lng], {
       radius: radiusMeters, color, fillColor: color,
@@ -194,12 +214,9 @@ export default function MapView({ location, rooms, onEnterRoom }) {
       dashArray: inRange ? null : '6',
     }).addTo(layer);
 
-    const marker = L.marker([lat, lng], { icon: makeIcon(emoji, color, name, inRange) }).addTo(layer);
-
-    // Click always fires onTap — GPS gating in handleEnterRoom blocks entry if too far
+    const marker = L.marker([lat, lng], { icon: makeIcon(emoji, color, name, inRange, count) }).addTo(layer);
     marker.on('click', onTap);
-
-    allPinsRef.current.push({ marker, circle, lat, lng, radiusMeters, name, emoji, color, onTap, isOSM });
+    allPinsRef.current.push({ marker, circle, lat, lng, radiusMeters, name, emoji, color, onTap, isOSM, roomId });
   };
 
   useEffect(() => {
@@ -231,7 +248,7 @@ export default function MapView({ location, rooms, onEnterRoom }) {
         async () => {
           const footprint = await fetchBuildingFootprint(room.lat, room.lng);
           onEnterRoomRef.current(room.id, footprint ? { ...room, footprint } : null);
-        });
+        }, false, room.id);
     });
 
     // Fetch nearby POIs

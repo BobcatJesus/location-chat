@@ -84,6 +84,14 @@ function checkRateLimit(userId) {
   return { allowed: true, remaining: CHANGE_LIMIT - r.count };
 }
 
+function broadcastRoomCounts() {
+  const counts = {};
+  Object.entries(rooms).forEach(([roomId, players]) => {
+    counts[roomId] = Object.keys(players).length;
+  });
+  io.emit('room_counts', counts);
+}
+
 // 2. Real-Time Socket Event Handlers
 io.on('connection', (socket) => {
   console.log(`⚡ Client connected: ${socket.id}`);
@@ -116,6 +124,7 @@ io.on('connection', (socket) => {
     socket.emit('room_state', rooms[roomId]);
     socket.emit('room_decorations', decorations[roomId] || []);
     socket.to(roomId).emit('player_joined', { socketId: socket.id, player: playerState });
+    broadcastRoomCounts();
   });
 
   // PLAYER MOVEMENT
@@ -196,6 +205,7 @@ io.on('connection', (socket) => {
         io.in(roomId).emit('player_left', { socketId: socket.id });
       }
     });
+    broadcastRoomCounts();
   });
 });
 
