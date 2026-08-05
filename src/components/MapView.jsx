@@ -92,13 +92,27 @@ const POI_RADIUS = 40; // metres
 
 // Fetch nearby POIs from OpenStreetMap Overpass API (free, no key)
 async function fetchNearbyPOIs(lat, lng, radiusMeters = 800) {
-  const types = POI_TYPES.map(t => `node["${t.tag}"="${t.value}"](around:${radiusMeters},${lat},${lng});`).join('');
-  const query = `[out:json][timeout:15];(${types});out body;`;
-  // Try mirrors in order if one fails
+  // Group by tag key and use regex OR — much smaller query than one node per type
+  const amenityVals = POI_TYPES.filter(t => t.tag === 'amenity').map(t => t.value).join('|');
+  const shopVals    = POI_TYPES.filter(t => t.tag === 'shop').map(t => t.value).join('|');
+  const leisureVals = POI_TYPES.filter(t => t.tag === 'leisure').map(t => t.value).join('|');
+  const tourismVals = POI_TYPES.filter(t => t.tag === 'tourism').map(t => t.value).join('|');
+  const naturalVals = POI_TYPES.filter(t => t.tag === 'natural').map(t => t.value).join('|');
+  const historicVals= POI_TYPES.filter(t => t.tag === 'historic').map(t => t.value).join('|');
+  const ar = `(around:${radiusMeters},${lat},${lng})`;
+  const parts = [
+    `node["amenity"~"${amenityVals}"]${ar};`,
+    `node["shop"~"${shopVals}"]${ar};`,
+    `node["leisure"~"${leisureVals}"]${ar};`,
+    `node["tourism"~"${tourismVals}"]${ar};`,
+    `node["natural"~"${naturalVals}"]${ar};`,
+    `node["historic"~"${historicVals}"]${ar};`,
+  ].join('');
+  const query = `[out:json][timeout:25];(${parts});out body;`;
   const endpoints = [
+    'https://overpass-api.de/api/interpreter',
     'https://overpass.kumi.systems/api/interpreter',
     'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
-    'https://overpass-api.de/api/interpreter',
   ];
   for (const endpoint of endpoints) {
     try {
@@ -176,7 +190,7 @@ export default function MapView({ location, rooms, onEnterRoom }) {
   const loadPOIs = (lat, lng) => {
     if (!leafletRef.current) return;
     setPoiStatus('loading');
-    fetchNearbyPOIs(lat, lng, 1500).then(pois => {
+    fetchNearbyPOIs(lat, lng, 1000).then(pois => {
       if (!leafletRef.current) return;
       // Remove old POI markers
       allPinsRef.current = allPinsRef.current.filter(pin => {
