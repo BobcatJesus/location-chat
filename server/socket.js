@@ -4,9 +4,23 @@ import http from 'http';
 import { Server } from 'socket.io';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import fs from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Persist decorations to file so they survive server restarts
+const DATA_FILE = process.env.DATA_PATH
+  ? path.join(process.env.DATA_PATH, 'decorations.json')
+  : path.join(__dirname, 'decorations.json');
+
+function loadDecorations() {
+  try { return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')); } catch { return {}; }
+}
+
+function saveDecorations(data) {
+  try { fs.writeFileSync(DATA_FILE, JSON.stringify(data), 'utf8'); } catch (e) { console.warn('Could not save decorations:', e.message); }
+}
 
 const app = express();
 const server = http.createServer(app);
@@ -21,8 +35,9 @@ const io = new Server(server, {
 
 // Store room state in memory: { roomName: { socketId: { id, name, x, y } } }
 const rooms = {};
-// Store room decorations: { roomId: [ { id, type, x, y, placedBy } ] }
-const decorations = {};
+// Store room decorations — loaded from file on startup
+const decorations = loadDecorations();
+console.log(`🪑 Loaded decorations for ${Object.keys(decorations).length} room(s)`);
 
 // 2. Real-Time Socket Event Handlers
 io.on('connection', (socket) => {
@@ -79,6 +94,7 @@ io.on('connection', (socket) => {
     if (!decorations[roomId]) decorations[roomId] = [];
     const decoration = { ...item, id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, placedBy: socket.id };
     decorations[roomId].push(decoration);
+    saveDecorations(decorations);
     io.in(roomId).emit('decoration_placed', decoration);
   });
 
@@ -86,6 +102,7 @@ io.on('connection', (socket) => {
   socket.on('remove_decoration', ({ roomId, id }) => {
     if (decorations[roomId]) {
       decorations[roomId] = decorations[roomId].filter(d => d.id !== id);
+      saveDecorations(decorations);
       io.in(roomId).emit('decoration_removed', { id });
     }
   });
