@@ -354,10 +354,16 @@ function App() {
                   <button
                     onClick={() => {
                       const link = `${window.location.origin}${window.location.pathname}?invite=${btoa(JSON.stringify(activeRoom))}`;
-                      navigator.clipboard.writeText(link).then(() => {
-                        setInviteToast(true);
-                        setTimeout(() => setInviteToast(null), 2500);
-                      });
+                      try {
+                        navigator.clipboard.writeText(link).then(() => {
+                          setInviteToast(true);
+                          setTimeout(() => setInviteToast(null), 2500);
+                        }).catch(() => {
+                          prompt('Copy this invite link:', link);
+                        });
+                      } catch {
+                        prompt('Copy this invite link:', link);
+                      }
                     }}
                     style={{ position: 'absolute', top: 12, right: 12, zIndex: 1000, background: '#1e293b', border: '1px solid #fbbf24', color: '#fbbf24', padding: '6px 12px', fontFamily: 'Courier New', fontSize: 11, cursor: 'pointer', boxShadow: '2px 2px 0 #000' }}>
                     🔗 Copy invite link
