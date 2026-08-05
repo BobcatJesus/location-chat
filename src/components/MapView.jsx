@@ -279,9 +279,10 @@ export default function MapView({ location, rooms, onEnterRoom }) {
       weight: inRange ? 2 : 1,
       opacity: inRange ? 0.8 : 0.3,
       dashArray: inRange ? null : '6',
+      interactive: false, // never intercept clicks
     }).addTo(layer);
 
-    const marker = L.marker([lat, lng], { icon: makeIcon(emoji, color, name, inRange, count) }).addTo(layer);
+    const marker = L.marker([lat, lng], { icon: makeIcon(emoji, color, name, inRange, count), bubblingMouseEvents: false }).addTo(layer);
     marker.on('click', onTap);
     allPinsRef.current.push({ marker, circle, lat, lng, radiusMeters, name, emoji, color, onTap, isOSM, roomId });
   };
@@ -292,7 +293,7 @@ export default function MapView({ location, rooms, onEnterRoom }) {
     const lat = location?.latitude || 29.8368;
     const lng = location?.longitude || -95.4201;
 
-    const map = L.map(mapRef.current, { center: [lat, lng], zoom: 17, zoomControl: false });
+    const map = L.map(mapRef.current, { center: [lat, lng], zoom: 17, zoomControl: false, clickTolerance: 10 });
     leafletRef.current = map;
 
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
