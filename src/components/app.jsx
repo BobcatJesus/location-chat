@@ -72,7 +72,7 @@ function App() {
       const params = new URLSearchParams(window.location.search);
       const inv = params.get('invite');
       if (inv) {
-        const room = JSON.parse(atob(inv));
+        const room = JSON.parse(decodeURIComponent(inv));
         acceptRoomInvite(room, uid);
         window.history.replaceState({}, '', window.location.pathname);
       }
@@ -119,6 +119,11 @@ function App() {
       id: room.id,
       name: room.name,
       kind: room.kind,
+      lat: room.lat,
+      lng: room.lng,
+      radiusMeters: room.radiusMeters,
+      ownerId: room.ownerId,
+      contributors: room.contributors,
       icon: room.kind === 'user-created' ? '🔥' : { 'starbucks-spring': '☕', 'agora-houston': '🍷', 'downtown-hub': '🏙️', 'forest-gate': '🌲', 'sunset-temple': '⛩️' }[room.id] || '🏛️',
       blurb: room.kind === 'user-created'
         ? `Community space · ${room.contributors.join(', ')}`
@@ -353,7 +358,7 @@ function App() {
                 {activeRoom?.kind === 'user-created' && (
                   <button
                     onClick={() => {
-                      const link = `${window.location.origin}${window.location.pathname}?invite=${btoa(JSON.stringify(activeRoom))}`;
+                      const link = `${window.location.origin}${window.location.pathname}?invite=${encodeURIComponent(JSON.stringify(activeRoom))}`;
                       try {
                         navigator.clipboard.writeText(link).then(() => {
                           setInviteToast(true);
