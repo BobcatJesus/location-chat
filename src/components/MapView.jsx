@@ -41,7 +41,7 @@ async function fetchNearbyPOIs(lat, lng, radiusMeters = 500) {
     const res = await fetch(url);
     const data = await res.json();
     return (data.elements || []).map(el => {
-      const typeInfo = POI_TYPES.find(t => el.tags?.[t.tag] === t.value) || { emoji: '📍', color: '#94a3b8', label: 'Place' };
+      const typeInfo = POI_TYPES.find(t => el.tags?.[t.tag] === t.value) || { emoji: '📍', color: '#94a3b8', label: 'Place', value: 'default' };
       return {
         id: `osm-${el.id}`,
         name: el.tags?.name || typeInfo.label,
@@ -49,6 +49,7 @@ async function fetchNearbyPOIs(lat, lng, radiusMeters = 500) {
         lng: el.lon,
         radiusMeters: POI_RADIUS,
         kind: 'osm',
+        amenity: typeInfo.value,  // used by SpatialCanvas to pick the environment theme
         emoji: typeInfo.emoji,
         color: typeInfo.color,
       };
