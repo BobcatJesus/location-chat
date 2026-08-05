@@ -92,7 +92,6 @@ io.on('connection', (socket) => {
 
   // CHAT MESSAGE (Speech Bubbles)
   socket.on('send_message', ({ roomId, message }) => {
-  socket.on('send_message', ({ roomId, message }) => {
     const player = rooms[roomId]?.[socket.id];
 
     if (!player) return;
