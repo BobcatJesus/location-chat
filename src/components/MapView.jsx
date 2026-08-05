@@ -282,8 +282,29 @@ export default function MapView({ location, rooms, onEnterRoom }) {
       interactive: false, // never intercept clicks
     }).addTo(layer);
 
-    const marker = L.marker([lat, lng], { icon: makeIcon(emoji, color, name, inRange, count), bubblingMouseEvents: false }).addTo(layer);
-    marker.on('click', onTap);
+    const marker = L.marker([lat, lng], { icon: makeIcon(emoji, color, name, inRange, count) }).addTo(layer);
+
+    // Bind directly on DOM element so both mouse and touch work reliably
+    const bindTap = () => {
+      const el = marker.getElement();
+      if (!el) return;
+      let touchMoved = false;
+      el.addEventListener('touchstart', () => { touchMoved = false; }, { passive: true });
+      el.addEventListener('touchmove', () => { touchMoved = true; }, { passive: true });
+      el.addEventListener('touchend', (e) => {
+        if (touchMoved) return;
+        e.preventDefault();
+        e.stopPropagation();
+        onTap();
+      });
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        onTap();
+      });
+    };
+    if (marker.getElement()) bindTap();
+    else marker.once('add', bindTap);
+
     allPinsRef.current.push({ marker, circle, lat, lng, radiusMeters, name, emoji, color, onTap, isOSM, roomId });
   };
 
@@ -293,7 +314,7 @@ export default function MapView({ location, rooms, onEnterRoom }) {
     const lat = location?.latitude || 29.8368;
     const lng = location?.longitude || -95.4201;
 
-    const map = L.map(mapRef.current, { center: [lat, lng], zoom: 17, zoomControl: false, clickTolerance: 10 });
+    const map = L.map(mapRef.current, { center: [lat, lng], zoom: 17, zoomControl: false, clickTolerance: 5 });
     leafletRef.current = map;
 
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
