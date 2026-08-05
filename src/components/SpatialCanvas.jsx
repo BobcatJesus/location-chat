@@ -3,6 +3,47 @@ import Phaser from 'phaser';
 import { io } from 'socket.io-client';
 import ModularAvatar from '../game/entities/ModularAvatar';
 
+// Spawn a speech bubble above an avatar and auto-destroy it after 4s
+function spawnBubble(scene, avatarContainer, text) {
+  // Kill existing bubble on this avatar
+  const existing = avatarContainer.getData('bubble');
+  if (existing) { existing.destroy(); }
+
+  const maxLen = 36;
+  const display = text.length > maxLen ? text.slice(0, maxLen) + '…' : text;
+  const x = avatarContainer.x;
+  const y = avatarContainer.y - 68;
+
+  const label = scene.add.text(x, y, display, {
+    fontFamily: 'Courier New',
+    fontSize: '11px',
+    color: '#111827',
+    backgroundColor: '#fef3c7',
+    padding: { x: 7, y: 5 },
+    wordWrap: { width: 160 },
+  }).setOrigin(0.5, 1);
+
+  // Tail triangle pointing down
+  const tail = scene.add.triangle(x, y + 1, -6, 0, 6, 0, 0, 8, 0xfef3c7).setOrigin(0.5, 0);
+
+  const container = scene.add.container(0, 0, [label, tail]);
+  avatarContainer.setData('bubble', container);
+
+  // Fade out and destroy after 4s
+  scene.tweens.add({
+    targets: container,
+    alpha: 0,
+    delay: 3200,
+    duration: 800,
+    onComplete: () => {
+      container.destroy();
+      if (avatarContainer.getData('bubble') === container) {
+        avatarContainer.setData('bubble', null);
+      }
+    },
+  });
+}
+
 const SOCKET_SERVER_URL = process.env.NODE_ENV === 'production'
   ? 'https://location-chat-production.up.railway.app'
   : 'http://localhost:4000';
@@ -155,6 +196,10 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
         const distance = Math.sqrt(dx * dx + dy * dy);
         if (distance <= PROXIMITY_RADIUS) {
           setMessages((prev) => [...prev.slice(-9), { ...payload, distance: Math.round(distance) }]);
+          // Spawn bubble on the correct avatar
+          const isLocal = payload.socketId === socket.id;
+          const target = isLocal ? localPlayerRef.current : remotePlayersRef.current.get(payload.socketId);
+          if (target && sceneRef.current) spawnBubble(sceneRef.current, target, payload.message);
         }
       } else {
         setMessages((prev) => [...prev.slice(-9), payload]);
