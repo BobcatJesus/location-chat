@@ -75,6 +75,8 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
   const [selectedFurniture, setSelectedFurnitureState] = useState(FURNITURE[0].type);
   const editModeRef = useRef(false);
   const selectedFurnitureRef = useRef(FURNITURE[0].type);
+  const [quotaRemaining, setQuotaRemaining] = useState(10);
+  const [decorError, setDecorError] = useState(null);
 
   const setEditMode = (val) => { editModeRef.current = val; setEditModeState(val); };
   const setSelectedFurniture = (val) => { selectedFurnitureRef.current = val; setSelectedFurnitureState(val); };
@@ -161,8 +163,7 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
           photo: profile?.profile?.photo || null,
           skinId: profile?.profile?.skinId || 'blue',
         },
-      });
-    });
+      });    });
 
     socket.on('connect_error', () => {
       setConnectionState('Connection failed');
@@ -188,6 +189,12 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
     socket.on('decoration_removed', ({ id }) => {
       const obj = decorationObjectsRef.current.get(id);
       if (obj) { obj.destroy(); decorationObjectsRef.current.delete(id); }
+    });
+
+    socket.on('decoration_quota', ({ remaining }) => setQuotaRemaining(remaining));
+    socket.on('decoration_error', ({ message }) => {
+      setDecorError(message);
+      setTimeout(() => setDecorError(null), 4000);
     });
 
     socket.on('room_state', (state) => {
@@ -736,6 +743,13 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
         </div>
       </div>
 
+      {/* Decoration error toast */}
+      {decorError && (
+        <div style={{ position: 'absolute', top: 48, right: 10, zIndex: 60, background: '#1e293b', border: '1px solid #ef4444', color: '#fca5a5', padding: '6px 12px', fontFamily: 'Courier New', fontSize: 11, borderRadius: 4, maxWidth: 220 }}>
+          {decorError}
+        </div>
+      )}
+
       {/* Top-right: exit + edit toggle */}
       <div style={{ position: 'absolute', top: 10, right: 10, zIndex: 50, display: 'flex', gap: 6 }}>
         <button onClick={() => setEditMode(!editModeRef.current)}
@@ -758,8 +772,9 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
               {f.emoji} {f.label}
             </button>
           ))}
-          <div style={{ marginTop: 4, color: '#475569', fontFamily: 'Courier New', fontSize: 9, borderTop: '1px solid #1e293b', paddingTop: 4 }}>
-            Click canvas to place<br/>Right-click to remove
+          <div style={{ marginTop: 4, color: quotaRemaining > 3 ? '#475569' : '#f97316', fontFamily: 'Courier New', fontSize: 9, borderTop: '1px solid #1e293b', paddingTop: 4 }}>
+            Click canvas to place<br/>Right-click to remove yours<br/>
+            <span style={{ color: quotaRemaining > 3 ? '#4ade80' : '#ef4444' }}>{quotaRemaining} changes left (3-day limit)</span>
           </div>
         </div>
       )}
@@ -799,8 +814,6 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
             });
             if (closestId) socketRef.current?.emit('remove_decoration', { roomId: room?.id || 'default-room', id: closestId });
           }}
-        />
-      )}
 
       {/* Virtual D-pad — bottom-left, visible on touch devices */}
       <div style={{ position: 'absolute', bottom: 24, left: 24, zIndex: 50, display: 'grid', gridTemplateColumns: '44px 44px 44px', gridTemplateRows: '44px 44px 44px', gap: 4, userSelect: 'none', touchAction: 'none' }}>

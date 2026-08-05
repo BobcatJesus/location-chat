@@ -39,6 +39,28 @@ const rooms = {};
 const decorations = loadDecorations();
 console.log(`🪑 Loaded decorations for ${Object.keys(decorations).length} room(s)`);
 
+// Rate limit: { userId: { count: N, windowStart: timestamp } }
+const CHANGE_LIMIT = 10;
+const WINDOW_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
+const changeRates = {};
+// Map socketId → userId for decoration ownership
+const socketUserMap = {};
+
+function checkRateLimit(userId) {
+  const now = Date.now();
+  const r = changeRates[userId];
+  if (!r || now - r.windowStart > WINDOW_MS) {
+    changeRates[userId] = { count: 1, windowStart: now };
+    return { allowed: true, remaining: CHANGE_LIMIT - 1 };
+  }
+  if (r.count >= CHANGE_LIMIT) {
+    const resetIn = Math.ceil((r.windowStart + WINDOW_MS - now) / 3600000);
+    return { allowed: false, remaining: 0, resetIn };
+  }
+  r.count += 1;
+  return { allowed: true, remaining: CHANGE_LIMIT - r.count };
+}
+
 // 2. Real-Time Socket Event Handlers
 io.on('connection', (socket) => {
   console.log(`⚡ Client connected: ${socket.id}`);
@@ -65,6 +87,7 @@ io.on('connection', (socket) => {
     };
 
     rooms[roomId][socket.id] = playerState;
+    socketUserMap[socket.id] = user?.id || socket.id;
     console.log(`👤 ${playerState.name} joined room: ${roomId}`);
 
     socket.emit('room_state', rooms[roomId]);
@@ -91,20 +114,39 @@ io.on('connection', (socket) => {
 
   // PLACE DECORATION
   socket.on('place_decoration', ({ roomId, item }) => {
+    const userId = socketUserMap[socket.id] || socket.id;
+    const rate = checkRateLimit(userId);
+    if (!rate.allowed) {
+      socket.emit('decoration_error', { message: `Limit reached. Resets in ~${rate.resetIn}h.` });
+      return;
+    }
     if (!decorations[roomId]) decorations[roomId] = [];
-    const decoration = { ...item, id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, placedBy: socket.id };
+    const decoration = { ...item, id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, placedBy: userId };
     decorations[roomId].push(decoration);
     saveDecorations(decorations);
     io.in(roomId).emit('decoration_placed', decoration);
+    socket.emit('decoration_quota', { remaining: rate.remaining });
   });
 
   // REMOVE DECORATION
   socket.on('remove_decoration', ({ roomId, id }) => {
-    if (decorations[roomId]) {
-      decorations[roomId] = decorations[roomId].filter(d => d.id !== id);
-      saveDecorations(decorations);
-      io.in(roomId).emit('decoration_removed', { id });
+    const userId = socketUserMap[socket.id] || socket.id;
+    const decoration = decorations[roomId]?.find(d => d.id === id);
+    if (!decoration) return;
+    // Only owner can remove their own decorations
+    if (decoration.placedBy !== userId) {
+      socket.emit('decoration_error', { message: 'You can only remove items you placed.' });
+      return;
     }
+    const rate = checkRateLimit(userId);
+    if (!rate.allowed) {
+      socket.emit('decoration_error', { message: `Limit reached. Resets in ~${rate.resetIn}h.` });
+      return;
+    }
+    decorations[roomId] = decorations[roomId].filter(d => d.id !== id);
+    saveDecorations(decorations);
+    io.in(roomId).emit('decoration_removed', { id });
+    socket.emit('decoration_quota', { remaining: rate.remaining });
   });
 
   // CHAT MESSAGE (Speech Bubbles)
@@ -126,8 +168,7 @@ io.on('connection', (socket) => {
   // DISCONNECT
   socket.on('disconnect', () => {
     console.log(`❌ Client disconnected: ${socket.id}`);
-    
-    // Remove player from active rooms
+    delete socketUserMap[socket.id];
     Object.keys(rooms).forEach((roomId) => {
       if (rooms[roomId][socket.id]) {
         delete rooms[roomId][socket.id];
