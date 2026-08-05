@@ -165,7 +165,13 @@ function App() {
   const presentDistance = roomMatch ? roomMatch.distance : null;
 
   const handleEnterRoom = (roomId, poiMeta = null) => {
-    // GPS rooms are blocked if you're outside radius
+    // your-room requires confirmed GPS
+    if (roomId === 'your-room' && !location) {
+      setGpsToast('GPS not yet confirmed. Wait for your location to lock on.');
+      setTimeout(() => setGpsToast(null), 3500);
+      return;
+    }
+    // GPS rooms are blocked if outside radius
     if (roomId !== 'your-room' && !poiMeta) {
       const allRooms = getAllRooms();
       const target = allRooms.find(r => r.id === roomId);
@@ -301,12 +307,18 @@ function App() {
                   rooms={getAllRooms().map(r => ({ ...r, radiusMeters: r.radiusMeters || 100 }))}
                   onEnterRoom={handleEnterRoom}
                 />
-                {/* Your Room button — always accessible */}
-                <button
-                  onClick={() => handleEnterRoom('your-room')}
-                  style={{ position: 'absolute', top: 12, left: 12, zIndex: 1000, background: '#fbbf24', border: 'none', padding: '8px 14px', fontWeight: 'bold', cursor: 'pointer', fontFamily: 'Courier New', fontSize: 12, boxShadow: '2px 2px 0 #000' }}>
-                  📍 Your Room
-                </button>
+                {/* Your Room button — requires confirmed GPS */}
+                {location ? (
+                  <button
+                    onClick={() => handleEnterRoom('your-room')}
+                    style={{ position: 'absolute', top: 12, left: 12, zIndex: 1000, background: '#fbbf24', border: 'none', padding: '8px 14px', fontWeight: 'bold', cursor: 'pointer', fontFamily: 'Courier New', fontSize: 12, boxShadow: '2px 2px 0 #000' }}>
+                    📍 Your Room
+                  </button>
+                ) : (
+                  <div style={{ position: 'absolute', top: 12, left: 12, zIndex: 1000, background: '#1e293b', border: '1px solid #475569', padding: '8px 14px', fontFamily: 'Courier New', fontSize: 11, color: '#64748b', boxShadow: '2px 2px 0 #000' }}>
+                    📍 Waiting for GPS…
+                  </div>
+                )}
               </div>
             ) : (
               <div style={{ flex: 1, border: '2px solid #334155', borderRadius: 12, overflow: 'hidden', position: 'relative' }}>
