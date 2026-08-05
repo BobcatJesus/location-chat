@@ -424,7 +424,7 @@ function App() {
                         prompt('Copy this invite link:', link);
                       }
                     }}
-                    style={{ position: 'absolute', top: 12, right: 12, zIndex: 1000, background: '#1e293b', border: '1px solid #fbbf24', color: '#fbbf24', padding: '6px 12px', fontFamily: 'Courier New', fontSize: 11, cursor: 'pointer', boxShadow: '2px 2px 0 #000' }}>
+                    style={{ position: 'absolute', bottom: 16, right: 12, zIndex: 1000, background: '#1e293b', border: '1px solid #fbbf24', color: '#fbbf24', padding: '6px 12px', fontFamily: 'Courier New', fontSize: 11, cursor: 'pointer', boxShadow: '2px 2px 0 #000' }}>
                     🔗 Copy invite link
                   </button>
                 )}
