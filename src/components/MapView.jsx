@@ -73,12 +73,25 @@ const POI_TYPES = [
   { tag: 'amenity', value: 'marketplace',      emoji: '🏪', color: '#f59e0b', label: 'Market' },
   { tag: 'shop',    value: 'supermarket',      emoji: '🛒', color: '#60a5fa', label: 'Supermarket' },
   { tag: 'shop',    value: 'convenience',      emoji: '🏪', color: '#94a3b8', label: 'Store' },
+  { tag: 'shop',    value: 'deli',             emoji: '🥪', color: '#f59e0b', label: 'Deli' },
+  { tag: 'shop',    value: 'bakery',           emoji: '🥐', color: '#fcd34d', label: 'Bakery' },
+  { tag: 'shop',    value: 'butcher',          emoji: '🥩', color: '#ef4444', label: 'Butcher' },
+  { tag: 'shop',    value: 'seafood',          emoji: '🦞', color: '#0ea5e9', label: 'Seafood' },
+  { tag: 'shop',    value: 'wine',             emoji: '🍷', color: '#9333ea', label: 'Wine Shop' },
+  { tag: 'shop',    value: 'coffee',           emoji: '☕', color: '#00704a', label: 'Coffee Shop' },
+  { tag: 'shop',    value: 'clothes',          emoji: '👕', color: '#ec4899', label: 'Clothing' },
+  { tag: 'shop',    value: 'books',            emoji: '📚', color: '#6366f1', label: 'Bookstore' },
+  { tag: 'shop',    value: 'music',            emoji: '🎵', color: '#a855f7', label: 'Music' },
+  { tag: 'shop',    value: 'art',              emoji: '🎨', color: '#818cf8', label: 'Art Shop' },
+  { tag: 'amenity', value: 'deli',             emoji: '🥪', color: '#f59e0b', label: 'Deli' },
+  { tag: 'amenity', value: 'juice_bar',        emoji: '🥤', color: '#4ade80', label: 'Juice Bar' },
+  { tag: 'amenity', value: 'hookah_lounge',    emoji: '💨', color: '#a78bfa', label: 'Lounge' },
 ];
 
-const POI_RADIUS = 30; // metres — must be at or near the entrance
+const POI_RADIUS = 40; // metres
 
 // Fetch nearby POIs from OpenStreetMap Overpass API (free, no key)
-async function fetchNearbyPOIs(lat, lng, radiusMeters = 500) {
+async function fetchNearbyPOIs(lat, lng, radiusMeters = 800) {
   const types = POI_TYPES.map(t => `node["${t.tag}"="${t.value}"](around:${radiusMeters},${lat},${lng});`).join('');
   const query = `[out:json][timeout:15];(${types});out body;`;
   // Try mirrors in order if one fails
@@ -369,10 +382,12 @@ export default function MapView({ location, rooms, onEnterRoom }) {
     );
     setNearbyRoom(inside?.name || null);
 
-    // Re-fetch if moved >500m from last fetch position
+    // Re-fetch if moved >300m, or if initial mount used fallback coords (no real GPS yet)
     if (lastFetchPosRef.current && poiLoadedRef.current) {
       const moved = getDistanceMeters(lat, lng, lastFetchPosRef.current.lat, lastFetchPosRef.current.lng);
-      if (moved > 500) loadPOIs(lat, lng);
+      if (moved > 300) loadPOIs(lat, lng);
+    } else if (!poiLoadedRef.current) {
+      loadPOIs(lat, lng);
     }
   }, [location?.latitude, location?.longitude]);
 
