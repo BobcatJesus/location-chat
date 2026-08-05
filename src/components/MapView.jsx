@@ -35,37 +35,50 @@ const POI_RADIUS = 30; // metres — must be at or near the entrance
 // Fetch nearby POIs from OpenStreetMap Overpass API (free, no key)
 async function fetchNearbyPOIs(lat, lng, radiusMeters = 500) {
   const types = POI_TYPES.map(t => `node["${t.tag}"="${t.value}"](around:${radiusMeters},${lat},${lng});`).join('');
-  const query = `[out:json][timeout:10];(${types});out body;`;
-  const url = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`;
-  try {
-    const res = await fetch(url);
-    const data = await res.json();
-    return (data.elements || []).map(el => {
-      const typeInfo = POI_TYPES.find(t => el.tags?.[t.tag] === t.value) || { emoji: '📍', color: '#94a3b8', label: 'Place', value: 'default' };
-      return {
-        id: `osm-${el.id}`,
-        name: el.tags?.name || typeInfo.label,
-        lat: el.lat,
-        lng: el.lon,
-        radiusMeters: POI_RADIUS,
-        kind: 'osm',
-        amenity: typeInfo.value,
-        emoji: typeInfo.emoji,
-        color: typeInfo.color,
-      };
-    });
-  } catch {
-    return [];
+  const query = `[out:json][timeout:15];(${types});out body;`;
+  // Try mirrors in order if one fails
+  const endpoints = [
+    'https://overpass.kumi.systems/api/interpreter',
+    'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+    'https://overpass-api.de/api/interpreter',
+  ];
+  for (const endpoint of endpoints) {
+    try {
+      const res = await fetch(`${endpoint}?data=${encodeURIComponent(query)}`);
+      if (!res.ok) continue;
+      const data = await res.json();
+      return (data.elements || []).map(el => {
+        const typeInfo = POI_TYPES.find(t => el.tags?.[t.tag] === t.value) || { emoji: '📍', color: '#94a3b8', label: 'Place', value: 'default' };
+        return {
+          id: `osm-${el.id}`,
+          name: el.tags?.name || typeInfo.label,
+          lat: el.lat,
+          lng: el.lon,
+          radiusMeters: POI_RADIUS,
+          kind: 'osm',
+          amenity: typeInfo.value,
+          emoji: typeInfo.emoji,
+          color: typeInfo.color,
+        };
+      });
+    } catch { continue; }
   }
+  return [];
 }
 
 // Fetch the building polygon footprint nearest to a given point
 async function fetchBuildingFootprint(lat, lng) {
   const query = `[out:json][timeout:8];way["building"](around:60,${lat},${lng});out geom;`;
-  const url = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`;
-  try {
-    const res = await fetch(url);
-    const data = await res.json();
+  const endpoints = [
+    'https://overpass.kumi.systems/api/interpreter',
+    'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+    'https://overpass-api.de/api/interpreter',
+  ];
+  for (const endpoint of endpoints) {
+    try {
+      const res = await fetch(`${endpoint}?data=${encodeURIComponent(query)}`);
+      if (!res.ok) continue;
+      const data = await res.json();
     const ways = (data.elements || []).filter(el => el.geometry?.length > 3);
     if (!ways.length) return null;
     // Pick the closest way by centroid
@@ -75,10 +88,10 @@ async function fetchBuildingFootprint(lat, lng) {
       const d = Math.abs(clat - lat) + Math.abs(clng - lng);
       return (!best || d < best.d) ? { w, d } : best;
     }, null)?.w;
-    return closest?.geometry?.map(p => ({ lat: p.lat, lng: p.lon })) || null;
-  } catch {
-    return null;
+      return closest?.geometry?.map(p => ({ lat: p.lat, lng: p.lon })) || null;
+    } catch { continue; }
   }
+  return null;
 }
 
 const ROOM_STYLES = {
