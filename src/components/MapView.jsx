@@ -110,6 +110,38 @@ export default function MapView({ location, rooms, onEnterRoom }) {
   const allPinsRef = useRef([]); // [{ marker, circle, lat, lng, radiusMeters, name, emoji, color, onTap }]
   const [poiCount, setPoiCount] = useState(0);
   const [poiStatus, setPoiStatus] = useState('loading');
+  const poiLoadedRef = useRef(false);
+
+  const loadPOIs = (lat, lng) => {
+    if (!leafletRef.current) return;
+    setPoiStatus('loading');
+    fetchNearbyPOIs(lat, lng, 1500).then(pois => {
+      if (!leafletRef.current) return;
+      // Remove old POI markers
+      allPinsRef.current = allPinsRef.current.filter(pin => {
+        if (pin.isOSM) { pin.marker.remove(); pin.circle.remove(); return false; }
+        return true;
+      });
+      const manualCoords = rooms.filter(r => r.lat).map(r => [r.lat, r.lng]);
+      const filtered = pois.filter(poi =>
+        !manualCoords.some(([rlat, rlng]) => getDistanceMeters(poi.lat, poi.lng, rlat, rlng) < 40)
+      );
+      filtered.forEach(poi => {
+        addPin(leafletRef.current, poi.lat, poi.lng, poi.name, poi.emoji, poi.color, poi.radiusMeters,
+          async () => {
+            const footprint = await fetchBuildingFootprint(poi.lat, poi.lng);
+            onEnterRoomRef.current(poi.id, { ...poi, footprint });
+          }, true);
+      });
+      // Re-evaluate all pins with current position
+      const lat2 = playerMarkerRef.current?.getLatLng()?.lat || lat;
+      const lng2 = playerMarkerRef.current?.getLatLng()?.lng || lng;
+      updateAllPins(lat2, lng2);
+      setPoiCount(filtered.length);
+      setPoiStatus(filtered.length > 0 ? 'found' : 'none');
+      poiLoadedRef.current = true;
+    }).catch(() => setPoiStatus('error'));
+  };
 
   useEffect(() => { onEnterRoomRef.current = onEnterRoom; });
 
@@ -147,7 +179,7 @@ export default function MapView({ location, rooms, onEnterRoom }) {
     });
   };
 
-  const addPin = (layer, lat, lng, name, emoji, color, radiusMeters, onTap) => {
+  const addPin = (layer, lat, lng, name, emoji, color, radiusMeters, onTap, isOSM = false) => {
     const dist = location ? getDistanceMeters(location.latitude, location.longitude, lat, lng) : Infinity;
     const inRange = dist <= radiusMeters;
 
@@ -164,7 +196,7 @@ export default function MapView({ location, rooms, onEnterRoom }) {
     // Click always fires onTap — GPS gating in handleEnterRoom blocks entry if too far
     marker.on('click', onTap);
 
-    allPinsRef.current.push({ marker, circle, lat, lng, radiusMeters, name, emoji, color, onTap });
+    allPinsRef.current.push({ marker, circle, lat, lng, radiusMeters, name, emoji, color, onTap, isOSM });
   };
 
   useEffect(() => {
@@ -200,22 +232,7 @@ export default function MapView({ location, rooms, onEnterRoom }) {
     });
 
     // Fetch nearby POIs
-    fetchNearbyPOIs(lat, lng, 1500).then(pois => {
-      if (!leafletRef.current) return;
-      const manualCoords = rooms.filter(r => r.lat).map(r => [r.lat, r.lng]);
-      const filtered = pois.filter(poi =>
-        !manualCoords.some(([rlat, rlng]) => getDistanceMeters(poi.lat, poi.lng, rlat, rlng) < 40)
-      );
-      filtered.forEach(poi => {
-        addPin(leafletRef.current, poi.lat, poi.lng, poi.name, poi.emoji, poi.color, poi.radiusMeters,
-          async () => {
-            const footprint = await fetchBuildingFootprint(poi.lat, poi.lng);
-            onEnterRoomRef.current(poi.id, { ...poi, footprint });
-          });
-      });
-      setPoiCount(filtered.length);
-      setPoiStatus(filtered.length > 0 ? 'found' : 'none');
-    }).catch(() => setPoiStatus('error'));
+    loadPOIs(lat, lng);
 
     return () => {
       if (leafletRef.current) {
@@ -242,10 +259,24 @@ export default function MapView({ location, rooms, onEnterRoom }) {
       <div style={{ position: 'absolute', bottom: 12, left: 12, zIndex: 1000, background: 'rgba(0,0,0,0.75)', border: '1px solid #334155', borderRadius: 8, padding: '8px 12px', fontFamily: 'Courier New', fontSize: 11, color: '#94a3b8' }}>
         <div style={{ color: '#fbbf24', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 2 }}>Nearby places</div>
         <div>✦ Tap a lit pin to enter</div>
-        {poiStatus === 'loading' && <div style={{ marginTop: 2, color: '#60a5fa' }}>Discovering places…</div>}
-        {poiStatus === 'found' && <div style={{ marginTop: 2, color: '#4ade80' }}>{poiCount} places found</div>}
-        {poiStatus === 'none' && <div style={{ marginTop: 2, color: '#f97316' }}>No places found nearby</div>}
-        {poiStatus === 'error' && <div style={{ marginTop: 2, color: '#ef4444' }}>Could not load places</div>}
+        {poiStatus === 'loading' && <div style={{ marginTop: 4, color: '#60a5fa', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span>Discovering…</span>
+          <span style={{ animation: 'pulse 1s infinite', fontSize: 14 }}>⟳</span>
+        </div>}
+        {poiStatus === 'found' && <div style={{ marginTop: 4, color: '#4ade80' }}>{poiCount} places found</div>}
+        {(poiStatus === 'none' || poiStatus === 'error') && (
+          <div style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <div style={{ color: poiStatus === 'error' ? '#ef4444' : '#f97316' }}>
+              {poiStatus === 'error' ? 'Load failed' : 'None found nearby'}
+            </div>
+            <button onClick={() => {
+              const pos = playerMarkerRef.current?.getLatLng();
+              if (pos) loadPOIs(pos.lat, pos.lng);
+            }} style={{ background: '#1e293b', border: '1px solid #475569', color: '#94a3b8', padding: '3px 8px', cursor: 'pointer', fontFamily: 'Courier New', fontSize: 10, borderRadius: 4 }}>
+              ↺ Retry
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
