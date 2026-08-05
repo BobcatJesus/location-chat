@@ -111,7 +111,7 @@ export default function MapView({ location, rooms, onEnterRoom }) {
     iconSize: [80, 55], iconAnchor: [40, 55],
   });
 
-  // Re-evaluate every pin against current player position
+  // Re-evaluate every pin's visual against current player position (icon + circle only)
   const updateAllPins = (playerLat, playerLng) => {
     allPinsRef.current.forEach(pin => {
       const dist = getDistanceMeters(playerLat, playerLng, pin.lat, pin.lng);
@@ -123,14 +123,6 @@ export default function MapView({ location, rooms, onEnterRoom }) {
         opacity: inRange ? 0.8 : 0.3,
         dashArray: inRange ? null : '6',
       });
-      pin.marker.off('click');
-      if (inRange) {
-        pin.marker.closePopup();
-        pin.marker.unbindPopup();
-        pin.marker.on('click', pin.onTap);
-      } else {
-        pin.marker.bindPopup(`<div style="font-family:'Courier New',monospace;font-size:11px;text-align:center"><b>${pin.name}</b><br/><span style="color:#9ca3af">Walk closer to enter</span></div>`);
-      }
     });
   };
 
@@ -148,11 +140,8 @@ export default function MapView({ location, rooms, onEnterRoom }) {
 
     const marker = L.marker([lat, lng], { icon: makeIcon(emoji, color, name, inRange) }).addTo(layer);
 
-    if (inRange) {
-      marker.on('click', onTap);
-    } else {
-      marker.bindPopup(`<div style="font-family:'Courier New',monospace;font-size:11px;text-align:center"><b>${name}</b><br/><span style="color:#9ca3af">Walk closer to enter</span></div>`);
-    }
+    // Click always fires onTap — GPS gating in handleEnterRoom blocks entry if too far
+    marker.on('click', onTap);
 
     allPinsRef.current.push({ marker, circle, lat, lng, radiusMeters, name, emoji, color, onTap });
   };
