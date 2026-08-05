@@ -13,6 +13,15 @@ export const ROOMS = [
     contributors: ['system']
   },
   {
+    id: 'agora-houston',
+    name: 'Agora',
+    lat: 29.7429,
+    lng: -95.4026,
+    radiusMeters: 40,
+    kind: 'gps',
+    contributors: ['system']
+  },
+  {
     id: 'downtown-hub',
     name: 'Downtown Plaza',
     lat: 29.7604,

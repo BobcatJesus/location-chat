@@ -122,15 +122,15 @@ function App() {
     ...getAllRooms().map((room) => ({
       id: room.id,
       name: room.name,
-      icon: room.kind === 'user-created' ? '🔥' : { 'starbucks-spring': '☕', 'downtown-hub': '🏙️', 'forest-gate': '🌲', 'sunset-temple': '⛩️' }[room.id] || '🏛️',
+      icon: room.kind === 'user-created' ? '🔥' : { 'starbucks-spring': '☕', 'agora-houston': '🍷', 'downtown-hub': '🏙️', 'forest-gate': '🌲', 'sunset-temple': '⛩️' }[room.id] || '🏛️',
       blurb: room.kind === 'user-created'
         ? `Community space · ${room.contributors.join(', ')}`
         : `GPS-anchored · ${room.radiusMeters}m radius`,
       status: roomMatch?.room?.id === room.id ? '✦ You are here' : room.kind === 'user-created' ? 'Community' : 'GPS room',
-      accent: room.kind === 'user-created' ? '#f97316' : { 'starbucks-spring': '#00704a', 'downtown-hub': '#60a5fa', 'forest-gate': '#4ade80', 'sunset-temple': '#f472b6' }[room.id] || '#a78bfa',
+      accent: room.kind === 'user-created' ? '#f97316' : { 'starbucks-spring': '#00704a', 'agora-houston': '#9333ea', 'downtown-hub': '#60a5fa', 'forest-gate': '#4ade80', 'sunset-temple': '#f472b6' }[room.id] || '#a78bfa',
       bg: room.kind === 'user-created'
         ? 'linear-gradient(135deg, #1a0e00 0%, #0f172a 100%)'
-        : { 'starbucks-spring': 'linear-gradient(135deg, #00160e 0%, #0f172a 100%)', 'downtown-hub': 'linear-gradient(135deg, #0a1628 0%, #0f172a 100%)', 'forest-gate': 'linear-gradient(135deg, #0a1a0e 0%, #0f172a 100%)', 'sunset-temple': 'linear-gradient(135deg, #1a0a14 0%, #0f172a 100%)' }[room.id] || 'linear-gradient(135deg, #120a1a 0%, #0f172a 100%)',
+        : { 'starbucks-spring': 'linear-gradient(135deg, #00160e 0%, #0f172a 100%)', 'agora-houston': 'linear-gradient(135deg, #1a0028 0%, #0f172a 100%)', 'downtown-hub': 'linear-gradient(135deg, #0a1628 0%, #0f172a 100%)', 'forest-gate': 'linear-gradient(135deg, #0a1a0e 0%, #0f172a 100%)', 'sunset-temple': 'linear-gradient(135deg, #1a0a14 0%, #0f172a 100%)' }[room.id] || 'linear-gradient(135deg, #120a1a 0%, #0f172a 100%)',
     }))
   ];
 

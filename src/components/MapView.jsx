@@ -96,6 +96,7 @@ async function fetchBuildingFootprint(lat, lng) {
 
 const ROOM_STYLES = {
   'starbucks-spring': { color: '#00704a', emoji: '☕' },
+  'agora-houston':    { color: '#9333ea', emoji: '🍷' },
   'downtown-hub':     { color: '#60a5fa', emoji: '🏙️' },
   'forest-gate':      { color: '#4ade80', emoji: '🌲' },
   'sunset-temple':    { color: '#f472b6', emoji: '⛩️' },

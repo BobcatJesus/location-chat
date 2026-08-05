@@ -284,6 +284,7 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
           // --- Environment themes per room ---
           const themes = {
             'starbucks-spring': { floor1: 0x00160e, floor2: 0x001a10, accent: 0x00704a, wall: 0x00120a, decor: 0x00704a },
+            'agora-houston':    { floor1: 0x1a001a, floor2: 0x1e0020, accent: 0x9333ea, wall: 0x110018, decor: 0xb060ff },
             'cafe':    { floor1: 0x1a0f00, floor2: 0x221400, accent: 0x8B6914, wall: 0x110a00, decor: 0xc8a000 },
             'restaurant': { floor1: 0x1a0a0a, floor2: 0x200c0c, accent: 0x9a2020, wall: 0x100505, decor: 0xcc4444 },
             'bar':     { floor1: 0x0a0a1a, floor2: 0x0c0c22, accent: 0x4400cc, wall: 0x060614, decor: 0x8800ff },
@@ -323,7 +324,23 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
 
           const roomType = room?.amenity || room?.type || roomId;
 
-          if (roomId === 'starbucks-spring' || roomType === 'cafe') {
+          if (roomId === 'agora-houston') {
+            // Wine bar: dark purple, bar counter, candle-lit tables, bookshelf
+            this.add.rectangle(W/2, 38, W-40, 22, 0x1a0028); this.add.rectangle(W/2, 38, W-44, 18, 0x2a0038); // bar counter
+            for (let i=0;i<6;i++) this.add.rectangle(60+i*70, 52, 14, 10, 0x1a001e); // stools
+            // Tables with candles
+            [[100,H/2-30],[W/2,H/2-40],[W-100,H/2-30],[W/2-60,H/2+60],[W/2+80,H/2+60]].forEach(([x,y]) => {
+              this.add.rectangle(x,y,36,24,0x1e0028); this.add.rectangle(x,y,32,20,0x2a003a);
+              this.add.circle(x,y-4,4,0xffcc44).setAlpha(0.9); this.add.circle(x,y-4,8,0xffaa00).setAlpha(0.2);
+              [[x-10,y+6],[x+10,y+6]].forEach(([cx,cy]) => { this.add.circle(cx,cy,6,0x1a0022); });
+            });
+            // Bookshelf along right wall
+            this.add.rectangle(W-16, H/2, 24, H*0.7, 0x1a0022); this.add.rectangle(W-16, H/2, 20, H*0.7-4, 0x22002e);
+            [0x8B0000,0x00448B,0x2d6e1a,0x4B0082].forEach((c,i) => this.add.rectangle(W-16, H/2-60+i*30, 16, 10, c));
+            // Glow
+            this.add.circle(W/2, H/2, 80, 0x9333ea).setAlpha(0.05);
+
+          } else if (roomId === 'starbucks-spring' || roomType === 'cafe') {
             // Counter along top wall
             this.add.rectangle(W / 2, 40, W - 60, 28, 0x3d1a00);
             this.add.rectangle(W / 2, 40, W - 64, 24, 0x5c2800);
