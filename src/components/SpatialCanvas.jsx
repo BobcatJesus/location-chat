@@ -95,6 +95,7 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
     socketRef.current = socket;
 
     const displayName = profile?.profile?.characterName || profile?.mode || 'Guest';
+    const displayFirstName = profile?.profile?.firstName || displayName.split(' ')[0] || 'You';
     const playerId = profile?.profile?.email || `guest-${socket.id}`;
 
     const syncPlayerList = (state) => {
@@ -118,7 +119,7 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
       // Remote player — built from ModularAvatar class
       const playerGroup = new ModularAvatar(scene, player.x, player.y, {
         skinId: player.skinId || 'red',
-        name: player.name || 'Traveler',
+        name: player.firstName || player.name || 'Traveler',
         isLocal: false,
       });
       if (player.photo) playerGroup.attachPhoto(scene, player.photo);
@@ -161,6 +162,7 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
         user: {
           id: playerId,
           name: displayName,
+          firstName: profile?.profile?.firstName || '',
           photo: profile?.profile?.photo || null,
           skinId: profile?.profile?.skinId || 'blue',
           isCreator: room?.ownerId && (room.ownerId === (profile?.profile?.email || profile?.mode || 'guest')),
@@ -580,7 +582,7 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
           // Local player — built from ModularAvatar class
           const playerGroup = new ModularAvatar(this, W / 2, H / 2, {
             skinId: profile?.profile?.skinId || 'blue',
-            name: profile?.profile?.characterName || 'YOU',
+            name: profile?.profile?.firstName || (profile?.profile?.characterName || 'YOU').split(' ')[0],
             isLocal: true,
           });
           if (profile?.profile?.photo) playerGroup.attachPhoto(this, profile.profile.photo);

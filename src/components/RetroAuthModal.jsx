@@ -50,7 +50,7 @@ export default function RetroAuthModal({ onLogin }) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  const initialForm = { email: '', password: '', characterName: '' };
+  const initialForm = { email: '', password: '', characterName: '', firstName: '' };
   const [formData, setFormData] = useState(initialForm);
   const [photoDataUrl, setPhotoDataUrl] = useState(null);
 
@@ -179,7 +179,7 @@ export default function RetroAuthModal({ onLogin }) {
 
       // Derive display name: prefer characterName, else part before @ in email
       const characterName = formData.characterName.trim() || formData.email.split('@')[0];
-      const profile = { email: formData.email, characterName };
+      const profile = { email: formData.email, characterName, firstName: formData.firstName.trim() };
 
       if (isSignUp) {
         // Store new account
@@ -326,6 +326,13 @@ export default function RetroAuthModal({ onLogin }) {
 
                 {/* Form */}
                 <form onSubmit={handleSubmit} noValidate style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  {isSignUp && (
+                    <div>
+                      <label style={{ display: 'block', fontSize: 11, textTransform: 'uppercase', color: '#94a3b8', marginBottom: 4 }}>First Name <span style={{ color: '#475569' }}>(shown above your avatar)</span></label>
+                      <input type="text" name="firstName" placeholder="e.g. Alex" value={formData.firstName} onChange={handleInputChange} maxLength={20}
+                        style={{ width: '100%', boxSizing: 'border-box', background: '#000', border: '2px solid #475569', padding: '8px 10px', color: '#fbbf24', fontFamily: 'Courier New, monospace', fontSize: 13, outline: 'none' }} />
+                    </div>
+                  )}
                   {isSignUp && (
                     <div>
                       <label style={{ display: 'block', fontSize: 11, textTransform: 'uppercase', color: '#94a3b8', marginBottom: 4 }}>Avatar Name</label>

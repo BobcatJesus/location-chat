@@ -26,6 +26,7 @@ function App() {
   const openEditProfile = () => {
     setEditForm({
       characterName: profile?.profile?.characterName || '',
+      firstName: profile?.profile?.firstName || '',
       photo: profile?.profile?.photo || null,
       skinId: profile?.profile?.skinId || 'blue',
     });
@@ -57,7 +58,7 @@ function App() {
   };
 
   const saveEditProfile = () => {
-    const updated = { ...profile.profile, characterName: editForm.characterName.trim() || profile.profile.characterName, photo: editForm.photo, skinId: editForm.skinId || 'blue' };
+    const updated = { ...profile.profile, characterName: editForm.characterName.trim() || profile.profile.characterName, firstName: editForm.firstName.trim(), photo: editForm.photo, skinId: editForm.skinId || 'blue' };
     localStorage.setItem('sidequest_profile', JSON.stringify(updated));
     setProfile({ ...profile, profile: updated });
     setEditingProfile(false);
@@ -287,6 +288,10 @@ function App() {
 
               {/* Name */}
               <div style={{ marginBottom: 20 }}>
+                <label style={{ display: 'block', fontSize: 11, textTransform: 'uppercase', color: '#94a3b8', marginBottom: 6 }}>First Name <span style={{ color: '#475569', fontSize: 9 }}>(shown above avatar)</span></label>
+                <input type="text" value={editForm.firstName} onChange={e => setEditForm(f => ({ ...f, firstName: e.target.value }))} maxLength={20}
+                  placeholder="e.g. Alex"
+                  style={{ width: '100%', boxSizing: 'border-box', background: '#000', border: '2px solid #475569', padding: '8px 10px', color: '#fbbf24', fontFamily: 'Courier New, monospace', fontSize: 13, outline: 'none', marginBottom: 10 }} />
                 <label style={{ display: 'block', fontSize: 11, textTransform: 'uppercase', color: '#94a3b8', marginBottom: 6 }}>Display Name</label>
                 <input type="text" value={editForm.characterName} onChange={e => setEditForm(f => ({ ...f, characterName: e.target.value }))}
                   style={{ width: '100%', boxSizing: 'border-box', background: '#000', border: '2px solid #475569', padding: '8px 10px', color: '#fbbf24', fontFamily: 'Courier New, monospace', fontSize: 13, outline: 'none' }} />

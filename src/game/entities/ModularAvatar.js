@@ -52,9 +52,9 @@ export default class ModularAvatar extends Phaser.GameObjects.Container {
     this.add(scene.add.rectangle(-2, -14, 1, 1, 0xffffff));
     this.add(scene.add.rectangle(4, -14, 1, 1, 0xffffff));
 
-    // Name label — first name only
-    const firstName = (name || '').split(' ')[0] || (isLocal ? 'YOU' : 'Traveler');
-    this._label = scene.add.text(x, y - 28, firstName, {
+    // Name label — use name as-is (callers now pass firstName directly)
+    const labelText = (name || '').trim() || (isLocal ? 'YOU' : 'Traveler');
+    this._label = scene.add.text(x, y - 28, labelText, {
       fontFamily: 'Courier New', fontSize: '10px',
       color: isLocal ? '#fef3c7' : '#fca5a5',
       backgroundColor: '#00000099',
