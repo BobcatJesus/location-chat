@@ -132,7 +132,6 @@ function App() {
         setTimeout(() => setGpsToast(null), 4000);
         return;
       }
-    }
       // Save to server so everyone can discover it
       try {
         await fetch(`${SOCKET_SERVER_URL}/api/community-locations`, {
