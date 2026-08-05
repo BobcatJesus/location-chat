@@ -4,7 +4,7 @@ import SpatialCanvas from './SpatialCanvas';
 import MapView from './MapView';
 import { AVATAR_SKINS } from './SpatialCanvas';
 import { useGeofencedMap } from '../hooks/UseGeofencingApp';
-import { createUserRoom, findRoomByLocation, getAllRooms } from '../../rooms/rooms.js';
+import { createUserRoom, loadUserRooms, acceptRoomInvite, findRoomByLocation, getAllRooms } from '../../rooms/rooms.js';
 import { getDistanceMeters } from '../geo';
 
 function App() {
@@ -16,7 +16,10 @@ function App() {
   const [editingProfile, setEditingProfile] = useState(false);
   const [editForm, setEditForm] = useState({ characterName: '', photo: null });
   const editFileRef = React.useRef(null);
-  const [osmRoom, setOsmRoom] = useState(null); // active OSM POI meta
+  const [osmRoom, setOsmRoom] = useState(null);
+  const [creatingRoom, setCreatingRoom] = useState(false);
+  const [newRoomName, setNewRoomName] = useState('');
+  const [inviteToast, setInviteToast] = useState(null);
 
   const openEditProfile = () => {
     setEditForm({
@@ -62,6 +65,18 @@ function App() {
   const handleLogin = (authProfile) => {
     setProfile(authProfile);
     setIsLoggedIn(true);
+    const uid = authProfile?.profile?.email || authProfile?.mode || 'guest';
+    loadUserRooms(uid);
+    // Accept invite from URL if present
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const inv = params.get('invite');
+      if (inv) {
+        const room = JSON.parse(atob(inv));
+        acceptRoomInvite(room, uid);
+        window.history.replaceState({}, '', window.location.pathname);
+      }
+    } catch {}
   };
 
   const handleLogout = () => {
@@ -77,15 +92,24 @@ function App() {
 
   const handleCreateRoom = () => {
     if (!location) return;
+    setNewRoomName('');
+    setCreatingRoom(true);
+  };
+
+  const confirmCreateRoom = () => {
     const contributorName = profile?.profile?.characterName || profile?.mode || 'guest';
+    const ownerId = profile?.profile?.email || profile?.mode || 'guest';
+    const roomName = newRoomName.trim() || `${contributorName}'s Spot`;
     const newRoom = createUserRoom({
       id: `user-${Date.now()}`,
-      name: `${contributorName}'s Spot`,
+      name: roomName,
       lat: location.latitude,
       lng: location.longitude,
       radiusMeters: 60,
-      contributor: contributorName
+      contributor: contributorName,
+      ownerId,
     });
+    setCreatingRoom(false);
     setSelectedRoom(newRoom.id);
     setActiveScene('room');
   };
@@ -225,6 +249,41 @@ function App() {
           </div>
         </div>
       )}
+      {/* Create room name prompt */}
+      {creatingRoom && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', zIndex: 10001, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setCreatingRoom(false)}>
+          <div onClick={e => e.stopPropagation()} style={{ background: '#0f172a', border: '4px solid #fbbf24', padding: 28, maxWidth: 320, width: '100%', margin: 16, boxShadow: '8px 8px 0 #000', fontFamily: 'Courier New, monospace' }}>
+            <div style={{ color: '#fbbf24', fontSize: 13, textTransform: 'uppercase', letterSpacing: 2, marginBottom: 16 }}>📍 Name Your Space</div>
+            <input
+              autoFocus
+              type="text"
+              placeholder="e.g. Rooftop Hangout"
+              value={newRoomName}
+              onChange={e => setNewRoomName(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && confirmCreateRoom()}
+              maxLength={32}
+              style={{ width: '100%', boxSizing: 'border-box', background: '#000', border: '2px solid #475569', padding: '10px 12px', color: '#f8fafc', fontFamily: 'Courier New, monospace', fontSize: 14, outline: 'none', marginBottom: 16 }}
+            />
+            <div style={{ fontSize: 10, color: '#64748b', marginBottom: 16 }}>This room will be anchored to your current GPS position. Only you can see it unless you share an invite link.</div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={confirmCreateRoom} style={{ flex: 1, padding: '10px 0', background: '#16a34a', border: '2px solid #000', boxShadow: '2px 2px 0 #000', color: '#fff', fontWeight: 'bold', fontFamily: 'Courier New, monospace', fontSize: 12, cursor: 'pointer', textTransform: 'uppercase' }}>
+                Create
+              </button>
+              <button onClick={() => setCreatingRoom(false)} style={{ padding: '10px 16px', background: 'none', border: '2px solid #334155', color: '#94a3b8', fontFamily: 'Courier New, monospace', fontSize: 12, cursor: 'pointer' }}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Invite copied toast */}
+      {inviteToast && (
+        <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', zIndex: 9999, background: '#16a34a', border: '2px solid #000', color: '#fff', padding: '10px 20px', fontFamily: 'Courier New', fontSize: 13, boxShadow: '0 4px 20px #000' }}>
+          ✓ Invite link copied!
+        </div>
+      )}
+
       {!isLoggedIn && (
         <div
           style={{
@@ -289,6 +348,20 @@ function App() {
             ) : (
               <div style={{ flex: 1, border: '2px solid #334155', borderRadius: 12, overflow: 'hidden', position: 'relative' }}>
                 <SpatialCanvas room={osmRoom ? { ...osmRoom, id: osmRoom.id } : activeRoom} profile={profile} onLeave={() => { setActiveScene('world'); setOsmRoom(null); }} />
+                {/* Invite button for user-created private rooms */}
+                {activeRoom?.kind === 'user-created' && (
+                  <button
+                    onClick={() => {
+                      const link = `${window.location.origin}${window.location.pathname}?invite=${btoa(JSON.stringify(activeRoom))}`;
+                      navigator.clipboard.writeText(link).then(() => {
+                        setInviteToast(true);
+                        setTimeout(() => setInviteToast(null), 2500);
+                      });
+                    }}
+                    style={{ position: 'absolute', top: 12, right: 12, zIndex: 1000, background: '#1e293b', border: '1px solid #fbbf24', color: '#fbbf24', padding: '6px 12px', fontFamily: 'Courier New', fontSize: 11, cursor: 'pointer', boxShadow: '2px 2px 0 #000' }}>
+                    🔗 Copy invite link
+                  </button>
+                )}
               </div>
             )}
           </div>

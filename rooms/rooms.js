@@ -50,20 +50,21 @@ export const ROOMS = [
   }
 ];
 
-// User-created rooms can be anchored to a GPS position and enriched by contributors.
-export const USER_CREATED_ROOMS = [
-  {
-    id: 'campfire-circle',
-    name: 'Campfire Circle',
-    lat: 29.7612,
-    lng: -95.3710,
-    radiusMeters: 90,
-    kind: 'user-created',
-    contributors: ['guest']
-  }
-];
+// User-created rooms — private by default, persisted in localStorage per owner
+export const USER_CREATED_ROOMS = [];
 
-export function createUserRoom({ id, name, lat, lng, radiusMeters = 50, contributor }) {
+const STORAGE_KEY = 'sidequest_user_rooms';
+
+export function loadUserRooms(ownerId) {
+  try {
+    const all = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    // Load rooms owned by this user OR shared via invite that they accepted
+    const mine = all.filter(r => r.ownerId === ownerId || r.invitedIds?.includes(ownerId));
+    mine.forEach(r => { if (!USER_CREATED_ROOMS.find(x => x.id === r.id)) USER_CREATED_ROOMS.push(r); });
+  } catch {}
+}
+
+export function createUserRoom({ id, name, lat, lng, radiusMeters = 50, contributor, ownerId }) {
   const room = {
     id,
     name,
@@ -71,11 +72,30 @@ export function createUserRoom({ id, name, lat, lng, radiusMeters = 50, contribu
     lng,
     radiusMeters,
     kind: 'user-created',
-    contributors: contributor ? [contributor] : ['anonymous']
+    contributors: contributor ? [contributor] : ['anonymous'],
+    ownerId: ownerId || 'unknown',
+    invitedIds: [],
   };
-
   USER_CREATED_ROOMS.push(room);
+  try {
+    const all = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    all.push(room);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
+  } catch {}
   return room;
+}
+
+// Accept a room shared via invite link and add it to this user's visible rooms
+export function acceptRoomInvite(room, ownerId) {
+  if (USER_CREATED_ROOMS.find(r => r.id === room.id)) return;
+  USER_CREATED_ROOMS.push(room);
+  try {
+    const all = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    if (!all.find(r => r.id === room.id)) {
+      all.push({ ...room, invitedIds: [ownerId] });
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
+    }
+  } catch {}
 }
 
 export function getAllRooms() {
