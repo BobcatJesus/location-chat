@@ -739,8 +739,8 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
       {/* Top-right: exit + edit toggle */}
       <div style={{ position: 'absolute', top: 10, right: 10, zIndex: 50, display: 'flex', gap: 6 }}>
         <button onClick={() => setEditMode(!editModeRef.current)}
-          style={{ background: editModeRef.current ? '#fbbf24' : 'rgba(15,23,42,0.8)', border: `2px solid ${editModeRef.current ? '#fbbf24' : '#475569'}`, color: editModeRef.current ? '#000' : '#94a3b8', padding: '5px 10px', fontWeight: 'bold', cursor: 'pointer', fontFamily: 'Courier New', fontSize: 11, whiteSpace: 'nowrap' }}>
-          🪑 {editModeRef.current ? 'Done' : 'Edit'}
+          style={{ background: editMode ? '#fbbf24' : 'rgba(15,23,42,0.8)', border: `2px solid ${editMode ? '#fbbf24' : '#475569'}`, color: editMode ? '#000' : '#94a3b8', padding: '5px 10px', fontWeight: 'bold', cursor: 'pointer', fontFamily: 'Courier New', fontSize: 11, whiteSpace: 'nowrap' }}>
+          🪑 {editMode ? 'Done' : 'Edit'}
         </button>
         <button onClick={onLeave}
           style={{ background: '#e2b46c', border: 'none', padding: '6px 14px', fontWeight: 'bold', cursor: 'pointer', fontFamily: 'Courier New', whiteSpace: 'nowrap' }}>
@@ -749,7 +749,7 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
       </div>
 
       {/* Furniture palette — visible in edit mode */}
-      {editModeRef.current && (
+      {editMode && (
         <div style={{ position: 'absolute', top: 50, right: 10, zIndex: 50, background: 'rgba(15,23,42,0.95)', border: '2px solid #334155', borderRadius: 8, padding: 8, display: 'flex', flexDirection: 'column', gap: 4, maxHeight: '70vh', overflowY: 'auto' }}>
           <div style={{ color: '#fbbf24', fontFamily: 'Courier New', fontSize: 10, textTransform: 'uppercase', letterSpacing: 2, marginBottom: 4 }}>Place item</div>
           {FURNITURE.map(f => (
@@ -765,7 +765,7 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
       )}
 
       {/* Edit mode click-capture overlay — sits above canvas, below palette/buttons */}
-      {editModeRef.current && (
+      {editMode && (
         <div
           style={{ position: 'absolute', inset: 0, zIndex: 10, cursor: 'crosshair' }}
           onClick={(e) => {
