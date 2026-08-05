@@ -269,12 +269,12 @@ export default function MapView({ location, rooms, onEnterRoom }) {
   // Build icon HTML based on current in-range state
   const makeIcon = (emoji, color, name, inRange, count) => L.divIcon({
     className: '',
-    html: `<div style="display:flex;flex-direction:column;align-items:center;cursor:${inRange ? 'pointer' : 'default'};filter:${inRange ? 'none' : 'grayscale(80%) opacity(0.4)'}">
-      <div style="background:${color};font-size:16px;width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:2px solid #fff;box-shadow:0 0 ${inRange ? '10px' : '3px'} ${color}${inRange ? 'cc' : '33'}">${emoji}</div>
-      <div style="background:rgba(0,0,0,0.85);color:#fff;font-size:9px;padding:1px 5px;border-radius:2px;margin-top:1px;white-space:nowrap;font-family:'Courier New',monospace;max-width:90px;overflow:hidden;text-overflow:ellipsis">${name}${inRange ? ' ✦' : ''}${count ? ` · 👤${count}` : ''}</div>
-      <div style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:6px solid rgba(0,0,0,0.85)"></div>
+    html: `<div style="display:flex;flex-direction:column;align-items:center;cursor:${inRange ? 'pointer' : 'default'};filter:${inRange ? 'none' : 'grayscale(60%) opacity(0.5)'}">
+      <div style="background:${color};font-size:16px;width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:3px solid #2b2b33;box-shadow:2px 2px 0 #2b2b33">${emoji}</div>
+      <div style="background:#faf0d7;color:#2b2b33;font-size:9px;padding:2px 6px;border-radius:3px;margin-top:2px;white-space:nowrap;font-family:'Courier New',monospace;max-width:90px;overflow:hidden;text-overflow:ellipsis;border:1.5px solid #2b2b33;box-shadow:1px 1px 0 #2b2b33">${name}${inRange ? ' ✦' : ''}${count ? ` · 👤${count}` : ''}</div>
+      <div style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:6px solid #2b2b33"></div>
     </div>`,
-    iconSize: [80, 55], iconAnchor: [40, 55],
+    iconSize: [80, 58], iconAnchor: [40, 58],
   });
 
   // Re-evaluate every pin's visual against current player position — CSS only, no DOM replacement
@@ -357,7 +357,7 @@ export default function MapView({ location, rooms, onEnterRoom }) {
     // Player dot
     const playerIcon = L.divIcon({
       className: '',
-      html: `<div style="width:16px;height:16px;border-radius:50%;background:#fbbf24;border:3px solid #fff;box-shadow:0 0 0 3px rgba(251,191,36,0.4)"></div>`,
+      html: `<div style="width:16px;height:16px;border-radius:50%;background:#e85d5d;border:3px solid #fff;box-shadow:0 0 0 3px rgba(232,93,93,0.4)"></div>`,
       iconSize: [16, 16], iconAnchor: [8, 8],
     });
     playerMarkerRef.current = L.marker([lat, lng], { icon: playerIcon }).addTo(map);
@@ -419,13 +419,13 @@ export default function MapView({ location, rooms, onEnterRoom }) {
 
       {/* "You're here" banner when inside a named room's radius */}
       {nearbyRoom && (
-        <div style={{ position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 1000, background: '#fbbf24', color: '#000', fontFamily: 'Courier New', fontSize: 13, fontWeight: 'bold', padding: '6px 16px', borderRadius: 6, boxShadow: '0 2px 12px rgba(251,191,36,0.6)', whiteSpace: 'nowrap' }}>
+        <div style={{ position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 1000, background: '#faf0d7', color: '#2b2b33', fontFamily: 'Courier New', fontSize: 13, fontWeight: 'bold', padding: '6px 16px', borderRadius: 6, border: '2px solid #2b2b33', boxShadow: '2px 2px 0 #2b2b33', whiteSpace: 'nowrap' }}>
           📍 You're at {nearbyRoom} — tap the pin to enter
         </div>
       )}
       {/* Legend */}
-      <div style={{ position: 'absolute', bottom: 12, left: 12, zIndex: 1000, background: 'rgba(0,0,0,0.75)', border: '1px solid #334155', borderRadius: 8, padding: '8px 12px', fontFamily: 'Courier New', fontSize: 11, color: '#94a3b8' }}>
-        <div style={{ color: '#fbbf24', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 2 }}>Nearby places</div>
+      <div style={{ position: 'absolute', bottom: 12, left: 12, zIndex: 1000, background: '#faf0d7', border: '2px solid #2b2b33', borderRadius: 8, padding: '8px 12px', fontFamily: 'Courier New', fontSize: 11, color: '#2b2b33', boxShadow: '2px 2px 0 #2b2b33' }}>
+        <div style={{ color: '#5a3e2b', fontWeight: 'bold', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 2 }}>Nearby places</div>
         <div>✦ Tap a lit pin to enter</div>
         {poiStatus === 'loading' && <div style={{ marginTop: 4, color: '#60a5fa', display: 'flex', alignItems: 'center', gap: 6 }}>
           <span>Discovering…</span>
@@ -440,7 +440,7 @@ export default function MapView({ location, rooms, onEnterRoom }) {
             <button onClick={() => {
               const pos = playerMarkerRef.current?.getLatLng();
               if (pos) loadPOIs(pos.lat, pos.lng);
-            }} style={{ background: '#1e293b', border: '1px solid #475569', color: '#94a3b8', padding: '3px 8px', cursor: 'pointer', fontFamily: 'Courier New', fontSize: 10, borderRadius: 4 }}>
+            }} style={{ background: '#faf0d7', border: '2px solid #2b2b33', color: '#2b2b33', padding: '3px 8px', cursor: 'pointer', fontFamily: 'Courier New', fontSize: 10, borderRadius: 4, boxShadow: '1px 1px 0 #2b2b33' }}>
               ↺ Retry
             </button>
           </div>
