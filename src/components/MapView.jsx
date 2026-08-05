@@ -203,9 +203,11 @@ export default function MapView({ location, rooms, onEnterRoom }) {
       );
       filtered.forEach(poi => {
         addPin(leafletRef.current, poi.lat, poi.lng, poi.name, poi.emoji, poi.color, poi.radiusMeters,
-          async () => {
-            const footprint = await fetchBuildingFootprint(poi.lat, poi.lng);
-            onEnterRoomRef.current(poi.id, { ...poi, footprint });
+          () => {
+            onEnterRoomRef.current(poi.id, { ...poi });
+            fetchBuildingFootprint(poi.lat, poi.lng).then(footprint => {
+              if (footprint) onEnterRoomRef.current(poi.id, { ...poi, footprint });
+            });
           }, true);
       });
       // Re-evaluate all pins with current position
@@ -232,9 +234,11 @@ export default function MapView({ location, rooms, onEnterRoom }) {
     socket.on('community_location_added', (loc) => {
       if (!leafletRef.current) return;
       addPin(leafletRef.current, loc.lat, loc.lng, loc.name, loc.emoji || '📍', loc.color || '#f97316', loc.radius || 50,
-        async () => {
-          const footprint = await fetchBuildingFootprint(loc.lat, loc.lng);
-          onEnterRoomRef.current(loc.id, { ...loc, ...(footprint ? { footprint } : {}) });
+        () => {
+          onEnterRoomRef.current(loc.id, { ...loc });
+          fetchBuildingFootprint(loc.lat, loc.lng).then(footprint => {
+            if (footprint) onEnterRoomRef.current(loc.id, { ...loc, footprint });
+          });
         }, false, loc.id);
       const pos = playerMarkerRef.current?.getLatLng();
       if (pos) updateAllPins(pos.lat, pos.lng);
@@ -250,9 +254,11 @@ export default function MapView({ location, rooms, onEnterRoom }) {
         if (!leafletRef.current) return;
         locs.forEach(loc => {
           addPin(leafletRef.current, loc.lat, loc.lng, loc.name, loc.emoji || '📍', loc.color || '#f97316', loc.radius || 50,
-            async () => {
-              const footprint = await fetchBuildingFootprint(loc.lat, loc.lng);
-              onEnterRoomRef.current(loc.id, { ...loc, ...(footprint ? { footprint } : {}) });
+            () => {
+              onEnterRoomRef.current(loc.id, { ...loc });
+              fetchBuildingFootprint(loc.lat, loc.lng).then(footprint => {
+                if (footprint) onEnterRoomRef.current(loc.id, { ...loc, footprint });
+              });
             }, false, loc.id);
         });
         const pos = playerMarkerRef.current?.getLatLng();
@@ -361,9 +367,11 @@ export default function MapView({ location, rooms, onEnterRoom }) {
       if (!room.lat || !room.lng) return;
       const style = ROOM_STYLES[room.id] || { color: '#a78bfa', emoji: '📍' };
       addPin(map, room.lat, room.lng, room.name, style.emoji, style.color, room.radiusMeters,
-        async () => {
-          const footprint = await fetchBuildingFootprint(room.lat, room.lng);
-          onEnterRoomRef.current(room.id, footprint ? { ...room, footprint } : null);
+        () => {
+          onEnterRoomRef.current(room.id, null);
+          fetchBuildingFootprint(room.lat, room.lng).then(footprint => {
+            if (footprint) onEnterRoomRef.current(room.id, { ...room, footprint });
+          });
         }, false, room.id);
     });
 
