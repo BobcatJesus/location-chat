@@ -123,6 +123,16 @@ function App() {
     const roomId = `user-${Date.now()}`;
 
     if (newRoomPublic) {
+      const THREE_DAYS = 3 * 24 * 60 * 60 * 1000;
+      const lastTs = parseInt(localStorage.getItem('sidequest_loc_ts') || '0', 10);
+      const resetIn = Math.ceil((lastTs + THREE_DAYS - Date.now()) / 3600000);
+      if (Date.now() - lastTs < THREE_DAYS) {
+        setCreatingRoom(false);
+        setGpsToast(`You can create 1 community location every 3 days. Try again in ~${resetIn}h.`);
+        setTimeout(() => setGpsToast(null), 4000);
+        return;
+      }
+    }
       // Save to server so everyone can discover it
       try {
         await fetch(`${SOCKET_SERVER_URL}/api/community-locations`, {
@@ -136,6 +146,7 @@ function App() {
             creator: contributorName, description: '',
           }),
         });
+        localStorage.setItem('sidequest_loc_ts', Date.now().toString());
       } catch {}
     }
 
@@ -316,15 +327,27 @@ function App() {
               ))}
             </div>
             {/* Public toggle */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, padding: '10px 12px', background: '#1e293b', border: `2px solid ${newRoomPublic ? '#16a34a' : '#334155'}`, cursor: 'pointer' }} onClick={() => setNewRoomPublic(p => !p)}>
-              <div style={{ width: 36, height: 20, background: newRoomPublic ? '#16a34a' : '#475569', borderRadius: 10, position: 'relative', transition: 'background 0.2s' }}>
-                <div style={{ position: 'absolute', top: 2, left: newRoomPublic ? 18 : 2, width: 16, height: 16, background: '#fff', borderRadius: '50%', transition: 'left 0.2s' }} />
-              </div>
-              <div>
-                <div style={{ color: newRoomPublic ? '#4ade80' : '#94a3b8', fontSize: 12, fontWeight: 'bold' }}>{newRoomPublic ? '🌍 Community — visible to everyone' : '🔒 Private — only you'}</div>
-                <div style={{ color: '#475569', fontSize: 10 }}>{newRoomPublic ? 'Appears on all users\' maps' : 'Share via invite link to add others'}</div>
-              </div>
-            </div>
+            {(() => {
+              const THREE_DAYS = 3 * 24 * 60 * 60 * 1000;
+              const lastTs = parseInt(localStorage.getItem('sidequest_loc_ts') || '0', 10);
+              const onCooldown = Date.now() - lastTs < THREE_DAYS;
+              const resetIn = Math.ceil((lastTs + THREE_DAYS - Date.now()) / 3600000);
+              return (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, padding: '10px 12px', background: '#1e293b', border: `2px solid ${newRoomPublic && !onCooldown ? '#16a34a' : '#334155'}`, cursor: onCooldown ? 'not-allowed' : 'pointer', opacity: onCooldown && !newRoomPublic ? 0.5 : 1 }} onClick={() => !onCooldown && setNewRoomPublic(p => !p)}>
+                  <div style={{ width: 36, height: 20, background: newRoomPublic && !onCooldown ? '#16a34a' : '#475569', borderRadius: 10, position: 'relative', transition: 'background 0.2s' }}>
+                    <div style={{ position: 'absolute', top: 2, left: newRoomPublic && !onCooldown ? 18 : 2, width: 16, height: 16, background: '#fff', borderRadius: '50%', transition: 'left 0.2s' }} />
+                  </div>
+                  <div>
+                    <div style={{ color: newRoomPublic && !onCooldown ? '#4ade80' : '#94a3b8', fontSize: 12, fontWeight: 'bold' }}>
+                      {onCooldown ? `⏳ Cooldown — ${resetIn}h remaining` : newRoomPublic ? '🌍 Community — visible to everyone' : '🔒 Private — only you'}
+                    </div>
+                    <div style={{ color: '#475569', fontSize: 10 }}>
+                      {onCooldown ? '1 community location per 3 days' : newRoomPublic ? 'Appears on all users\' maps' : 'Share via invite link to add others'}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
             <div style={{ display: 'flex', gap: 8 }}>
               <button onClick={confirmCreateRoom} style={{ flex: 1, padding: '10px 0', background: '#16a34a', border: '2px solid #000', boxShadow: '2px 2px 0 #000', color: '#fff', fontWeight: 'bold', fontFamily: 'Courier New, monospace', fontSize: 12, cursor: 'pointer', textTransform: 'uppercase' }}>
                 Create
