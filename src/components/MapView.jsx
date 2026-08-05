@@ -111,6 +111,7 @@ export default function MapView({ location, rooms, onEnterRoom }) {
   const [poiCount, setPoiCount] = useState(0);
   const [poiStatus, setPoiStatus] = useState('loading');
   const poiLoadedRef = useRef(false);
+  const lastFetchPosRef = useRef(null); // {lat, lng} of last successful POI fetch
 
   const loadPOIs = (lat, lng) => {
     if (!leafletRef.current) return;
@@ -140,6 +141,7 @@ export default function MapView({ location, rooms, onEnterRoom }) {
       setPoiCount(filtered.length);
       setPoiStatus(filtered.length > 0 ? 'found' : 'none');
       poiLoadedRef.current = true;
+      lastFetchPosRef.current = { lat, lng };
     }).catch(() => setPoiStatus('error'));
   };
 
@@ -244,12 +246,19 @@ export default function MapView({ location, rooms, onEnterRoom }) {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Update player position AND re-evaluate all pin states when GPS moves
+  // Also re-fetch POIs if moved more than 500m from last fetch location
   useEffect(() => {
     if (!leafletRef.current || !location) return;
     const { latitude: lat, longitude: lng } = location;
     playerMarkerRef.current?.setLatLng([lat, lng]);
     leafletRef.current.setView([lat, lng], leafletRef.current.getZoom(), { animate: true, duration: 1 });
     updateAllPins(lat, lng);
+
+    // Re-fetch if moved >500m from last fetch position
+    if (lastFetchPosRef.current && poiLoadedRef.current) {
+      const moved = getDistanceMeters(lat, lng, lastFetchPosRef.current.lat, lastFetchPosRef.current.lng);
+      if (moved > 500) loadPOIs(lat, lng);
+    }
   }, [location?.latitude, location?.longitude]);
 
   return (
