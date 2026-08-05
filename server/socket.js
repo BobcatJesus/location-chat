@@ -264,6 +264,10 @@ app.get('/api/community-locations', async (req, res) => {
   } catch { res.json([]); }
 });
 
+app.get('/health', (req, res) => {
+  res.json({ db: !!pool, env: !!process.env.DATABASE_URL });
+});
+
 app.post('/api/community-locations', async (req, res) => {
   if (!pool) return res.status(503).json({ error: 'No database' });
   const { id, name, lat, lng, radius, category, emoji, color, creator, description } = req.body;
