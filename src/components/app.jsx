@@ -72,29 +72,11 @@ function App() {
   };
 
   const staticRoomMatch = location ? findRoomByLocation(location.latitude, location.longitude) : null;
-  const currentLocationRoom = location
-    ? {
-        id: 'your-room',
-        name: 'Your Room',
-        lat: location.latitude,
-        lng: location.longitude,
-        radiusMeters: 30
-      }
-    : null;
-  const currentLocationMatch = currentLocationRoom && location
-    ? {
-        room: currentLocationRoom,
-        distance: Math.round(getDistanceMeters(location.latitude, location.longitude, currentLocationRoom.lat, currentLocationRoom.lng))
-      }
-    : null;
-  const roomMatch = currentLocationMatch || staticRoomMatch;
+  const roomMatch = staticRoomMatch;
   const worldTitle = roomMatch ? `The ${roomMatch.room.name} Overworld` : 'The Lost Overworld';
 
   const handleCreateRoom = () => {
-    if (!location) {
-      return;
-    }
-
+    if (!location) return;
     const contributorName = profile?.profile?.characterName || profile?.mode || 'guest';
     const newRoom = createUserRoom({
       id: `user-${Date.now()}`,
@@ -104,21 +86,11 @@ function App() {
       radiusMeters: 60,
       contributor: contributorName
     });
-
     setSelectedRoom(newRoom.id);
     setActiveScene('room');
   };
 
   const roomCards = [
-    {
-      id: 'your-room',
-      name: 'Your Room',
-      icon: '📍',
-      blurb: 'A room anchored to where you are right now.',
-      status: location ? 'Current position' : 'Waiting for GPS',
-      accent: '#f59e0b',
-      bg: 'linear-gradient(135deg, #1c1a0a 0%, #0f172a 100%)',
-    },
     ...getAllRooms().map((room) => ({
       id: room.id,
       name: room.name,
@@ -165,14 +137,8 @@ function App() {
   const presentDistance = roomMatch ? roomMatch.distance : null;
 
   const handleEnterRoom = (roomId, poiMeta = null) => {
-    // your-room requires confirmed GPS
-    if (roomId === 'your-room' && !location) {
-      setGpsToast('GPS not yet confirmed. Wait for your location to lock on.');
-      setTimeout(() => setGpsToast(null), 3500);
-      return;
-    }
     // GPS rooms are blocked if outside radius
-    if (roomId !== 'your-room' && !poiMeta) {
+    if (!poiMeta) {
       const allRooms = getAllRooms();
       const target = allRooms.find(r => r.id === roomId);
       if (target && target.kind === 'gps' && location) {
@@ -307,12 +273,12 @@ function App() {
                   rooms={getAllRooms().map(r => ({ ...r, radiusMeters: r.radiusMeters || 100 }))}
                   onEnterRoom={handleEnterRoom}
                 />
-                {/* Your Room button — requires confirmed GPS */}
-                {location ? (
+                {/* Create room at current GPS location */}
+                {location && !isLocating ? (
                   <button
-                    onClick={() => handleEnterRoom('your-room')}
+                    onClick={handleCreateRoom}
                     style={{ position: 'absolute', top: 12, left: 12, zIndex: 1000, background: '#fbbf24', border: 'none', padding: '8px 14px', fontWeight: 'bold', cursor: 'pointer', fontFamily: 'Courier New', fontSize: 12, boxShadow: '2px 2px 0 #000' }}>
-                    📍 Your Room
+                    + Create room here
                   </button>
                 ) : (
                   <div style={{ position: 'absolute', top: 12, left: 12, zIndex: 1000, background: '#1e293b', border: '1px solid #475569', padding: '8px 14px', fontFamily: 'Courier New', fontSize: 11, color: '#64748b', boxShadow: '2px 2px 0 #000' }}>
