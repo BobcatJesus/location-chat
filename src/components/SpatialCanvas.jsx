@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import Phaser from 'phaser';
 import { io } from 'socket.io-client';
 import ModularAvatar from '../game/entities/ModularAvatar';
+import { FURNITURE, drawFurniture } from '../game/furniture';
 
 // Spawn a speech bubble above an avatar and auto-destroy it after 4s
 function spawnBubble(scene, avatarContainer, text) {
@@ -68,7 +69,15 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
   const playersRef = useRef({});
   const inputRef = useRef(null);
   const lastMoveAtRef = useRef(0);
-  const dpadRef = useRef({ x: 0, y: 0 }); // touch D-pad state
+  const dpadRef = useRef({ x: 0, y: 0 });
+  const decorationObjectsRef = useRef(new Map()); // id → Phaser container
+  const [editMode, setEditModeState] = useState(false);
+  const [selectedFurniture, setSelectedFurnitureState] = useState(FURNITURE[0].type);
+  const editModeRef = useRef(false);
+  const selectedFurnitureRef = useRef(FURNITURE[0].type);
+
+  const setEditMode = (val) => { editModeRef.current = val; setEditModeState(val); };
+  const setSelectedFurniture = (val) => { selectedFurnitureRef.current = val; setSelectedFurnitureState(val); };
 
   const [players, setPlayers] = useState([]);
   const [messages, setMessages] = useState([]);
@@ -157,6 +166,28 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
 
     socket.on('connect_error', () => {
       setConnectionState('Connection failed');
+    });
+
+    // Receive full decoration state on join
+    socket.on('room_decorations', (items) => {
+      items.forEach(item => {
+        if (sceneRef.current && !decorationObjectsRef.current.has(item.id)) {
+          const obj = drawFurniture(sceneRef.current, item);
+          decorationObjectsRef.current.set(item.id, obj);
+        }
+      });
+    });
+
+    socket.on('decoration_placed', (item) => {
+      if (sceneRef.current && !decorationObjectsRef.current.has(item.id)) {
+        const obj = drawFurniture(sceneRef.current, item);
+        decorationObjectsRef.current.set(item.id, obj);
+      }
+    });
+
+    socket.on('decoration_removed', ({ id }) => {
+      const obj = decorationObjectsRef.current.get(id);
+      if (obj) { obj.destroy(); decorationObjectsRef.current.delete(id); }
     });
 
     socket.on('room_state', (state) => {
@@ -533,6 +564,27 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
           playerGroup.body.setBounce(0);
 
           this.input.keyboard.createCursorKeys();
+
+          // Canvas click — place furniture in edit mode
+          this.input.on('pointerdown', (pointer) => {
+            if (!editModeRef.current) return;
+            const socket = socketRef.current;
+            if (!socket?.connected) return;
+            const item = { type: selectedFurnitureRef.current, x: Math.round(pointer.x), y: Math.round(pointer.y) };
+            socket.emit('place_decoration', { roomId: room?.id || 'default-room', item });
+          });
+
+          // Right-click to remove nearest decoration
+          this.input.on('rightdown', (pointer) => {
+            const socket = socketRef.current;
+            if (!socket?.connected) return;
+            let closest = null, minDist = 30;
+            decorationObjectsRef.current.forEach((obj, id) => {
+              const d = Math.hypot(obj.x - pointer.x, obj.y - pointer.y);
+              if (d < minDist) { minDist = d; closest = id; }
+            });
+            if (closest) socket.emit('remove_decoration', { roomId: room?.id || 'default-room', id: closest });
+          });
         },
         update() {
           const speed = 160 / 60;
@@ -704,13 +756,33 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
         </div>
       </div>
 
-      {/* Top-right: exit button */}
-      <button
-        onClick={onLeave}
-        style={{ position: 'absolute', top: 10, right: 10, zIndex: 50, background: '#e2b46c', border: 'none', padding: '6px 14px', fontWeight: 'bold', cursor: 'pointer', fontFamily: 'Courier New', whiteSpace: 'nowrap' }}
-      >
-        ← Exit
-      </button>
+      {/* Top-right: exit + edit toggle */}
+      <div style={{ position: 'absolute', top: 10, right: 10, zIndex: 50, display: 'flex', gap: 6 }}>
+        <button onClick={() => setEditMode(!editModeRef.current)}
+          style={{ background: editModeRef.current ? '#fbbf24' : 'rgba(15,23,42,0.8)', border: `2px solid ${editModeRef.current ? '#fbbf24' : '#475569'}`, color: editModeRef.current ? '#000' : '#94a3b8', padding: '5px 10px', fontWeight: 'bold', cursor: 'pointer', fontFamily: 'Courier New', fontSize: 11, whiteSpace: 'nowrap' }}>
+          🪑 {editModeRef.current ? 'Done' : 'Edit'}
+        </button>
+        <button onClick={onLeave}
+          style={{ background: '#e2b46c', border: 'none', padding: '6px 14px', fontWeight: 'bold', cursor: 'pointer', fontFamily: 'Courier New', whiteSpace: 'nowrap' }}>
+          ← Exit
+        </button>
+      </div>
+
+      {/* Furniture palette — visible in edit mode */}
+      {editModeRef.current && (
+        <div style={{ position: 'absolute', top: 50, right: 10, zIndex: 50, background: 'rgba(15,23,42,0.95)', border: '2px solid #334155', borderRadius: 8, padding: 8, display: 'flex', flexDirection: 'column', gap: 4, maxHeight: '70vh', overflowY: 'auto' }}>
+          <div style={{ color: '#fbbf24', fontFamily: 'Courier New', fontSize: 10, textTransform: 'uppercase', letterSpacing: 2, marginBottom: 4 }}>Place item</div>
+          {FURNITURE.map(f => (
+            <button key={f.type} onClick={() => setSelectedFurniture(f.type)}
+              style={{ background: selectedFurnitureRef.current === f.type ? '#1e3a5f' : 'transparent', border: `1px solid ${selectedFurnitureRef.current === f.type ? '#3b82f6' : '#334155'}`, color: '#e2e8f0', padding: '5px 10px', cursor: 'pointer', fontFamily: 'Courier New', fontSize: 11, textAlign: 'left', borderRadius: 4, whiteSpace: 'nowrap' }}>
+              {f.emoji} {f.label}
+            </button>
+          ))}
+          <div style={{ marginTop: 4, color: '#475569', fontFamily: 'Courier New', fontSize: 9, borderTop: '1px solid #1e293b', paddingTop: 4 }}>
+            Click canvas to place<br/>Right-click to remove
+          </div>
+        </div>
+      )}
 
       {/* Virtual D-pad — bottom-left, visible on touch devices */}
       <div style={{ position: 'absolute', bottom: 24, left: 24, zIndex: 50, display: 'grid', gridTemplateColumns: '44px 44px 44px', gridTemplateRows: '44px 44px 44px', gap: 4, userSelect: 'none', touchAction: 'none' }}>

@@ -21,6 +21,8 @@ const io = new Server(server, {
 
 // Store room state in memory: { roomName: { socketId: { id, name, x, y } } }
 const rooms = {};
+// Store room decorations: { roomId: [ { id, type, x, y, placedBy } ] }
+const decorations = {};
 
 // 2. Real-Time Socket Event Handlers
 io.on('connection', (socket) => {
@@ -50,14 +52,10 @@ io.on('connection', (socket) => {
     rooms[roomId][socket.id] = playerState;
     console.log(`👤 ${playerState.name} joined room: ${roomId}`);
 
-    // Send current players list to newly connected player
     socket.emit('room_state', rooms[roomId]);
-
-    // Broadcast new player join event to everyone else in the room
-    socket.to(roomId).emit('player_joined', {
-      socketId: socket.id,
-      player: playerState,
-    });
+    // Send current decorations to the joining player
+    socket.emit('room_decorations', decorations[roomId] || []);
+    socket.to(roomId).emit('player_joined', { socketId: socket.id, player: playerState });
   });
 
   // PLAYER MOVEMENT
@@ -76,7 +74,24 @@ io.on('connection', (socket) => {
     }
   });
 
+  // PLACE DECORATION
+  socket.on('place_decoration', ({ roomId, item }) => {
+    if (!decorations[roomId]) decorations[roomId] = [];
+    const decoration = { ...item, id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, placedBy: socket.id };
+    decorations[roomId].push(decoration);
+    io.in(roomId).emit('decoration_placed', decoration);
+  });
+
+  // REMOVE DECORATION
+  socket.on('remove_decoration', ({ roomId, id }) => {
+    if (decorations[roomId]) {
+      decorations[roomId] = decorations[roomId].filter(d => d.id !== id);
+      io.in(roomId).emit('decoration_removed', { id });
+    }
+  });
+
   // CHAT MESSAGE (Speech Bubbles)
+  socket.on('send_message', ({ roomId, message }) => {
   socket.on('send_message', ({ roomId, message }) => {
     const player = rooms[roomId]?.[socket.id];
 
