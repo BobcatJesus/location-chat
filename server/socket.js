@@ -2,24 +2,49 @@
 import express from 'express';
 import http from 'http';
 import { Server } from 'socket.io';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import fs from 'fs';
+import pg from 'pg';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+const { Pool } = pg;
 
-// Persist decorations to file so they survive server restarts
-const DATA_FILE = process.env.DATA_PATH
-  ? path.join(process.env.DATA_PATH, 'decorations.json')
-  : path.join(__dirname, 'decorations.json');
+// Postgres for persistent decorations; falls back to in-memory if no DATABASE_URL
+const pool = process.env.DATABASE_URL
+  ? new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } })
+  : null;
 
-function loadDecorations() {
-  try { return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')); } catch { return {}; }
+async function initDb() {
+  if (!pool) return;
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS decorations (
+      id TEXT PRIMARY KEY,
+      room_id TEXT NOT NULL,
+      placed_by TEXT NOT NULL,
+      data JSONB NOT NULL
+    )
+  `);
+  console.log('✅ Postgres decorations table ready');
 }
 
-function saveDecorations(data) {
-  try { fs.writeFileSync(DATA_FILE, JSON.stringify(data), 'utf8'); } catch (e) { console.warn('Could not save decorations:', e.message); }
+async function loadDecorations() {
+  if (!pool) return {};
+  const { rows } = await pool.query('SELECT room_id, data FROM decorations');
+  return rows.reduce((acc, row) => {
+    if (!acc[row.room_id]) acc[row.room_id] = [];
+    acc[row.room_id].push(row.data);
+    return acc;
+  }, {});
+}
+
+async function saveDecoration(roomId, decoration) {
+  if (!pool) return;
+  await pool.query(
+    'INSERT INTO decorations (id, room_id, placed_by, data) VALUES ($1, $2, $3, $4) ON CONFLICT (id) DO UPDATE SET data = $4',
+    [decoration.id, roomId, decoration.placedBy, decoration]
+  );
+}
+
+async function deleteDecoration(id) {
+  if (!pool) return;
+  await pool.query('DELETE FROM decorations WHERE id = $1', [id]);
 }
 
 const app = express();
@@ -35,9 +60,7 @@ const io = new Server(server, {
 
 // Store room state in memory: { roomName: { socketId: { id, name, x, y } } }
 const rooms = {};
-// Store room decorations — loaded from file on startup
-const decorations = loadDecorations();
-console.log(`🪑 Loaded decorations for ${Object.keys(decorations).length} room(s)`);
+const decorations = {}; // populated on startup from Postgres
 
 // Rate limit: { userId: { count: N, windowStart: timestamp } }
 const CHANGE_LIMIT = 10;
@@ -91,7 +114,6 @@ io.on('connection', (socket) => {
     console.log(`👤 ${playerState.name} joined room: ${roomId}`);
 
     socket.emit('room_state', rooms[roomId]);
-    // Send current decorations to the joining player
     socket.emit('room_decorations', decorations[roomId] || []);
     socket.to(roomId).emit('player_joined', { socketId: socket.id, player: playerState });
   });
@@ -113,7 +135,7 @@ io.on('connection', (socket) => {
   });
 
   // PLACE DECORATION
-  socket.on('place_decoration', ({ roomId, item }) => {
+  socket.on('place_decoration', async ({ roomId, item }) => {
     const userId = socketUserMap[socket.id] || socket.id;
     const rate = checkRateLimit(userId);
     if (!rate.allowed) {
@@ -123,17 +145,16 @@ io.on('connection', (socket) => {
     if (!decorations[roomId]) decorations[roomId] = [];
     const decoration = { ...item, id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, placedBy: userId };
     decorations[roomId].push(decoration);
-    saveDecorations(decorations);
+    await saveDecoration(roomId, decoration);
     io.in(roomId).emit('decoration_placed', decoration);
     socket.emit('decoration_quota', { remaining: rate.remaining });
   });
 
   // REMOVE DECORATION
-  socket.on('remove_decoration', ({ roomId, id }) => {
+  socket.on('remove_decoration', async ({ roomId, id }) => {
     const userId = socketUserMap[socket.id] || socket.id;
     const decoration = decorations[roomId]?.find(d => d.id === id);
     if (!decoration) return;
-    // Only owner can remove their own decorations
     if (decoration.placedBy !== userId) {
       socket.emit('decoration_error', { message: 'You can only remove items you placed.' });
       return;
@@ -144,7 +165,7 @@ io.on('connection', (socket) => {
       return;
     }
     decorations[roomId] = decorations[roomId].filter(d => d.id !== id);
-    saveDecorations(decorations);
+    await deleteDecoration(id);
     io.in(roomId).emit('decoration_removed', { id });
     socket.emit('decoration_quota', { remaining: rate.remaining });
   });
@@ -179,18 +200,27 @@ io.on('connection', (socket) => {
 });
 
 // 3. Serve Compiled React Static Production Files
+import path from 'path';
+import { fileURLToPath } from 'url';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 app.use(express.static(path.join(__dirname, '../dist')));
-
-// Fallback to React index.html for Single Page App routing
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '../dist/index.html'));
 });
 
 // 4. Start Server
 const PORT = process.env.PORT || 4000;
-server.listen(PORT, () => {
-  console.log(`\n===========================================`);
-  console.log(`🚀 2D Spatial MVP Server is Live!`);
-  console.log(`📡 Port: ${PORT}`);
-  console.log(`===========================================\n`);
-});
+async function start() {
+  await initDb();
+  const loaded = await loadDecorations();
+  Object.assign(decorations, loaded);
+  console.log(`ᾩ1 Loaded decorations for ${Object.keys(decorations).length} room(s)`);
+  server.listen(PORT, () => {
+    console.log(`\n===========================================`);
+    console.log(`🚀 2D Spatial MVP Server is Live!`);
+    console.log(`📡 Port: ${PORT}`);
+    console.log(`===========================================\n`);
+  });
+}
+start();
