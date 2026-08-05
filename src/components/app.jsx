@@ -232,6 +232,11 @@ function App() {
     setActiveScene('room');
   };
 
+  const _THREE_DAYS = 3 * 24 * 60 * 60 * 1000;
+  const _lastLocTs = parseInt(localStorage.getItem('sidequest_loc_ts') || '0', 10);
+  const locCooldown = Date.now() - _lastLocTs < _THREE_DAYS;
+  const locCooldownHours = Math.ceil((_lastLocTs + _THREE_DAYS - Date.now()) / 3600000);
+
   return (
     <div style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden', background: 'linear-gradient(180deg, #0f172a 0%, #1e293b 100%)', color: '#f8fafc', fontFamily: 'monospace' }}>
 
@@ -327,27 +332,19 @@ function App() {
               ))}
             </div>
             {/* Public toggle */}
-            {(() => {
-              const THREE_DAYS = 3 * 24 * 60 * 60 * 1000;
-              const lastTs = parseInt(localStorage.getItem('sidequest_loc_ts') || '0', 10);
-              const onCooldown = Date.now() - lastTs < THREE_DAYS;
-              const resetIn = Math.ceil((lastTs + THREE_DAYS - Date.now()) / 3600000);
-              return (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, padding: '10px 12px', background: '#1e293b', border: `2px solid ${newRoomPublic && !onCooldown ? '#16a34a' : '#334155'}`, cursor: onCooldown ? 'not-allowed' : 'pointer', opacity: onCooldown && !newRoomPublic ? 0.5 : 1 }} onClick={() => !onCooldown && setNewRoomPublic(p => !p)}>
-                  <div style={{ width: 36, height: 20, background: newRoomPublic && !onCooldown ? '#16a34a' : '#475569', borderRadius: 10, position: 'relative', transition: 'background 0.2s' }}>
-                    <div style={{ position: 'absolute', top: 2, left: newRoomPublic && !onCooldown ? 18 : 2, width: 16, height: 16, background: '#fff', borderRadius: '50%', transition: 'left 0.2s' }} />
-                  </div>
-                  <div>
-                    <div style={{ color: newRoomPublic && !onCooldown ? '#4ade80' : '#94a3b8', fontSize: 12, fontWeight: 'bold' }}>
-                      {onCooldown ? `⏳ Cooldown — ${resetIn}h remaining` : newRoomPublic ? '🌍 Community — visible to everyone' : '🔒 Private — only you'}
-                    </div>
-                    <div style={{ color: '#475569', fontSize: 10 }}>
-                      {onCooldown ? '1 community location per 3 days' : newRoomPublic ? 'Appears on all users\' maps' : 'Share via invite link to add others'}
-                    </div>
-                  </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, padding: '10px 12px', background: '#1e293b', border: `2px solid ${newRoomPublic && !locCooldown ? '#16a34a' : '#334155'}`, cursor: locCooldown ? 'not-allowed' : 'pointer', opacity: locCooldown && !newRoomPublic ? 0.5 : 1 }} onClick={() => !locCooldown && setNewRoomPublic(p => !p)}>
+              <div style={{ width: 36, height: 20, background: newRoomPublic && !locCooldown ? '#16a34a' : '#475569', borderRadius: 10, position: 'relative', transition: 'background 0.2s' }}>
+                <div style={{ position: 'absolute', top: 2, left: newRoomPublic && !locCooldown ? 18 : 2, width: 16, height: 16, background: '#fff', borderRadius: '50%', transition: 'left 0.2s' }} />
+              </div>
+              <div>
+                <div style={{ color: newRoomPublic && !locCooldown ? '#4ade80' : '#94a3b8', fontSize: 12, fontWeight: 'bold' }}>
+                  {locCooldown ? `⏳ Cooldown — ${locCooldownHours}h remaining` : newRoomPublic ? '🌍 Community — visible to everyone' : '🔒 Private — only you'}
                 </div>
-              );
-            })()}
+                <div style={{ color: '#475569', fontSize: 10 }}>
+                  {locCooldown ? '1 community location per 3 days' : newRoomPublic ? "Appears on all users' maps" : 'Share via invite link to add others'}
+                </div>
+              </div>
+            </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <button onClick={confirmCreateRoom} style={{ flex: 1, padding: '10px 0', background: '#16a34a', border: '2px solid #000', boxShadow: '2px 2px 0 #000', color: '#fff', fontWeight: 'bold', fontFamily: 'Courier New, monospace', fontSize: 12, cursor: 'pointer', textTransform: 'uppercase' }}>
                 Create
