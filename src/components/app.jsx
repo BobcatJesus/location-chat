@@ -118,6 +118,7 @@ function App() {
     ...getAllRooms().map((room) => ({
       id: room.id,
       name: room.name,
+      kind: room.kind,
       icon: room.kind === 'user-created' ? '🔥' : { 'starbucks-spring': '☕', 'agora-houston': '🍷', 'downtown-hub': '🏙️', 'forest-gate': '🌲', 'sunset-temple': '⛩️' }[room.id] || '🏛️',
       blurb: room.kind === 'user-created'
         ? `Community space · ${room.contributors.join(', ')}`
