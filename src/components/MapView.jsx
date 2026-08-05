@@ -111,12 +111,20 @@ export default function MapView({ location, rooms, onEnterRoom }) {
     iconSize: [80, 55], iconAnchor: [40, 55],
   });
 
-  // Re-evaluate every pin's visual against current player position (icon + circle only)
+  // Re-evaluate every pin's visual against current player position — CSS only, no DOM replacement
   const updateAllPins = (playerLat, playerLng) => {
     allPinsRef.current.forEach(pin => {
       const dist = getDistanceMeters(playerLat, playerLng, pin.lat, pin.lng);
       const inRange = dist <= pin.radiusMeters;
-      pin.marker.setIcon(makeIcon(pin.emoji, pin.color, pin.name, inRange));
+      const el = pin.marker.getElement();
+      if (el) {
+        el.style.filter = inRange ? 'none' : 'grayscale(80%) opacity(0.4)';
+        el.style.cursor = inRange ? 'pointer' : 'default';
+        const dot = el.querySelector('div > div:first-child');
+        if (dot) dot.style.boxShadow = inRange ? `0 0 10px ${pin.color}cc` : `0 0 3px ${pin.color}33`;
+        const label = el.querySelector('div > div:nth-child(2)');
+        if (label) label.textContent = pin.name + (inRange ? ' ✦' : '');
+      }
       pin.circle.setStyle({
         fillOpacity: inRange ? 0.15 : 0.05,
         weight: inRange ? 2 : 1,
