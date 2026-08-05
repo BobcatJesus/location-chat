@@ -246,6 +246,8 @@ export default function MapView({ location, rooms, onEnterRoom }) {
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const [nearbyRoom, setNearbyRoom] = useState(null); // name of room you're currently inside
+
   // Update player position AND re-evaluate all pin states when GPS moves
   // Also re-fetch POIs if moved more than 500m from last fetch location
   useEffect(() => {
@@ -254,6 +256,12 @@ export default function MapView({ location, rooms, onEnterRoom }) {
     playerMarkerRef.current?.setLatLng([lat, lng]);
     leafletRef.current.setView([lat, lng], leafletRef.current.getZoom(), { animate: true, duration: 1 });
     updateAllPins(lat, lng);
+
+    // Check if inside any named room
+    const inside = allPinsRef.current.find(pin =>
+      !pin.isOSM && getDistanceMeters(lat, lng, pin.lat, pin.lng) <= pin.radiusMeters
+    );
+    setNearbyRoom(inside?.name || null);
 
     // Re-fetch if moved >500m from last fetch position
     if (lastFetchPosRef.current && poiLoadedRef.current) {
@@ -265,6 +273,13 @@ export default function MapView({ location, rooms, onEnterRoom }) {
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
+
+      {/* "You're here" banner when inside a named room's radius */}
+      {nearbyRoom && (
+        <div style={{ position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 1000, background: '#fbbf24', color: '#000', fontFamily: 'Courier New', fontSize: 13, fontWeight: 'bold', padding: '6px 16px', borderRadius: 6, boxShadow: '0 2px 12px rgba(251,191,36,0.6)', whiteSpace: 'nowrap' }}>
+          📍 You're at {nearbyRoom} — tap the pin to enter
+        </div>
+      )}
       {/* Legend */}
       <div style={{ position: 'absolute', bottom: 12, left: 12, zIndex: 1000, background: 'rgba(0,0,0,0.75)', border: '1px solid #334155', borderRadius: 8, padding: '8px 12px', fontFamily: 'Courier New', fontSize: 11, color: '#94a3b8' }}>
         <div style={{ color: '#fbbf24', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 2 }}>Nearby places</div>

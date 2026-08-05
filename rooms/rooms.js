@@ -17,7 +17,7 @@ export const ROOMS = [
     name: 'Agora',
     lat: 29.7429,
     lng: -95.4026,
-    radiusMeters: 40,
+    radiusMeters: 80,
     kind: 'gps',
     contributors: ['system']
   },
