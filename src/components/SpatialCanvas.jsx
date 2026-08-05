@@ -76,6 +76,7 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
   const editModeRef = useRef(false);
   const selectedFurnitureRef = useRef(FURNITURE[0].type);
   const [quotaRemaining, setQuotaRemaining] = useState(10);
+  const [quotaIsCreator, setQuotaIsCreator] = useState(false);
   const [decorError, setDecorError] = useState(null);
 
   const setEditMode = (val) => { editModeRef.current = val; setEditModeState(val); };
@@ -162,6 +163,7 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
           name: displayName,
           photo: profile?.profile?.photo || null,
           skinId: profile?.profile?.skinId || 'blue',
+          isCreator: room?.ownerId && (room.ownerId === (profile?.profile?.email || profile?.mode || 'guest')),
         },
       });    });
 
@@ -191,7 +193,10 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
       if (obj) { obj.destroy(); decorationObjectsRef.current.delete(id); }
     });
 
-    socket.on('decoration_quota', ({ remaining }) => setQuotaRemaining(remaining));
+    socket.on('decoration_quota', ({ remaining, isCreator }) => {
+      setQuotaRemaining(remaining);
+      if (isCreator !== undefined) setQuotaIsCreator(isCreator);
+    });
     socket.on('decoration_error', ({ message }) => {
       setDecorError(message);
       setTimeout(() => setDecorError(null), 4000);
@@ -791,7 +796,8 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
           ))}
           <div style={{ marginTop: 4, color: quotaRemaining > 3 ? '#475569' : '#f97316', fontFamily: 'Courier New', fontSize: 9, borderTop: '1px solid #1e293b', paddingTop: 4 }}>
             Click canvas to place<br/>Right-click to remove yours<br/>
-            <span style={{ color: quotaRemaining > 3 ? '#4ade80' : '#ef4444' }}>{quotaRemaining} changes left (3-day limit)</span>
+            <span style={{ color: quotaRemaining > 3 ? '#4ade80' : '#ef4444' }}>{quotaRemaining} changes left</span>
+            <span style={{ color: '#475569' }}> ({quotaIsCreator ? '🏠 15 creator slots' : '10 / 3 days'})</span>
           </div>
         </div>
       )}

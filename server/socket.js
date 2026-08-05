@@ -78,9 +78,11 @@ const decorations = {}; // populated on startup from Postgres
 
 // Rate limit: { userId: { count: N, windowStart: timestamp } }
 const CHANGE_LIMIT = 10;
+const CREATOR_LIMIT = 15;
 const WINDOW_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
 const changeRates = {};
-// Map socketId → userId for decoration ownership
+const creatorRates = {}; // keyed by `${userId}:${roomId}`
+const socketCreatorRooms = {}; // socketId → Set<roomId>
 const socketUserMap = {};
 
 function checkRateLimit(userId) {
@@ -96,6 +98,22 @@ function checkRateLimit(userId) {
   }
   r.count += 1;
   return { allowed: true, remaining: CHANGE_LIMIT - r.count };
+}
+
+function checkCreatorRate(userId, roomId) {
+  const key = `${userId}:${roomId}`;
+  const now = Date.now();
+  const r = creatorRates[key];
+  if (!r || now - r.windowStart > WINDOW_MS) {
+    creatorRates[key] = { count: 1, windowStart: now };
+    return { allowed: true, remaining: CREATOR_LIMIT - 1, isCreator: true };
+  }
+  if (r.count >= CREATOR_LIMIT) {
+    const resetIn = Math.ceil((r.windowStart + WINDOW_MS - now) / 3600000);
+    return { allowed: false, remaining: 0, resetIn, isCreator: true };
+  }
+  r.count += 1;
+  return { allowed: true, remaining: CREATOR_LIMIT - r.count, isCreator: true };
 }
 
 function broadcastRoomCounts() {
@@ -133,6 +151,10 @@ io.on('connection', (socket) => {
 
     rooms[roomId][socket.id] = playerState;
     socketUserMap[socket.id] = user?.id || socket.id;
+    if (user?.isCreator) {
+      if (!socketCreatorRooms[socket.id]) socketCreatorRooms[socket.id] = new Set();
+      socketCreatorRooms[socket.id].add(roomId);
+    }
     console.log(`👤 ${playerState.name} joined room: ${roomId}`);
 
     socket.emit('room_state', rooms[roomId]);
@@ -160,7 +182,8 @@ io.on('connection', (socket) => {
   // PLACE DECORATION
   socket.on('place_decoration', async ({ roomId, item }) => {
     const userId = socketUserMap[socket.id] || socket.id;
-    const rate = checkRateLimit(userId);
+    const isCreator = socketCreatorRooms[socket.id]?.has(roomId);
+    const rate = isCreator ? checkCreatorRate(userId, roomId) : checkRateLimit(userId);
     if (!rate.allowed) {
       socket.emit('decoration_error', { message: `Limit reached. Resets in ~${rate.resetIn}h.` });
       return;
@@ -170,7 +193,7 @@ io.on('connection', (socket) => {
     decorations[roomId].push(decoration);
     await saveDecoration(roomId, decoration);
     io.in(roomId).emit('decoration_placed', decoration);
-    socket.emit('decoration_quota', { remaining: rate.remaining });
+    socket.emit('decoration_quota', { remaining: rate.remaining, isCreator: rate.isCreator || false });
   });
 
   // REMOVE DECORATION
@@ -182,7 +205,8 @@ io.on('connection', (socket) => {
       socket.emit('decoration_error', { message: 'You can only remove items you placed.' });
       return;
     }
-    const rate = checkRateLimit(userId);
+    const isCreator = socketCreatorRooms[socket.id]?.has(roomId);
+    const rate = isCreator ? checkCreatorRate(userId, roomId) : checkRateLimit(userId);
     if (!rate.allowed) {
       socket.emit('decoration_error', { message: `Limit reached. Resets in ~${rate.resetIn}h.` });
       return;
@@ -190,7 +214,7 @@ io.on('connection', (socket) => {
     decorations[roomId] = decorations[roomId].filter(d => d.id !== id);
     await deleteDecoration(id);
     io.in(roomId).emit('decoration_removed', { id });
-    socket.emit('decoration_quota', { remaining: rate.remaining });
+    socket.emit('decoration_quota', { remaining: rate.remaining, isCreator: rate.isCreator || false });
   });
 
   // CHAT MESSAGE (Speech Bubbles)
@@ -213,6 +237,7 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     console.log(`❌ Client disconnected: ${socket.id}`);
     delete socketUserMap[socket.id];
+    delete socketCreatorRooms[socket.id];
     Object.keys(rooms).forEach((roomId) => {
       if (rooms[roomId][socket.id]) {
         delete rooms[roomId][socket.id];
