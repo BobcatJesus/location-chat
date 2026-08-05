@@ -212,7 +212,7 @@ function App() {
   const presentDistance = roomMatch ? roomMatch.distance : null;
 
   const handleEnterRoom = (roomId, poiMeta = null) => {
-    // GPS rooms are blocked if outside radius
+    // GPS gating for named GPS rooms (no poiMeta)
     if (!poiMeta) {
       const allRooms = getAllRooms();
       const target = allRooms.find(r => r.id === roomId);
@@ -223,6 +223,15 @@ function App() {
           setTimeout(() => setGpsToast(null), 3500);
           return;
         }
+      }
+    }
+    // GPS gating for community/user rooms passed via poiMeta with a radius
+    if (poiMeta?.radius && poiMeta?.lat && location) {
+      const dist = getDistanceMeters(location.latitude, location.longitude, poiMeta.lat, poiMeta.lng);
+      if (dist > poiMeta.radius) {
+        setGpsToast(`You need to be within ${poiMeta.radius}m of ${poiMeta.name || 'this location'} to enter. You are ${Math.round(dist)}m away.`);
+        setTimeout(() => setGpsToast(null), 3500);
+        return;
       }
     }
     if (poiMeta) setOsmRoom(poiMeta);

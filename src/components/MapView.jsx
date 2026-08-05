@@ -207,7 +207,7 @@ export default function MapView({ location, rooms, onEnterRoom }) {
       addPin(leafletRef.current, loc.lat, loc.lng, loc.name, loc.emoji || '📍', loc.color || '#f97316', loc.radius || 50,
         async () => {
           const footprint = await fetchBuildingFootprint(loc.lat, loc.lng);
-          onEnterRoomRef.current(loc.id, footprint ? { ...loc, footprint } : null);
+          onEnterRoomRef.current(loc.id, { ...loc, ...(footprint ? { footprint } : {}) });
         }, false, loc.id);
       const pos = playerMarkerRef.current?.getLatLng();
       if (pos) updateAllPins(pos.lat, pos.lng);
@@ -225,7 +225,7 @@ export default function MapView({ location, rooms, onEnterRoom }) {
           addPin(leafletRef.current, loc.lat, loc.lng, loc.name, loc.emoji || '📍', loc.color || '#f97316', loc.radius || 50,
             async () => {
               const footprint = await fetchBuildingFootprint(loc.lat, loc.lng);
-              onEnterRoomRef.current(loc.id, footprint ? { ...loc, footprint } : null);
+              onEnterRoomRef.current(loc.id, { ...loc, ...(footprint ? { footprint } : {}) });
             }, false, loc.id);
         });
         const pos = playerMarkerRef.current?.getLatLng();
