@@ -814,6 +814,8 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
             });
             if (closestId) socketRef.current?.emit('remove_decoration', { roomId: room?.id || 'default-room', id: closestId });
           }}
+        />
+      )}
 
       {/* Virtual D-pad — bottom-left, visible on touch devices */}
       <div style={{ position: 'absolute', bottom: 24, left: 24, zIndex: 50, display: 'grid', gridTemplateColumns: '44px 44px 44px', gridTemplateRows: '44px 44px 44px', gap: 4, userSelect: 'none', touchAction: 'none' }}>
