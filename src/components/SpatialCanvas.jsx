@@ -715,41 +715,9 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
     <div style={{ position: 'relative', width: '100%', height: '100%', background: '#111', overflow: 'hidden' }}>
 
       {/* Game canvas — fills the container */}
-      <div id="phaser-container" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', outline: 'none', cursor: editModeRef.current ? 'crosshair' : 'default' }}
-        onClick={(e) => {
-          if (editModeRef.current) {
-            // Convert click coords to canvas pixel coords
-            const rect = e.currentTarget.getBoundingClientRect();
-            const canvas = e.currentTarget.querySelector('canvas');
-            const scaleX = canvas ? canvas.width / rect.width : 1;
-            const scaleY = canvas ? canvas.height / rect.height : 1;
-            const x = Math.round((e.clientX - rect.left) * scaleX);
-            const y = Math.round((e.clientY - rect.top) * scaleY);
-            socketRef.current?.emit('place_decoration', {
-              roomId: room?.id || 'default-room',
-              item: { type: selectedFurnitureRef.current, x, y },
-            });
-            return;
-          }
-          e.currentTarget.querySelector('canvas')?.focus();
-        }}
-        onContextMenu={(e) => {
-          e.preventDefault();
-          if (!editModeRef.current) return;
-          // Right-click: find nearest decoration and remove it
-          const rect = e.currentTarget.getBoundingClientRect();
-          const canvas = e.currentTarget.querySelector('canvas');
-          const scaleX = canvas ? canvas.width / rect.width : 1;
-          const scaleY = canvas ? canvas.height / rect.height : 1;
-          const cx = (e.clientX - rect.left) * scaleX;
-          const cy = (e.clientY - rect.top) * scaleY;
-          let closestId = null, minDist = 40;
-          decorationObjectsRef.current.forEach((obj, id) => {
-            const d = Math.hypot(obj.x - cx, obj.y - cy);
-            if (d < minDist) { minDist = d; closestId = id; }
-          });
-          if (closestId) socketRef.current?.emit('remove_decoration', { roomId: room?.id || 'default-room', id: closestId });
-        }}
+      <div id="phaser-container" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', outline: 'none' }}
+        onClick={(e) => { if (!editModeRef.current) e.currentTarget.querySelector('canvas')?.focus(); }}
+        onContextMenu={(e) => e.preventDefault()}
         ref={(el) => {
           if (el) {
             const canvas = el.querySelector('canvas');
@@ -794,6 +762,44 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
             Click canvas to place<br/>Right-click to remove
           </div>
         </div>
+      )}
+
+      {/* Edit mode click-capture overlay — sits above canvas, below palette/buttons */}
+      {editModeRef.current && (
+        <div
+          style={{ position: 'absolute', inset: 0, zIndex: 10, cursor: 'crosshair' }}
+          onClick={(e) => {
+            const container = document.getElementById('phaser-container');
+            if (!container) return;
+            const rect = container.getBoundingClientRect();
+            const canvas = container.querySelector('canvas');
+            const scaleX = canvas ? canvas.width / rect.width : 1;
+            const scaleY = canvas ? canvas.height / rect.height : 1;
+            const x = Math.round((e.clientX - rect.left) * scaleX);
+            const y = Math.round((e.clientY - rect.top) * scaleY);
+            socketRef.current?.emit('place_decoration', {
+              roomId: room?.id || 'default-room',
+              item: { type: selectedFurnitureRef.current, x, y },
+            });
+          }}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            const container = document.getElementById('phaser-container');
+            if (!container) return;
+            const rect = container.getBoundingClientRect();
+            const canvas = container.querySelector('canvas');
+            const scaleX = canvas ? canvas.width / rect.width : 1;
+            const scaleY = canvas ? canvas.height / rect.height : 1;
+            const cx = (e.clientX - rect.left) * scaleX;
+            const cy = (e.clientY - rect.top) * scaleY;
+            let closestId = null, minDist = 40;
+            decorationObjectsRef.current.forEach((obj, id) => {
+              const d = Math.hypot(obj.x - cx, obj.y - cy);
+              if (d < minDist) { minDist = d; closestId = id; }
+            });
+            if (closestId) socketRef.current?.emit('remove_decoration', { roomId: room?.id || 'default-room', id: closestId });
+          }}
+        />
       )}
 
       {/* Virtual D-pad — bottom-left, visible on touch devices */}
