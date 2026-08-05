@@ -49,13 +49,35 @@ async function fetchNearbyPOIs(lat, lng, radiusMeters = 500) {
         lng: el.lon,
         radiusMeters: POI_RADIUS,
         kind: 'osm',
-        amenity: typeInfo.value,  // used by SpatialCanvas to pick the environment theme
+        amenity: typeInfo.value,
         emoji: typeInfo.emoji,
         color: typeInfo.color,
       };
     });
   } catch {
     return [];
+  }
+}
+
+// Fetch the building polygon footprint nearest to a given point
+async function fetchBuildingFootprint(lat, lng) {
+  const query = `[out:json][timeout:8];way["building"](around:60,${lat},${lng});out geom;`;
+  const url = `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`;
+  try {
+    const res = await fetch(url);
+    const data = await res.json();
+    const ways = (data.elements || []).filter(el => el.geometry?.length > 3);
+    if (!ways.length) return null;
+    // Pick the closest way by centroid
+    const closest = ways.reduce((best, w) => {
+      const clat = w.geometry.reduce((s, p) => s + p.lat, 0) / w.geometry.length;
+      const clng = w.geometry.reduce((s, p) => s + p.lon, 0) / w.geometry.length;
+      const d = Math.abs(clat - lat) + Math.abs(clng - lng);
+      return (!best || d < best.d) ? { w, d } : best;
+    }, null)?.w;
+    return closest?.geometry?.map(p => ({ lat: p.lat, lng: p.lon })) || null;
+  } catch {
+    return null;
   }
 }
 
@@ -161,7 +183,10 @@ export default function MapView({ location, rooms, onEnterRoom }) {
       if (!room.lat || !room.lng) return;
       const style = ROOM_STYLES[room.id] || { color: '#a78bfa', emoji: '📍' };
       addPin(map, room.lat, room.lng, room.name, style.emoji, style.color, room.radiusMeters,
-        () => onEnterRoomRef.current(room.id));
+        async () => {
+          const footprint = await fetchBuildingFootprint(room.lat, room.lng);
+          onEnterRoomRef.current(room.id, footprint ? { ...room, footprint } : null);
+        });
     });
 
     // Fetch nearby POIs
@@ -173,7 +198,10 @@ export default function MapView({ location, rooms, onEnterRoom }) {
       );
       filtered.forEach(poi => {
         addPin(leafletRef.current, poi.lat, poi.lng, poi.name, poi.emoji, poi.color, poi.radiusMeters,
-          () => onEnterRoomRef.current(poi.id, poi));
+          async () => {
+            const footprint = await fetchBuildingFootprint(poi.lat, poi.lng);
+            onEnterRoomRef.current(poi.id, { ...poi, footprint });
+          });
       });
       setPoiCount(filtered.length);
       setPoiStatus(filtered.length > 0 ? 'found' : 'none');

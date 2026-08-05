@@ -410,16 +410,54 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
             });
           }
 
-          // Border wall
-          const wt = 8;
-          this.add.rectangle(W / 2, wt / 2, W, wt, th.wall);
-          this.add.rectangle(W / 2, H - wt / 2, W, wt, th.wall);
-          this.add.rectangle(wt / 2, H / 2, wt, H, th.wall);
-          this.add.rectangle(W - wt / 2, H / 2, wt, H, th.wall);
+          // Border — either real building footprint or fallback rectangle
+          const footprint = room?.footprint;
+          if (footprint && footprint.length > 2) {
+            // Convert lat/lng polygon → canvas pixels
+            const lats = footprint.map(p => p.lat);
+            const lngs = footprint.map(p => p.lng);
+            const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+            const minLng = Math.min(...lngs), maxLng = Math.max(...lngs);
+            const pad = 20;
+            const toX = lng => pad + ((lng - minLng) / (maxLng - minLng || 1)) * (W - pad * 2);
+            const toY = lat => pad + (1 - (lat - minLat) / (maxLat - minLat || 1)) * (H - pad * 2);
+            const pts = footprint.map(p => ({ x: toX(p.lng), y: toY(p.lat) }));
 
-          // Inner wall highlight
-          this.add.rectangle(W / 2, wt + 1, W, 2, th.decor).setAlpha(0.4);
-          this.add.rectangle(W / 2, H - wt - 1, W, 2, th.decor).setAlpha(0.4);
+            // Filled interior
+            const fill = this.add.graphics();
+            fill.fillStyle(th.floor1, 1);
+            fill.beginPath();
+            fill.moveTo(pts[0].x, pts[0].y);
+            pts.slice(1).forEach(p => fill.lineTo(p.x, p.y));
+            fill.closePath();
+            fill.fillPath();
+
+            // Wall outline
+            const wall = this.add.graphics();
+            wall.lineStyle(6, th.wall, 1);
+            wall.beginPath();
+            wall.moveTo(pts[0].x, pts[0].y);
+            pts.slice(1).forEach(p => wall.lineTo(p.x, p.y));
+            wall.closePath();
+            wall.strokePath();
+
+            // Inner highlight
+            wall.lineStyle(2, th.decor, 0.4);
+            wall.beginPath();
+            wall.moveTo(pts[0].x, pts[0].y);
+            pts.slice(1).forEach(p => wall.lineTo(p.x, p.y));
+            wall.closePath();
+            wall.strokePath();
+          } else {
+            // Fallback rectangular walls
+            const wt = 8;
+            this.add.rectangle(W / 2, wt / 2, W, wt, th.wall);
+            this.add.rectangle(W / 2, H - wt / 2, W, wt, th.wall);
+            this.add.rectangle(wt / 2, H / 2, wt, H, th.wall);
+            this.add.rectangle(W - wt / 2, H / 2, wt, H, th.wall);
+            this.add.rectangle(W / 2, wt + 1, W, 2, th.decor).setAlpha(0.4);
+            this.add.rectangle(W / 2, H - wt - 1, W, 2, th.decor).setAlpha(0.4);
+          }
 
           // Realm name label
           this.add.text(16, 12, room?.name || 'Unknown', {
