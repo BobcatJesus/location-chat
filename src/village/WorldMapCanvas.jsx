@@ -145,8 +145,7 @@ export default function WorldMapCanvas({ location, rooms, onEnterRoom }) {
         style={{
           position: 'absolute',
           right: 12,
-          // Keep visibly above mobile browser chrome even when safe-area is 0
-          bottom: 'calc(64px + env(safe-area-inset-bottom, 0px))',
+          top: 'calc(12px + env(safe-area-inset-top, 0px))',
           zIndex: 12,
           background: '#2b2b33',
           color: '#faf0d7',
@@ -165,7 +164,7 @@ export default function WorldMapCanvas({ location, rooms, onEnterRoom }) {
         <div style={{
           position: 'absolute',
           right: 12,
-          bottom: 'calc(112px + env(safe-area-inset-bottom, 0px))',
+          top: 'calc(52px + env(safe-area-inset-top, 0px))',
           zIndex: 12,
           background: '#00000099',
           color: '#ffd2d2',
