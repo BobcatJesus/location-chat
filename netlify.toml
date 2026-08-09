@@ -1,0 +1,2 @@
+[build.environment]
+  VITE_BACKEND_URL = "https://location-chat-production.up.railway.app"
