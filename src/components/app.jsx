@@ -7,6 +7,15 @@ import { useGeofencedMap } from '../hooks/UseGeofencingApp';
 import { createUserRoom, loadUserRooms, acceptRoomInvite, findRoomByLocation, getAllRooms } from '../../rooms/rooms.js';
 import { getDistanceMeters } from '../geo';
 
+const AVATAR_PRESETS = [
+  { id: 'ranger', label: 'Ranger', skinId: 'green', hairStyle: 'side', bodyType: 'standard' },
+  { id: 'rogue', label: 'Rogue', skinId: 'slate', hairStyle: 'mohawk', bodyType: 'compact' },
+  { id: 'scholar', label: 'Scholar', skinId: 'blue', hairStyle: 'short', bodyType: 'standard' },
+  { id: 'bard', label: 'Bard', skinId: 'pink', hairStyle: 'side', bodyType: 'broad' },
+  { id: 'monk', label: 'Monk', skinId: 'orange', hairStyle: 'buzz', bodyType: 'compact' },
+  { id: 'sentinel', label: 'Sentinel', skinId: 'purple', hairStyle: 'short', bodyType: 'broad' },
+];
+
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [profile, setProfile] = useState(null);
@@ -35,6 +44,22 @@ function App() {
   const bodyPreviewWidth = previewBody === 'broad' ? 22 : previewBody === 'compact' ? 16 : 19;
   const bodyPreviewHeight = 30;
   const hairPreviewStyle = editForm.hairStyle || 'short';
+
+  const applyAvatarPreset = (preset) => {
+    setEditForm((prev) => ({
+      ...prev,
+      skinId: preset.skinId,
+      hairStyle: preset.hairStyle,
+      bodyType: preset.bodyType,
+    }));
+  };
+
+  const randomizeAvatar = () => {
+    const skin = AVATAR_SKINS[Math.floor(Math.random() * AVATAR_SKINS.length)]?.id || 'blue';
+    const hair = AVATAR_HAIR_STYLES[Math.floor(Math.random() * AVATAR_HAIR_STYLES.length)]?.id || 'short';
+    const body = AVATAR_BODY_TYPES[Math.floor(Math.random() * AVATAR_BODY_TYPES.length)]?.id || 'standard';
+    setEditForm((prev) => ({ ...prev, skinId: skin, hairStyle: hair, bodyType: body }));
+  };
 
   const openEditProfile = () => {
     setEditForm({
@@ -330,7 +355,25 @@ function App() {
 
               {/* Avatar skin */}
               <div style={{ marginBottom: 20 }}>
-                <label style={{ display: 'block', fontSize: 11, textTransform: 'uppercase', color: '#94a3b8', marginBottom: 8 }}>Avatar Style</label>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
+                  <label style={{ display: 'block', fontSize: 11, textTransform: 'uppercase', color: '#94a3b8' }}>Avatar Style</label>
+                  <button
+                    type="button"
+                    onClick={randomizeAvatar}
+                    style={{
+                      padding: '4px 8px',
+                      border: '2px solid #334155',
+                      background: 'transparent',
+                      color: '#93c5fd',
+                      fontFamily: 'Courier New, monospace',
+                      fontSize: 10,
+                      cursor: 'pointer',
+                      textTransform: 'uppercase',
+                    }}
+                  >
+                    Randomize
+                  </button>
+                </div>
                 <div style={{ display: 'flex', alignItems: 'flex-end', gap: 14, marginBottom: 12 }}>
                   <div style={{ width: 74, height: 88, border: '2px solid #334155', background: '#020617', display: 'flex', justifyContent: 'center', alignItems: 'flex-end', paddingBottom: 10 }}>
                     <div style={{ position: 'relative', width: bodyPreviewWidth, height: bodyPreviewHeight }}>
@@ -349,6 +392,32 @@ function App() {
                   <div style={{ fontSize: 10, color: '#64748b', lineHeight: 1.5 }}>
                     live preview<br />
                     updates as you pick
+                  </div>
+                </div>
+                <div style={{ marginBottom: 10 }}>
+                  <label style={{ display: 'block', fontSize: 10, textTransform: 'uppercase', color: '#64748b', marginBottom: 6 }}>Presets</label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {AVATAR_PRESETS.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => applyAvatarPreset(p)}
+                        style={{
+                          padding: '4px 7px',
+                          border: editForm.skinId === p.skinId && editForm.hairStyle === p.hairStyle && editForm.bodyType === p.bodyType
+                            ? '2px solid #fbbf24'
+                            : '2px solid #334155',
+                          background: 'transparent',
+                          color: '#cbd5e1',
+                          fontFamily: 'Courier New, monospace',
+                          fontSize: 10,
+                          cursor: 'pointer',
+                          textTransform: 'uppercase',
+                        }}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
                   </div>
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
