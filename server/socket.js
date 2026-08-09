@@ -154,6 +154,8 @@ io.on('connection', (socket) => {
       firstName: user?.firstName || '',
       photo: user?.photo || null,
       skinId: user?.skinId || 'blue',
+      hairStyle: user?.hairStyle || 'short',
+      bodyType: user?.bodyType || 'standard',
       x: 640 + spawnOffsetX,
       y: 400 + spawnOffsetY,
     };

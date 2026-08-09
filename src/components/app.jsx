@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import RetroAuthModal from './RetroAuthModal';
 import VillageCanvas from '../village/VillageCanvas.jsx';
 import WorldMapCanvas from '../village/WorldMapCanvas.jsx';
-import { AVATAR_SKINS } from './SpatialCanvas';
+import { AVATAR_SKINS, AVATAR_HAIR_STYLES, AVATAR_BODY_TYPES } from './SpatialCanvas';
 import { useGeofencedMap } from '../hooks/UseGeofencingApp';
 import { createUserRoom, loadUserRooms, acceptRoomInvite, findRoomByLocation, getAllRooms } from '../../rooms/rooms.js';
 import { getDistanceMeters } from '../geo';
@@ -14,7 +14,14 @@ function App() {
   const [activeScene, setActiveScene] = useState('world');
   const [gpsToast, setGpsToast] = useState(null);
   const [editingProfile, setEditingProfile] = useState(false);
-  const [editForm, setEditForm] = useState({ characterName: '', photo: null });
+  const [editForm, setEditForm] = useState({
+    characterName: '',
+    firstName: '',
+    photo: null,
+    skinId: 'blue',
+    hairStyle: 'short',
+    bodyType: 'standard',
+  });
   const editFileRef = React.useRef(null);
   const [osmRoom, setOsmRoom] = useState(null);
   const [creatingRoom, setCreatingRoom] = useState(false);
@@ -23,12 +30,20 @@ function App() {
   const [newRoomPublic, setNewRoomPublic] = useState(false);
   const [inviteToast, setInviteToast] = useState(null);
 
+  const selectedSkin = AVATAR_SKINS.find(s => s.id === (editForm.skinId || 'blue')) || AVATAR_SKINS[0];
+  const previewBody = AVATAR_BODY_TYPES.find(b => b.id === (editForm.bodyType || 'standard'))?.id || 'standard';
+  const bodyPreviewWidth = previewBody === 'broad' ? 22 : previewBody === 'compact' ? 16 : 19;
+  const bodyPreviewHeight = 30;
+  const hairPreviewStyle = editForm.hairStyle || 'short';
+
   const openEditProfile = () => {
     setEditForm({
       characterName: profile?.profile?.characterName || '',
       firstName: profile?.profile?.firstName || '',
       photo: profile?.profile?.photo || null,
       skinId: profile?.profile?.skinId || 'blue',
+      hairStyle: profile?.profile?.hairStyle || 'short',
+      bodyType: profile?.profile?.bodyType || 'standard',
     });
     setEditingProfile(true);
   };
@@ -58,7 +73,15 @@ function App() {
   };
 
   const saveEditProfile = () => {
-    const updated = { ...profile.profile, characterName: editForm.characterName.trim() || profile.profile.characterName, firstName: editForm.firstName.trim(), photo: editForm.photo, skinId: editForm.skinId || 'blue' };
+    const updated = {
+      ...profile.profile,
+      characterName: editForm.characterName.trim() || profile.profile.characterName,
+      firstName: editForm.firstName.trim(),
+      photo: editForm.photo,
+      skinId: editForm.skinId || 'blue',
+      hairStyle: editForm.hairStyle || 'short',
+      bodyType: editForm.bodyType || 'standard',
+    };
     localStorage.setItem('sidequest_profile', JSON.stringify(updated));
     setProfile({ ...profile, profile: updated });
     setEditingProfile(false);
@@ -308,6 +331,26 @@ function App() {
               {/* Avatar skin */}
               <div style={{ marginBottom: 20 }}>
                 <label style={{ display: 'block', fontSize: 11, textTransform: 'uppercase', color: '#94a3b8', marginBottom: 8 }}>Avatar Style</label>
+                <div style={{ display: 'flex', alignItems: 'flex-end', gap: 14, marginBottom: 12 }}>
+                  <div style={{ width: 74, height: 88, border: '2px solid #334155', background: '#020617', display: 'flex', justifyContent: 'center', alignItems: 'flex-end', paddingBottom: 10 }}>
+                    <div style={{ position: 'relative', width: bodyPreviewWidth, height: bodyPreviewHeight }}>
+                      <div style={{ position: 'absolute', left: 4, right: 4, top: 6, height: 12, background: selectedSkin?.swatch || '#3b82f6', border: '1px solid #0f172a' }} />
+                      <div style={{ position: 'absolute', left: 0, top: 7, width: 4, height: 11, background: selectedSkin?.swatch || '#3b82f6' }} />
+                      <div style={{ position: 'absolute', right: 0, top: 7, width: 4, height: 11, background: selectedSkin?.swatch || '#3b82f6' }} />
+                      <div style={{ position: 'absolute', left: Math.floor((bodyPreviewWidth / 2) - 7), top: -10, width: 14, height: 12, background: '#f5c27a', border: '1px solid #78350f' }} />
+                      {hairPreviewStyle === 'mohawk' && <div style={{ position: 'absolute', left: Math.floor((bodyPreviewWidth / 2) - 2), top: -15, width: 4, height: 7, background: '#111827' }} />}
+                      {hairPreviewStyle === 'buzz' && <div style={{ position: 'absolute', left: Math.floor((bodyPreviewWidth / 2) - 7), top: -13, width: 14, height: 3, background: '#111827' }} />}
+                      {hairPreviewStyle === 'side' && <div style={{ position: 'absolute', left: Math.floor((bodyPreviewWidth / 2) - 6), top: -14, width: 13, height: 4, background: '#111827' }} />}
+                      {hairPreviewStyle === 'short' && <div style={{ position: 'absolute', left: Math.floor((bodyPreviewWidth / 2) - 7), top: -15, width: 14, height: 5, background: '#111827' }} />}
+                      <div style={{ position: 'absolute', left: Math.floor((bodyPreviewWidth / 2) - 6), bottom: 0, width: 5, height: 10, background: '#1e293b' }} />
+                      <div style={{ position: 'absolute', left: Math.floor((bodyPreviewWidth / 2) + 1), bottom: 0, width: 5, height: 10, background: '#1e293b' }} />
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 10, color: '#64748b', lineHeight: 1.5 }}>
+                    live preview<br />
+                    updates as you pick
+                  </div>
+                </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                   {AVATAR_SKINS.map(skin => (
                     <div key={skin.id} onClick={() => setEditForm(f => ({ ...f, skinId: skin.id }))}
@@ -316,6 +359,54 @@ function App() {
                       <div style={{ fontSize: 9, color: '#94a3b8', textTransform: 'uppercase' }}>{skin.label}</div>
                     </div>
                   ))}
+                </div>
+                <div style={{ marginTop: 14 }}>
+                  <label style={{ display: 'block', fontSize: 10, textTransform: 'uppercase', color: '#64748b', marginBottom: 6 }}>Hair Style</label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {AVATAR_HAIR_STYLES.map(h => (
+                      <button
+                        key={h.id}
+                        type="button"
+                        onClick={() => setEditForm(f => ({ ...f, hairStyle: h.id }))}
+                        style={{
+                          padding: '5px 8px',
+                          border: editForm.hairStyle === h.id ? '2px solid #fbbf24' : '2px solid #334155',
+                          background: editForm.hairStyle === h.id ? '#1f2937' : 'transparent',
+                          color: editForm.hairStyle === h.id ? '#fbbf24' : '#94a3b8',
+                          fontFamily: 'Courier New, monospace',
+                          fontSize: 10,
+                          cursor: 'pointer',
+                          textTransform: 'uppercase',
+                        }}
+                      >
+                        {h.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div style={{ marginTop: 12 }}>
+                  <label style={{ display: 'block', fontSize: 10, textTransform: 'uppercase', color: '#64748b', marginBottom: 6 }}>Body Type</label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {AVATAR_BODY_TYPES.map(b => (
+                      <button
+                        key={b.id}
+                        type="button"
+                        onClick={() => setEditForm(f => ({ ...f, bodyType: b.id }))}
+                        style={{
+                          padding: '5px 8px',
+                          border: editForm.bodyType === b.id ? '2px solid #fbbf24' : '2px solid #334155',
+                          background: editForm.bodyType === b.id ? '#1f2937' : 'transparent',
+                          color: editForm.bodyType === b.id ? '#fbbf24' : '#94a3b8',
+                          fontFamily: 'Courier New, monospace',
+                          fontSize: 10,
+                          cursor: 'pointer',
+                          textTransform: 'uppercase',
+                        }}
+                      >
+                        {b.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
 

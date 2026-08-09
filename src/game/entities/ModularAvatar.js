@@ -12,39 +12,69 @@ export const SKINS = {
   slate:  { shirt: 0x475569, pants: 0x111827, hair: 0xd1d5db },
 };
 
+export const HAIR_STYLES = {
+  short: 'Short',
+  side: 'Side Part',
+  mohawk: 'Mohawk',
+  buzz: 'Buzz',
+};
+
+export const BODY_TYPES = {
+  compact: { bodyW: 12, bodyH: 10, armH: 8, legGap: 3 },
+  standard: { bodyW: 14, bodyH: 12, armH: 9, legGap: 4 },
+  broad: { bodyW: 16, bodyH: 12, armH: 10, legGap: 5 },
+};
+
 export default class ModularAvatar extends Phaser.GameObjects.Container {
-  constructor(scene, x, y, { skinId = 'blue', name = '', isLocal = false } = {}) {
+  constructor(scene, x, y, { skinId = 'blue', name = '', isLocal = false, hairStyle = 'short', bodyType = 'standard' } = {}) {
     super(scene, x, y);
 
     const skin = SKINS[skinId] || SKINS.blue;
+    const body = BODY_TYPES[bodyType] || BODY_TYPES.standard;
     const { shirt, pants, hair } = skin;
     const skin_color = 0xf5c27a;
 
     // Shadow
     this.add(scene.add.ellipse(0, 14, 20, 6, 0x000000).setAlpha(0.3));
     // Legs
-    this.add(scene.add.rectangle(-4, 10, 5, 8, pants));
-    this.add(scene.add.rectangle(4, 10, 5, 8, pants));
+    this.add(scene.add.rectangle(-body.legGap, 10, 5, 8, pants));
+    this.add(scene.add.rectangle(body.legGap, 10, 5, 8, pants));
     // Shoes
-    this.add(scene.add.rectangle(-4, 15, 6, 4, 0x222222));
-    this.add(scene.add.rectangle(4, 15, 6, 4, 0x222222));
+    this.add(scene.add.rectangle(-body.legGap, 15, 6, 4, 0x222222));
+    this.add(scene.add.rectangle(body.legGap, 15, 6, 4, 0x222222));
     // Body
-    this.add(scene.add.rectangle(0, 1, 14, 12, shirt));
+    this.add(scene.add.rectangle(0, 1, body.bodyW, body.bodyH, shirt));
     // Belt
-    this.add(scene.add.rectangle(0, 7, 14, 2, 0x8B6914));
+    this.add(scene.add.rectangle(0, 7, body.bodyW, 2, 0x8B6914));
     // Arms
-    this.add(scene.add.rectangle(-9, 2, 4, 9, shirt));
-    this.add(scene.add.rectangle(9, 2, 4, 9, shirt));
+    this.add(scene.add.rectangle(-(body.bodyW / 2 + 2), 2, 4, body.armH, shirt));
+    this.add(scene.add.rectangle(body.bodyW / 2 + 2, 2, 4, body.armH, shirt));
     // Hands
-    this.add(scene.add.circle(-9, 7, 3, skin_color));
-    this.add(scene.add.circle(9, 7, 3, skin_color));
+    this.add(scene.add.circle(-(body.bodyW / 2 + 2), 7, 3, skin_color));
+    this.add(scene.add.circle(body.bodyW / 2 + 2, 7, 3, skin_color));
     // Neck
     this.add(scene.add.rectangle(0, -5, 5, 4, skin_color));
     // Head
     this.add(scene.add.rectangle(0, -12, 14, 12, skin_color));
-    // Hair
-    this.add(scene.add.rectangle(0, -17, 14, 5, hair));
-    this.add(scene.add.rectangle(-6, -14, 3, 8, hair));
+
+    // Hair variants
+    switch (hairStyle) {
+      case 'side':
+        this.add(scene.add.rectangle(1, -17, 13, 4, hair));
+        this.add(scene.add.rectangle(5, -14, 3, 7, hair));
+        break;
+      case 'mohawk':
+        this.add(scene.add.rectangle(0, -18, 4, 7, hair));
+        this.add(scene.add.rectangle(0, -14, 2, 3, 0xffffff).setAlpha(0.15));
+        break;
+      case 'buzz':
+        this.add(scene.add.rectangle(0, -16, 14, 3, hair));
+        break;
+      default:
+        this.add(scene.add.rectangle(0, -17, 14, 5, hair));
+        this.add(scene.add.rectangle(-6, -14, 3, 8, hair));
+        break;
+    }
     // Eyes
     this.add(scene.add.rectangle(-3, -13, 3, 3, 0x333333));
     this.add(scene.add.rectangle(3, -13, 3, 3, 0x333333));

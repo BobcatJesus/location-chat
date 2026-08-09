@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import Phaser from 'phaser';
 import { io } from 'socket.io-client';
-import ModularAvatar from '../game/entities/ModularAvatar';
+import ModularAvatar, { HAIR_STYLES as MODULAR_HAIR_STYLES, BODY_TYPES as MODULAR_BODY_TYPES } from '../game/entities/ModularAvatar';
 import { FURNITURE, drawFurniture } from '../game/furniture';
 
 // Spawn a speech bubble above an avatar and auto-destroy it after 4s
@@ -58,6 +58,12 @@ export const AVATAR_SKINS = [
   { id: 'teal',   label: 'Tide',    shirt: 0x0891b2, pants: 0x0a2a3a, hair: 0x2d1a0e, swatch: '#0891b2' },
   { id: 'slate',  label: 'Shadow',  shirt: 0x475569, pants: 0x111827, hair: 0xd1d5db, swatch: '#475569' },
 ];
+
+export const AVATAR_HAIR_STYLES = Object.entries(MODULAR_HAIR_STYLES).map(([id, label]) => ({ id, label }));
+export const AVATAR_BODY_TYPES = Object.keys(MODULAR_BODY_TYPES).map((id) => ({
+  id,
+  label: id === 'compact' ? 'Compact' : id === 'broad' ? 'Broad' : 'Standard',
+}));
 
 export default function SpatialCanvas({ room, profile, onLeave }) {
   const gameRef = useRef(null);
@@ -118,6 +124,8 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
       // Remote player — built from ModularAvatar class
       const playerGroup = new ModularAvatar(scene, player.x, player.y, {
         skinId: player.skinId || 'red',
+        hairStyle: player.hairStyle || 'short',
+        bodyType: player.bodyType || 'standard',
         name: player.firstName || player.name || 'Traveler',
         isLocal: false,
       });
@@ -164,6 +172,8 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
           firstName: profile?.profile?.firstName || '',
           photo: profile?.profile?.photo || null,
           skinId: profile?.profile?.skinId || 'blue',
+          hairStyle: profile?.profile?.hairStyle || 'short',
+          bodyType: profile?.profile?.bodyType || 'standard',
           isCreator: room?.ownerId && (room.ownerId === (profile?.profile?.email || profile?.mode || 'guest')),
         },
       });    });
@@ -258,7 +268,15 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
       remotePlayersRef.current.forEach((sprite) => sprite.destroy());
       remotePlayersRef.current.clear();
     };
-  }, [room?.id, profile?.profile?.email, profile?.profile?.characterName, profile?.mode]);
+  }, [
+    room?.id,
+    profile?.profile?.email,
+    profile?.profile?.characterName,
+    profile?.profile?.skinId,
+    profile?.profile?.hairStyle,
+    profile?.profile?.bodyType,
+    profile?.mode,
+  ]);
 
   useEffect(() => {
     const config = {
@@ -581,6 +599,8 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
           // Local player — built from ModularAvatar class
           const playerGroup = new ModularAvatar(this, W / 2, H / 2, {
             skinId: profile?.profile?.skinId || 'blue',
+            hairStyle: profile?.profile?.hairStyle || 'short',
+            bodyType: profile?.profile?.bodyType || 'standard',
             name: profile?.profile?.firstName || (profile?.profile?.characterName || 'YOU').split(' ')[0],
             isLocal: true,
           });
