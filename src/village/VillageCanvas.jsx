@@ -114,12 +114,13 @@ export default function VillageCanvas({ room, profile, onLeave }) {
       <div style={{
         position: 'absolute',
         right: 'calc(12px + env(safe-area-inset-right, 0px))',
-        bottom: 'calc(12px + env(safe-area-inset-bottom, 0px))',
-        width: 280,
+        bottom: 'calc(64px + env(safe-area-inset-bottom, 0px))',
+        width: 'min(280px, calc(100vw - 24px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)))',
         zIndex: 1000,
         display: 'flex',
         flexDirection: 'column',
         gap: 6,
+        maxHeight: '45vh',
       }}>
         <div style={{
           background: '#0f172acc',
@@ -135,7 +136,7 @@ export default function VillageCanvas({ room, profile, onLeave }) {
 
         {messages.length > 0 && (
           <div style={{
-            maxHeight: 140,
+            maxHeight: '22vh',
             overflowY: 'auto',
             background: '#0f172acc',
             border: '1px solid #334155',
