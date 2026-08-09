@@ -45,9 +45,8 @@ function spawnBubble(scene, avatarContainer, text) {
   });
 }
 
-const SOCKET_SERVER_URL = process.env.NODE_ENV === 'production'
-  ? 'https://location-chat-production.up.railway.app'
-  : 'http://localhost:4000';
+const SOCKET_SERVER_URL = import.meta.env.VITE_BACKEND_URL ||
+  (import.meta.env.PROD ? 'https://location-chat-production.up.railway.app' : 'http://localhost:4000');
 
 export const AVATAR_SKINS = [
   { id: 'blue',   label: 'Ocean',   shirt: 0x3b82f6, pants: 0x1e3a5f, hair: 0x7c4a1e, swatch: '#3b82f6' },

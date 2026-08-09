@@ -4,9 +4,8 @@ import 'leaflet/dist/leaflet.css';
 import { io } from 'socket.io-client';
 import { getDistanceMeters } from '../geo';
 
-const SOCKET_SERVER_URL = process.env.NODE_ENV === 'production'
-  ? 'https://location-chat-production.up.railway.app'
-  : 'http://localhost:4000';
+const SOCKET_SERVER_URL = import.meta.env.VITE_BACKEND_URL ||
+  (import.meta.env.PROD ? 'https://location-chat-production.up.railway.app' : 'http://localhost:4000');
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({

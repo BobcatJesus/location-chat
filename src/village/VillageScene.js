@@ -7,9 +7,8 @@ import { pickLayout } from './layoutPicker.js';
 import { RoomEditor } from './RoomEditor.js';
 import { Prop, PROP_DEFS } from './Prop.js';
 
-const SOCKET_SERVER_URL = process.env.NODE_ENV === 'production'
-  ? 'https://location-chat-production.up.railway.app'
-  : 'http://localhost:4000';
+const SOCKET_SERVER_URL = import.meta.env.VITE_BACKEND_URL ||
+  (import.meta.env.PROD ? 'https://location-chat-production.up.railway.app' : 'http://localhost:4000');
 
 const SPEED = 180;
 const TICK_MS = 50; // position broadcast interval

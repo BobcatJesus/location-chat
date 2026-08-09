@@ -112,9 +112,8 @@ function App() {
     { id: 'sport',     emoji: '🏃', label: 'Sport',     color: '#0891b2' },
   ];
 
-  const SOCKET_SERVER_URL = process.env.NODE_ENV === 'production'
-    ? 'https://location-chat-production.up.railway.app'
-    : 'http://localhost:4000';
+  const SOCKET_SERVER_URL = import.meta.env.VITE_BACKEND_URL ||
+    (import.meta.env.PROD ? 'https://location-chat-production.up.railway.app' : 'http://localhost:4000');
 
   const confirmCreateRoom = async () => {
     const contributorName = profile?.profile?.characterName || profile?.mode || 'guest';
