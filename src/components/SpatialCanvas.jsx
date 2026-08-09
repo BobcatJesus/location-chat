@@ -92,8 +92,15 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
   const [draft, setDraft] = useState('');
   const [connectionState, setConnectionState] = useState('Connecting…');
   const [nearbyCount, setNearbyCount] = useState(0);
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768);
   const localPlayerPosRef = useRef({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
   const PROXIMITY_RADIUS = 150;
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   useEffect(() => {
     const socket = io(SOCKET_SERVER_URL, { transports: ['websocket'] });
@@ -891,7 +898,19 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
       </div>
 
       {/* Bottom-right overlay: nearby travelers + chat */}
-      <div style={{ position: 'absolute', bottom: 12, right: 12, width: 280, display: 'flex', flexDirection: 'column', gap: '6px' }}>
+      <div
+        style={{
+          position: 'absolute',
+          right: 'calc(12px + env(safe-area-inset-right, 0px))',
+          top: isMobile ? 'calc(60px + env(safe-area-inset-top, 0px))' : 'auto',
+          bottom: isMobile ? 'auto' : 'calc(64px + env(safe-area-inset-bottom, 0px))',
+          width: 'min(280px, calc(100vw - 24px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)))',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '6px',
+          maxHeight: '45vh',
+        }}
+      >
 
         {/* Nearby travelers */}
         {players.length > 0 && (
@@ -909,7 +928,7 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
 
         {/* Chat messages — only when someone is in range */}
         {nearbyCount > 0 && messages.length > 0 && (
-          <div style={{ background: '#0f172acc', border: '1px solid #334155', borderRadius: '6px', padding: '8px 10px', maxHeight: 160, overflowY: 'auto' }}>
+          <div style={{ background: '#0f172acc', border: '1px solid #334155', borderRadius: '6px', padding: '8px 10px', maxHeight: '22vh', overflowY: 'auto' }}>
             {messages.map((message, index) => (
               <div key={`${message.socketId}-${message.timestamp || index}`} style={{ marginBottom: '4px', color: '#f8fafc', fontSize: '12px', fontFamily: 'Courier New' }}>
                 <strong style={{ color: message.socketId === socketRef.current?.id ? '#fbbf24' : '#93c5fd' }}>
