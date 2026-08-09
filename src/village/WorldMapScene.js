@@ -13,6 +13,16 @@ const C_BUTTER   = 0xfef9c3;
 const C_SAGE     = 0xd1fae5;
 const C_LAVENDER = 0xede9fe;
 const C_OUTLINE  = 0x2b2b33;
+const SKIN_TINTS = {
+  blue: 0x3b82f6,
+  red: 0xe53e3e,
+  green: 0x16a34a,
+  purple: 0x7c3aed,
+  orange: 0xea580c,
+  pink: 0xec4899,
+  teal: 0x0891b2,
+  slate: 0x94a3b8,
+};
 
 function buildingFill(tags = {}) {
   const a = tags.amenity, s = tags.shop, l = tags.leisure;
@@ -34,6 +44,7 @@ export class WorldMapScene extends Phaser.Scene {
     WorldMapScene._boot = null;
     this.initLat     = d.lat;
     this.initLng     = d.lng;
+    this.skinId      = d.profile?.profile?.skinId || 'blue';
     this.rooms       = d.rooms || [];
     this.onEnterRoom = d.onEnterRoom || (() => {});
     this.onReady     = d.onReady || (() => {});
@@ -82,6 +93,7 @@ export class WorldMapScene extends Phaser.Scene {
     this.playerShadow = this.add.ellipse(0, 0, 28, 14, 0x000000, 0.25).setDepth(999);
     this.playerSprite = this.add.image(0, 0, 'demon-front-step1')
       .setOrigin(0.5, 1).setScale(0.09).setDepth(1000);
+    this.playerSprite.setTint(SKIN_TINTS[this.skinId] || 0xffffff);
 
     this.dir = 'front'; this.stepFrame = 0; this.stepAccum = 0;
     this.isMoving = false;

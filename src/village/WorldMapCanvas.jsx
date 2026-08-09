@@ -7,7 +7,7 @@ const spinnerStyle = `
 @keyframes wm-pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
 `;
 
-export default function WorldMapCanvas({ location, rooms, onEnterRoom }) {
+export default function WorldMapCanvas({ location, rooms, onEnterRoom, profile }) {
   const containerRef = useRef(null);
   const gameRef      = useRef(null);
   const onEnterRef   = useRef(onEnterRoom);
@@ -45,6 +45,7 @@ export default function WorldMapCanvas({ location, rooms, onEnterRoom }) {
     WorldMapScene._boot = {
       lat: effectiveLoc.latitude,
       lng: effectiveLoc.longitude,
+      profile,
       rooms,
       onEnterRoom: (id, meta) => onEnterRef.current(id, meta),
       onReady: () => setLoadState('ready'),
@@ -90,6 +91,7 @@ export default function WorldMapCanvas({ location, rooms, onEnterRoom }) {
           scene.scene.restart({
             lat,
             lng,
+            profile,
             rooms,
             onEnterRoom: (id, meta) => onEnterRef.current(id, meta),
             onReady: () => setLoadState('ready'),

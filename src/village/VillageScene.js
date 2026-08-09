@@ -12,6 +12,16 @@ const SOCKET_SERVER_URL = import.meta.env.VITE_BACKEND_URL ||
 
 const SPEED = 180;
 const TICK_MS = 50; // position broadcast interval
+const SKIN_TINTS = {
+  blue: 0x3b82f6,
+  red: 0xe53e3e,
+  green: 0x16a34a,
+  purple: 0x7c3aed,
+  orange: 0xea580c,
+  pink: 0xec4899,
+  teal: 0x0891b2,
+  slate: 0x94a3b8,
+};
 
 export class VillageScene extends Phaser.Scene {
   constructor() { super({ key: 'VillageScene' }); }
@@ -26,6 +36,7 @@ export class VillageScene extends Phaser.Scene {
     this.amenityTag = d.amenityTag ?? '';
     this.shopTag    = d.shopTag    ?? '';
     this.profile    = d.profile    ?? {};
+    this.skinId     = d.profile?.profile?.skinId ?? 'blue';
     this.onEditorChange = d.onEditorChange ?? (() => {});
   }
 
@@ -63,6 +74,7 @@ export class VillageScene extends Phaser.Scene {
       scene: this, texture: 'demon-front-step1',
       gx: spawn.x, gy: spawn.y, footprintWidth: 28, footprintHeight: 14, scale: 0.09,
     });
+    this.player.sprite.setTint(SKIN_TINTS[this.skinId] || 0xffffff);
 
     // Coffee cup overhead (shown near café)
     this.coffeeCup = this.add.text(0, 0, '☕', { fontSize: '18px' })
@@ -136,7 +148,7 @@ export class VillageScene extends Phaser.Scene {
     socket.on('connect', () => {
       socket.emit('join_room', {
         roomId: this.roomId,
-        user: { id: userId, name: userName, firstName, skinId: 'demon' },
+        user: { id: userId, name: userName, firstName, skinId: this.skinId },
       });
     });
 
@@ -168,6 +180,7 @@ export class VillageScene extends Phaser.Scene {
       gx: player.x ?? 400, gy: player.y ?? 300,
       footprintWidth: 28, footprintHeight: 14, scale: 0.09,
     });
+    actor.sprite.setTint(SKIN_TINTS[player?.skinId] || 0xffffff);
     this.remotePlayers.set(socketId, actor);
   }
 

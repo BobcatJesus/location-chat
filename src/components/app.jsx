@@ -430,6 +430,7 @@ function App() {
                 <WorldMapCanvas
                   key="world-map"
                   location={location}
+                  profile={profile}
                   rooms={getAllRooms().map(r => ({ ...r, radiusMeters: r.radiusMeters || 100 }))}
                   onEnterRoom={handleEnterRoom}
                 />
