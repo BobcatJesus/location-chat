@@ -6,6 +6,9 @@ export default function VillageCanvas({ room, profile, onLeave }) {
   const containerRef = useRef(null);
   const gameRef = useRef(null);
   const [editorActive, setEditorActive] = useState(false);
+  const [nearbyCount, setNearbyCount] = useState(0);
+  const [messages, setMessages] = useState([]);
+  const [draft, setDraft] = useState('');
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -21,6 +24,10 @@ export default function VillageCanvas({ room, profile, onLeave }) {
       shopTag:    room?.shop    || '',
       profile,
       onEditorChange: setEditorActive,
+      onNearbyChange: setNearbyCount,
+      onChatMessage: (msg) => {
+        setMessages((prev) => [...prev.slice(-9), msg]);
+      },
     };
 
     const config = {
@@ -43,6 +50,9 @@ export default function VillageCanvas({ room, profile, onLeave }) {
       game.destroy(true);
       gameRef.current = null;
       setEditorActive(false);
+      setNearbyCount(0);
+      setMessages([]);
+      setDraft('');
     };
   }, []);
 
@@ -50,6 +60,17 @@ export default function VillageCanvas({ room, profile, onLeave }) {
     const scene = gameRef.current?.scene?.getScene('VillageScene');
     if (scene?.sys?.isActive()) {
       scene.toggleEditor?.();
+    }
+  };
+
+  const sendChat = (e) => {
+    e.preventDefault();
+    const text = draft.trim();
+    if (!text) return;
+    const scene = gameRef.current?.scene?.getScene('VillageScene');
+    if (scene?.sys?.isActive()) {
+      scene.sendChatMessage?.(text);
+      setDraft('');
     }
   };
 
@@ -88,6 +109,85 @@ export default function VillageCanvas({ room, profile, onLeave }) {
         >
           {editorActive ? 'Done' : 'Edit'}
         </button>
+      </div>
+
+      <div style={{
+        position: 'absolute',
+        right: 'calc(12px + env(safe-area-inset-right, 0px))',
+        bottom: 'calc(12px + env(safe-area-inset-bottom, 0px))',
+        width: 280,
+        zIndex: 1000,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 6,
+      }}>
+        <div style={{
+          background: '#0f172acc',
+          border: '1px solid #334155',
+          borderRadius: 6,
+          padding: '6px 10px',
+          color: nearbyCount > 0 ? '#4ade80' : '#64748b',
+          fontFamily: 'Courier New, monospace',
+          fontSize: 11,
+        }}>
+          {nearbyCount > 0 ? `Chat unlocked: ${nearbyCount} nearby` : 'Approach someone to chat'}
+        </div>
+
+        {messages.length > 0 && (
+          <div style={{
+            maxHeight: 140,
+            overflowY: 'auto',
+            background: '#0f172acc',
+            border: '1px solid #334155',
+            borderRadius: 6,
+            padding: '8px 10px',
+            fontFamily: 'Courier New, monospace',
+            fontSize: 11,
+            color: '#f8fafc',
+          }}>
+            {messages.map((m, i) => (
+              <div key={`${m.timestamp || i}-${i}`} style={{ marginBottom: 4 }}>
+                <strong style={{ color: m.isSelf ? '#fbbf24' : '#93c5fd' }}>{m.isSelf ? 'You' : m.senderName}</strong>
+                <span style={{ color: '#64748b', fontSize: 10 }}> ({m.distance}px)</span>: {m.message}
+              </div>
+            ))}
+          </div>
+        )}
+
+        <form onSubmit={sendChat} style={{ display: 'flex', gap: 6 }}>
+          <input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            placeholder={nearbyCount > 0 ? 'Say something nearby…' : 'No one nearby'}
+            disabled={nearbyCount === 0}
+            style={{
+              flex: 1,
+              padding: '7px 10px',
+              border: '1px solid #475569',
+              borderRadius: 6,
+              background: '#111827cc',
+              color: '#f8fafc',
+              fontFamily: 'Courier New, monospace',
+              fontSize: 12,
+            }}
+          />
+          <button
+            type="submit"
+            disabled={nearbyCount === 0 || !draft.trim()}
+            style={{
+              padding: '7px 12px',
+              border: 'none',
+              background: nearbyCount > 0 ? '#e2b46c' : '#475569',
+              color: '#0f172a',
+              cursor: nearbyCount > 0 ? 'pointer' : 'not-allowed',
+              fontWeight: 'bold',
+              fontFamily: 'Courier New, monospace',
+              borderRadius: 6,
+            }}
+          >
+            ↩
+          </button>
+        </form>
       </div>
     </div>
   );

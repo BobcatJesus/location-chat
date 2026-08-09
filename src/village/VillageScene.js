@@ -12,6 +12,7 @@ const SOCKET_SERVER_URL = import.meta.env.VITE_BACKEND_URL ||
 
 const SPEED = 180;
 const TICK_MS = 50; // position broadcast interval
+const PROXIMITY_RADIUS = 150;
 const SKIN_TINTS = {
   blue: 0x3b82f6,
   red: 0xe53e3e,
@@ -38,6 +39,8 @@ export class VillageScene extends Phaser.Scene {
     this.profile    = d.profile    ?? {};
     this.skinId     = d.profile?.profile?.skinId ?? 'blue';
     this.onEditorChange = d.onEditorChange ?? (() => {});
+    this.onNearbyChange = d.onNearbyChange ?? (() => {});
+    this.onChatMessage = d.onChatMessage ?? (() => {});
   }
 
   preload() {
@@ -85,6 +88,7 @@ export class VillageScene extends Phaser.Scene {
 
     // Remote players map: socketId → Actor
     this.remotePlayers = new Map();
+    this._nearbyCount = -1;
 
     // Walk animation state
     this.dir = 'front';
@@ -131,6 +135,7 @@ export class VillageScene extends Phaser.Scene {
 
     // Connect Socket.IO
     this._connectSocket();
+    this.onNearbyChange(0);
   }
 
   toggleEditor() {
@@ -170,6 +175,31 @@ export class VillageScene extends Phaser.Scene {
     socket.on('player_left', ({ socketId }) => {
       const actor = this.remotePlayers.get(socketId);
       if (actor) { actor.destroy(); this.remotePlayers.delete(socketId); }
+    });
+
+    socket.on('receive_message', (payload) => {
+      if (!payload?.message || !payload?.position) return;
+      const dx = payload.position.x - this.player.gx;
+      const dy = payload.position.y - this.player.gy;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      if (distance <= PROXIMITY_RADIUS) {
+        this.onChatMessage({
+          senderName: payload.senderName || 'Traveler',
+          message: payload.message,
+          isSelf: payload.socketId === socket.id,
+          distance: Math.round(distance),
+          timestamp: payload.timestamp || Date.now(),
+        });
+      }
+    });
+  }
+
+  sendChatMessage(message) {
+    const text = (message || '').trim();
+    if (!text || !this.socket?.connected) return;
+    this.socket.emit('send_message', {
+      roomId: this.roomId,
+      message: text,
     });
   }
 
@@ -220,6 +250,18 @@ export class VillageScene extends Phaser.Scene {
     this.player.sprite.setTexture(`demon-${this.dir}-step${this.stepFrame + 1}`);
     this.player.sprite.setFlipX(this.dir === 'side' && dx < 0);
     this.player.sync();
+
+    // Nearby count for chat gating UI
+    let nearbyCount = 0;
+    this.remotePlayers.forEach((actor) => {
+      const ddx = this.player.gx - actor.gx;
+      const ddy = this.player.gy - actor.gy;
+      if (Math.sqrt(ddx * ddx + ddy * ddy) <= PROXIMITY_RADIUS) nearbyCount += 1;
+    });
+    if (nearbyCount !== this._nearbyCount) {
+      this._nearbyCount = nearbyCount;
+      this.onNearbyChange(nearbyCount);
+    }
 
     // Coffee cup near café
     const nearCafe = this.roomLayout?.interactZones?.some(z =>
@@ -276,6 +318,7 @@ export class VillageScene extends Phaser.Scene {
     this.roomEditor?.destroy();
     this._propSprites?.forEach(p => p.destroy());
     this.onEditorChange(false);
+    this.onNearbyChange(0);
   }
 
   _switchFloor(floorIndex) {
