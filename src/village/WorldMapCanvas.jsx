@@ -15,6 +15,8 @@ export default function WorldMapCanvas({ location, rooms, onEnterRoom }) {
 
   const [loadState, setLoadState] = useState('gps'); // 'gps' | 'tiles' | 'ready'
   const [effectiveLoc, setEffectiveLoc] = useState(null);
+  const [gpsBusy, setGpsBusy] = useState(false);
+  const [gpsError, setGpsError] = useState('');
 
   // Get GPS directly — bypasses the geofence hook which may stall on mobile
   useEffect(() => {
@@ -71,6 +73,39 @@ export default function WorldMapCanvas({ location, rooms, onEnterRoom }) {
     }
   }, [effectiveLoc?.latitude, effectiveLoc?.longitude]);
 
+  const recenterToGPS = () => {
+    if (!navigator.geolocation || gpsBusy) return;
+    setGpsBusy(true);
+    setGpsError('');
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const lat = pos.coords.latitude;
+        const lng = pos.coords.longitude;
+        const next = { latitude: lat, longitude: lng };
+        setEffectiveLoc(next);
+
+        const scene = gameRef.current?.scene?.getScene('WorldMapScene');
+        if (scene?.sys?.isActive()) {
+          setLoadState('tiles');
+          scene.scene.restart({
+            lat,
+            lng,
+            rooms,
+            onEnterRoom: (id, meta) => onEnterRef.current(id, meta),
+            onReady: () => setLoadState('ready'),
+          });
+        }
+
+        setGpsBusy(false);
+      },
+      () => {
+        setGpsBusy(false);
+        setGpsError('GPS blocked or unavailable');
+      },
+      { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }
+    );
+  };
+
   const showOverlay = loadState !== 'ready';
   const msg = loadState === 'gps' ? 'Acquiring GPS… (or waiting for permission)' : 'Loading map…';
 
@@ -102,6 +137,43 @@ export default function WorldMapCanvas({ location, rooms, onEnterRoom }) {
               Load without GPS
             </button>
           )}
+        </div>
+      )}
+      <button
+        onClick={recenterToGPS}
+        disabled={gpsBusy}
+        style={{
+          position: 'absolute',
+          right: 12,
+          bottom: 12,
+          zIndex: 12,
+          background: '#2b2b33',
+          color: '#faf0d7',
+          border: 'none',
+          borderRadius: 8,
+          padding: '8px 12px',
+          fontFamily: 'Courier New, monospace',
+          fontSize: 12,
+          cursor: gpsBusy ? 'default' : 'pointer',
+          opacity: gpsBusy ? 0.6 : 1,
+        }}
+      >
+        {gpsBusy ? 'Locating…' : 'Recenter to GPS'}
+      </button>
+      {gpsError && (
+        <div style={{
+          position: 'absolute',
+          right: 12,
+          bottom: 52,
+          zIndex: 12,
+          background: '#00000099',
+          color: '#ffd2d2',
+          borderRadius: 6,
+          padding: '6px 8px',
+          fontFamily: 'Courier New, monospace',
+          fontSize: 11,
+        }}>
+          {gpsError}
         </div>
       )}
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
