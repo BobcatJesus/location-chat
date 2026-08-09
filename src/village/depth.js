@@ -1,0 +1,7 @@
+export const DEPTH = {
+  GROUND: -10000,
+  SHADOW: -8000,
+  ACTOR_MIN: 0,
+  OVERHEAD: 900000,
+  UI: 1000000,
+};

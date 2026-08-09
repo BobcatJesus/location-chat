@@ -1,0 +1,22 @@
+{
+  "frames": {
+    "prop_table_round":    { "frame": { "x":    0, "y":    0, "w": 576, "h": 576 }, "rotated": false, "trimmed": false, "spriteSourceSize": { "x": 0, "y": 0, "w": 576, "h": 576 }, "sourceSize": { "w": 576, "h": 576 } },
+    "prop_portrait_framed":{ "frame": { "x":  576, "y":    0, "w": 576, "h": 576 }, "rotated": false, "trimmed": false, "spriteSourceSize": { "x": 0, "y": 0, "w": 576, "h": 576 }, "sourceSize": { "w": 576, "h": 576 } },
+    "prop_trash_can":      { "frame": { "x": 1152, "y":    0, "w": 576, "h": 576 }, "rotated": false, "trimmed": false, "spriteSourceSize": { "x": 0, "y": 0, "w": 576, "h": 576 }, "sourceSize": { "w": 576, "h": 576 } },
+    "prop_jukebox":        { "frame": { "x": 1728, "y":    0, "w": 576, "h": 576 }, "rotated": false, "trimmed": false, "spriteSourceSize": { "x": 0, "y": 0, "w": 576, "h": 576 }, "sourceSize": { "w": 576, "h": 576 } },
+    "prop_coffee_cup":     { "frame": { "x":    0, "y":  576, "w": 576, "h": 576 }, "rotated": false, "trimmed": false, "spriteSourceSize": { "x": 0, "y": 0, "w": 576, "h": 576 }, "sourceSize": { "w": 576, "h": 576 } },
+    "prop_lamp_floor":     { "frame": { "x":  576, "y":  576, "w": 576, "h": 576 }, "rotated": false, "trimmed": false, "spriteSourceSize": { "x": 0, "y": 0, "w": 576, "h": 576 }, "sourceSize": { "w": 576, "h": 576 } },
+    "prop_plant_potted":   { "frame": { "x": 1152, "y":  576, "w": 576, "h": 576 }, "rotated": false, "trimmed": false, "spriteSourceSize": { "x": 0, "y": 0, "w": 576, "h": 576 }, "sourceSize": { "w": 576, "h": 576 } },
+    "prop_chair_wooden":   { "frame": { "x": 1728, "y":  576, "w": 576, "h": 576 }, "rotated": false, "trimmed": false, "spriteSourceSize": { "x": 0, "y": 0, "w": 576, "h": 576 }, "sourceSize": { "w": 576, "h": 576 } },
+    "prop_books_stack":    { "frame": { "x":    0, "y": 1152, "w": 576, "h": 576 }, "rotated": false, "trimmed": false, "spriteSourceSize": { "x": 0, "y": 0, "w": 576, "h": 576 }, "sourceSize": { "w": 576, "h": 576 } },
+    "prop_candle":         { "frame": { "x":  576, "y": 1152, "w": 576, "h": 576 }, "rotated": false, "trimmed": false, "spriteSourceSize": { "x": 0, "y": 0, "w": 576, "h": 576 }, "sourceSize": { "w": 576, "h": 576 } },
+    "prop_bookshelf":      { "frame": { "x": 1152, "y": 1152, "w": 576, "h": 576 }, "rotated": false, "trimmed": false, "spriteSourceSize": { "x": 0, "y": 0, "w": 576, "h": 576 }, "sourceSize": { "w": 576, "h": 576 } },
+    "prop_rug_rolled":     { "frame": { "x": 1728, "y": 1152, "w": 576, "h": 576 }, "rotated": false, "trimmed": false, "spriteSourceSize": { "x": 0, "y": 0, "w": 576, "h": 576 }, "sourceSize": { "w": 576, "h": 576 } }
+  },
+  "meta": {
+    "image": "props.png",
+    "format": "RGBA8888",
+    "size": { "w": 2304, "h": 1728 },
+    "scale": "1"
+  }
+}

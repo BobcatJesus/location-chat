@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import RetroAuthModal from './RetroAuthModal';
-import SpatialCanvas from './SpatialCanvas';
-import MapView from './MapView';
+import VillageCanvas from '../village/VillageCanvas.jsx';
+import WorldMapCanvas from '../village/WorldMapCanvas.jsx';
 import { AVATAR_SKINS } from './SpatialCanvas';
 import { useGeofencedMap } from '../hooks/UseGeofencingApp';
 import { createUserRoom, loadUserRooms, acceptRoomInvite, findRoomByLocation, getAllRooms } from '../../rooms/rooms.js';
@@ -428,7 +428,7 @@ function App() {
             {activeScene === 'world' ? (
               /* Map view fills the main area */
               <div style={{ flex: 1, borderRadius: 12, overflow: 'hidden', border: '2px solid #334155', position: 'relative' }}>
-                <MapView
+                <WorldMapCanvas
                   key="world-map"
                   location={location}
                   rooms={getAllRooms().map(r => ({ ...r, radiusMeters: r.radiusMeters || 100 }))}
@@ -449,7 +449,7 @@ function App() {
               </div>
             ) : (
               <div style={{ flex: 1, border: '2px solid #334155', borderRadius: 12, overflow: 'hidden', position: 'relative' }}>
-                <SpatialCanvas room={osmRoom ? { ...osmRoom, id: osmRoom.id } : activeRoom} profile={profile} onLeave={() => { setActiveScene('world'); setOsmRoom(null); }} />
+                <VillageCanvas room={osmRoom ? { ...osmRoom, id: osmRoom.id } : activeRoom} profile={profile} onLeave={() => { setActiveScene('world'); setOsmRoom(null); }} />
                 {/* Invite button for user-created private rooms */}
                 {activeRoom?.kind === 'user-created' && (
                   <button
