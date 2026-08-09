@@ -1,2 +1,6 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
 [build.environment]
   VITE_BACKEND_URL = "https://location-chat-production.up.railway.app"
