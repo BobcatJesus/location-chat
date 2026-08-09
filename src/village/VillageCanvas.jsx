@@ -9,6 +9,13 @@ export default function VillageCanvas({ room, profile, onLeave }) {
   const [nearbyCount, setNearbyCount] = useState(0);
   const [messages, setMessages] = useState([]);
   const [draft, setDraft] = useState('');
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768);
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -114,7 +121,8 @@ export default function VillageCanvas({ room, profile, onLeave }) {
       <div style={{
         position: 'absolute',
         right: 'calc(12px + env(safe-area-inset-right, 0px))',
-        bottom: 'calc(64px + env(safe-area-inset-bottom, 0px))',
+        top: isMobile ? 'calc(60px + env(safe-area-inset-top, 0px))' : 'auto',
+        bottom: isMobile ? 'auto' : 'calc(64px + env(safe-area-inset-bottom, 0px))',
         width: 'min(280px, calc(100vw - 24px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)))',
         zIndex: 1000,
         display: 'flex',
