@@ -86,7 +86,7 @@ export class RoomEditor {
 
     const hint = document.createElement('div');
     hint.style.cssText = 'margin-top:8px;color:#888;font-size:9px;line-height:1.6;';
-    hint.innerHTML = 'Click: place<br>Right-click: delete<br><b style="color:#aaa">E: exit</b>';
+    hint.innerHTML = 'Tap: place<br>Right-click: delete<br><b style="color:#aaa">Edit button or E: exit</b>';
     div.appendChild(hint);
 
     const clearBtn = document.createElement('button');

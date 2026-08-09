@@ -26,6 +26,7 @@ export class VillageScene extends Phaser.Scene {
     this.amenityTag = d.amenityTag ?? '';
     this.shopTag    = d.shopTag    ?? '';
     this.profile    = d.profile    ?? {};
+    this.onEditorChange = d.onEditorChange ?? (() => {});
   }
 
   preload() {
@@ -48,8 +49,9 @@ export class VillageScene extends Phaser.Scene {
     this.currentFloor = 0;
     this.roomLayout.drawFloor(0);
 
-    // Initialize room editor (press E to toggle edit mode)
+    // Initialize room editor (press E or use the UI toggle)
     this.roomEditor = new RoomEditor(this);
+    this.onEditorChange(false);
     // Render any custom zones already saved
     this._propSprites = [];
     this._renderSavedProps();
@@ -97,7 +99,7 @@ export class VillageScene extends Phaser.Scene {
         if (!this._eKeyPressed) {
           this._eKeyPressed = true;
           console.log('[VillageScene] E pressed — toggling editor');
-          this.roomEditor?.toggle();
+          this.toggleEditor();
         }
       }
     };
@@ -117,6 +119,11 @@ export class VillageScene extends Phaser.Scene {
 
     // Connect Socket.IO
     this._connectSocket();
+  }
+
+  toggleEditor() {
+    this.roomEditor?.toggle();
+    this.onEditorChange(!!this.roomEditor?.isActive);
   }
 
   _connectSocket() {
@@ -255,6 +262,7 @@ export class VillageScene extends Phaser.Scene {
     this.roomLayout?.destroy();
     this.roomEditor?.destroy();
     this._propSprites?.forEach(p => p.destroy());
+    this.onEditorChange(false);
   }
 
   _switchFloor(floorIndex) {

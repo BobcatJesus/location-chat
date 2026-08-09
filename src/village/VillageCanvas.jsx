@@ -1,10 +1,11 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import Phaser from 'phaser';
 import { VillageScene } from './VillageScene.js';
 
 export default function VillageCanvas({ room, profile, onLeave }) {
   const containerRef = useRef(null);
   const gameRef = useRef(null);
+  const [editorActive, setEditorActive] = useState(false);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -19,6 +20,7 @@ export default function VillageCanvas({ room, profile, onLeave }) {
       amenityTag: room?.amenity || '',
       shopTag:    room?.shop    || '',
       profile,
+      onEditorChange: setEditorActive,
     };
 
     const config = {
@@ -40,22 +42,53 @@ export default function VillageCanvas({ room, profile, onLeave }) {
     return () => {
       game.destroy(true);
       gameRef.current = null;
+      setEditorActive(false);
     };
   }, []);
+
+  const toggleEditor = () => {
+    const scene = gameRef.current?.scene?.getScene('VillageScene');
+    if (scene?.sys?.isActive()) {
+      scene.toggleEditor?.();
+    }
+  };
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
-      <button
-        onClick={onLeave}
-        style={{
-          position: 'absolute', top: 12, left: 12, zIndex: 1000,
-          background: 'rgba(0,0,0,0.55)', color: '#fff', border: 'none',
-          borderRadius: 8, padding: '6px 14px', cursor: 'pointer', fontSize: 14,
-        }}
-      >
-        ← Leave
-      </button>
+      <div style={{
+        position: 'absolute',
+        top: 'calc(12px + env(safe-area-inset-top, 0px))',
+        left: 'calc(12px + env(safe-area-inset-left, 0px))',
+        zIndex: 1000,
+        display: 'flex',
+        gap: 8,
+      }}>
+        <button
+          onClick={onLeave}
+          style={{
+            background: 'rgba(0,0,0,0.55)', color: '#fff', border: 'none',
+            borderRadius: 8, padding: '6px 14px', cursor: 'pointer', fontSize: 14,
+          }}
+        >
+          ← Leave
+        </button>
+        <button
+          onClick={toggleEditor}
+          style={{
+            background: editorActive ? '#fbbf24' : 'rgba(0,0,0,0.55)',
+            color: editorActive ? '#000' : '#fff',
+            border: 'none',
+            borderRadius: 8,
+            padding: '6px 14px',
+            cursor: 'pointer',
+            fontSize: 14,
+            fontWeight: 'bold',
+          }}
+        >
+          {editorActive ? 'Done' : 'Edit'}
+        </button>
+      </div>
     </div>
   );
 }
