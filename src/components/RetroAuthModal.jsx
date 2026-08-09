@@ -45,6 +45,15 @@ const playSound = (type) => {
   }
 };
 
+const AVATAR_PRESETS = [
+  { id: 'ranger', label: 'Ranger', skinId: 'green', hairStyle: 'side', bodyType: 'standard' },
+  { id: 'rogue', label: 'Rogue', skinId: 'slate', hairStyle: 'mohawk', bodyType: 'compact' },
+  { id: 'scholar', label: 'Scholar', skinId: 'blue', hairStyle: 'short', bodyType: 'standard' },
+  { id: 'bard', label: 'Bard', skinId: 'pink', hairStyle: 'side', bodyType: 'broad' },
+  { id: 'monk', label: 'Monk', skinId: 'orange', hairStyle: 'buzz', bodyType: 'compact' },
+  { id: 'sentinel', label: 'Sentinel', skinId: 'purple', hairStyle: 'short', bodyType: 'broad' },
+];
+
 export default function RetroAuthModal({ onLogin }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isSignUp, setIsSignUp] = useState(false);
@@ -144,6 +153,24 @@ export default function RetroAuthModal({ onLogin }) {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
     if (error) setError(null); // Clear error on typing
+  };
+
+  const applyAvatarPreset = (preset) => {
+    playSound('blip');
+    setFormData((prev) => ({
+      ...prev,
+      skinId: preset.skinId,
+      hairStyle: preset.hairStyle,
+      bodyType: preset.bodyType,
+    }));
+  };
+
+  const randomizeAvatar = () => {
+    const skin = AVATAR_SKINS[Math.floor(Math.random() * AVATAR_SKINS.length)]?.id || 'blue';
+    const hair = AVATAR_HAIR_STYLES[Math.floor(Math.random() * AVATAR_HAIR_STYLES.length)]?.id || 'short';
+    const body = AVATAR_BODY_TYPES[Math.floor(Math.random() * AVATAR_BODY_TYPES.length)]?.id || 'standard';
+    playSound('blip');
+    setFormData((prev) => ({ ...prev, skinId: skin, hairStyle: hair, bodyType: body }));
   };
 
   // --- Client-side Validation Logic ---
@@ -388,11 +415,56 @@ export default function RetroAuthModal({ onLogin }) {
                   )}
                   {isSignUp && (
                     <div style={{ border: '2px solid #1e293b', background: '#020617', padding: 10 }}>
-                      <label style={{ display: 'block', fontSize: 11, textTransform: 'uppercase', color: '#94a3b8', marginBottom: 8 }}>Choose Avatar</label>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
+                        <label style={{ display: 'block', fontSize: 11, textTransform: 'uppercase', color: '#94a3b8' }}>Choose Avatar</label>
+                        <button
+                          type="button"
+                          onClick={randomizeAvatar}
+                          style={{
+                            padding: '4px 8px',
+                            border: '2px solid #334155',
+                            background: 'transparent',
+                            color: '#93c5fd',
+                            fontFamily: 'Courier New, monospace',
+                            fontSize: 10,
+                            cursor: 'pointer',
+                            textTransform: 'uppercase',
+                          }}
+                        >
+                          Randomize
+                        </button>
+                      </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
                         <div style={{ width: 36, height: 36, borderRadius: '50%', border: '2px solid #fbbf24', background: (AVATAR_SKINS.find(s => s.id === formData.skinId)?.swatch || '#3b82f6') }} />
                         <div style={{ fontSize: 10, color: '#64748b', textTransform: 'uppercase' }}>
                           {AVATAR_BODY_TYPES.find(b => b.id === formData.bodyType)?.label || 'Standard'} · {AVATAR_HAIR_STYLES.find(h => h.id === formData.hairStyle)?.label || 'Short'}
+                        </div>
+                      </div>
+
+                      <div style={{ marginBottom: 10 }}>
+                        <label style={{ display: 'block', fontSize: 10, textTransform: 'uppercase', color: '#64748b', marginBottom: 4 }}>Presets</label>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                          {AVATAR_PRESETS.map((p) => (
+                            <button
+                              key={p.id}
+                              type="button"
+                              onClick={() => applyAvatarPreset(p)}
+                              style={{
+                                padding: '4px 7px',
+                                border: formData.skinId === p.skinId && formData.hairStyle === p.hairStyle && formData.bodyType === p.bodyType
+                                  ? '2px solid #fbbf24'
+                                  : '2px solid #334155',
+                                background: 'transparent',
+                                color: '#cbd5e1',
+                                fontFamily: 'Courier New, monospace',
+                                fontSize: 10,
+                                cursor: 'pointer',
+                                textTransform: 'uppercase',
+                              }}
+                            >
+                              {p.label}
+                            </button>
+                          ))}
                         </div>
                       </div>
 
