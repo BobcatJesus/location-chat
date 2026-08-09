@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { AVATAR_SKINS, AVATAR_HAIR_STYLES, AVATAR_BODY_TYPES } from './SpatialCanvas';
 
 // --- Web Audio Helper for Retro SFX ---
 const playSound = (type) => {
@@ -50,7 +51,15 @@ export default function RetroAuthModal({ onLogin }) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  const initialForm = { email: '', password: '', characterName: '', firstName: '' };
+  const initialForm = {
+    email: '',
+    password: '',
+    characterName: '',
+    firstName: '',
+    skinId: 'blue',
+    hairStyle: 'short',
+    bodyType: 'standard',
+  };
   const [formData, setFormData] = useState(initialForm);
   const [photoDataUrl, setPhotoDataUrl] = useState(null);
 
@@ -179,7 +188,15 @@ export default function RetroAuthModal({ onLogin }) {
 
       // Derive display name: prefer characterName, else part before @ in email
       const characterName = formData.characterName.trim() || formData.email.split('@')[0];
-      const profile = { email: formData.email, characterName, firstName: formData.firstName.trim() };
+      let profile = {
+        email: formData.email,
+        characterName,
+        firstName: formData.firstName.trim(),
+        photo: photoDataUrl,
+        skinId: formData.skinId || 'blue',
+        hairStyle: formData.hairStyle || 'short',
+        bodyType: formData.bodyType || 'standard',
+      };
 
       if (isSignUp) {
         // Store new account
@@ -192,6 +209,13 @@ export default function RetroAuthModal({ onLogin }) {
           if (existing.email !== formData.email) {
             throw new Error('No save file found for this email.');
           }
+          // Login should restore the saved profile as source of truth.
+          profile = {
+            ...existing,
+            skinId: existing.skinId || 'blue',
+            hairStyle: existing.hairStyle || 'short',
+            bodyType: existing.bodyType || 'standard',
+          };
         } else {
           // First time login — save it
           localStorage.setItem('sidequest_profile', JSON.stringify(profile));
@@ -359,6 +383,86 @@ export default function RetroAuthModal({ onLogin }) {
                           </button>
                         )}
                         <input ref={fileInputRef} type="file" accept="image/*" onChange={handlePhotoChange} style={{ display: 'none' }} />
+                      </div>
+                    </div>
+                  )}
+                  {isSignUp && (
+                    <div style={{ border: '2px solid #1e293b', background: '#020617', padding: 10 }}>
+                      <label style={{ display: 'block', fontSize: 11, textTransform: 'uppercase', color: '#94a3b8', marginBottom: 8 }}>Choose Avatar</label>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                        <div style={{ width: 36, height: 36, borderRadius: '50%', border: '2px solid #fbbf24', background: (AVATAR_SKINS.find(s => s.id === formData.skinId)?.swatch || '#3b82f6') }} />
+                        <div style={{ fontSize: 10, color: '#64748b', textTransform: 'uppercase' }}>
+                          {AVATAR_BODY_TYPES.find(b => b.id === formData.bodyType)?.label || 'Standard'} · {AVATAR_HAIR_STYLES.find(h => h.id === formData.hairStyle)?.label || 'Short'}
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+                        {AVATAR_SKINS.map(skin => (
+                          <button
+                            key={skin.id}
+                            type="button"
+                            onClick={() => setFormData(prev => ({ ...prev, skinId: skin.id }))}
+                            style={{
+                              width: 26,
+                              height: 26,
+                              borderRadius: '50%',
+                              border: formData.skinId === skin.id ? '2px solid #fbbf24' : '2px solid #334155',
+                              background: skin.swatch,
+                              cursor: 'pointer',
+                            }}
+                            title={skin.label}
+                          />
+                        ))}
+                      </div>
+
+                      <div style={{ marginBottom: 8 }}>
+                        <label style={{ display: 'block', fontSize: 10, textTransform: 'uppercase', color: '#64748b', marginBottom: 4 }}>Hair</label>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                          {AVATAR_HAIR_STYLES.map(h => (
+                            <button
+                              key={h.id}
+                              type="button"
+                              onClick={() => setFormData(prev => ({ ...prev, hairStyle: h.id }))}
+                              style={{
+                                padding: '4px 7px',
+                                border: formData.hairStyle === h.id ? '2px solid #fbbf24' : '2px solid #334155',
+                                background: formData.hairStyle === h.id ? '#1f2937' : 'transparent',
+                                color: formData.hairStyle === h.id ? '#fbbf24' : '#94a3b8',
+                                fontFamily: 'Courier New, monospace',
+                                fontSize: 10,
+                                cursor: 'pointer',
+                                textTransform: 'uppercase',
+                              }}
+                            >
+                              {h.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div>
+                        <label style={{ display: 'block', fontSize: 10, textTransform: 'uppercase', color: '#64748b', marginBottom: 4 }}>Body</label>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                          {AVATAR_BODY_TYPES.map(b => (
+                            <button
+                              key={b.id}
+                              type="button"
+                              onClick={() => setFormData(prev => ({ ...prev, bodyType: b.id }))}
+                              style={{
+                                padding: '4px 7px',
+                                border: formData.bodyType === b.id ? '2px solid #fbbf24' : '2px solid #334155',
+                                background: formData.bodyType === b.id ? '#1f2937' : 'transparent',
+                                color: formData.bodyType === b.id ? '#fbbf24' : '#94a3b8',
+                                fontFamily: 'Courier New, monospace',
+                                fontSize: 10,
+                                cursor: 'pointer',
+                                textTransform: 'uppercase',
+                              }}
+                            >
+                              {b.label}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     </div>
                   )}
