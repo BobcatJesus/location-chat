@@ -86,6 +86,32 @@ export function createUserRoom({ id, name, lat, lng, radiusMeters = 50, contribu
   return room;
 }
 
+export function deleteUserRoom(roomId, ownerId) {
+  if (!roomId) return false;
+  let removed = false;
+
+  for (let i = USER_CREATED_ROOMS.length - 1; i >= 0; i -= 1) {
+    const room = USER_CREATED_ROOMS[i];
+    const ownerMatches = !ownerId || room.ownerId === ownerId;
+    if (room.id === roomId && ownerMatches) {
+      USER_CREATED_ROOMS.splice(i, 1);
+      removed = true;
+    }
+  }
+
+  try {
+    const all = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    const next = all.filter((room) => {
+      if (room.id !== roomId) return true;
+      if (!ownerId) return false;
+      return room.ownerId !== ownerId;
+    });
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  } catch {}
+
+  return removed;
+}
+
 // Accept a room shared via invite link and add it to this user's visible rooms
 export function acceptRoomInvite(room, ownerId) {
   if (USER_CREATED_ROOMS.find(r => r.id === room.id)) return;

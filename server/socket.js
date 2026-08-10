@@ -143,7 +143,7 @@ app.use(express.json());
 // Allow all origins for REST endpoints
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+  res.header('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.sendStatus(204);
   next();
@@ -407,6 +407,26 @@ app.post('/api/community-locations', async (req, res) => {
     io.emit('community_location_added', location);
     res.json(location);
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/community-locations/:id', async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'No database' });
+  const { id } = req.params;
+  const creator = req.query.creator ? String(req.query.creator) : null;
+  if (!id) return res.status(400).json({ error: 'Missing id' });
+  try {
+    const { rows } = await pool.query(
+      `DELETE FROM community_locations
+       WHERE id = $1 AND ($2::text IS NULL OR creator = $2)
+       RETURNING id`,
+      [id, creator]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Location not found or not owned by creator' });
+    io.emit('community_location_removed', { id });
+    res.json({ ok: true, id });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 app.use(express.static(path.join(__dirname, '../dist')));

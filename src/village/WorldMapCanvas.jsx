@@ -11,6 +11,7 @@ export default function WorldMapCanvas({ location, rooms, onEnterRoom, profile }
   const containerRef = useRef(null);
   const gameRef      = useRef(null);
   const onEnterRef   = useRef(onEnterRoom);
+  const roomsHashRef = useRef('');
   onEnterRef.current = onEnterRoom;
 
   const [loadState, setLoadState] = useState('gps'); // 'gps' | 'tiles' | 'ready'
@@ -73,6 +74,26 @@ export default function WorldMapCanvas({ location, rooms, onEnterRoom, profile }
       scene.updateGPS(effectiveLoc.latitude, effectiveLoc.longitude);
     }
   }, [effectiveLoc?.latitude, effectiveLoc?.longitude]);
+
+  useEffect(() => {
+    if (!effectiveLoc || !gameRef.current) return;
+    const nextHash = JSON.stringify((rooms || []).map((r) => `${r.id}:${r.lat}:${r.lng}:${r.radiusMeters}`).sort());
+    if (roomsHashRef.current === nextHash) return;
+    roomsHashRef.current = nextHash;
+
+    const scene = gameRef.current.scene.getScene('WorldMapScene');
+    if (scene?.sys?.isActive()) {
+      setLoadState('tiles');
+      scene.scene.restart({
+        lat: effectiveLoc.latitude,
+        lng: effectiveLoc.longitude,
+        profile,
+        rooms,
+        onEnterRoom: (id, meta) => onEnterRef.current(id, meta),
+        onReady: () => setLoadState('ready'),
+      });
+    }
+  }, [rooms, profile, effectiveLoc]);
 
   const recenterToGPS = () => {
     if (!navigator.geolocation || gpsBusy) return;

@@ -2,7 +2,7 @@ import React, { useState, useEffect, lazy, Suspense } from 'react';
 import RetroAuthModal from './RetroAuthModal';
 import AvatarSetupFields from './AvatarSetupFields';
 import { useGeofencedMap } from '../hooks/UseGeofencingApp';
-import { createUserRoom, loadUserRooms, acceptRoomInvite, getAllRooms } from '../../rooms/rooms.js';
+import { createUserRoom, deleteUserRoom, loadUserRooms, acceptRoomInvite, getAllRooms } from '../../rooms/rooms.js';
 import { getDistanceMeters } from '../geo';
 import { normalizeAvatarModel } from '../game/entities/avatarFactory';
 
@@ -512,6 +512,39 @@ function App() {
     setCreatingRoom(true);
   };
 
+  const handleDeleteRoom = async (room) => {
+    if (!room || room.kind === 'gps') return;
+    const ownerId = profile?.profile?.email || profile?.mode || 'guest';
+    const creatorName = profile?.profile?.characterName || '';
+    const ownsRoom = room.ownerId === ownerId || room.ownerId === creatorName;
+
+    if (!ownsRoom) {
+      setGpsToast('You can only delete rooms you created.');
+      setTimeout(() => setGpsToast(null), 3000);
+      return;
+    }
+
+    const ok = window.confirm(`Delete "${room.name}"? This cannot be undone.`);
+    if (!ok) return;
+
+    if (room.kind === 'community' || room.isPublic === true) {
+      try {
+        const qs = creatorName ? `?creator=${encodeURIComponent(creatorName)}` : '';
+        await fetch(`${SOCKET_SERVER_URL}/api/community-locations/${encodeURIComponent(room.id)}${qs}`, {
+          method: 'DELETE',
+        });
+      } catch {}
+      setCommunityRooms((prev) => prev.filter((r) => r.id !== room.id));
+    }
+
+    deleteUserRoom(room.id, ownerId);
+    setSelectedRoom('downtown-hub');
+    setOsmRoom(null);
+    setActiveScene('world');
+    setGpsToast(`Deleted room: ${room.name}`);
+    setTimeout(() => setGpsToast(null), 3000);
+  };
+
   const COMMUNITY_CATEGORIES = [
     { id: 'social',    emoji: '🔥', label: 'Social',    color: '#f97316' },
     { id: 'nature',    emoji: '🌲', label: 'Nature',    color: '#16a34a' },
@@ -832,6 +865,13 @@ function App() {
                 <Suspense fallback={<div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', color: '#94a3b8', background: '#0f172a' }}>Loading room…</div>}>
                   <VillageCanvas room={osmRoom ? { ...osmRoom, id: osmRoom.id } : activeRoom} profile={profile} onLeave={() => { setActiveScene('world'); setOsmRoom(null); }} />
                 </Suspense>
+                {(activeRoom?.kind === 'user-created' || activeRoom?.kind === 'community') && (activeRoom.ownerId === (profile?.profile?.email || profile?.mode || 'guest') || activeRoom.ownerId === (profile?.profile?.characterName || '')) && (
+                  <button
+                    onClick={() => handleDeleteRoom(activeRoom)}
+                    style={{ position: 'absolute', bottom: 16, left: 12, zIndex: 1000, background: '#7f1d1d', border: '1px solid #ef4444', color: '#fecaca', padding: '6px 12px', fontFamily: 'Courier New', fontSize: 11, cursor: 'pointer', boxShadow: '2px 2px 0 #000' }}>
+                    🗑 Delete room
+                  </button>
+                )}
                 {/* Invite button for user-created private rooms */}
                 {activeRoom?.kind === 'user-created' && (
                   <button
