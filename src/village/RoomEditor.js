@@ -1,5 +1,4 @@
 import { DEPTH } from './depth.js';
-import { Prop } from './Prop.js';
 
 export class RoomEditor {
   constructor(scene) {
@@ -23,9 +22,15 @@ export class RoomEditor {
     this.editGraphics = scene.add.graphics().setDepth(DEPTH.UI - 1).setVisible(false);
     this.panel = null;
     this.hoveredZone = null;
-    this.customZones = this._loadCustomZones();
+    this.customZones = [];
     this._pointerMove = null;
     this._pointerDown = null;
+  }
+
+  setZones(zones) {
+    this.customZones = Array.isArray(zones) ? zones : [];
+    this.hoveredZone = null;
+    this._redraw();
   }
 
   toggle() {
@@ -86,11 +91,11 @@ export class RoomEditor {
 
     const hint = document.createElement('div');
     hint.style.cssText = 'margin-top:8px;color:#888;font-size:9px;line-height:1.6;';
-    hint.innerHTML = 'Tap: place<br>Right-click: delete<br><b style="color:#aaa">Edit button or E: exit</b>';
+    hint.innerHTML = 'Tap: place<br>Right-click: delete yours<br><b style="color:#aaa">Edit button or E: exit</b>';
     div.appendChild(hint);
 
     const clearBtn = document.createElement('button');
-    clearBtn.textContent = '🗑 Clear All';
+    clearBtn.textContent = '🗑 Clear My Items';
     clearBtn.style.cssText = [
       'display:block', 'width:100%', 'margin-top:8px',
       'padding:4px 8px', 'border:none', 'cursor:pointer',
@@ -99,11 +104,8 @@ export class RoomEditor {
       'border-radius:2px',
     ].join(';');
     clearBtn.addEventListener('click', () => {
-      if (confirm('Clear all placed items?')) {
-        this.customZones = [];
-        this._save();
-        this._redraw();
-        this.scene._renderSavedProps?.();
+      if (confirm('Remove all items you placed?')) {
+        this.scene.clearOwnDecorations?.();
       }
     });
     div.appendChild(clearBtn);
@@ -124,21 +126,13 @@ export class RoomEditor {
           frameKey: this.selectedZoneType,
           x: ptr.worldX, y: ptr.worldY,
           w: 60, h: 60,
-          id: Math.random().toString(36).slice(2, 9),
         };
         console.log('[RoomEditor] placing', zone.type, 'at world', Math.round(zone.x), Math.round(zone.y));
-        this.customZones.push(zone);
-        this._save();
-        this._redraw();
-        const p = new Prop(this.scene, zone.x, zone.y, zone.frameKey);
-        this.scene._propSprites?.push(p);
+        this.scene.placeDecoration?.(zone);
       } else if (ptr.button === 2 && this.hoveredZone) {
-        this.customZones.splice(this.customZones.indexOf(this.hoveredZone), 1);
+        this.scene.removeDecoration?.(this.hoveredZone.id);
         this.hoveredZone = null;
-        this._save();
         this._redraw();
-        // Rebuild sprites from saved zones
-        this.scene._renderSavedProps?.();
       }
     };
     this.scene.input.on('pointermove', this._pointerMove);
@@ -169,23 +163,6 @@ export class RoomEditor {
   _hit(px, py, z) {
     return px >= z.x - z.w / 2 && px <= z.x + z.w / 2 &&
            py >= z.y - z.h / 2 && py <= z.y + z.h / 2;
-  }
-
-  _roomKey() {
-    const id = this.scene.roomId;
-    const name = this.scene.roomName;
-    const key = (id && id !== 'default-room' && id !== 'undefined') ? id : name;
-    console.log('[RoomEditor] storage key:', `sidequest_customzones_${key}`);
-    return `sidequest_customzones_${key}`;
-  }
-
-  _save() {
-    localStorage.setItem(this._roomKey(), JSON.stringify(this.customZones));
-  }
-
-  _loadCustomZones() {
-    const raw = localStorage.getItem(this._roomKey());
-    return raw ? JSON.parse(raw) : [];
   }
 
   destroy() {

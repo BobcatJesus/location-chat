@@ -65,6 +65,7 @@ export class VillageScene extends Phaser.Scene {
 
     // Initialize room editor (press E or use the UI toggle)
     this.roomEditor = new RoomEditor(this);
+    this.customZones = [];
     this.onEditorChange(false);
     // Render any custom zones already saved
     this._propSprites = [];
@@ -147,6 +148,7 @@ export class VillageScene extends Phaser.Scene {
     const socket = io(SOCKET_SERVER_URL, { transports: ['websocket'] });
     this.socket = socket;
     const userId = this.profile?.profile?.email || this.profile?.mode || 'guest';
+    this.userId = userId;
     const userName = this.profile?.profile?.characterName || 'Traveler';
     const firstName = this.profile?.profile?.firstName || userName.split(' ')[0];
 
@@ -177,6 +179,36 @@ export class VillageScene extends Phaser.Scene {
       if (actor) { actor.destroy(); this.remotePlayers.delete(socketId); }
     });
 
+    socket.on('room_decorations', (items) => {
+      this.customZones = [];
+      (items || []).forEach((item) => {
+        const zone = this._normalizeDecoration(item);
+        if (zone) this.customZones.push(zone);
+      });
+      this.roomEditor?.setZones(this.customZones);
+      this._renderSavedProps();
+    });
+
+    socket.on('decoration_placed', (item) => {
+      const zone = this._normalizeDecoration(item);
+      if (!zone) return;
+      if (this.customZones.some(z => z.id === zone.id)) return;
+      this.customZones.push(zone);
+      this.roomEditor?.setZones(this.customZones);
+      this._renderSavedProps();
+    });
+
+    socket.on('decoration_removed', ({ id }) => {
+      if (!id) return;
+      this.customZones = this.customZones.filter(z => z.id !== id);
+      this.roomEditor?.setZones(this.customZones);
+      this._renderSavedProps();
+    });
+
+    socket.on('decoration_error', ({ message }) => {
+      if (message) console.warn('[VillageScene] decoration_error:', message);
+    });
+
     socket.on('receive_message', (payload) => {
       if (!payload?.message || !payload?.position) return;
       const dx = payload.position.x - this.player.gx;
@@ -201,6 +233,50 @@ export class VillageScene extends Phaser.Scene {
       roomId: this.roomId,
       message: text,
     });
+  }
+
+  placeDecoration(zone) {
+    if (!this.socket?.connected) return;
+    this.socket.emit('place_decoration', {
+      roomId: this.roomId,
+      item: {
+        frameKey: zone.frameKey,
+        type: zone.type || zone.frameKey,
+        x: zone.x,
+        y: zone.y,
+        w: zone.w || 60,
+        h: zone.h || 60,
+      },
+    });
+  }
+
+  removeDecoration(id) {
+    if (!this.socket?.connected || !id) return;
+    this.socket.emit('remove_decoration', {
+      roomId: this.roomId,
+      id,
+    });
+  }
+
+  clearOwnDecorations() {
+    this.customZones
+      .filter(z => z.placedBy === this.userId)
+      .forEach(z => this.removeDecoration(z.id));
+  }
+
+  _normalizeDecoration(item) {
+    if (!item?.frameKey) return null;
+    if (!PROP_DEFS[item.frameKey]) return null;
+    return {
+      id: item.id,
+      frameKey: item.frameKey,
+      type: item.type || item.frameKey,
+      x: item.x,
+      y: item.y,
+      w: item.w || 60,
+      h: item.h || 60,
+      placedBy: item.placedBy,
+    };
   }
 
   _spawnRemote(socketId, player) {
@@ -301,7 +377,7 @@ export class VillageScene extends Phaser.Scene {
     this._propSprites.forEach(p => p.destroy());
     this._propSprites = [];
     if (!this.textures.exists('props')) return;
-    (this.roomEditor?.customZones || []).forEach(z => {
+    (this.customZones || []).forEach(z => {
       if (z.frameKey) {
         this._propSprites.push(new Prop(this, z.x, z.y, z.frameKey));
       }
