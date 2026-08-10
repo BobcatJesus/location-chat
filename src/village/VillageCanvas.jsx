@@ -159,6 +159,25 @@ export default function VillageCanvas({ room, profile, onLeave }) {
 
       <div style={{
         position: 'absolute',
+        top: 'calc(12px + env(safe-area-inset-top, 0px))',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        zIndex: 1001,
+        background: '#111827ee',
+        border: '2px solid #f59e0b',
+        borderRadius: 8,
+        padding: '6px 10px',
+        color: '#fef3c7',
+        fontFamily: 'Courier New, monospace',
+        fontSize: 12,
+        whiteSpace: 'nowrap',
+        pointerEvents: 'none',
+      }}>
+        NET ROOM: {roomId || '--'} | PLAYERS: {debugState?.roomStateCount ?? 0} | REMOTE: {debugState?.remoteCount ?? 0}
+      </div>
+
+      <div style={{
+        position: 'absolute',
         right: 'calc(12px + env(safe-area-inset-right, 0px))',
         top: isMobile ? 'calc(60px + env(safe-area-inset-top, 0px))' : 'auto',
         bottom: isMobile ? 'auto' : 'calc(64px + env(safe-area-inset-bottom, 0px))',
