@@ -2,6 +2,28 @@ import React, { useEffect, useRef, useState } from 'react';
 import Phaser from 'phaser';
 import { VillageScene } from './VillageScene.js';
 
+function slugify(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '') || 'room';
+}
+
+function canonicalRoomId(room) {
+  if (!room) return null;
+  const rawId = String(room.id || '').trim();
+  if (rawId && !rawId.startsWith('user-')) return rawId;
+
+  const nameKey = slugify(room.name || room.shop || room.amenity || 'room');
+  const hasCoords = Number.isFinite(room.lat) && Number.isFinite(room.lng);
+  if (hasCoords) {
+    const lat = Number(room.lat).toFixed(4);
+    const lng = Number(room.lng).toFixed(4);
+    return `geo-${lat}-${lng}-${nameKey}`;
+  }
+  return `name-${nameKey}`;
+}
+
 export default function VillageCanvas({ room, profile, onLeave }) {
   const containerRef = useRef(null);
   const gameRef = useRef(null);
@@ -10,6 +32,7 @@ export default function VillageCanvas({ room, profile, onLeave }) {
   const [messages, setMessages] = useState([]);
   const [draft, setDraft] = useState('');
   const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768);
+  const roomId = canonicalRoomId(room);
 
   useEffect(() => {
     const onResize = () => setIsMobile(window.innerWidth <= 768);
@@ -18,14 +41,14 @@ export default function VillageCanvas({ room, profile, onLeave }) {
   }, []);
 
   useEffect(() => {
-    if (!containerRef.current || !room?.id) return;
+    if (!containerRef.current || !roomId) return;
 
     const el = containerRef.current;
     const width = el.clientWidth || window.innerWidth;
     const height = el.clientHeight || window.innerHeight;
 
     VillageScene._boot = {
-      roomId:     room?.id,
+      roomId,
       roomName:   room?.name   || '',
       amenityTag: room?.amenity || '',
       shopTag:    room?.shop    || '',
@@ -61,7 +84,7 @@ export default function VillageCanvas({ room, profile, onLeave }) {
       setMessages([]);
       setDraft('');
     };
-  }, [room?.id, room?.name, room?.amenity, room?.shop, profile]);
+  }, [roomId, room?.name, room?.amenity, room?.shop, profile]);
 
   const toggleEditor = () => {
     const scene = gameRef.current?.scene?.getScene('VillageScene');
