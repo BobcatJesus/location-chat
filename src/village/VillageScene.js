@@ -24,6 +24,15 @@ const SKIN_TINTS = {
   slate: 0x94a3b8,
 };
 
+const LEGACY_TYPE_TO_FRAME_KEY = {
+  table: 'prop_table_round',
+  chair: 'prop_chair_wooden',
+  plant: 'prop_plant_potted',
+  jukebox: 'prop_jukebox',
+  rug: 'prop_rug_rolled',
+  art: 'prop_portrait_framed',
+};
+
 export class VillageScene extends Phaser.Scene {
   constructor() { super({ key: 'VillageScene' }); }
 
@@ -265,12 +274,13 @@ export class VillageScene extends Phaser.Scene {
   }
 
   _normalizeDecoration(item) {
-    if (!item?.frameKey) return null;
-    if (!PROP_DEFS[item.frameKey]) return null;
+    if (!item) return null;
+    const frameKey = item.frameKey || LEGACY_TYPE_TO_FRAME_KEY[item.type] || null;
+    if (!frameKey || !PROP_DEFS[frameKey]) return null;
     return {
       id: item.id,
-      frameKey: item.frameKey,
-      type: item.type || item.frameKey,
+      frameKey,
+      type: item.type || frameKey,
       x: item.x,
       y: item.y,
       w: item.w || 60,

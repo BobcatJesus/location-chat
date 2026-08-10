@@ -18,7 +18,7 @@ export default function VillageCanvas({ room, profile, onLeave }) {
   }, []);
 
   useEffect(() => {
-    if (!containerRef.current) return;
+    if (!containerRef.current || !room?.id) return;
 
     const el = containerRef.current;
     const width = el.clientWidth || window.innerWidth;
@@ -61,7 +61,7 @@ export default function VillageCanvas({ room, profile, onLeave }) {
       setMessages([]);
       setDraft('');
     };
-  }, []);
+  }, [room?.id, room?.name, room?.amenity, room?.shop, profile]);
 
   const toggleEditor = () => {
     const scene = gameRef.current?.scene?.getScene('VillageScene');
