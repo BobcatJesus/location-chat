@@ -13,6 +13,8 @@ const SOCKET_SERVER_URL = import.meta.env.VITE_BACKEND_URL ||
 const SPEED = 180;
 const TICK_MS = 50; // position broadcast interval
 const PROXIMITY_RADIUS = 150;
+const DECOR_SYNC_MS = 8000;
+const PRESENCE_SYNC_MS = 4000;
 const SKIN_TINTS = {
   blue: 0x3b82f6,
   red: 0xe53e3e,
@@ -173,11 +175,11 @@ export class VillageScene extends Phaser.Scene {
       if (this._decorationSyncTimer) clearInterval(this._decorationSyncTimer);
       this._decorationSyncTimer = setInterval(() => {
         if (socket.connected) socket.emit('get_room_decorations', { roomId: this.roomId });
-      }, 3000);
+      }, DECOR_SYNC_MS);
       if (this._presenceSyncTimer) clearInterval(this._presenceSyncTimer);
       this._presenceSyncTimer = setInterval(() => {
         if (socket.connected) socket.emit('get_room_state', { roomId: this.roomId });
-      }, 1500);
+      }, PRESENCE_SYNC_MS);
     });
 
     socket.on('disconnect', () => {
