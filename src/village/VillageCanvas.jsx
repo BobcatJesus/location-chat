@@ -34,7 +34,6 @@ export default function VillageCanvas({ room, profile, onLeave }) {
   const [messages, setMessages] = useState([]);
   const [draft, setDraft] = useState('');
   const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768);
-  const [debugState, setDebugState] = useState(null);
   const roomId = canonicalRoomId(room);
 
   useEffect(() => {
@@ -89,21 +88,6 @@ export default function VillageCanvas({ room, profile, onLeave }) {
     };
   }, [roomId, room?.name, room?.amenity, room?.shop, profile]);
 
-  useEffect(() => {
-    const id = setInterval(() => {
-      const scene = gameRef.current?.scene?.getScene('VillageScene');
-      if (scene?.sys?.isActive?.()) {
-        setDebugState(scene.getDebugState?.() || null);
-      }
-    }, 500);
-    return () => clearInterval(id);
-  }, []);
-
-  const fmtTime = (ts) => {
-    if (!ts) return '--';
-    return new Date(ts).toLocaleTimeString();
-  };
-
   const toggleEditor = () => {
     const scene = gameRef.current?.scene?.getScene('VillageScene');
     if (scene?.sys?.isActive()) {
@@ -157,25 +141,6 @@ export default function VillageCanvas({ room, profile, onLeave }) {
         >
           {editorActive ? 'Done' : 'Edit'}
         </button>
-      </div>
-
-      <div style={{
-        position: 'absolute',
-        top: 'calc(12px + env(safe-area-inset-top, 0px))',
-        left: '50%',
-        transform: 'translateX(-50%)',
-        zIndex: 1001,
-        background: '#111827ee',
-        border: '2px solid #f59e0b',
-        borderRadius: 8,
-        padding: '6px 10px',
-        color: '#fef3c7',
-        fontFamily: 'Courier New, monospace',
-        fontSize: 12,
-        whiteSpace: 'nowrap',
-        pointerEvents: 'none',
-      }}>
-        NET ROOM: {roomId || '--'} | PLAYERS: {debugState?.roomStateCount ?? 0} | REMOTE: {debugState?.remoteCount ?? 0}
       </div>
 
       <div style={{
@@ -257,33 +222,6 @@ export default function VillageCanvas({ room, profile, onLeave }) {
             ↩
           </button>
         </form>
-      </div>
-
-      <div style={{
-        position: 'absolute',
-        left: 'calc(12px + env(safe-area-inset-left, 0px))',
-        bottom: 'calc(12px + env(safe-area-inset-bottom, 0px))',
-        zIndex: 1000,
-        width: 'min(320px, calc(100vw - 24px))',
-        background: '#020617e0',
-        border: '1px solid #334155',
-        borderRadius: 8,
-        padding: '8px 10px',
-        color: '#cbd5e1',
-        fontFamily: 'Courier New, monospace',
-        fontSize: 11,
-        lineHeight: 1.4,
-        pointerEvents: 'none',
-      }}>
-        <div style={{ color: '#fbbf24', marginBottom: 4 }}>Multiplayer Debug</div>
-        <div>roomKey: {roomId || '--'}</div>
-        <div>socketId: {debugState?.socketId || '--'}</div>
-        <div>connected: {debugState?.connected ? 'yes' : 'no'}</div>
-        <div>roomStateCount: {debugState?.roomStateCount ?? 0}</div>
-        <div>remoteCount: {debugState?.remoteCount ?? 0}</div>
-        <div>decorations: {debugState?.decorationCount ?? 0}</div>
-        <div>lastEvent: {debugState?.lastEvent || '--'} @ {fmtTime(debugState?.lastEventAt)}</div>
-        <div>lastDecorEvent: {fmtTime(debugState?.lastDecorationEventAt)}</div>
       </div>
     </div>
   );
