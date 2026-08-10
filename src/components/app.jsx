@@ -291,7 +291,7 @@ function App() {
         return;
       }
     }
-    if (poiMeta) setOsmRoom(poiMeta);
+    if (poiMeta) setOsmRoom({ ...poiMeta, id: roomId });
     else setOsmRoom(null);
     setSelectedRoom(roomId);
     setActiveScene('room');

@@ -12,7 +12,7 @@ function slugify(value) {
 function canonicalRoomId(room) {
   if (!room) return null;
   const rawId = String(room.id || '').trim();
-  if (rawId && !rawId.startsWith('user-')) return rawId;
+  if (rawId) return rawId;
 
   const nameKey = slugify(room.name || room.shop || room.amenity || 'room');
   const hasCoords = Number.isFinite(room.lat) && Number.isFinite(room.lng);
