@@ -1,11 +1,13 @@
-const PIGMENT_STOPS = [
-  '#f5d8b6',
-  '#ddb892',
-  '#b08968',
-  '#7f5539',
-  '#3d2b1f',
-  '#25262b',
-  '#111218',
+const SKIN_TONE_STOPS = [
+  '#fbe3cf',
+  '#f4cfb5',
+  '#e6b893',
+  '#cf9a74',
+  '#b37d5d',
+  '#8f6247',
+  '#684634',
+  '#493122',
+  '#2f2016',
 ];
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
@@ -78,32 +80,29 @@ const hslToRgb = (h, s, l) => {
 
 export const colorHexToInt = (hex) => parseInt(hex.replace('#', ''), 16);
 
-export const pigmentToBodyColor = (pigment = 82) => {
-  const p = clamp(Number(pigment), 0, 100);
-  const segmentSize = 100 / (PIGMENT_STOPS.length - 1);
-  const idx = Math.min(PIGMENT_STOPS.length - 2, Math.floor(p / segmentSize));
+export const skinToneToColor = (skinTone = 45) => {
+  const p = clamp(Number(skinTone), 0, 100);
+  const segmentSize = 100 / (SKIN_TONE_STOPS.length - 1);
+  const idx = Math.min(SKIN_TONE_STOPS.length - 2, Math.floor(p / segmentSize));
   const segmentStart = idx * segmentSize;
   const t = (p - segmentStart) / segmentSize;
-  return lerpHex(PIGMENT_STOPS[idx], PIGMENT_STOPS[idx + 1], t);
+  return lerpHex(SKIN_TONE_STOPS[idx], SKIN_TONE_STOPS[idx + 1], t);
 };
 
-export const pigmentToEarInnerColor = (pigment = 82) => shiftColor(pigmentToBodyColor(pigment), 24);
-export const pigmentToLimbColor = (pigment = 82) => shiftColor(pigmentToBodyColor(pigment), -18);
-export const pigmentToOutlineColor = (pigment = 82) => shiftColor(pigmentToBodyColor(pigment), -42);
+export const skinToneToShade = (skinTone = 45, amount = -20) => shiftColor(skinToneToColor(skinTone), amount);
 
-export const scarfColorFromHue = (hue = 195, saturation = 52, lightness = 72) => {
-  const { r, g, b } = hslToRgb(Number(hue), saturation, lightness);
+export const hueToColor = (hue = 24, saturation = 70, lightness = 45) => {
+  const { r, g, b } = hslToRgb(Number(hue), Number(saturation), Number(lightness));
   return rgbToHex(r, g, b);
 };
 
-export const eyeGlowColorFromHue = (hue = 42, saturation = 95, lightness = 57) => {
-  const { r, g, b } = hslToRgb(Number(hue), saturation, lightness);
-  return rgbToHex(r, g, b);
-};
+export const hairHueToColor = (hue = 26) => hueToColor(hue, 65, 32);
+export const accessoryHueToColor = (hue = 210) => hueToColor(hue, 60, 48);
 
-export const scarfSwatchFromProfile = (profile) => {
-  if (profile && profile.scarfHue !== undefined && profile.scarfHue !== null) {
-    return scarfColorFromHue(profile.scarfHue);
-  }
-  return '#8a8f9e';
-};
+// Backward-compatible aliases while migrating saved profiles.
+export const pigmentToBodyColor = (pigment = 45) => skinToneToColor(pigment);
+export const pigmentToLimbColor = (pigment = 45) => skinToneToShade(pigment, -16);
+export const pigmentToOutlineColor = (pigment = 45) => skinToneToShade(pigment, -36);
+export const pigmentToEarInnerColor = (pigment = 45) => skinToneToShade(pigment, 18);
+export const scarfColorFromHue = (hue = 210, saturation = 60, lightness = 48) => hueToColor(hue, saturation, lightness);
+export const eyeGlowColorFromHue = (hue = 42, saturation = 95, lightness = 55) => hueToColor(hue, saturation, lightness);

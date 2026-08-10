@@ -5,9 +5,10 @@ import { useState, useEffect, useRef } from 'react';
  * retro tilemap JSON whenever the user enters a verified venue polygon.
  * 
  * @param {string} apiEndpoint - Backend geofence verification endpoint
+ * @param {boolean} enabled - Whether to actively watch and resolve geofence data
  * @returns {Object} { location, currentVenue, mapData, isInsideVenue, error, isLocating }
  */
-export function useGeofencedMap(apiEndpoint = '/api/geofence/check') {
+export function useGeofencedMap(apiEndpoint = '/api/geofence/check', enabled = true) {
   const [location, setLocation] = useState(null);
   const [currentVenue, setCurrentVenue] = useState(null);
   const [mapData, setMapData] = useState(null);
@@ -19,6 +20,17 @@ export function useGeofencedMap(apiEndpoint = '/api/geofence/check') {
   const activeVenueIdRef = useRef(null);
 
   useEffect(() => {
+    if (!enabled) {
+      activeVenueIdRef.current = null;
+      setLocation(null);
+      setCurrentVenue(null);
+      setMapData(null);
+      setIsInsideVenue(false);
+      setError(null);
+      setIsLocating(false);
+      return;
+    }
+
     if (!('geolocation' in navigator)) {
       setError('Geolocation is not supported by your browser.');
       setIsLocating(false);
@@ -46,7 +58,17 @@ export function useGeofencedMap(apiEndpoint = '/api/geofence/check') {
           body: JSON.stringify({ latitude, longitude }),
         });
 
-        const result = await response.json();
+        const raw = await response.text();
+        let result = {};
+        try {
+          result = raw ? JSON.parse(raw) : {};
+        } catch {
+          throw new Error(`Invalid geofence response (${response.status})`);
+        }
+
+        if (!response.ok) {
+          throw new Error(result?.error || `Geofence request failed (${response.status})`);
+        }
 
         if (result.accessGranted && result.venue) {
           // Check if user entered a new venue or first-time load
@@ -100,7 +122,7 @@ export function useGeofencedMap(apiEndpoint = '/api/geofence/check') {
     return () => {
       navigator.geolocation.clearWatch(watchId);
     };
-  }, [apiEndpoint]);
+  }, [apiEndpoint, enabled]);
 
   return {
     location,        // Raw { latitude, longitude, accuracy }

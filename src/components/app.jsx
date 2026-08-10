@@ -1,4 +1,4 @@
-import React, { useState, lazy, Suspense } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import RetroAuthModal from './RetroAuthModal';
 import AvatarSetupFields from './AvatarSetupFields';
 import { useGeofencedMap } from '../hooks/UseGeofencingApp';
@@ -9,6 +9,12 @@ const VillageCanvas = lazy(() => import('../village/VillageCanvas.jsx'));
 const WorldMapCanvas = lazy(() => import('../village/WorldMapCanvas.jsx'));
 
 const hasText = (value) => typeof value === 'string' && value.trim().length > 0;
+const normalizeHairStyle = (hairStyle) => {
+  if (hairStyle === 'messy' || hairStyle === 'combed') return hairStyle;
+  if (hairStyle === 'side' || hairStyle === 'mohawk') return 'messy';
+  return 'combed';
+};
+
 const isAvatarOnboardingComplete = (savedProfile) => {
   if (!savedProfile) return false;
   if (savedProfile.avatarOnboardingComplete === true) return true;
@@ -16,7 +22,10 @@ const isAvatarOnboardingComplete = (savedProfile) => {
     && hasText(savedProfile.characterName)
     && hasText(savedProfile.skinId)
     && hasText(savedProfile.hairStyle)
-    && hasText(savedProfile.bodyType);
+    && hasText(savedProfile.bodyType)
+    && hasText(savedProfile.topStyle)
+    && hasText(savedProfile.bottomStyle)
+    && hasText(savedProfile.footwear);
 };
 
 const migrateProfileForAvatar = (savedProfile) => {
@@ -26,11 +35,16 @@ const migrateProfileForAvatar = (savedProfile) => {
     ...profile,
     characterName: hasText(profile.characterName) ? profile.characterName : emailStem,
     skinId: hasText(profile.skinId) ? profile.skinId : 'slate',
-    hairStyle: hasText(profile.hairStyle) ? profile.hairStyle : 'side',
+    hairStyle: normalizeHairStyle(profile.hairStyle),
     bodyType: hasText(profile.bodyType) ? profile.bodyType : 'standard',
-    pigment: profile.pigment ?? 92,
-    scarfHue: profile.scarfHue ?? 220,
-    eyeHue: profile.eyeHue ?? 42,
+    skinTone: profile.skinTone ?? profile.pigment ?? 45,
+    hairHue: profile.hairHue ?? profile.eyeHue ?? 26,
+    outfitHue: profile.outfitHue ?? profile.scarfHue ?? 220,
+    topStyle: hasText(profile.topStyle) ? profile.topStyle : 'hoodie',
+    bottomStyle: hasText(profile.bottomStyle) ? profile.bottomStyle : 'pants',
+    footwear: hasText(profile.footwear) ? profile.footwear : 'sneakers',
+    glasses: Boolean(profile.glasses),
+    hasScythe: Boolean(profile.hasScythe),
   };
 
   const changed = (
@@ -38,13 +52,125 @@ const migrateProfileForAvatar = (savedProfile) => {
     || migrated.skinId !== profile.skinId
     || migrated.hairStyle !== profile.hairStyle
     || migrated.bodyType !== profile.bodyType
-    || migrated.pigment !== profile.pigment
-    || migrated.scarfHue !== profile.scarfHue
-    || migrated.eyeHue !== profile.eyeHue
+    || migrated.skinTone !== profile.skinTone
+    || migrated.hairHue !== profile.hairHue
+    || migrated.outfitHue !== profile.outfitHue
+    || migrated.topStyle !== profile.topStyle
+    || migrated.bottomStyle !== profile.bottomStyle
+    || migrated.footwear !== profile.footwear
+    || migrated.glasses !== profile.glasses
+    || migrated.hasScythe !== profile.hasScythe
   );
 
   return { migrated, changed };
 };
+
+function AvatarStudioPage({
+  formData,
+  setFormData,
+  profileError,
+  onSave,
+  onCancel,
+  onForceEnter,
+  onboardingRequired,
+}) {
+  const emergencyAction = onboardingRequired ? onForceEnter : onCancel;
+  const emergencyLabel = onboardingRequired ? 'Exit To World' : 'Exit Editor';
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 20000, minHeight: '100vh', width: '100%', background: 'radial-gradient(120% 100% at 0% 0%, #12203a 0%, #0f172a 45%, #020617 100%)', color: '#f8fafc', fontFamily: 'Courier New, monospace', overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+      {emergencyAction && (
+        <a
+          href="?quickStart=complete"
+          onClick={(e) => {
+            e.preventDefault();
+            emergencyAction();
+          }}
+          style={{ position: 'fixed', top: 10, right: 10, zIndex: 20050, padding: '8px 12px', border: '2px solid #f59e0b', background: '#111827', color: '#fde68a', fontFamily: 'Courier New, monospace', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.07em', cursor: 'pointer', textDecoration: 'none' }}
+        >
+          {emergencyLabel}
+        </a>
+      )}
+      <div style={{ maxWidth: 980, margin: '0 auto', padding: '22px 14px 34px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+        <aside style={{ border: '2px solid #1e293b', background: 'linear-gradient(140deg, rgba(15,23,42,0.95), rgba(13,33,60,0.8))', padding: 16 }}>
+          <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.12em', color: '#93c5fd', marginBottom: 8 }}>Avatar Studio</div>
+          <h1 style={{ margin: '0 0 10px', color: '#fde68a', fontSize: 'clamp(1.8rem, 6vw, 2.7rem)', lineHeight: 0.95, textTransform: 'uppercase' }}>
+            Build Your Human Avatar
+          </h1>
+          <p style={{ margin: '0 0 12px', color: '#cbd5e1', fontSize: 13, lineHeight: 1.5 }}>
+            This is now a dedicated page. Finish your avatar here, then continue into map and location rooms.
+          </p>
+
+          <div style={{ border: '2px solid #334155', background: '#0b1220', padding: 10, marginBottom: 10 }}>
+            <div style={{ color: '#fbbf24', fontSize: 11, textTransform: 'uppercase', marginBottom: 6 }}>Checklist</div>
+            <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 4 }}>- First name + display name</div>
+            <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 4 }}>- Hair style + hair color spectrum</div>
+            <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 4 }}>- Outfit + accessories</div>
+            <div style={{ color: '#94a3b8', fontSize: 12 }}>- Save to enter the world</div>
+          </div>
+
+          {onboardingRequired && (
+            <div style={{ border: '2px solid #f59e0b', background: 'rgba(120,53,15,0.35)', color: '#fde68a', padding: '8px 10px', fontSize: 12 }}>
+              Avatar onboarding is required before entering map locations.
+            </div>
+          )}
+        </aside>
+
+        <section style={{ border: '4px solid #fff', background: '#0f172a', padding: 4, boxShadow: '8px 8px 0 #000' }}>
+          <div style={{ border: '2px solid #3b82f6', background: '#0f172a', padding: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 14, borderBottom: '2px solid #1e293b', paddingBottom: 10 }}>
+              <h2 style={{ margin: 0, color: '#fbbf24', fontSize: 16, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                {onboardingRequired ? 'Complete Avatar Setup' : 'Edit Avatar'}
+              </h2>
+              {!onboardingRequired && onCancel && (
+                <button onClick={onCancel} style={{ background: 'none', border: '1px solid #334155', color: '#94a3b8', fontFamily: 'Courier New, monospace', fontSize: 11, cursor: 'pointer', padding: '3px 8px', textTransform: 'uppercase' }}>
+                  Back to map
+                </button>
+              )}
+            </div>
+
+            {profileError && (
+              <div style={{ marginBottom: 12, padding: '8px 10px', border: '2px solid #ef4444', background: 'rgba(127,29,29,0.8)', color: '#fca5a5', fontSize: 11 }}>
+                {profileError}
+              </div>
+            )}
+
+            <AvatarSetupFields
+              formData={formData}
+              setFormData={setFormData}
+              photoDataUrl={formData.photo}
+              setPhotoDataUrl={(photo) => setFormData((f) => ({ ...f, photo }))}
+              firstNameLabel="First Name"
+              characterNameLabel="Display Name"
+            />
+
+            <div style={{ display: 'flex', gap: 8, marginTop: 14, position: 'sticky', bottom: 0, zIndex: 20, background: 'linear-gradient(180deg, rgba(15,23,42,0.25) 0%, rgba(15,23,42,0.98) 40%)', paddingTop: 10, paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 8px)' }}>
+              {!onboardingRequired && onCancel && (
+                <button onClick={onCancel} style={{ flex: 1, padding: '10px 0', background: 'transparent', border: '2px solid #334155', color: '#94a3b8', fontFamily: 'Courier New, monospace', fontSize: 12, textTransform: 'uppercase', cursor: 'pointer' }}>
+                  Cancel
+                </button>
+              )}
+              {onboardingRequired && onForceEnter && (
+                <button
+                  onClick={onForceEnter}
+                  style={{ flex: 1, padding: '10px 0', background: 'transparent', border: '2px dashed #f59e0b', color: '#fde68a', fontFamily: 'Courier New, monospace', fontSize: 12, textTransform: 'uppercase', cursor: 'pointer' }}
+                >
+                  Enter World Now
+                </button>
+              )}
+              <button
+                onClick={onSave}
+                style={{ flex: 1, padding: '10px 0', background: '#16a34a', border: '2px solid #000', boxShadow: '2px 2px 0 #000', color: '#fff', fontWeight: 'bold', fontFamily: 'Courier New, monospace', fontSize: 12, letterSpacing: '0.08em', textTransform: 'uppercase', cursor: 'pointer' }}
+              >
+                {onboardingRequired ? 'Save and Enter World' : 'Save Avatar'}
+              </button>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -60,11 +186,16 @@ function App() {
     firstName: '',
     photo: null,
     skinId: 'slate',
-    hairStyle: 'side',
+    hairStyle: 'combed',
     bodyType: 'standard',
-    pigment: 92,
-    scarfHue: 220,
-    eyeHue: 42,
+    skinTone: 45,
+    hairHue: 26,
+    outfitHue: 220,
+    topStyle: 'hoodie',
+    bottomStyle: 'pants',
+    footwear: 'sneakers',
+    glasses: false,
+    hasScythe: false,
   });
   const [osmRoom, setOsmRoom] = useState(null);
   const [creatingRoom, setCreatingRoom] = useState(false);
@@ -73,17 +204,32 @@ function App() {
   const [newRoomPublic, setNewRoomPublic] = useState(false);
   const [inviteToast, setInviteToast] = useState(null);
 
+  const clearQuickStartParam = () => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (!params.has('quickStart')) return;
+      params.delete('quickStart');
+      const next = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ''}`;
+      window.history.replaceState({}, '', next);
+    } catch {}
+  };
+
   const openEditProfile = () => {
     setEditForm({
       characterName: profile?.profile?.characterName || '',
       firstName: profile?.profile?.firstName || '',
       photo: profile?.profile?.photo || null,
       skinId: profile?.profile?.skinId || 'slate',
-      hairStyle: profile?.profile?.hairStyle || 'side',
+      hairStyle: normalizeHairStyle(profile?.profile?.hairStyle),
       bodyType: profile?.profile?.bodyType || 'standard',
-      pigment: profile?.profile?.pigment ?? 92,
-      scarfHue: profile?.profile?.scarfHue ?? 220,
-      eyeHue: profile?.profile?.eyeHue ?? 42,
+      skinTone: profile?.profile?.skinTone ?? profile?.profile?.pigment ?? 45,
+      hairHue: profile?.profile?.hairHue ?? profile?.profile?.eyeHue ?? 26,
+      outfitHue: profile?.profile?.outfitHue ?? profile?.profile?.scarfHue ?? 220,
+      topStyle: profile?.profile?.topStyle || 'hoodie',
+      bottomStyle: profile?.profile?.bottomStyle || 'pants',
+      footwear: profile?.profile?.footwear || 'sneakers',
+      glasses: Boolean(profile?.profile?.glasses),
+      hasScythe: Boolean(profile?.profile?.hasScythe),
     });
     setProfileError(null);
     setEditingProfile(true);
@@ -96,11 +242,16 @@ function App() {
       firstName: p.firstName || '',
       photo: p.photo || null,
       skinId: p.skinId || 'slate',
-      hairStyle: p.hairStyle || 'side',
+      hairStyle: normalizeHairStyle(p.hairStyle),
       bodyType: p.bodyType || 'standard',
-      pigment: p.pigment ?? 92,
-      scarfHue: p.scarfHue ?? 220,
-      eyeHue: p.eyeHue ?? 42,
+      skinTone: p.skinTone ?? p.pigment ?? 45,
+      hairHue: p.hairHue ?? p.eyeHue ?? 26,
+      outfitHue: p.outfitHue ?? p.scarfHue ?? 220,
+      topStyle: p.topStyle || 'hoodie',
+      bottomStyle: p.bottomStyle || 'pants',
+      footwear: p.footwear || 'sneakers',
+      glasses: Boolean(p.glasses),
+      hasScythe: Boolean(p.hasScythe),
     });
     setProfileError(null);
     setOnboardingRequired(true);
@@ -128,11 +279,16 @@ function App() {
       firstName: editForm.firstName.trim(),
       photo: editForm.photo,
       skinId: editForm.skinId || 'slate',
-      hairStyle: editForm.hairStyle || 'side',
+      hairStyle: normalizeHairStyle(editForm.hairStyle),
       bodyType: editForm.bodyType || 'standard',
-      pigment: editForm.pigment ?? 92,
-      scarfHue: editForm.scarfHue ?? 220,
-      eyeHue: editForm.eyeHue ?? 42,
+      skinTone: editForm.skinTone ?? 45,
+      hairHue: editForm.hairHue ?? 26,
+      outfitHue: editForm.outfitHue ?? 220,
+      topStyle: editForm.topStyle || 'hoodie',
+      bottomStyle: editForm.bottomStyle || 'pants',
+      footwear: editForm.footwear || 'sneakers',
+      glasses: Boolean(editForm.glasses),
+      hasScythe: Boolean(editForm.hasScythe),
       avatarOnboardingComplete: true,
     };
     localStorage.setItem('sidequest_profile', JSON.stringify(updated));
@@ -141,7 +297,93 @@ function App() {
     setOnboardingRequired(false);
     setEditingProfile(false);
   };
-  const { location, currentVenue, isInsideVenue, error, isLocating } = useGeofencedMap('/api/geofence/check');
+
+  const forceEnterWorld = () => {
+    const base = profile?.profile || {};
+    const fallbackFirst = editForm.firstName.trim() || base.firstName || 'Traveler';
+    const rawName = editForm.characterName.trim() || base.characterName || fallbackFirst;
+    const safeName = rawName.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '').slice(0, 24) || `traveler_${Date.now().toString().slice(-4)}`;
+
+    const updated = {
+      ...base,
+      characterName: safeName,
+      firstName: fallbackFirst,
+      photo: editForm.photo,
+      skinId: editForm.skinId || 'slate',
+      hairStyle: normalizeHairStyle(editForm.hairStyle),
+      bodyType: editForm.bodyType || 'standard',
+      skinTone: editForm.skinTone ?? 45,
+      hairHue: editForm.hairHue ?? 26,
+      outfitHue: editForm.outfitHue ?? 220,
+      topStyle: editForm.topStyle || 'hoodie',
+      bottomStyle: editForm.bottomStyle || 'pants',
+      footwear: editForm.footwear || 'sneakers',
+      glasses: Boolean(editForm.glasses),
+      hasScythe: Boolean(editForm.hasScythe),
+      avatarOnboardingComplete: true,
+    };
+
+    localStorage.setItem('sidequest_profile', JSON.stringify(updated));
+    setProfile((prev) => ({ ...(prev || {}), profile: updated }));
+    setProfileError(null);
+    setOnboardingRequired(false);
+    setEditingProfile(false);
+  };
+
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const quickStart = params.get('quickStart');
+      if (!quickStart) return;
+
+      if (quickStart === 'guest' && !isLoggedIn) {
+        const stamp = Date.now().toString().slice(-4);
+        const guestProfile = {
+          email: `guest_${stamp}@side.quest`,
+          characterName: `guest_${stamp}`,
+          firstName: `Guest${stamp}`,
+          skinId: 'slate',
+          hairStyle: 'combed',
+          bodyType: 'standard',
+          skinTone: 45,
+          hairHue: 26,
+          outfitHue: 220,
+          topStyle: 'hoodie',
+          bottomStyle: 'pants',
+          footwear: 'sneakers',
+          glasses: false,
+          hasScythe: false,
+          avatarOnboardingComplete: true,
+          guestMode: true,
+        };
+        localStorage.setItem('sidequest_profile', JSON.stringify(guestProfile));
+        setProfile({ mode: 'guest', profile: guestProfile });
+        setIsLoggedIn(true);
+        setOnboardingRequired(false);
+        setEditingProfile(false);
+        loadUserRooms(guestProfile.email);
+        clearQuickStartParam();
+        return;
+      }
+
+      if (quickStart === 'complete' && isLoggedIn) {
+        if (profile?.profile) {
+          const updated = {
+            ...profile.profile,
+            avatarOnboardingComplete: true,
+          };
+          localStorage.setItem('sidequest_profile', JSON.stringify(updated));
+          setProfile((prev) => ({ ...(prev || {}), profile: updated }));
+        }
+        setOnboardingRequired(false);
+        setEditingProfile(false);
+        clearQuickStartParam();
+      }
+    } catch {
+      clearQuickStartParam();
+    }
+  }, [isLoggedIn, profile]);
+  const { location, currentVenue, isInsideVenue, error, isLocating } = useGeofencedMap('/api/geofence/check', isLoggedIn);
 
   const handleLogin = (authProfile) => {
     const { migrated, changed } = migrateProfileForAvatar(authProfile?.profile);
@@ -173,6 +415,7 @@ function App() {
 
   const handleLogout = () => {
     localStorage.removeItem('sidequest_profile');
+    localStorage.removeItem('sidequest_signup_draft_v1');
     setIsLoggedIn(false);
     setProfile(null);
     setOnboardingRequired(false);
@@ -347,9 +590,22 @@ function App() {
   const locCooldownHours = Math.ceil((_lastLocTs + _THREE_DAYS - Date.now()) / 3600000);
   const avatarComplete = isAvatarOnboardingComplete(profile?.profile);
   const onboardingStepLabel = onboardingRequired ? 'Onboarding Step 2/2: Complete Avatar Setup' : null;
+  const avatarStudioOpen = isLoggedIn && editingProfile;
 
   return (
-    <div style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden', background: 'linear-gradient(180deg, #0f172a 0%, #1e293b 100%)', color: '#f8fafc', fontFamily: 'monospace' }}>
+    <div
+      style={{
+        position: 'relative',
+        width: '100vw',
+        minHeight: '100vh',
+        height: isLoggedIn && !avatarStudioOpen ? '100vh' : 'auto',
+        overflowX: 'hidden',
+        overflowY: isLoggedIn && !avatarStudioOpen ? 'hidden' : 'auto',
+        background: 'linear-gradient(180deg, #0f172a 0%, #1e293b 100%)',
+        color: '#f8fafc',
+        fontFamily: 'monospace',
+      }}
+    >
 
       {/* GPS block toast */}
       {gpsToast && (
@@ -358,56 +614,8 @@ function App() {
         </div>
       )}
 
-      {/* Edit profile modal */}
-      {editingProfile && (
-        <div
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-          onClick={() => { if (!onboardingRequired) setEditingProfile(false); }}
-        >
-          <div onClick={e => e.stopPropagation()} style={{ background: '#0f172a', border: '4px solid #fff', padding: 4, maxWidth: 360, width: '100%', margin: 16, boxShadow: '8px 8px 0 #000' }}>
-            <div style={{ border: '2px solid #3b82f6', padding: 24, background: '#0f172a', color: '#fff', fontFamily: 'Courier New, monospace' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, paddingBottom: 12, borderBottom: '2px solid #1e293b' }}>
-                <h2 style={{ margin: 0, color: '#fbbf24', fontSize: 15, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
-                  {onboardingRequired ? 'Complete Avatar Setup' : 'Edit Profile'}
-                </h2>
-                {!onboardingRequired && (
-                  <button onClick={() => setEditingProfile(false)} style={{ background: 'none', border: 'none', color: '#64748b', fontWeight: 'bold', cursor: 'pointer', fontFamily: 'Courier New', fontSize: 14 }}>[X]</button>
-                )}
-              </div>
-
-              {onboardingRequired && (
-                <div style={{ marginBottom: 14, padding: '8px 10px', border: '2px solid #fbbf24', background: '#111827', color: '#fde68a', fontSize: 11 }}>
-                  Create your avatar to enter the world.
-                </div>
-              )}
-
-              {profileError && (
-                <div style={{ marginBottom: 14, padding: '8px 10px', border: '2px solid #ef4444', background: 'rgba(127,29,29,0.8)', color: '#fca5a5', fontSize: 11 }}>
-                  {profileError}
-                </div>
-              )}
-
-              <div style={{ marginBottom: 20 }}>
-                <AvatarSetupFields
-                  formData={editForm}
-                  setFormData={setEditForm}
-                  photoDataUrl={editForm.photo}
-                  setPhotoDataUrl={(photo) => setEditForm((f) => ({ ...f, photo }))}
-                  firstNameLabel="First Name"
-                  characterNameLabel="Display Name"
-                />
-              </div>
-
-              <button onClick={saveEditProfile}
-                style={{ width: '100%', padding: '12px 0', background: '#16a34a', border: '2px solid #000', boxShadow: '2px 2px 0 #000', color: '#fff', fontWeight: 'bold', fontFamily: 'Courier New, monospace', fontSize: 13, letterSpacing: '0.1em', textTransform: 'uppercase', cursor: 'pointer' }}>
-                {onboardingRequired ? 'Save and Enter World' : 'Save Changes'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
       {/* Create room name prompt */}
-      {creatingRoom && (
+      {!avatarStudioOpen && creatingRoom && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', zIndex: 10001, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setCreatingRoom(false)}>
           <div onClick={e => e.stopPropagation()} style={{ background: '#0f172a', border: '4px solid #fbbf24', padding: 28, maxWidth: 340, width: '100%', margin: 16, boxShadow: '8px 8px 0 #000', fontFamily: 'Courier New, monospace' }}>
             <div style={{ color: '#fbbf24', fontSize: 13, textTransform: 'uppercase', letterSpacing: 2, marginBottom: 16 }}>📍 Create a Place</div>
@@ -458,25 +666,27 @@ function App() {
       )}
 
       {/* Invite copied toast */}
-      {inviteToast && (
+      {!avatarStudioOpen && inviteToast && (
         <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', zIndex: 9999, background: '#16a34a', border: '2px solid #000', color: '#fff', padding: '10px 20px', fontFamily: 'Courier New', fontSize: 13, boxShadow: '0 4px 20px #000' }}>
           ✓ Invite link copied!
         </div>
       )}
 
-      {!isLoggedIn && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 99999,
-          }}
-        >
-          <RetroAuthModal onLogin={handleLogin} />
-        </div>
+      {!isLoggedIn && <RetroAuthModal onLogin={handleLogin} />}
+
+      {avatarStudioOpen && (
+        <AvatarStudioPage
+          formData={editForm}
+          setFormData={setEditForm}
+          profileError={profileError}
+          onSave={saveEditProfile}
+          onCancel={onboardingRequired ? null : () => setEditingProfile(false)}
+          onForceEnter={onboardingRequired ? forceEnterWorld : null}
+          onboardingRequired={onboardingRequired}
+        />
       )}
 
-      {isLoggedIn && (
+      {isLoggedIn && !avatarStudioOpen && (
         <div style={{ height: '100%', display: 'flex', flexDirection: 'column', padding: 20, boxSizing: 'border-box', gap: 12 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #64748b', paddingBottom: 8 }}>
             <div>

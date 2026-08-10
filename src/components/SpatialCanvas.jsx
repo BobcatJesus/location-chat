@@ -49,14 +49,14 @@ const SOCKET_SERVER_URL = import.meta.env.VITE_BACKEND_URL ||
   (import.meta.env.PROD ? 'https://location-chat-production.up.railway.app' : 'http://localhost:4000');
 
 export const AVATAR_SKINS = [
-  { id: 'blue',   label: 'Sky Scarf',   shirt: 0x8fcde1, pants: 0x111111, hair: 0xf6e8cd, swatch: '#8fcde1' },
-  { id: 'red',    label: 'Rose Scarf',  shirt: 0xf2a7a0, pants: 0x111111, hair: 0xf6e8cd, swatch: '#f2a7a0' },
-  { id: 'green',  label: 'Mint Scarf',  shirt: 0xb8dccb, pants: 0x111111, hair: 0xf6e8cd, swatch: '#b8dccb' },
-  { id: 'purple', label: 'Lilac Scarf', shirt: 0xc9b8e6, pants: 0x111111, hair: 0xf6e8cd, swatch: '#c9b8e6' },
-  { id: 'orange', label: 'Peach Scarf', shirt: 0xf3c5a9, pants: 0x111111, hair: 0xf6e8cd, swatch: '#f3c5a9' },
-  { id: 'pink',   label: 'Blush Scarf', shirt: 0xf6c3cf, pants: 0x111111, hair: 0xf6e8cd, swatch: '#f6c3cf' },
-  { id: 'teal',   label: 'Aqua Scarf',  shirt: 0x9fd7d9, pants: 0x111111, hair: 0xf6e8cd, swatch: '#9fd7d9' },
-  { id: 'slate',  label: 'Night Scarf', shirt: 0x93a2b8, pants: 0x111111, hair: 0xf6e8cd, swatch: '#93a2b8' },
+  { id: 'blue', label: 'Cool Palette', swatch: '#8fcde1' },
+  { id: 'red', label: 'Warm Palette', swatch: '#f2a7a0' },
+  { id: 'green', label: 'Earth Palette', swatch: '#b8dccb' },
+  { id: 'purple', label: 'Night Palette', swatch: '#c9b8e6' },
+  { id: 'orange', label: 'Sunset Palette', swatch: '#f3c5a9' },
+  { id: 'pink', label: 'Rose Palette', swatch: '#f6c3cf' },
+  { id: 'teal', label: 'Aqua Palette', swatch: '#9fd7d9' },
+  { id: 'slate', label: 'Urban Palette', swatch: '#93a2b8' },
 ];
 
 export const AVATAR_HAIR_STYLES = Object.entries(MODULAR_HAIR_STYLES).map(([id, label]) => ({ id, label }));
@@ -138,11 +138,16 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
       // Remote player — built from ModularAvatar class
       const playerGroup = new ModularAvatar(scene, player.x, player.y, {
         skinId: player.skinId || 'slate',
-        hairStyle: player.hairStyle || 'side',
+        hairStyle: player.hairStyle || 'combed',
         bodyType: player.bodyType || 'standard',
-        pigment: player.pigment ?? 92,
-        scarfHue: player.scarfHue ?? 220,
-        eyeHue: player.eyeHue ?? 42,
+        skinTone: player.skinTone ?? player.pigment ?? 45,
+        hairHue: player.hairHue ?? player.eyeHue ?? 26,
+        outfitHue: player.outfitHue ?? player.scarfHue ?? 220,
+        topStyle: player.topStyle || 'hoodie',
+        bottomStyle: player.bottomStyle || 'pants',
+        footwear: player.footwear || 'sneakers',
+        glasses: Boolean(player.glasses),
+        hasScythe: Boolean(player.hasScythe),
         name: player.firstName || player.name || 'Traveler',
         isLocal: false,
       });
@@ -189,11 +194,16 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
           firstName: profile?.profile?.firstName || '',
           photo: profile?.profile?.photo || null,
           skinId: profile?.profile?.skinId || 'slate',
-          hairStyle: profile?.profile?.hairStyle || 'side',
+          hairStyle: profile?.profile?.hairStyle || 'combed',
           bodyType: profile?.profile?.bodyType || 'standard',
-          pigment: profile?.profile?.pigment ?? 92,
-          scarfHue: profile?.profile?.scarfHue ?? 220,
-          eyeHue: profile?.profile?.eyeHue ?? 42,
+          skinTone: profile?.profile?.skinTone ?? profile?.profile?.pigment ?? 45,
+          hairHue: profile?.profile?.hairHue ?? profile?.profile?.eyeHue ?? 26,
+          outfitHue: profile?.profile?.outfitHue ?? profile?.profile?.scarfHue ?? 220,
+          topStyle: profile?.profile?.topStyle || 'hoodie',
+          bottomStyle: profile?.profile?.bottomStyle || 'pants',
+          footwear: profile?.profile?.footwear || 'sneakers',
+          glasses: Boolean(profile?.profile?.glasses),
+          hasScythe: Boolean(profile?.profile?.hasScythe),
           isCreator: room?.ownerId && (room.ownerId === (profile?.profile?.email || profile?.mode || 'guest')),
         },
       });    });
@@ -295,9 +305,14 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
     profile?.profile?.skinId,
     profile?.profile?.hairStyle,
     profile?.profile?.bodyType,
-    profile?.profile?.pigment,
-    profile?.profile?.scarfHue,
-    profile?.profile?.eyeHue,
+    profile?.profile?.skinTone,
+    profile?.profile?.hairHue,
+    profile?.profile?.outfitHue,
+    profile?.profile?.topStyle,
+    profile?.profile?.bottomStyle,
+    profile?.profile?.footwear,
+    profile?.profile?.glasses,
+    profile?.profile?.hasScythe,
     profile?.mode,
   ]);
 
@@ -622,11 +637,16 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
           // Local player — built from ModularAvatar class
           const playerGroup = new ModularAvatar(this, W / 2, H / 2, {
             skinId: profile?.profile?.skinId || 'slate',
-            hairStyle: profile?.profile?.hairStyle || 'side',
+            hairStyle: profile?.profile?.hairStyle || 'combed',
             bodyType: profile?.profile?.bodyType || 'standard',
-            pigment: profile?.profile?.pigment ?? 92,
-            scarfHue: profile?.profile?.scarfHue ?? 220,
-            eyeHue: profile?.profile?.eyeHue ?? 42,
+            skinTone: profile?.profile?.skinTone ?? profile?.profile?.pigment ?? 45,
+            hairHue: profile?.profile?.hairHue ?? profile?.profile?.eyeHue ?? 26,
+            outfitHue: profile?.profile?.outfitHue ?? profile?.profile?.scarfHue ?? 220,
+            topStyle: profile?.profile?.topStyle || 'hoodie',
+            bottomStyle: profile?.profile?.bottomStyle || 'pants',
+            footwear: profile?.profile?.footwear || 'sneakers',
+            glasses: Boolean(profile?.profile?.glasses),
+            hasScythe: Boolean(profile?.profile?.hasScythe),
             name: profile?.profile?.firstName || (profile?.profile?.characterName || 'YOU').split(' ')[0],
             isLocal: true,
           });

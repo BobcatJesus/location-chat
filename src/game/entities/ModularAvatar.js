@@ -1,103 +1,153 @@
 import Phaser from 'phaser';
-import { colorHexToInt, pigmentToBodyColor, pigmentToEarInnerColor, pigmentToLimbColor, pigmentToOutlineColor, scarfColorFromHue, eyeGlowColorFromHue } from '../../utils/avatarColors';
+import { colorHexToInt, skinToneToColor, skinToneToShade, hairHueToColor, accessoryHueToColor } from '../../utils/avatarColors';
 
 // Predefined skin presets — id must match AVATAR_SKINS in SpatialCanvas.jsx
 export const SKINS = {
-  blue:   { scarfHue: 210, eyeHue: 42, pigment: 82 },
-  red:    { scarfHue: 350, eyeHue: 22, pigment: 72 },
-  green:  { scarfHue: 135, eyeHue: 95, pigment: 76 },
-  purple: { scarfHue: 275, eyeHue: 310, pigment: 88 },
-  orange: { scarfHue: 24, eyeHue: 45, pigment: 68 },
-  pink:   { scarfHue: 330, eyeHue: 335, pigment: 62 },
-  teal:   { scarfHue: 178, eyeHue: 188, pigment: 80 },
-  slate:  { scarfHue: 220, eyeHue: 42, pigment: 92 },
+  blue:   { outfitHue: 210 },
+  red:    { outfitHue: 350 },
+  green:  { outfitHue: 135 },
+  purple: { outfitHue: 275 },
+  orange: { outfitHue: 24 },
+  pink:   { outfitHue: 330 },
+  teal:   { outfitHue: 178 },
+  slate:  { outfitHue: 220 },
 };
 
 export const HAIR_STYLES = {
-  short: 'Curved Horns',
-  side: 'Tall Horns',
-  mohawk: 'Tilt Horns',
-  buzz: 'Nub Horns',
+  messy: 'Messy Hair',
+  combed: 'Combed Hair',
 };
 
 export const BODY_TYPES = {
-  compact: { bodyW: 12, bodyH: 10, armH: 8, legGap: 3 },
-  standard: { bodyW: 14, bodyH: 12, armH: 9, legGap: 4 },
-  broad: { bodyW: 16, bodyH: 12, armH: 10, legGap: 5 },
+  compact: { torsoW: 14, torsoH: 12, legGap: 3 },
+  standard: { torsoW: 16, torsoH: 14, legGap: 4 },
+  broad: { torsoW: 18, torsoH: 15, legGap: 5 },
+};
+
+const mapLegacyHairStyle = (hairStyle) => {
+  if (hairStyle === 'messy' || hairStyle === 'combed') return hairStyle;
+  if (hairStyle === 'side' || hairStyle === 'mohawk') return 'messy';
+  return 'combed';
 };
 
 export default class ModularAvatar extends Phaser.GameObjects.Container {
-  constructor(scene, x, y, { skinId = 'blue', name = '', isLocal = false, hairStyle = 'short', bodyType = 'standard', pigment, eyeHue, scarfHue } = {}) {
+  constructor(
+    scene,
+    x,
+    y,
+    {
+      skinId = 'blue',
+      name = '',
+      isLocal = false,
+      hairStyle = 'combed',
+      bodyType = 'standard',
+      skinTone,
+      hairHue,
+      outfitHue,
+      topStyle = 'hoodie',
+      bottomStyle = 'pants',
+      footwear = 'sneakers',
+      glasses = false,
+      hasScythe = false,
+      // Legacy compatibility inputs
+      pigment,
+      scarfHue,
+      eyeHue,
+    } = {},
+  ) {
     super(scene, x, y);
 
     const skin = SKINS[skinId] || SKINS.blue;
     const body = BODY_TYPES[bodyType] || BODY_TYPES.standard;
-    const resolvedPigment = pigment ?? skin.pigment;
-    const resolvedScarfHue = scarfHue ?? skin.scarfHue;
-    const resolvedEyeHue = eyeHue ?? skin.eyeHue;
+    const resolvedSkinTone = skinTone ?? pigment ?? 45;
+    const resolvedHairHue = hairHue ?? eyeHue ?? 26;
+    const resolvedOutfitHue = outfitHue ?? scarfHue ?? skin.outfitHue;
+    const resolvedHairStyle = mapLegacyHairStyle(hairStyle);
 
-    const bodyColor = colorHexToInt(pigmentToBodyColor(resolvedPigment));
-    const innerColor = colorHexToInt(pigmentToEarInnerColor(resolvedPigment));
-    const limbColor = colorHexToInt(pigmentToLimbColor(resolvedPigment));
-    const outlineColor = colorHexToInt(pigmentToOutlineColor(resolvedPigment));
-    const scarfColor = colorHexToInt(scarfColorFromHue(resolvedScarfHue));
-    const eyeColor = colorHexToInt(eyeGlowColorFromHue(resolvedEyeHue));
+    const skinColor = colorHexToInt(skinToneToColor(resolvedSkinTone));
+    const skinShadow = colorHexToInt(skinToneToShade(resolvedSkinTone, -16));
+    const hairColor = colorHexToInt(hairHueToColor(resolvedHairHue));
+    const outfitColor = colorHexToInt(accessoryHueToColor(resolvedOutfitHue));
+    const outfitDark = colorHexToInt(accessoryHueToColor(resolvedOutfitHue, 48, 34));
+    const outlineColor = colorHexToInt('#15161b');
 
-    const headR = bodyType === 'compact' ? 10 : bodyType === 'broad' ? 12 : 11;
-    const torsoW = bodyType === 'compact' ? 16 : bodyType === 'broad' ? 20 : 18;
-    const torsoH = bodyType === 'compact' ? 15 : bodyType === 'broad' ? 18 : 16;
+    const headR = bodyType === 'compact' ? 8.5 : bodyType === 'broad' ? 10.5 : 9.5;
+    const { torsoW, torsoH, legGap } = body;
 
-    this.add(scene.add.ellipse(0, 13, 24, 7, 0x08090d).setAlpha(0.4));
+    this.add(scene.add.ellipse(0, 14, torsoW + 10, 6, 0x000000).setAlpha(0.25));
 
-    // Body and cloak silhouette
-    this.add(scene.add.ellipse(0, 1, torsoW, torsoH, bodyColor));
-    this.add(scene.add.circle(0, -11, headR, bodyColor));
-    this.add(scene.add.rectangle(0, 8, torsoW + 1, 3, bodyColor));
+    if (hasScythe) {
+      const shaft = scene.add.rectangle(11, -1, 2, 28, 0x6b7280).setAngle(22);
+      const blade = scene.add.arc(15, -15, 8, 200, 20, false, 0xdbe4f2).setLineWidth(3, 0xdbe4f2);
+      this.add(shaft);
+      this.add(blade);
+    }
 
-    // Horn / ear shapes mapped from current style ids
-    if (hairStyle === 'side') {
-      this.add(scene.add.triangle(-7, -19, -1, 7, 4, 1, -5, -6, bodyColor));
-      this.add(scene.add.triangle(7, -19, 1, 7, -4, 1, 5, -6, bodyColor));
-    } else if (hairStyle === 'mohawk') {
-      this.add(scene.add.triangle(-5, -20, -1, 7, 4, 1, -6, -7, bodyColor));
-      this.add(scene.add.triangle(6, -18, 1, 7, -4, 1, 5, -5, bodyColor));
-    } else if (hairStyle === 'buzz') {
-      this.add(scene.add.triangle(-4, -17, -1, 5, 3, 1, -4, -4, bodyColor));
-      this.add(scene.add.triangle(4, -17, 1, 5, -3, 1, 4, -4, bodyColor));
+    // Legs
+    this.add(scene.add.rectangle(-legGap, 10, 5, 9, bottomStyle === 'skirt' ? outfitDark : outfitColor));
+    this.add(scene.add.rectangle(legGap, 10, 5, 9, bottomStyle === 'skirt' ? outfitDark : outfitColor));
+
+    // Shoes
+    if (footwear === 'heels') {
+      this.add(scene.add.rectangle(-legGap, 15, 7, 3, 0x1f2937));
+      this.add(scene.add.rectangle(legGap, 15, 7, 3, 0x1f2937));
+      this.add(scene.add.rectangle(-legGap + 2, 17, 2, 2, 0x111827));
+      this.add(scene.add.rectangle(legGap + 2, 17, 2, 2, 0x111827));
     } else {
-      this.add(scene.add.triangle(-6, -18, -1, 6, 4, 1, -5, -5, bodyColor));
-      this.add(scene.add.triangle(6, -18, 1, 6, -4, 1, 5, -5, bodyColor));
+      this.add(scene.add.rectangle(-legGap, 15, 8, 4, 0x2b2f38));
+      this.add(scene.add.rectangle(legGap, 15, 8, 4, 0x2b2f38));
     }
 
-    // Arms and legs
-    this.add(scene.add.ellipse(-(torsoW / 2 - 2), 2, 6, 10, limbColor));
-    this.add(scene.add.ellipse((torsoW / 2 - 2), 2, 6, 10, limbColor));
-    this.add(scene.add.ellipse(-(body.legGap + 2), 12, 8, 9, limbColor));
-    this.add(scene.add.ellipse((body.legGap + 2), 12, 8, 9, limbColor));
+    // Torso
+    this.add(scene.add.rectangle(0, 1, torsoW, torsoH, outfitColor));
 
-    // Scarf + ragged hem
-    this.add(scene.add.ellipse(0, -3, torsoW - 1, 7, scarfColor));
-    this.add(scene.add.rectangle(4, 3, 4, 8, scarfColor));
-    this.add(scene.add.triangle(-6, 9, -2, 0, 2, 0, 0, 3, bodyColor));
-    this.add(scene.add.triangle(0, 9, -2, 0, 2, 0, 0, 3, bodyColor));
-    this.add(scene.add.triangle(6, 9, -2, 0, 2, 0, 0, 3, bodyColor));
-
-    // Tail
-    this.add(scene.add.rectangle(7, 10, 6, 2, bodyColor).setAngle(24));
-    this.add(scene.add.triangle(11, 12, -2, 1, 2, 0, 1, 3, bodyColor).setAngle(24));
-
-    // Face + eyes
-    this.add(scene.add.ellipse(-4, -11, 4, 6, eyeColor));
-    this.add(scene.add.ellipse(4, -11, 4, 6, eyeColor));
-
-    // Subtle inner ear accents on lighter pigments
-    if (resolvedPigment < 60) {
-      this.add(scene.add.circle(-5, -16, 2, innerColor).setAlpha(0.25));
-      this.add(scene.add.circle(5, -16, 2, innerColor).setAlpha(0.25));
+    if (bottomStyle === 'skirt') {
+      this.add(scene.add.triangle(0, 8, -(torsoW / 2), -1, torsoW / 2, -1, 0, 6, outfitDark));
     }
 
-    // Outline pass to keep the OG sticker-like silhouette
-    this.add(scene.add.circle(0, -11, headR + 1.5, outlineColor).setAlpha(0.12));
+    if (topStyle === 'hoodie') {
+      this.add(scene.add.arc(0, -6, 8, 200, -20, false, outfitDark).setLineWidth(3, outfitDark));
+      this.add(scene.add.rectangle(0, 5, 6, 2, outfitDark));
+    } else {
+      this.add(scene.add.rectangle(0, -6, torsoW - 2, 3, outfitDark));
+      this.add(scene.add.rectangle(0, -4, torsoW - 4, 2, outfitDark));
+    }
+
+    // Arms
+    this.add(scene.add.rectangle(-(torsoW / 2 + 2), 2, 4, 9, outfitColor));
+    this.add(scene.add.rectangle(torsoW / 2 + 2, 2, 4, 9, outfitColor));
+    this.add(scene.add.circle(-(torsoW / 2 + 2), 7, 2.5, skinColor));
+    this.add(scene.add.circle(torsoW / 2 + 2, 7, 2.5, skinColor));
+
+    // Head and neck
+    this.add(scene.add.rectangle(0, -5, 4, 3, skinShadow));
+    this.add(scene.add.circle(0, -12, headR, skinColor));
+
+    // Hair
+    if (resolvedHairStyle === 'messy') {
+      this.add(scene.add.rectangle(0, -17, headR * 2, 4, hairColor));
+      this.add(scene.add.triangle(-6, -16, -3, 1, 2, 1, 0, -3, hairColor));
+      this.add(scene.add.triangle(4, -17, -3, 1, 2, 1, 0, -3, hairColor));
+      this.add(scene.add.rectangle(-7, -12, 2, 6, hairColor));
+    } else {
+      this.add(scene.add.rectangle(0, -17, headR * 2 + 1, 5, hairColor));
+      this.add(scene.add.rectangle(0, -14, headR * 2 - 1, 2, hairColor));
+      this.add(scene.add.rectangle(6, -12, 2, 5, hairColor));
+    }
+
+    // Face
+    this.add(scene.add.ellipse(-3, -12, 2.5, 3.5, 0x1f2937));
+    this.add(scene.add.ellipse(3, -12, 2.5, 3.5, 0x1f2937));
+    this.add(scene.add.arc(0, -9, 1.5, 15, 165, false, 0x8b5f52).setLineWidth(1, 0x8b5f52));
+
+    if (glasses) {
+      this.add(scene.add.rectangle(-3, -12, 4, 4, 0x000000).setAlpha(0.28));
+      this.add(scene.add.rectangle(3, -12, 4, 4, 0x000000).setAlpha(0.28));
+      this.add(scene.add.rectangle(0, -12, 2, 1, 0x111111));
+    }
+
+    // Outline
+    this.add(scene.add.circle(0, -12, headR + 1, outlineColor).setAlpha(0.08));
 
     // Name label — use name as-is (callers now pass firstName directly)
     const labelText = (name || '').trim() || (isLocal ? 'YOU' : 'Traveler');
