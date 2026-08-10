@@ -155,6 +155,17 @@ const creatorRates = {}; // keyed by `${userId}:${roomId}`
 const socketCreatorRooms = {}; // socketId → Set<roomId>
 const socketUserMap = {};
 
+function debugRoomEvent(event, { roomId, socketId, userId, extra } = {}) {
+  const msg = [
+    `[room-debug] event=${event}`,
+    `room=${roomId || '-'}`,
+    `socket=${socketId || '-'}`,
+    `user=${userId || '-'}`,
+    extra ? `extra=${extra}` : null,
+  ].filter(Boolean).join(' ');
+  console.log(msg);
+}
+
 function checkRateLimit(userId) {
   const now = Date.now();
   const r = changeRates[userId];
@@ -224,6 +235,12 @@ io.on('connection', (socket) => {
 
     rooms[roomId][socket.id] = playerState;
     socketUserMap[socket.id] = user?.id || socket.id;
+    debugRoomEvent('join_room', {
+      roomId,
+      socketId: socket.id,
+      userId: playerState.id,
+      extra: `name=${playerState.name}`,
+    });
     await upsertPresence({
       socketId: socket.id,
       userId: playerState.id,
@@ -251,6 +268,11 @@ io.on('connection', (socket) => {
 
   socket.on('get_room_decorations', async ({ roomId }) => {
     if (!roomId) return;
+    debugRoomEvent('get_room_decorations', {
+      roomId,
+      socketId: socket.id,
+      userId: socketUserMap[socket.id] || socket.id,
+    });
     const roomDecorations = (await loadDecorationsForRoom(roomId)) || decorations[roomId] || [];
     decorations[roomId] = roomDecorations;
     socket.emit('room_decorations', roomDecorations);
@@ -258,6 +280,11 @@ io.on('connection', (socket) => {
 
   socket.on('get_room_state', async ({ roomId }) => {
     if (!roomId) return;
+    debugRoomEvent('get_room_state', {
+      roomId,
+      socketId: socket.id,
+      userId: socketUserMap[socket.id] || socket.id,
+    });
     const dbRoomState = await getPresenceRoomState(roomId);
     socket.emit('room_state', dbRoomState || rooms[roomId] || {});
   });
@@ -282,6 +309,12 @@ io.on('connection', (socket) => {
   // PLACE DECORATION
   socket.on('place_decoration', async ({ roomId, item }) => {
     const userId = socketUserMap[socket.id] || socket.id;
+    debugRoomEvent('place_decoration', {
+      roomId,
+      socketId: socket.id,
+      userId,
+      extra: `type=${item?.type || item?.frameKey || '-'}`,
+    });
     const isCreator = socketCreatorRooms[socket.id]?.has(roomId);
     const rate = isCreator ? checkCreatorRate(userId, roomId) : checkRateLimit(userId);
     if (!rate.allowed) {
@@ -299,6 +332,12 @@ io.on('connection', (socket) => {
   // REMOVE DECORATION
   socket.on('remove_decoration', async ({ roomId, id }) => {
     const userId = socketUserMap[socket.id] || socket.id;
+    debugRoomEvent('remove_decoration', {
+      roomId,
+      socketId: socket.id,
+      userId,
+      extra: `id=${id || '-'}`,
+    });
     const decoration = decorations[roomId]?.find(d => d.id === id);
     if (!decoration) return;
     if (decoration.placedBy !== userId) {

@@ -109,6 +109,16 @@ export class VillageScene extends Phaser.Scene {
     // Position broadcast throttle
     this.tickAccum = 0;
     this.lastPos = { x: this.player.gx, y: this.player.gy };
+    this._debug = {
+      roomId: this.roomId,
+      socketId: '',
+      connected: false,
+      roomStateCount: 0,
+      remoteCount: 0,
+      lastEvent: 'create',
+      lastEventAt: Date.now(),
+      lastDecorationEventAt: 0,
+    };
 
     // Camera
     this.cameras.main.startFollow(this.player.sprite, true, 0.1, 0.1);
@@ -164,6 +174,10 @@ export class VillageScene extends Phaser.Scene {
     const firstName = this.profile?.profile?.firstName || userName.split(' ')[0];
 
     socket.on('connect', () => {
+      this._debug.socketId = socket.id || '';
+      this._debug.connected = true;
+      this._debug.lastEvent = 'connect';
+      this._debug.lastEventAt = Date.now();
       socket.emit('join_room', {
         roomId: this.roomId,
         user: { id: userId, name: userName, firstName, skinId: this.skinId },
@@ -181,6 +195,9 @@ export class VillageScene extends Phaser.Scene {
     });
 
     socket.on('disconnect', () => {
+      this._debug.connected = false;
+      this._debug.lastEvent = 'disconnect';
+      this._debug.lastEventAt = Date.now();
       if (this._decorationSyncTimer) {
         clearInterval(this._decorationSyncTimer);
         this._decorationSyncTimer = null;
@@ -192,6 +209,10 @@ export class VillageScene extends Phaser.Scene {
     });
 
     socket.on('room_state', (state) => {
+      this._debug.roomStateCount = Object.keys(state || {}).length;
+      this._debug.remoteCount = Math.max(0, this._debug.roomStateCount - 1);
+      this._debug.lastEvent = 'room_state';
+      this._debug.lastEventAt = Date.now();
       const nextIds = new Set(Object.keys(state || {}));
       this.remotePlayers.forEach((actor, sid) => {
         if (!nextIds.has(sid)) {
@@ -213,20 +234,29 @@ export class VillageScene extends Phaser.Scene {
     });
 
     socket.on('player_joined', ({ socketId, player }) => {
+      this._debug.lastEvent = 'player_joined';
+      this._debug.lastEventAt = Date.now();
       if (socketId !== socket.id) this._spawnRemote(socketId, player);
     });
 
     socket.on('player_moved', ({ socketId, x, y }) => {
+      this._debug.lastEvent = 'player_moved';
+      this._debug.lastEventAt = Date.now();
       const actor = this.remotePlayers.get(socketId);
       if (actor) { actor.gx = x; actor.gy = y; actor.sync(); }
     });
 
     socket.on('player_left', ({ socketId }) => {
+      this._debug.lastEvent = 'player_left';
+      this._debug.lastEventAt = Date.now();
       const actor = this.remotePlayers.get(socketId);
       if (actor) { actor.destroy(); this.remotePlayers.delete(socketId); }
     });
 
     socket.on('room_decorations', (items) => {
+      this._debug.lastEvent = 'room_decorations';
+      this._debug.lastEventAt = Date.now();
+      this._debug.lastDecorationEventAt = Date.now();
       this.customZones = [];
       (items || []).forEach((item) => {
         const zone = this._normalizeDecoration(item);
@@ -237,6 +267,9 @@ export class VillageScene extends Phaser.Scene {
     });
 
     socket.on('decoration_placed', (item) => {
+      this._debug.lastEvent = 'decoration_placed';
+      this._debug.lastEventAt = Date.now();
+      this._debug.lastDecorationEventAt = Date.now();
       const zone = this._normalizeDecoration(item);
       if (!zone) return;
       if (this.customZones.some(z => z.id === zone.id)) return;
@@ -246,6 +279,9 @@ export class VillageScene extends Phaser.Scene {
     });
 
     socket.on('decoration_removed', ({ id }) => {
+      this._debug.lastEvent = 'decoration_removed';
+      this._debug.lastEventAt = Date.now();
+      this._debug.lastDecorationEventAt = Date.now();
       if (!id) return;
       this.customZones = this.customZones.filter(z => z.id !== id);
       this.roomEditor?.setZones(this.customZones);
@@ -253,10 +289,14 @@ export class VillageScene extends Phaser.Scene {
     });
 
     socket.on('decoration_error', ({ message }) => {
+      this._debug.lastEvent = 'decoration_error';
+      this._debug.lastEventAt = Date.now();
       if (message) console.warn('[VillageScene] decoration_error:', message);
     });
 
     socket.on('receive_message', (payload) => {
+      this._debug.lastEvent = 'receive_message';
+      this._debug.lastEventAt = Date.now();
       if (!payload?.message || !payload?.position) return;
       const dx = payload.position.x - this.player.gx;
       const dy = payload.position.y - this.player.gy;
@@ -271,6 +311,20 @@ export class VillageScene extends Phaser.Scene {
         });
       }
     });
+  }
+
+  getDebugState() {
+    return {
+      roomId: this.roomId,
+      socketId: this.socket?.id || this._debug?.socketId || '',
+      connected: !!this.socket?.connected,
+      roomStateCount: this._debug?.roomStateCount || 0,
+      remoteCount: this.remotePlayers?.size || 0,
+      decorationCount: this.customZones?.length || 0,
+      lastEvent: this._debug?.lastEvent || '',
+      lastEventAt: this._debug?.lastEventAt || 0,
+      lastDecorationEventAt: this._debug?.lastDecorationEventAt || 0,
+    };
   }
 
   sendChatMessage(message) {
