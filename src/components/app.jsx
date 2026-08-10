@@ -1,20 +1,44 @@
-import React, { useState } from 'react';
+import React, { useState, lazy, Suspense } from 'react';
 import RetroAuthModal from './RetroAuthModal';
-import VillageCanvas from '../village/VillageCanvas.jsx';
-import WorldMapCanvas from '../village/WorldMapCanvas.jsx';
-import { AVATAR_SKINS, AVATAR_HAIR_STYLES, AVATAR_BODY_TYPES } from './SpatialCanvas';
+import AvatarSetupFields from './AvatarSetupFields';
 import { useGeofencedMap } from '../hooks/UseGeofencingApp';
 import { createUserRoom, loadUserRooms, acceptRoomInvite, findRoomByLocation, getAllRooms } from '../../rooms/rooms.js';
 import { getDistanceMeters } from '../geo';
 
-const AVATAR_PRESETS = [
-  { id: 'ranger', label: 'Ranger', skinId: 'green', hairStyle: 'side', bodyType: 'standard' },
-  { id: 'rogue', label: 'Rogue', skinId: 'slate', hairStyle: 'mohawk', bodyType: 'compact' },
-  { id: 'scholar', label: 'Scholar', skinId: 'blue', hairStyle: 'short', bodyType: 'standard' },
-  { id: 'bard', label: 'Bard', skinId: 'pink', hairStyle: 'side', bodyType: 'broad' },
-  { id: 'monk', label: 'Monk', skinId: 'orange', hairStyle: 'buzz', bodyType: 'compact' },
-  { id: 'sentinel', label: 'Sentinel', skinId: 'purple', hairStyle: 'short', bodyType: 'broad' },
-];
+const VillageCanvas = lazy(() => import('../village/VillageCanvas.jsx'));
+const WorldMapCanvas = lazy(() => import('../village/WorldMapCanvas.jsx'));
+
+const hasText = (value) => typeof value === 'string' && value.trim().length > 0;
+const isAvatarOnboardingComplete = (savedProfile) => {
+  if (!savedProfile) return false;
+  if (savedProfile.avatarOnboardingComplete === true) return true;
+  return hasText(savedProfile.firstName)
+    && hasText(savedProfile.characterName)
+    && hasText(savedProfile.skinId)
+    && hasText(savedProfile.hairStyle)
+    && hasText(savedProfile.bodyType);
+};
+
+const migrateProfileForAvatar = (savedProfile) => {
+  const profile = savedProfile || {};
+  const emailStem = (profile.email || 'traveler').split('@')[0] || 'traveler';
+  const migrated = {
+    ...profile,
+    characterName: hasText(profile.characterName) ? profile.characterName : emailStem,
+    skinId: hasText(profile.skinId) ? profile.skinId : 'blue',
+    hairStyle: hasText(profile.hairStyle) ? profile.hairStyle : 'short',
+    bodyType: hasText(profile.bodyType) ? profile.bodyType : 'standard',
+  };
+
+  const changed = (
+    migrated.characterName !== profile.characterName
+    || migrated.skinId !== profile.skinId
+    || migrated.hairStyle !== profile.hairStyle
+    || migrated.bodyType !== profile.bodyType
+  );
+
+  return { migrated, changed };
+};
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -23,6 +47,8 @@ function App() {
   const [activeScene, setActiveScene] = useState('world');
   const [gpsToast, setGpsToast] = useState(null);
   const [editingProfile, setEditingProfile] = useState(false);
+  const [onboardingRequired, setOnboardingRequired] = useState(false);
+  const [profileError, setProfileError] = useState(null);
   const [editForm, setEditForm] = useState({
     characterName: '',
     firstName: '',
@@ -31,35 +57,12 @@ function App() {
     hairStyle: 'short',
     bodyType: 'standard',
   });
-  const editFileRef = React.useRef(null);
   const [osmRoom, setOsmRoom] = useState(null);
   const [creatingRoom, setCreatingRoom] = useState(false);
   const [newRoomName, setNewRoomName] = useState('');
   const [newRoomCategory, setNewRoomCategory] = useState('social');
   const [newRoomPublic, setNewRoomPublic] = useState(false);
   const [inviteToast, setInviteToast] = useState(null);
-
-  const selectedSkin = AVATAR_SKINS.find(s => s.id === (editForm.skinId || 'blue')) || AVATAR_SKINS[0];
-  const previewBody = AVATAR_BODY_TYPES.find(b => b.id === (editForm.bodyType || 'standard'))?.id || 'standard';
-  const bodyPreviewWidth = previewBody === 'broad' ? 22 : previewBody === 'compact' ? 16 : 19;
-  const bodyPreviewHeight = 30;
-  const hairPreviewStyle = editForm.hairStyle || 'short';
-
-  const applyAvatarPreset = (preset) => {
-    setEditForm((prev) => ({
-      ...prev,
-      skinId: preset.skinId,
-      hairStyle: preset.hairStyle,
-      bodyType: preset.bodyType,
-    }));
-  };
-
-  const randomizeAvatar = () => {
-    const skin = AVATAR_SKINS[Math.floor(Math.random() * AVATAR_SKINS.length)]?.id || 'blue';
-    const hair = AVATAR_HAIR_STYLES[Math.floor(Math.random() * AVATAR_HAIR_STYLES.length)]?.id || 'short';
-    const body = AVATAR_BODY_TYPES[Math.floor(Math.random() * AVATAR_BODY_TYPES.length)]?.id || 'standard';
-    setEditForm((prev) => ({ ...prev, skinId: skin, hairStyle: hair, bodyType: body }));
-  };
 
   const openEditProfile = () => {
     setEditForm({
@@ -70,34 +73,40 @@ function App() {
       hairStyle: profile?.profile?.hairStyle || 'short',
       bodyType: profile?.profile?.bodyType || 'standard',
     });
+    setProfileError(null);
     setEditingProfile(true);
   };
 
-  const handleEditPhoto = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const img = new Image();
-      img.onload = () => {
-        const size = 96;
-        const canvas = document.createElement('canvas');
-        canvas.width = size; canvas.height = size;
-        const ctx = canvas.getContext('2d');
-        ctx.beginPath();
-        ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
-        ctx.clip();
-        const scale = Math.max(size / img.width, size / img.height);
-        const w = img.width * scale, h = img.height * scale;
-        ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
-        setEditForm(f => ({ ...f, photo: canvas.toDataURL('image/jpeg', 0.7) }));
-      };
-      img.src = ev.target.result;
-    };
-    reader.readAsDataURL(file);
+  const startAvatarOnboarding = (authProfile) => {
+    const p = authProfile?.profile || {};
+    setEditForm({
+      characterName: p.characterName || '',
+      firstName: p.firstName || '',
+      photo: p.photo || null,
+      skinId: p.skinId || 'blue',
+      hairStyle: p.hairStyle || 'short',
+      bodyType: p.bodyType || 'standard',
+    });
+    setProfileError(null);
+    setOnboardingRequired(true);
+    setEditingProfile(true);
   };
 
   const saveEditProfile = () => {
+    if (!editForm.firstName.trim()) {
+      setProfileError('Enter your first name before saving.');
+      return;
+    }
+    if (editForm.characterName.trim().length < 3) {
+      setProfileError('Avatar name must be at least 3 characters.');
+      return;
+    }
+    const handleRegex = /^[a-zA-Z0-9_]+$/;
+    if (!handleRegex.test(editForm.characterName.trim())) {
+      setProfileError('Avatar name can only contain letters, numbers, and underscores.');
+      return;
+    }
+
     const updated = {
       ...profile.profile,
       characterName: editForm.characterName.trim() || profile.profile.characterName,
@@ -106,17 +115,25 @@ function App() {
       skinId: editForm.skinId || 'blue',
       hairStyle: editForm.hairStyle || 'short',
       bodyType: editForm.bodyType || 'standard',
+      avatarOnboardingComplete: true,
     };
     localStorage.setItem('sidequest_profile', JSON.stringify(updated));
     setProfile({ ...profile, profile: updated });
+    setProfileError(null);
+    setOnboardingRequired(false);
     setEditingProfile(false);
   };
   const { location, currentVenue, isInsideVenue, error, isLocating } = useGeofencedMap('/api/geofence/check');
 
   const handleLogin = (authProfile) => {
-    setProfile(authProfile);
+    const { migrated, changed } = migrateProfileForAvatar(authProfile?.profile);
+    const normalizedAuthProfile = { ...authProfile, profile: migrated };
+    setProfile(normalizedAuthProfile);
     setIsLoggedIn(true);
-    const uid = authProfile?.profile?.email || authProfile?.mode || 'guest';
+    if (changed) {
+      localStorage.setItem('sidequest_profile', JSON.stringify(migrated));
+    }
+    const uid = migrated?.email || authProfile?.mode || 'guest';
     loadUserRooms(uid);
     // Accept invite from URL if present
     try {
@@ -128,12 +145,21 @@ function App() {
         window.history.replaceState({}, '', window.location.pathname);
       }
     } catch {}
+
+    if (!isAvatarOnboardingComplete(migrated)) {
+      startAvatarOnboarding(normalizedAuthProfile);
+    } else {
+      setOnboardingRequired(false);
+    }
   };
 
   const handleLogout = () => {
     localStorage.removeItem('sidequest_profile');
     setIsLoggedIn(false);
     setProfile(null);
+    setOnboardingRequired(false);
+    setEditingProfile(false);
+    setProfileError(null);
     setActiveScene('world');
   };
 
@@ -301,6 +327,8 @@ function App() {
   const _lastLocTs = parseInt(localStorage.getItem('sidequest_loc_ts') || '0', 10);
   const locCooldown = Date.now() - _lastLocTs < _THREE_DAYS;
   const locCooldownHours = Math.ceil((_lastLocTs + _THREE_DAYS - Date.now()) / 3600000);
+  const avatarComplete = isAvatarOnboardingComplete(profile?.profile);
+  const onboardingStepLabel = onboardingRequired ? 'Onboarding Step 2/2: Complete Avatar Setup' : null;
 
   return (
     <div style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden', background: 'linear-gradient(180deg, #0f172a 0%, #1e293b 100%)', color: '#f8fafc', fontFamily: 'monospace' }}>
@@ -314,174 +342,47 @@ function App() {
 
       {/* Edit profile modal */}
       {editingProfile && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setEditingProfile(false)}>
+        <div
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onClick={() => { if (!onboardingRequired) setEditingProfile(false); }}
+        >
           <div onClick={e => e.stopPropagation()} style={{ background: '#0f172a', border: '4px solid #fff', padding: 4, maxWidth: 360, width: '100%', margin: 16, boxShadow: '8px 8px 0 #000' }}>
             <div style={{ border: '2px solid #3b82f6', padding: 24, background: '#0f172a', color: '#fff', fontFamily: 'Courier New, monospace' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, paddingBottom: 12, borderBottom: '2px solid #1e293b' }}>
-                <h2 style={{ margin: 0, color: '#fbbf24', fontSize: 15, textTransform: 'uppercase', letterSpacing: '0.1em' }}>✏️ Edit Profile</h2>
-                <button onClick={() => setEditingProfile(false)} style={{ background: 'none', border: 'none', color: '#64748b', fontWeight: 'bold', cursor: 'pointer', fontFamily: 'Courier New', fontSize: 14 }}>[X]</button>
+                <h2 style={{ margin: 0, color: '#fbbf24', fontSize: 15, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                  {onboardingRequired ? 'Complete Avatar Setup' : 'Edit Profile'}
+                </h2>
+                {!onboardingRequired && (
+                  <button onClick={() => setEditingProfile(false)} style={{ background: 'none', border: 'none', color: '#64748b', fontWeight: 'bold', cursor: 'pointer', fontFamily: 'Courier New', fontSize: 14 }}>[X]</button>
+                )}
               </div>
 
-              {/* Photo */}
-              <div style={{ marginBottom: 16 }}>
-                <label style={{ display: 'block', fontSize: 11, textTransform: 'uppercase', color: '#94a3b8', marginBottom: 6 }}>Profile Photo</label>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  {editForm.photo
-                    ? <img src={editForm.photo} alt="preview" style={{ width: 48, height: 48, borderRadius: '50%', border: '2px solid #fbbf24', objectFit: 'cover' }} />
-                    : <div style={{ width: 48, height: 48, borderRadius: '50%', border: '2px dashed #475569', background: '#111', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22 }}>👤</div>
-                  }
-                  <button type="button" onClick={() => editFileRef.current?.click()}
-                    style={{ flex: 1, padding: '8px 10px', background: 'transparent', border: '2px solid #475569', color: '#94a3b8', fontFamily: 'Courier New, monospace', fontSize: 12, cursor: 'pointer' }}>
-                    {editForm.photo ? 'Change photo' : 'Upload photo'}
-                  </button>
-                  {editForm.photo && (
-                    <button type="button" onClick={() => setEditForm(f => ({ ...f, photo: null }))}
-                      style={{ padding: '8px 10px', background: 'transparent', border: '2px solid #475569', color: '#64748b', fontFamily: 'Courier New, monospace', fontSize: 12, cursor: 'pointer' }}>✕</button>
-                  )}
-                  <input ref={editFileRef} type="file" accept="image/*" onChange={handleEditPhoto} style={{ display: 'none' }} />
+              {onboardingRequired && (
+                <div style={{ marginBottom: 14, padding: '8px 10px', border: '2px solid #fbbf24', background: '#111827', color: '#fde68a', fontSize: 11 }}>
+                  Create your avatar to enter the world.
                 </div>
-              </div>
+              )}
 
-              {/* Name */}
+              {profileError && (
+                <div style={{ marginBottom: 14, padding: '8px 10px', border: '2px solid #ef4444', background: 'rgba(127,29,29,0.8)', color: '#fca5a5', fontSize: 11 }}>
+                  {profileError}
+                </div>
+              )}
+
               <div style={{ marginBottom: 20 }}>
-                <label style={{ display: 'block', fontSize: 11, textTransform: 'uppercase', color: '#94a3b8', marginBottom: 6 }}>First Name <span style={{ color: '#475569', fontSize: 9 }}>(shown above avatar)</span></label>
-                <input type="text" value={editForm.firstName} onChange={e => setEditForm(f => ({ ...f, firstName: e.target.value }))} maxLength={20}
-                  placeholder="e.g. Alex"
-                  style={{ width: '100%', boxSizing: 'border-box', background: '#000', border: '2px solid #475569', padding: '8px 10px', color: '#fbbf24', fontFamily: 'Courier New, monospace', fontSize: 13, outline: 'none', marginBottom: 10 }} />
-                <label style={{ display: 'block', fontSize: 11, textTransform: 'uppercase', color: '#94a3b8', marginBottom: 6 }}>Display Name</label>
-                <input type="text" value={editForm.characterName} onChange={e => setEditForm(f => ({ ...f, characterName: e.target.value }))}
-                  style={{ width: '100%', boxSizing: 'border-box', background: '#000', border: '2px solid #475569', padding: '8px 10px', color: '#fbbf24', fontFamily: 'Courier New, monospace', fontSize: 13, outline: 'none' }} />
-              </div>
-
-              {/* Avatar skin */}
-              <div style={{ marginBottom: 20 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
-                  <label style={{ display: 'block', fontSize: 11, textTransform: 'uppercase', color: '#94a3b8' }}>Avatar Style</label>
-                  <button
-                    type="button"
-                    onClick={randomizeAvatar}
-                    style={{
-                      padding: '4px 8px',
-                      border: '2px solid #334155',
-                      background: 'transparent',
-                      color: '#93c5fd',
-                      fontFamily: 'Courier New, monospace',
-                      fontSize: 10,
-                      cursor: 'pointer',
-                      textTransform: 'uppercase',
-                    }}
-                  >
-                    Randomize
-                  </button>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'flex-end', gap: 14, marginBottom: 12 }}>
-                  <div style={{ width: 74, height: 88, border: '2px solid #334155', background: '#020617', display: 'flex', justifyContent: 'center', alignItems: 'flex-end', paddingBottom: 10 }}>
-                    <div style={{ position: 'relative', width: bodyPreviewWidth, height: bodyPreviewHeight }}>
-                      <div style={{ position: 'absolute', left: 4, right: 4, top: 6, height: 12, background: selectedSkin?.swatch || '#3b82f6', border: '1px solid #0f172a' }} />
-                      <div style={{ position: 'absolute', left: 0, top: 7, width: 4, height: 11, background: selectedSkin?.swatch || '#3b82f6' }} />
-                      <div style={{ position: 'absolute', right: 0, top: 7, width: 4, height: 11, background: selectedSkin?.swatch || '#3b82f6' }} />
-                      <div style={{ position: 'absolute', left: Math.floor((bodyPreviewWidth / 2) - 7), top: -10, width: 14, height: 12, background: '#f5c27a', border: '1px solid #78350f' }} />
-                      {hairPreviewStyle === 'mohawk' && <div style={{ position: 'absolute', left: Math.floor((bodyPreviewWidth / 2) - 2), top: -15, width: 4, height: 7, background: '#111827' }} />}
-                      {hairPreviewStyle === 'buzz' && <div style={{ position: 'absolute', left: Math.floor((bodyPreviewWidth / 2) - 7), top: -13, width: 14, height: 3, background: '#111827' }} />}
-                      {hairPreviewStyle === 'side' && <div style={{ position: 'absolute', left: Math.floor((bodyPreviewWidth / 2) - 6), top: -14, width: 13, height: 4, background: '#111827' }} />}
-                      {hairPreviewStyle === 'short' && <div style={{ position: 'absolute', left: Math.floor((bodyPreviewWidth / 2) - 7), top: -15, width: 14, height: 5, background: '#111827' }} />}
-                      <div style={{ position: 'absolute', left: Math.floor((bodyPreviewWidth / 2) - 6), bottom: 0, width: 5, height: 10, background: '#1e293b' }} />
-                      <div style={{ position: 'absolute', left: Math.floor((bodyPreviewWidth / 2) + 1), bottom: 0, width: 5, height: 10, background: '#1e293b' }} />
-                    </div>
-                  </div>
-                  <div style={{ fontSize: 10, color: '#64748b', lineHeight: 1.5 }}>
-                    live preview<br />
-                    updates as you pick
-                  </div>
-                </div>
-                <div style={{ marginBottom: 10 }}>
-                  <label style={{ display: 'block', fontSize: 10, textTransform: 'uppercase', color: '#64748b', marginBottom: 6 }}>Presets</label>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                    {AVATAR_PRESETS.map((p) => (
-                      <button
-                        key={p.id}
-                        type="button"
-                        onClick={() => applyAvatarPreset(p)}
-                        style={{
-                          padding: '4px 7px',
-                          border: editForm.skinId === p.skinId && editForm.hairStyle === p.hairStyle && editForm.bodyType === p.bodyType
-                            ? '2px solid #fbbf24'
-                            : '2px solid #334155',
-                          background: 'transparent',
-                          color: '#cbd5e1',
-                          fontFamily: 'Courier New, monospace',
-                          fontSize: 10,
-                          cursor: 'pointer',
-                          textTransform: 'uppercase',
-                        }}
-                      >
-                        {p.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                  {AVATAR_SKINS.map(skin => (
-                    <div key={skin.id} onClick={() => setEditForm(f => ({ ...f, skinId: skin.id }))}
-                      style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, cursor: 'pointer', opacity: editForm.skinId === skin.id ? 1 : 0.5 }}>
-                      <div style={{ width: 32, height: 32, borderRadius: '50%', background: skin.swatch, border: editForm.skinId === skin.id ? '3px solid #fbbf24' : '3px solid transparent', boxShadow: editForm.skinId === skin.id ? `0 0 8px ${skin.swatch}` : 'none' }} />
-                      <div style={{ fontSize: 9, color: '#94a3b8', textTransform: 'uppercase' }}>{skin.label}</div>
-                    </div>
-                  ))}
-                </div>
-                <div style={{ marginTop: 14 }}>
-                  <label style={{ display: 'block', fontSize: 10, textTransform: 'uppercase', color: '#64748b', marginBottom: 6 }}>Hair Style</label>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                    {AVATAR_HAIR_STYLES.map(h => (
-                      <button
-                        key={h.id}
-                        type="button"
-                        onClick={() => setEditForm(f => ({ ...f, hairStyle: h.id }))}
-                        style={{
-                          padding: '5px 8px',
-                          border: editForm.hairStyle === h.id ? '2px solid #fbbf24' : '2px solid #334155',
-                          background: editForm.hairStyle === h.id ? '#1f2937' : 'transparent',
-                          color: editForm.hairStyle === h.id ? '#fbbf24' : '#94a3b8',
-                          fontFamily: 'Courier New, monospace',
-                          fontSize: 10,
-                          cursor: 'pointer',
-                          textTransform: 'uppercase',
-                        }}
-                      >
-                        {h.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div style={{ marginTop: 12 }}>
-                  <label style={{ display: 'block', fontSize: 10, textTransform: 'uppercase', color: '#64748b', marginBottom: 6 }}>Body Type</label>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                    {AVATAR_BODY_TYPES.map(b => (
-                      <button
-                        key={b.id}
-                        type="button"
-                        onClick={() => setEditForm(f => ({ ...f, bodyType: b.id }))}
-                        style={{
-                          padding: '5px 8px',
-                          border: editForm.bodyType === b.id ? '2px solid #fbbf24' : '2px solid #334155',
-                          background: editForm.bodyType === b.id ? '#1f2937' : 'transparent',
-                          color: editForm.bodyType === b.id ? '#fbbf24' : '#94a3b8',
-                          fontFamily: 'Courier New, monospace',
-                          fontSize: 10,
-                          cursor: 'pointer',
-                          textTransform: 'uppercase',
-                        }}
-                      >
-                        {b.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
+                <AvatarSetupFields
+                  formData={editForm}
+                  setFormData={setEditForm}
+                  photoDataUrl={editForm.photo}
+                  setPhotoDataUrl={(photo) => setEditForm((f) => ({ ...f, photo }))}
+                  firstNameLabel="First Name"
+                  characterNameLabel="Display Name"
+                />
               </div>
 
               <button onClick={saveEditProfile}
                 style={{ width: '100%', padding: '12px 0', background: '#16a34a', border: '2px solid #000', boxShadow: '2px 2px 0 #000', color: '#fff', fontWeight: 'bold', fontFamily: 'Courier New, monospace', fontSize: 13, letterSpacing: '0.1em', textTransform: 'uppercase', cursor: 'pointer' }}>
-                ✓ Save Changes
+                {onboardingRequired ? 'Save and Enter World' : 'Save Changes'}
               </button>
             </div>
           </div>
@@ -576,6 +477,19 @@ function App() {
                   edit
                 </button>
               </div>
+              <button
+                type="button"
+                onClick={openEditProfile}
+                style={{ marginTop: 4, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '2px 8px', border: `1px solid ${avatarComplete ? '#16a34a' : '#ef4444'}`, color: avatarComplete ? '#86efac' : '#fca5a5', background: avatarComplete ? 'rgba(20,83,45,0.35)' : 'rgba(127,29,29,0.35)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', cursor: 'pointer', fontFamily: 'monospace' }}
+                title="Open avatar settings"
+              >
+                <span>{avatarComplete ? 'Avatar Complete' : 'Avatar Incomplete'}</span>
+              </button>
+              {onboardingStepLabel && (
+                <div style={{ marginTop: 4, border: '1px solid #f59e0b', color: '#fde68a', background: 'rgba(120,53,15,0.35)', padding: '2px 8px', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  {onboardingStepLabel}
+                </div>
+              )}
               <div>{isLocating ? 'Scanning the land…' : isInsideVenue ? 'Within the sacred bounds' : 'Outside the marked realm'}</div>
               <button onClick={handleLogout} style={{ marginTop: 4, background: 'none', border: '1px solid #334155', color: '#475569', fontSize: 10, cursor: 'pointer', padding: '2px 6px', fontFamily: 'monospace', textTransform: 'uppercase' }}>
                 Log out
@@ -587,13 +501,15 @@ function App() {
             {activeScene === 'world' ? (
               /* Map view fills the main area */
               <div style={{ flex: 1, borderRadius: 12, overflow: 'hidden', border: '2px solid #334155', position: 'relative' }}>
-                <WorldMapCanvas
-                  key="world-map"
-                  location={location}
-                  profile={profile}
-                  rooms={getAllRooms().map(r => ({ ...r, radiusMeters: r.radiusMeters || 100 }))}
-                  onEnterRoom={handleEnterRoom}
-                />
+                <Suspense fallback={<div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', color: '#94a3b8', background: '#0f172a' }}>Loading map…</div>}>
+                  <WorldMapCanvas
+                    key="world-map"
+                    location={location}
+                    profile={profile}
+                    rooms={getAllRooms().map(r => ({ ...r, radiusMeters: r.radiusMeters || 100 }))}
+                    onEnterRoom={handleEnterRoom}
+                  />
+                </Suspense>
                 {/* Create room at current GPS location */}
                 {location && !isLocating ? (
                   <button
@@ -609,7 +525,9 @@ function App() {
               </div>
             ) : (
               <div style={{ flex: 1, border: '2px solid #334155', borderRadius: 12, overflow: 'hidden', position: 'relative' }}>
-                <VillageCanvas room={osmRoom ? { ...osmRoom, id: osmRoom.id } : activeRoom} profile={profile} onLeave={() => { setActiveScene('world'); setOsmRoom(null); }} />
+                <Suspense fallback={<div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', color: '#94a3b8', background: '#0f172a' }}>Loading room…</div>}>
+                  <VillageCanvas room={osmRoom ? { ...osmRoom, id: osmRoom.id } : activeRoom} profile={profile} onLeave={() => { setActiveScene('world'); setOsmRoom(null); }} />
+                </Suspense>
                 {/* Invite button for user-created private rooms */}
                 {activeRoom?.kind === 'user-created' && (
                   <button

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { AVATAR_SKINS, AVATAR_HAIR_STYLES, AVATAR_BODY_TYPES } from './SpatialCanvas';
+import AvatarSetupFields from './AvatarSetupFields';
 
 // --- Web Audio Helper for Retro SFX ---
 const playSound = (type) => {
@@ -45,20 +45,13 @@ const playSound = (type) => {
   }
 };
 
-const AVATAR_PRESETS = [
-  { id: 'ranger', label: 'Ranger', skinId: 'green', hairStyle: 'side', bodyType: 'standard' },
-  { id: 'rogue', label: 'Rogue', skinId: 'slate', hairStyle: 'mohawk', bodyType: 'compact' },
-  { id: 'scholar', label: 'Scholar', skinId: 'blue', hairStyle: 'short', bodyType: 'standard' },
-  { id: 'bard', label: 'Bard', skinId: 'pink', hairStyle: 'side', bodyType: 'broad' },
-  { id: 'monk', label: 'Monk', skinId: 'orange', hairStyle: 'buzz', bodyType: 'compact' },
-  { id: 'sentinel', label: 'Sentinel', skinId: 'purple', hairStyle: 'short', bodyType: 'broad' },
-];
-
 export default function RetroAuthModal({ onLogin }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isSignUp, setIsSignUp] = useState(false);
+  const [signUpStep, setSignUpStep] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [fieldErrors, setFieldErrors] = useState({});
 
   const initialForm = {
     email: '',
@@ -73,32 +66,6 @@ export default function RetroAuthModal({ onLogin }) {
   const [photoDataUrl, setPhotoDataUrl] = useState(null);
 
   const firstInputRef = useRef(null);
-  const fileInputRef = useRef(null);
-
-  // Compress uploaded photo to a 48×48 circle base64 thumbnail
-  const handlePhotoChange = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const img = new Image();
-      img.onload = () => {
-        const size = 96;
-        const canvas = document.createElement('canvas');
-        canvas.width = size; canvas.height = size;
-        const ctx = canvas.getContext('2d');
-        ctx.beginPath();
-        ctx.arc(size / 2, size / 2, size / 2, 0, Math.PI * 2);
-        ctx.clip();
-        const scale = Math.max(size / img.width, size / img.height);
-        const w = img.width * scale, h = img.height * scale;
-        ctx.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
-        setPhotoDataUrl(canvas.toDataURL('image/jpeg', 0.7));
-      };
-      img.src = ev.target.result;
-    };
-    reader.readAsDataURL(file);
-  };
 
   // Auto-login if saved profile exists
   useEffect(() => {
@@ -118,7 +85,7 @@ export default function RetroAuthModal({ onLogin }) {
     if (isOpen) {
       setTimeout(() => firstInputRef.current?.focus(), 50);
     }
-  }, [isOpen, isSignUp]);
+  }, [isOpen, isSignUp, signUpStep]);
 
   // Close on ESC key press
   useEffect(() => {
@@ -140,61 +107,112 @@ export default function RetroAuthModal({ onLogin }) {
     playSound('blip');
     setIsOpen(false);
     setFormData(initialForm);
+    setPhotoDataUrl(null);
+    setSignUpStep(1);
     setError(null);
+    setFieldErrors({});
   };
 
   const handleTabSwitch = (signUpMode) => {
     playSound('blip');
     setIsSignUp(signUpMode);
+    setSignUpStep(1);
     setError(null);
+    setFieldErrors({});
   };
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
     if (error) setError(null); // Clear error on typing
+    if (fieldErrors[name]) {
+      setFieldErrors((prev) => {
+        const next = { ...prev };
+        delete next[name];
+        return next;
+      });
+    }
   };
 
-  const applyAvatarPreset = (preset) => {
-    playSound('blip');
-    setFormData((prev) => ({
-      ...prev,
-      skinId: preset.skinId,
-      hairStyle: preset.hairStyle,
-      bodyType: preset.bodyType,
-    }));
-  };
-
-  const randomizeAvatar = () => {
-    const skin = AVATAR_SKINS[Math.floor(Math.random() * AVATAR_SKINS.length)]?.id || 'blue';
-    const hair = AVATAR_HAIR_STYLES[Math.floor(Math.random() * AVATAR_HAIR_STYLES.length)]?.id || 'short';
-    const body = AVATAR_BODY_TYPES[Math.floor(Math.random() * AVATAR_BODY_TYPES.length)]?.id || 'standard';
-    playSound('blip');
-    setFormData((prev) => ({ ...prev, skinId: skin, hairStyle: hair, bodyType: body }));
+  const clearFieldError = (fieldName) => {
+    if (fieldErrors[fieldName]) {
+      setFieldErrors((prev) => {
+        const next = { ...prev };
+        delete next[fieldName];
+        return next;
+      });
+    }
   };
 
   // --- Client-side Validation Logic ---
-  const validateForm = () => {
+  const getAvatarFieldErrors = () => {
+    const nextErrors = {};
+    if (!formData.firstName.trim()) {
+      nextErrors.firstName = 'Please enter your first name.';
+    }
+    if (formData.characterName.trim().length < 3) {
+      nextErrors.characterName = 'Avatar name needs at least 3 characters.';
+    }
+    const handleRegex = /^[a-zA-Z0-9_]+$/;
+    if (formData.characterName.trim().length >= 3 && !handleRegex.test(formData.characterName)) {
+      nextErrors.characterName = 'Use only letters, numbers, and underscores.';
+    }
+    return nextErrors;
+  };
+
+  const validateAvatarStep = () => {
+    const nextErrors = getAvatarFieldErrors();
+    setFieldErrors((prev) => ({ ...prev, ...nextErrors }));
+    if (nextErrors.firstName) return 'WHO GOES THERE? Enter your first name.';
+    if (nextErrors.characterName) return 'ILLEGAL RUNES! Name can only contain letters, numbers, and underscores.';
+    return null;
+  };
+
+  const getAccountFieldErrors = () => {
+    const nextErrors = {};
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(formData.email)) {
-      return 'INVALID SCROLL! Please enter a valid email address.';
+      nextErrors.email = 'Enter a valid email address.';
     }
 
     if (formData.password.length < 8) {
+      nextErrors.password = 'Password must be at least 8 characters.';
+    }
+
+    return nextErrors;
+  };
+
+  const validateForm = () => {
+    const nextErrors = getAccountFieldErrors();
+    setFieldErrors((prev) => ({ ...prev, ...nextErrors }));
+    if (nextErrors.email) {
+      return 'INVALID SCROLL! Please enter a valid email address.';
+    }
+    if (nextErrors.password) {
       return 'DEFENSE TOO LOW! Password must be at least 8 characters.';
     }
 
-    if (isSignUp) {
-      if (formData.characterName.trim().length < 3) {
-        return 'NAME TOO SHORT! Character handle needs 3+ characters.';
-      }
-      const handleRegex = /^[a-zA-Z0-9_]+$/;
-      if (!handleRegex.test(formData.characterName)) {
-        return 'ILLEGAL RUNES! Name can only contain letters, numbers, and underscores.';
-      }
-    }
-
     return null;
+  };
+
+  const goToAccountStep = () => {
+    const avatarError = validateAvatarStep();
+    if (avatarError) {
+      playSound('error');
+      setError(avatarError);
+      return;
+    }
+    playSound('blip');
+    setError(null);
+    setFieldErrors({});
+    setSignUpStep(2);
+  };
+
+  const goToAvatarStep = () => {
+    playSound('blip');
+    setError(null);
+    setFieldErrors({});
+    setSignUpStep(1);
   };
 
   const handleSubmit = async (e) => {
@@ -223,6 +241,7 @@ export default function RetroAuthModal({ onLogin }) {
         skinId: formData.skinId || 'blue',
         hairStyle: formData.hairStyle || 'short',
         bodyType: formData.bodyType || 'standard',
+        avatarOnboardingComplete: isSignUp,
       };
 
       if (isSignUp) {
@@ -345,14 +364,14 @@ export default function RetroAuthModal({ onLogin }) {
           <div onClick={handleClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 20 }} />
 
           {/* Dialog */}
-          <div role="dialog" aria-modal="true" style={{ position: 'fixed', inset: 0, zIndex: 30, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-            <div style={{ width: '100%', maxWidth: 400, background: '#0f172a', border: '4px solid #fff', padding: 4, boxShadow: '8px 8px 0 #000' }}>
-              <div style={{ border: '2px solid #3b82f6', padding: 24, background: '#0f172a', color: '#fff', fontFamily: 'Courier New, monospace' }}>
+          <div role="dialog" aria-modal="true" style={{ position: 'fixed', inset: 0, zIndex: 30, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '24px 12px', overflowY: 'auto' }}>
+            <div style={{ width: '100%', maxWidth: 400, background: '#0f172a', border: '4px solid #fff', padding: 4, boxShadow: '8px 8px 0 #000', margin: '0 auto' }}>
+              <div style={{ border: '2px solid #3b82f6', padding: 18, background: '#0f172a', color: '#fff', fontFamily: 'Courier New, monospace' }}>
 
                 {/* Header */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, paddingBottom: 12, borderBottom: '2px solid #1e293b' }}>
                   <h2 style={{ margin: 0, color: '#fbbf24', fontWeight: 'bold', letterSpacing: '0.1em', textTransform: 'uppercase', fontSize: 16 }}>
-                    {isSignUp ? '📜 Create Character' : '🔑 Player Login'}
+                    {isSignUp ? (signUpStep === 1 ? '📜 Create Character' : '🔐 Create Account') : '🔑 Player Login'}
                   </h2>
                   <button onClick={handleClose} aria-label="Close Modal" style={{ background: 'none', border: 'none', color: '#64748b', fontWeight: 'bold', fontSize: 14, cursor: 'pointer', fontFamily: 'Courier New, monospace' }}>
                     [X]
@@ -376,183 +395,71 @@ export default function RetroAuthModal({ onLogin }) {
                 )}
 
                 {/* Form */}
+                <div style={{ maxHeight: 'calc(100vh - 250px)', overflowY: 'auto', paddingRight: 2 }}>
                 <form onSubmit={handleSubmit} noValidate style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                  {isSignUp && (
-                    <div>
-                      <label style={{ display: 'block', fontSize: 11, textTransform: 'uppercase', color: '#94a3b8', marginBottom: 4 }}>First Name <span style={{ color: '#475569' }}>(shown above your avatar)</span></label>
-                      <input type="text" name="firstName" placeholder="e.g. Alex" value={formData.firstName} onChange={handleInputChange} maxLength={20}
-                        style={{ width: '100%', boxSizing: 'border-box', background: '#000', border: '2px solid #475569', padding: '8px 10px', color: '#fbbf24', fontFamily: 'Courier New, monospace', fontSize: 13, outline: 'none' }} />
+                  {isSignUp && signUpStep === 1 && (
+                    <div style={{ fontSize: 11, color: '#93c5fd', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                      Step 1 of 2: Avatar Setup
                     </div>
                   )}
-                  {isSignUp && (
-                    <div>
-                      <label style={{ display: 'block', fontSize: 11, textTransform: 'uppercase', color: '#94a3b8', marginBottom: 4 }}>Avatar Name</label>
-                      <input ref={firstInputRef} type="text" name="characterName" placeholder="e.g. HeroOfTime" value={formData.characterName} onChange={handleInputChange}
-                        style={{ width: '100%', boxSizing: 'border-box', background: '#000', border: '2px solid #475569', padding: '8px 10px', color: '#fbbf24', fontFamily: 'Courier New, monospace', fontSize: 13, outline: 'none' }} />
+                  {isSignUp && signUpStep === 2 && (
+                    <div style={{ fontSize: 11, color: '#93c5fd', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                      Step 2 of 2: Account Credentials
                     </div>
                   )}
-                  {isSignUp && (
-                    <div>
-                      <label style={{ display: 'block', fontSize: 11, textTransform: 'uppercase', color: '#94a3b8', marginBottom: 4 }}>Profile Photo <span style={{ color: '#475569' }}>(optional)</span></label>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        {photoDataUrl
-                          ? <img src={photoDataUrl} alt="preview" style={{ width: 40, height: 40, borderRadius: '50%', border: '2px solid #fbbf24', objectFit: 'cover' }} />
-                          : <div style={{ width: 40, height: 40, borderRadius: '50%', border: '2px dashed #475569', background: '#111', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>👤</div>
-                        }
-                        <button type="button" onClick={() => fileInputRef.current?.click()}
-                          style={{ flex: 1, padding: '7px 10px', background: 'transparent', border: '2px solid #475569', color: '#94a3b8', fontFamily: 'Courier New, monospace', fontSize: 12, cursor: 'pointer' }}>
-                          {photoDataUrl ? 'Change photo' : 'Upload photo'}
-                        </button>
-                        {photoDataUrl && (
-                          <button type="button" onClick={() => setPhotoDataUrl(null)}
-                            style={{ padding: '7px 10px', background: 'transparent', border: '2px solid #475569', color: '#64748b', fontFamily: 'Courier New, monospace', fontSize: 12, cursor: 'pointer' }}>
-                            ✕
-                          </button>
-                        )}
-                        <input ref={fileInputRef} type="file" accept="image/*" onChange={handlePhotoChange} style={{ display: 'none' }} />
-                      </div>
-                    </div>
+
+                  {isSignUp && signUpStep === 1 && (
+                    <AvatarSetupFields
+                      formData={formData}
+                      setFormData={setFormData}
+                      photoDataUrl={photoDataUrl}
+                      setPhotoDataUrl={setPhotoDataUrl}
+                      firstNameInputRef={firstInputRef}
+                      fieldErrors={fieldErrors}
+                      onFieldEdited={clearFieldError}
+                    />
                   )}
-                  {isSignUp && (
-                    <div style={{ border: '2px solid #1e293b', background: '#020617', padding: 10 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
-                        <label style={{ display: 'block', fontSize: 11, textTransform: 'uppercase', color: '#94a3b8' }}>Choose Avatar</label>
-                        <button
-                          type="button"
-                          onClick={randomizeAvatar}
-                          style={{
-                            padding: '4px 8px',
-                            border: '2px solid #334155',
-                            background: 'transparent',
-                            color: '#93c5fd',
-                            fontFamily: 'Courier New, monospace',
-                            fontSize: 10,
-                            cursor: 'pointer',
-                            textTransform: 'uppercase',
-                          }}
-                        >
-                          Randomize
-                        </button>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                        <div style={{ width: 36, height: 36, borderRadius: '50%', border: '2px solid #fbbf24', background: (AVATAR_SKINS.find(s => s.id === formData.skinId)?.swatch || '#3b82f6') }} />
-                        <div style={{ fontSize: 10, color: '#64748b', textTransform: 'uppercase' }}>
-                          {AVATAR_BODY_TYPES.find(b => b.id === formData.bodyType)?.label || 'Standard'} · {AVATAR_HAIR_STYLES.find(h => h.id === formData.hairStyle)?.label || 'Short'}
-                        </div>
-                      </div>
-
-                      <div style={{ marginBottom: 10 }}>
-                        <label style={{ display: 'block', fontSize: 10, textTransform: 'uppercase', color: '#64748b', marginBottom: 4 }}>Presets</label>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                          {AVATAR_PRESETS.map((p) => (
-                            <button
-                              key={p.id}
-                              type="button"
-                              onClick={() => applyAvatarPreset(p)}
-                              style={{
-                                padding: '4px 7px',
-                                border: formData.skinId === p.skinId && formData.hairStyle === p.hairStyle && formData.bodyType === p.bodyType
-                                  ? '2px solid #fbbf24'
-                                  : '2px solid #334155',
-                                background: 'transparent',
-                                color: '#cbd5e1',
-                                fontFamily: 'Courier New, monospace',
-                                fontSize: 10,
-                                cursor: 'pointer',
-                                textTransform: 'uppercase',
-                              }}
-                            >
-                              {p.label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
-                        {AVATAR_SKINS.map(skin => (
-                          <button
-                            key={skin.id}
-                            type="button"
-                            onClick={() => setFormData(prev => ({ ...prev, skinId: skin.id }))}
-                            style={{
-                              width: 26,
-                              height: 26,
-                              borderRadius: '50%',
-                              border: formData.skinId === skin.id ? '2px solid #fbbf24' : '2px solid #334155',
-                              background: skin.swatch,
-                              cursor: 'pointer',
-                            }}
-                            title={skin.label}
-                          />
-                        ))}
-                      </div>
-
-                      <div style={{ marginBottom: 8 }}>
-                        <label style={{ display: 'block', fontSize: 10, textTransform: 'uppercase', color: '#64748b', marginBottom: 4 }}>Hair</label>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                          {AVATAR_HAIR_STYLES.map(h => (
-                            <button
-                              key={h.id}
-                              type="button"
-                              onClick={() => setFormData(prev => ({ ...prev, hairStyle: h.id }))}
-                              style={{
-                                padding: '4px 7px',
-                                border: formData.hairStyle === h.id ? '2px solid #fbbf24' : '2px solid #334155',
-                                background: formData.hairStyle === h.id ? '#1f2937' : 'transparent',
-                                color: formData.hairStyle === h.id ? '#fbbf24' : '#94a3b8',
-                                fontFamily: 'Courier New, monospace',
-                                fontSize: 10,
-                                cursor: 'pointer',
-                                textTransform: 'uppercase',
-                              }}
-                            >
-                              {h.label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div>
-                        <label style={{ display: 'block', fontSize: 10, textTransform: 'uppercase', color: '#64748b', marginBottom: 4 }}>Body</label>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                          {AVATAR_BODY_TYPES.map(b => (
-                            <button
-                              key={b.id}
-                              type="button"
-                              onClick={() => setFormData(prev => ({ ...prev, bodyType: b.id }))}
-                              style={{
-                                padding: '4px 7px',
-                                border: formData.bodyType === b.id ? '2px solid #fbbf24' : '2px solid #334155',
-                                background: formData.bodyType === b.id ? '#1f2937' : 'transparent',
-                                color: formData.bodyType === b.id ? '#fbbf24' : '#94a3b8',
-                                fontFamily: 'Courier New, monospace',
-                                fontSize: 10,
-                                cursor: 'pointer',
-                                textTransform: 'uppercase',
-                              }}
-                            >
-                              {b.label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  )}
+                  {(isSignUp ? signUpStep === 2 : true) && (
                   <div>
                     <label style={{ display: 'block', fontSize: 11, textTransform: 'uppercase', color: '#94a3b8', marginBottom: 4 }}>Email Address</label>
                     <input ref={firstInputRef} type="email" name="email" placeholder="player@world.com" value={formData.email} onChange={handleInputChange}
                       style={{ width: '100%', boxSizing: 'border-box', background: '#000', border: '2px solid #475569', padding: '8px 10px', color: '#fbbf24', fontFamily: 'Courier New, monospace', fontSize: 13, outline: 'none' }} />
+                    {fieldErrors.email && (
+                      <div style={{ marginTop: 4, fontSize: 10, color: '#fca5a5' }}>{fieldErrors.email}</div>
+                    )}
                   </div>
+                  )}
+                  {(isSignUp ? signUpStep === 2 : true) && (
                   <div>
                     <label style={{ display: 'block', fontSize: 11, textTransform: 'uppercase', color: '#94a3b8', marginBottom: 4 }}>Password</label>
                     <input type="password" name="password" placeholder="••••••••" value={formData.password} onChange={handleInputChange}
                       style={{ width: '100%', boxSizing: 'border-box', background: '#000', border: '2px solid #475569', padding: '8px 10px', color: '#fbbf24', fontFamily: 'Courier New, monospace', fontSize: 13, outline: 'none' }} />
+                    {fieldErrors.password && (
+                      <div style={{ marginTop: 4, fontSize: 10, color: '#fca5a5' }}>{fieldErrors.password}</div>
+                    )}
                   </div>
-                  <button type="submit" disabled={isLoading}
-                    style={{ marginTop: 4, padding: '12px 0', background: isLoading ? '#1e293b' : '#16a34a', border: '2px solid #000', boxShadow: '2px 2px 0 #000', color: '#fff', fontWeight: 'bold', fontFamily: 'Courier New, monospace', fontSize: 13, letterSpacing: '0.1em', textTransform: 'uppercase', cursor: isLoading ? 'not-allowed' : 'pointer' }}>
-                    {isLoading ? '⏳ Connecting...' : isSignUp ? '⚔️ Enter World' : '🚀 Load Save'}
-                  </button>
+                  )}
+
+                  {isSignUp && signUpStep === 1 ? (
+                    <button type="button" onClick={goToAccountStep}
+                      style={{ marginTop: 4, padding: '12px 0', background: '#2563eb', border: '2px solid #000', boxShadow: '2px 2px 0 #000', color: '#fff', fontWeight: 'bold', fontFamily: 'Courier New, monospace', fontSize: 13, letterSpacing: '0.1em', textTransform: 'uppercase', cursor: 'pointer' }}>
+                      ➜ Next: Account
+                    </button>
+                  ) : (
+                    <button type="submit" disabled={isLoading}
+                      style={{ marginTop: 4, padding: '12px 0', background: isLoading ? '#1e293b' : '#16a34a', border: '2px solid #000', boxShadow: '2px 2px 0 #000', color: '#fff', fontWeight: 'bold', fontFamily: 'Courier New, monospace', fontSize: 13, letterSpacing: '0.1em', textTransform: 'uppercase', cursor: isLoading ? 'not-allowed' : 'pointer' }}>
+                      {isLoading ? '⏳ Connecting...' : isSignUp ? '⚔️ Enter World' : '🚀 Load Save'}
+                    </button>
+                  )}
+
+                  {isSignUp && signUpStep === 2 && (
+                    <button type="button" onClick={goToAvatarStep}
+                      style={{ marginTop: 0, padding: '10px 0', background: 'transparent', border: '2px solid #334155', color: '#94a3b8', fontWeight: 'bold', fontFamily: 'Courier New, monospace', fontSize: 12, letterSpacing: '0.08em', textTransform: 'uppercase', cursor: 'pointer' }}>
+                      ← Back to Avatar
+                    </button>
+                  )}
                 </form>
+                </div>
 
               </div>
             </div>
