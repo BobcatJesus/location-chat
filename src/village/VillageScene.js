@@ -120,6 +120,17 @@ export class VillageScene extends Phaser.Scene {
       lastDecorationEventAt: 0,
     };
 
+    this._debugText = this.add.text(10, 10, '', {
+      fontFamily: 'Courier New',
+      fontSize: '12px',
+      color: '#fef3c7',
+      backgroundColor: '#111827cc',
+      padding: { x: 6, y: 4 },
+    })
+      .setDepth(DEPTH.UI + 100)
+      .setScrollFactor(0);
+    this._refreshDebugText();
+
     // Camera
     this.cameras.main.startFollow(this.player.sprite, true, 0.1, 0.1);
     this.cameras.main.setZoom(1.8);
@@ -327,6 +338,16 @@ export class VillageScene extends Phaser.Scene {
     };
   }
 
+  _refreshDebugText() {
+    if (!this._debugText) return;
+    const s = this.getDebugState();
+    this._debugText.setText([
+      `NET ROOM: ${s.roomId || '--'}`,
+      `PLAYERS: ${s.roomStateCount || 0}  REMOTE: ${s.remoteCount || 0}`,
+      `SOCKET: ${s.socketId || '--'}`,
+    ]);
+  }
+
   sendChatMessage(message) {
     const text = (message || '').trim();
     if (!text || !this.socket?.connected) return;
@@ -393,6 +414,8 @@ export class VillageScene extends Phaser.Scene {
   }
 
   update(_t, delta) {
+
+    this._refreshDebugText();
 
     const step = (SPEED * delta) / 1000;
     let dx = 0, dy = 0;
