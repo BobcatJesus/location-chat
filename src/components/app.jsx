@@ -2,7 +2,7 @@ import React, { useState, useEffect, lazy, Suspense } from 'react';
 import RetroAuthModal from './RetroAuthModal';
 import AvatarSetupFields from './AvatarSetupFields';
 import { useGeofencedMap } from '../hooks/UseGeofencingApp';
-import { createUserRoom, loadUserRooms, acceptRoomInvite, findRoomByLocation, getAllRooms } from '../../rooms/rooms.js';
+import { createUserRoom, loadUserRooms, acceptRoomInvite, getAllRooms } from '../../rooms/rooms.js';
 import { getDistanceMeters } from '../geo';
 import { normalizeAvatarModel } from '../game/entities/avatarFactory';
 
@@ -27,6 +27,33 @@ const isAvatarOnboardingComplete = (savedProfile) => {
     && hasText(savedProfile.topStyle)
     && hasText(savedProfile.bottomStyle)
     && hasText(savedProfile.footwear);
+};
+
+const normalizeCommunityRoom = (room) => {
+  if (!room || room.lat == null || room.lng == null) return null;
+  return {
+    id: room.id,
+    name: room.name || 'Community Location',
+    lat: Number(room.lat),
+    lng: Number(room.lng),
+    radiusMeters: Number(room.radius ?? room.radiusMeters ?? 60),
+    kind: 'community',
+    category: room.category || 'social',
+    emoji: room.emoji || '📍',
+    color: room.color || '#f97316',
+    ownerId: room.creator || 'community',
+    contributors: [room.creator || 'community'],
+    isPublic: true,
+  };
+};
+
+const mergeRoomsById = (...roomSets) => {
+  const byId = new Map();
+  roomSets.flat().forEach((room) => {
+    if (!room?.id) return;
+    byId.set(room.id, room);
+  });
+  return Array.from(byId.values());
 };
 
 const migrateProfileForAvatar = (savedProfile) => {
@@ -207,6 +234,10 @@ function App() {
   const [newRoomCategory, setNewRoomCategory] = useState('social');
   const [newRoomPublic, setNewRoomPublic] = useState(false);
   const [inviteToast, setInviteToast] = useState(null);
+  const [communityRooms, setCommunityRooms] = useState([]);
+
+  const SOCKET_SERVER_URL = import.meta.env.VITE_BACKEND_URL ||
+    (import.meta.env.PROD ? 'https://location-chat-production.up.railway.app' : 'http://localhost:4000');
 
   const clearQuickStartParam = () => {
     try {
@@ -431,9 +462,45 @@ function App() {
     setEditingProfile(false);
     setProfileError(null);
     setActiveScene('world');
+    setCommunityRooms([]);
   };
 
-  const staticRoomMatch = location ? findRoomByLocation(location.latitude, location.longitude) : null;
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    let cancelled = false;
+
+    const fetchCommunityRooms = async () => {
+      try {
+        const resp = await fetch(`${SOCKET_SERVER_URL}/api/community-locations`);
+        if (!resp.ok) return;
+        const raw = await resp.json();
+        if (cancelled) return;
+        const normalized = (Array.isArray(raw) ? raw : []).map(normalizeCommunityRoom).filter(Boolean);
+        setCommunityRooms(normalized);
+      } catch {
+        // Keep existing list if fetch fails.
+      }
+    };
+
+    fetchCommunityRooms();
+    const timer = setInterval(fetchCommunityRooms, 30000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [isLoggedIn, SOCKET_SERVER_URL]);
+
+  const allRooms = mergeRoomsById(getAllRooms(), communityRooms);
+
+  const staticRoomMatch = location
+    ? (() => {
+      for (const room of allRooms) {
+        const distance = getDistanceMeters(location.latitude, location.longitude, room.lat, room.lng);
+        if (distance <= room.radiusMeters) return { room, distance: Math.round(distance) };
+      }
+      return null;
+    })()
+    : null;
   const roomMatch = staticRoomMatch;
   const worldTitle = roomMatch ? `The ${roomMatch.room.name} Overworld` : 'The Lost Overworld';
 
@@ -455,9 +522,6 @@ function App() {
     { id: 'arts',      emoji: '🎭', label: 'Arts',      color: '#e11d48' },
     { id: 'sport',     emoji: '🏃', label: 'Sport',     color: '#0891b2' },
   ];
-
-  const SOCKET_SERVER_URL = import.meta.env.VITE_BACKEND_URL ||
-    (import.meta.env.PROD ? 'https://location-chat-production.up.railway.app' : 'http://localhost:4000');
 
   const confirmCreateRoom = async () => {
     const contributorName = profile?.profile?.characterName || profile?.mode || 'guest';
@@ -494,6 +558,10 @@ function App() {
           setGpsToast(`Community save failed: ${err.error || resp.status}`);
           setTimeout(() => setGpsToast(null), 5000);
         } else {
+          const created = normalizeCommunityRoom(await resp.json().catch(() => null));
+          if (created) {
+            setCommunityRooms((prev) => mergeRoomsById(prev, [created]));
+          }
           localStorage.setItem('sidequest_loc_ts', Date.now().toString());
         }
       } catch (e) {
@@ -505,7 +573,7 @@ function App() {
     const newRoom = createUserRoom({
       id: roomId, name: roomName,
       lat: location.latitude, lng: location.longitude,
-      radiusMeters: 60, contributor: contributorName, ownerId,
+      radiusMeters: 60, contributor: contributorName, ownerId, isPublic: newRoomPublic,
     });
     setCreatingRoom(false);
     setSelectedRoom(newRoom.id);
@@ -513,7 +581,7 @@ function App() {
   };
 
   const roomCards = [
-    ...getAllRooms().map((room) => ({
+    ...allRooms.map((room) => ({
       id: room.id,
       name: room.name,
       kind: room.kind,
@@ -522,13 +590,13 @@ function App() {
       radiusMeters: room.radiusMeters,
       ownerId: room.ownerId,
       contributors: room.contributors,
-      icon: room.kind === 'user-created' ? '🔥' : { 'starbucks-spring': '☕', 'agora-houston': '🍷', 'downtown-hub': '🏙️', 'forest-gate': '🌲', 'sunset-temple': '⛩️' }[room.id] || '🏛️',
-      blurb: room.kind === 'user-created'
+      icon: (room.kind === 'user-created' || room.kind === 'community') ? (room.emoji || '🔥') : { 'starbucks-spring': '☕', 'agora-houston': '🍷', 'downtown-hub': '🏙️', 'forest-gate': '🌲', 'sunset-temple': '⛩️' }[room.id] || '🏛️',
+      blurb: (room.kind === 'user-created' || room.kind === 'community')
         ? `Community space · ${room.contributors.join(', ')}`
         : `GPS-anchored · ${room.radiusMeters}m radius`,
-      status: roomMatch?.room?.id === room.id ? '✦ You are here' : room.kind === 'user-created' ? 'Community' : 'GPS room',
-      accent: room.kind === 'user-created' ? '#f97316' : { 'starbucks-spring': '#00704a', 'agora-houston': '#9333ea', 'downtown-hub': '#60a5fa', 'forest-gate': '#4ade80', 'sunset-temple': '#f472b6' }[room.id] || '#a78bfa',
-      bg: room.kind === 'user-created'
+      status: roomMatch?.room?.id === room.id ? '✦ You are here' : (room.kind === 'user-created' || room.kind === 'community') ? 'Community' : 'GPS room',
+      accent: (room.kind === 'user-created' || room.kind === 'community') ? (room.color || '#f97316') : { 'starbucks-spring': '#00704a', 'agora-houston': '#9333ea', 'downtown-hub': '#60a5fa', 'forest-gate': '#4ade80', 'sunset-temple': '#f472b6' }[room.id] || '#a78bfa',
+      bg: (room.kind === 'user-created' || room.kind === 'community')
         ? 'linear-gradient(135deg, #1a0e00 0%, #0f172a 100%)'
         : { 'starbucks-spring': 'linear-gradient(135deg, #00160e 0%, #0f172a 100%)', 'agora-houston': 'linear-gradient(135deg, #1a0028 0%, #0f172a 100%)', 'downtown-hub': 'linear-gradient(135deg, #0a1628 0%, #0f172a 100%)', 'forest-gate': 'linear-gradient(135deg, #0a1a0e 0%, #0f172a 100%)', 'sunset-temple': 'linear-gradient(135deg, #1a0a14 0%, #0f172a 100%)' }[room.id] || 'linear-gradient(135deg, #120a1a 0%, #0f172a 100%)',
     }))
@@ -547,7 +615,7 @@ function App() {
         accent: '#38bdf8',
         tile: '▣▣▣\n▣▓▓▣\n▣▣▣'
       }
-    : getAllRooms().find((room) => room.id === selectedRoom)
+    : allRooms.find((room) => room.id === selectedRoom)
       ? {
           title: activeRoom.name,
           mood: activeRoom.name === "Campfire Circle" || activeRoom.name === "Guest's Spot"
@@ -567,7 +635,6 @@ function App() {
   const handleEnterRoom = (roomId, poiMeta = null) => {
     // GPS gating for named GPS rooms (no poiMeta)
     if (!poiMeta) {
-      const allRooms = getAllRooms();
       const target = allRooms.find(r => r.id === roomId);
       if (target && target.kind === 'gps' && location) {
         const dist = getDistanceMeters(location.latitude, location.longitude, target.lat, target.lng);
@@ -743,7 +810,7 @@ function App() {
                     key="world-map"
                     location={location}
                     profile={profile}
-                    rooms={getAllRooms().map(r => ({ ...r, radiusMeters: r.radiusMeters || 100 }))}
+                    rooms={allRooms.map((r) => ({ ...r, radiusMeters: r.radiusMeters || r.radius || 100 }))}
                     onEnterRoom={handleEnterRoom}
                   />
                 </Suspense>

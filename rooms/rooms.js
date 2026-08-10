@@ -58,13 +58,13 @@ const STORAGE_KEY = 'sidequest_user_rooms';
 export function loadUserRooms(ownerId) {
   try {
     const all = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
-    // Load rooms owned by this user OR shared via invite that they accepted
-    const mine = all.filter(r => r.ownerId === ownerId || r.invitedIds?.includes(ownerId));
+    // Load rooms owned by this user, invited rooms, and globally visible public rooms.
+    const mine = all.filter((r) => r.ownerId === ownerId || r.invitedIds?.includes(ownerId) || r.isPublic === true);
     mine.forEach(r => { if (!USER_CREATED_ROOMS.find(x => x.id === r.id)) USER_CREATED_ROOMS.push(r); });
   } catch {}
 }
 
-export function createUserRoom({ id, name, lat, lng, radiusMeters = 50, contributor, ownerId }) {
+export function createUserRoom({ id, name, lat, lng, radiusMeters = 50, contributor, ownerId, isPublic = false }) {
   const room = {
     id,
     name,
@@ -75,6 +75,7 @@ export function createUserRoom({ id, name, lat, lng, radiusMeters = 50, contribu
     contributors: contributor ? [contributor] : ['anonymous'],
     ownerId: ownerId || 'unknown',
     invitedIds: [],
+    isPublic: Boolean(isPublic),
   };
   USER_CREATED_ROOMS.push(room);
   try {
