@@ -1,5 +1,6 @@
 import ModularAvatar from './ModularAvatar';
 import OgDemonAvatar from './OgDemonAvatar';
+export { AVATAR_FRAME_KEYS, preloadAvatarTextures } from './avatarTextures';
 
 export const AVATAR_MODELS = [
   { id: 'hoodie', label: 'Hoodie Avatar' },

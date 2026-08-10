@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import Phaser from 'phaser';
 import { io } from 'socket.io-client';
 import { HAIR_STYLES as MODULAR_HAIR_STYLES, BODY_TYPES as MODULAR_BODY_TYPES } from '../game/entities/ModularAvatar';
-import { createAvatarEntity, normalizeAvatarModel } from '../game/entities/avatarFactory';
+import { createAvatarEntity, normalizeAvatarModel, preloadAvatarTextures } from '../game/entities/avatarFactory';
 import { FURNITURE, drawFurniture } from '../game/furniture';
 
 // Spawn a speech bubble above an avatar and auto-destroy it after 4s
@@ -342,12 +342,7 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
       },
       scene: {
         preload() {
-          const dirs = ['front', 'back', 'side'];
-          dirs.forEach((d) => {
-            [1, 2].forEach((s) => {
-              this.load.image(`demon-${d}-step${s}`, `/village-sprites/characters/demon-${d}-step${s}.png`);
-            });
-          });
+          preloadAvatarTextures(this);
         },
         create() {
           sceneRef.current = this;

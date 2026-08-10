@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { latLngToWorld, tileUrl, TILE_SIZE } from './tileUtils.js';
 import { getDistanceMeters } from '../geo.js';
-import { createAvatarEntity, normalizeAvatarModel } from '../game/entities/avatarFactory.js';
+import { createAvatarEntity, normalizeAvatarModel, preloadAvatarTextures } from '../game/entities/avatarFactory.js';
 
 const GRID = 5;          // 5×5 tile pool — 25 requests vs 49 for 7×7
 const HALF = Math.floor(GRID / 2);
@@ -67,12 +67,7 @@ export class WorldMapScene extends Phaser.Scene {
   }
 
   preload() {
-    const dirs = ['front', 'back', 'side'];
-    dirs.forEach((d) => {
-      [1, 2].forEach((s) => {
-        this.load.image(`demon-${d}-step${s}`, `/village-sprites/characters/demon-${d}-step${s}.png`);
-      });
-    });
+    preloadAvatarTextures(this);
   }
 
   create() {

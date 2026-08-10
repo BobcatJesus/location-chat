@@ -5,7 +5,7 @@ import { RoomLayout } from './RoomLayout.js';
 import { pickLayout } from './layoutPicker.js';
 import { RoomEditor } from './RoomEditor.js';
 import { Prop, PROP_DEFS } from './Prop.js';
-import { createAvatarEntity, normalizeAvatarModel } from '../game/entities/avatarFactory';
+import { createAvatarEntity, normalizeAvatarModel, preloadAvatarTextures } from '../game/entities/avatarFactory';
 
 const SOCKET_SERVER_URL = import.meta.env.VITE_BACKEND_URL ||
   (import.meta.env.PROD ? 'https://location-chat-production.up.railway.app' : 'http://localhost:4000');
@@ -64,12 +64,7 @@ export class VillageScene extends Phaser.Scene {
   }
 
   preload() {
-    const dirs = ['front', 'back', 'side'];
-    dirs.forEach((d) => {
-      [1, 2].forEach((s) => {
-        this.load.image(`demon-${d}-step${s}`, `/village-sprites/characters/demon-${d}-step${s}.png`);
-      });
-    });
+    preloadAvatarTextures(this);
     this.load.atlas('props', '/assets/props/props.png', '/assets/props/props.json');
   }
 
