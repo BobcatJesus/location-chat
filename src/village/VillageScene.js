@@ -15,6 +15,8 @@ const TICK_MS = 50; // position broadcast interval
 const PROXIMITY_RADIUS = 150;
 const DECOR_SYNC_MS = 8000;
 const PRESENCE_SYNC_MS = 4000;
+const DECOR_SYNC_HEALTHY_MS = 30000;
+const PRESENCE_SYNC_HEALTHY_MS = 20000;
 const SKIN_TINTS = {
   blue: 0x3b82f6,
   red: 0xe53e3e,
@@ -158,8 +160,9 @@ export class VillageScene extends Phaser.Scene {
   _connectSocket() {
     const socket = io(SOCKET_SERVER_URL, { transports: ['websocket'] });
     this.socket = socket;
-    this._decorationSyncTimer = null;
-    this._presenceSyncTimer = null;
+    this._fallbackSyncTimer = null;
+    this._lastDecorSyncAt = 0;
+    this._lastPresenceSyncAt = 0;
     const userId = this.profile?.profile?.email || this.profile?.mode || 'guest';
     this.userId = userId;
     const userName = this.profile?.profile?.characterName || 'Traveler';
@@ -172,24 +175,17 @@ export class VillageScene extends Phaser.Scene {
       });
       socket.emit('get_room_state', { roomId: this.roomId });
       socket.emit('get_room_decorations', { roomId: this.roomId });
-      if (this._decorationSyncTimer) clearInterval(this._decorationSyncTimer);
-      this._decorationSyncTimer = setInterval(() => {
-        if (socket.connected) socket.emit('get_room_decorations', { roomId: this.roomId });
-      }, DECOR_SYNC_MS);
-      if (this._presenceSyncTimer) clearInterval(this._presenceSyncTimer);
-      this._presenceSyncTimer = setInterval(() => {
-        if (socket.connected) socket.emit('get_room_state', { roomId: this.roomId });
-      }, PRESENCE_SYNC_MS);
+      const now = Date.now();
+      this._lastPresenceSyncAt = now;
+      this._lastDecorSyncAt = now;
+      if (this._fallbackSyncTimer) clearInterval(this._fallbackSyncTimer);
+      this._fallbackSyncTimer = setInterval(() => this._runFallbackSync(), 1000);
     });
 
     socket.on('disconnect', () => {
-      if (this._decorationSyncTimer) {
-        clearInterval(this._decorationSyncTimer);
-        this._decorationSyncTimer = null;
-      }
-      if (this._presenceSyncTimer) {
-        clearInterval(this._presenceSyncTimer);
-        this._presenceSyncTimer = null;
+      if (this._fallbackSyncTimer) {
+        clearInterval(this._fallbackSyncTimer);
+        this._fallbackSyncTimer = null;
       }
     });
 
@@ -340,6 +336,25 @@ export class VillageScene extends Phaser.Scene {
     this.remotePlayers.set(socketId, actor);
   }
 
+  _runFallbackSync() {
+    const socket = this.socket;
+    if (!socket?.connected) return;
+    const now = Date.now();
+    const hasRemotePlayers = this.remotePlayers.size > 0;
+
+    const presenceEveryMs = hasRemotePlayers ? PRESENCE_SYNC_HEALTHY_MS : PRESENCE_SYNC_MS;
+    const decorEveryMs = hasRemotePlayers ? DECOR_SYNC_HEALTHY_MS : DECOR_SYNC_MS;
+
+    if (now - this._lastPresenceSyncAt >= presenceEveryMs) {
+      socket.emit('get_room_state', { roomId: this.roomId });
+      this._lastPresenceSyncAt = now;
+    }
+    if (now - this._lastDecorSyncAt >= decorEveryMs) {
+      socket.emit('get_room_decorations', { roomId: this.roomId });
+      this._lastDecorSyncAt = now;
+    }
+  }
+
   update(_t, delta) {
 
     const step = (SPEED * delta) / 1000;
@@ -438,13 +453,9 @@ export class VillageScene extends Phaser.Scene {
     window.removeEventListener('keydown', this._onKeyDown);
     window.removeEventListener('keyup', this._onKeyUp);
     this.socket?.disconnect();
-    if (this._decorationSyncTimer) {
-      clearInterval(this._decorationSyncTimer);
-      this._decorationSyncTimer = null;
-    }
-    if (this._presenceSyncTimer) {
-      clearInterval(this._presenceSyncTimer);
-      this._presenceSyncTimer = null;
+    if (this._fallbackSyncTimer) {
+      clearInterval(this._fallbackSyncTimer);
+      this._fallbackSyncTimer = null;
     }
     this.remotePlayers.forEach(a => a.destroy());
     this.remotePlayers.clear();
