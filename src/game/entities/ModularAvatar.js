@@ -78,7 +78,7 @@ export default class ModularAvatar extends Phaser.GameObjects.Container {
 
     if (hasScythe) {
       const shaft = scene.add.rectangle(11, -1, 2, 28, 0x6b7280).setAngle(22);
-      const blade = scene.add.arc(15, -15, 8, 200, 20, false, 0xdbe4f2).setLineWidth(3, 0xdbe4f2);
+      const blade = scene.add.arc(15, -15, 8, 200, 20, false, 0xdbe4f2).setStrokeStyle(3, 0xdbe4f2, 1);
       this.add(shaft);
       this.add(blade);
     }
@@ -106,7 +106,7 @@ export default class ModularAvatar extends Phaser.GameObjects.Container {
     }
 
     if (topStyle === 'hoodie') {
-      this.add(scene.add.arc(0, -6, 8, 200, -20, false, outfitDark).setLineWidth(3, outfitDark));
+      this.add(scene.add.arc(0, -6, 8, 200, -20, false, outfitDark).setStrokeStyle(3, outfitDark, 1));
       this.add(scene.add.rectangle(0, 5, 6, 2, outfitDark));
     } else {
       this.add(scene.add.rectangle(0, -6, torsoW - 2, 3, outfitDark));
@@ -138,7 +138,7 @@ export default class ModularAvatar extends Phaser.GameObjects.Container {
     // Face
     this.add(scene.add.ellipse(-3, -12, 2.5, 3.5, 0x1f2937));
     this.add(scene.add.ellipse(3, -12, 2.5, 3.5, 0x1f2937));
-    this.add(scene.add.arc(0, -9, 1.5, 15, 165, false, 0x8b5f52).setLineWidth(1, 0x8b5f52));
+    this.add(scene.add.arc(0, -9, 1.5, 15, 165, false, 0x8b5f52).setStrokeStyle(1, 0x8b5f52, 1));
 
     if (glasses) {
       this.add(scene.add.rectangle(-3, -12, 4, 4, 0x000000).setAlpha(0.28));

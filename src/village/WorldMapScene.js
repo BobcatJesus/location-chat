@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { latLngToWorld, tileUrl, TILE_SIZE } from './tileUtils.js';
 import { getDistanceMeters } from '../geo.js';
+import ModularAvatar from '../game/entities/ModularAvatar.js';
 
 const GRID = 5;          // 5×5 tile pool — 25 requests vs 49 for 7×7
 const HALF = Math.floor(GRID / 2);
@@ -13,16 +14,22 @@ const C_BUTTER   = 0xfef9c3;
 const C_SAGE     = 0xd1fae5;
 const C_LAVENDER = 0xede9fe;
 const C_OUTLINE  = 0x2b2b33;
-const SKIN_TINTS = {
-  blue: 0x3b82f6,
-  red: 0xe53e3e,
-  green: 0x16a34a,
-  purple: 0x7c3aed,
-  orange: 0xea580c,
-  pink: 0xec4899,
-  teal: 0x0891b2,
-  slate: 0x94a3b8,
-};
+function normalizeAvatarState(source = {}) {
+  return {
+    skinId: source.skinId || 'slate',
+    hairStyle: source.hairStyle || 'combed',
+    bodyType: source.bodyType || 'standard',
+    skinTone: source.skinTone ?? source.pigment ?? 45,
+    hairHue: source.hairHue ?? source.eyeHue ?? 26,
+    outfitHue: source.outfitHue ?? source.scarfHue ?? 220,
+    topStyle: source.topStyle || 'hoodie',
+    bottomStyle: source.bottomStyle || 'pants',
+    footwear: source.footwear || 'sneakers',
+    glasses: Boolean(source.glasses),
+    hasScythe: Boolean(source.hasScythe),
+    photo: source.photo || null,
+  };
+}
 
 function buildingFill(tags = {}) {
   const a = tags.amenity, s = tags.shop, l = tags.leisure;
@@ -44,7 +51,8 @@ export class WorldMapScene extends Phaser.Scene {
     WorldMapScene._boot = null;
     this.initLat     = d.lat;
     this.initLng     = d.lng;
-    this.skinId      = d.profile?.profile?.skinId || 'blue';
+    this.profile     = d.profile || {};
+    this.avatarState = normalizeAvatarState(d.profile?.profile || {});
     this.rooms       = d.rooms || [];
     this.onEnterRoom = d.onEnterRoom || (() => {});
     this.onReady     = d.onReady || (() => {});
@@ -57,11 +65,7 @@ export class WorldMapScene extends Phaser.Scene {
     this._readyFired = false;
   }
 
-  preload() {
-    ['front', 'back', 'side'].forEach(d =>
-      [1, 2].forEach(s => this.load.image(`demon-${d}-step${s}`, `/village-sprites/characters/demon-${d}-step${s}.png`))
-    );
-  }
+  preload() {}
 
   create() {
     this.originWorld = latLngToWorld(this.initLat, this.initLng);
@@ -90,10 +94,15 @@ export class WorldMapScene extends Phaser.Scene {
     this.buildingGfx = this.add.graphics().setDepth(-9000);
 
     // ── Player ─────────────────────────────────────────────────────────────────
-    this.playerShadow = this.add.ellipse(0, 0, 28, 14, 0x000000, 0.25).setDepth(999);
-    this.playerSprite = this.add.image(0, 0, 'demon-front-step1')
-      .setOrigin(0.5, 1).setScale(0.09).setDepth(1000);
-    this.playerSprite.setTint(SKIN_TINTS[this.skinId] || 0xffffff);
+    const displayName = this.profile?.profile?.characterName || this.profile?.mode || 'Traveler';
+    const firstName = this.profile?.profile?.firstName || displayName.split(' ')[0] || 'You';
+    this.playerAvatar = new ModularAvatar(this, 0, 0, {
+      ...this.avatarState,
+      name: firstName,
+      isLocal: true,
+    });
+    if (this.avatarState.photo) this.playerAvatar.attachPhoto(this, this.avatarState.photo);
+    this.playerAvatar.setDepth(1000);
 
     this.dir = 'front'; this.stepFrame = 0; this.stepAccum = 0;
     this.isMoving = false;
@@ -108,7 +117,7 @@ export class WorldMapScene extends Phaser.Scene {
     }).setDepth(9999999).setScrollFactor(0).setOrigin(0, 1);
 
     // ── Camera ─────────────────────────────────────────────────────────────────
-    this.cameras.main.startFollow(this.playerSprite, true, 0.08, 0.08);
+    this.cameras.main.startFollow(this.playerAvatar, true, 0.08, 0.08);
 
     this._lastCenterTX = null;
     this._lastCenterTY = null;
@@ -140,15 +149,15 @@ export class WorldMapScene extends Phaser.Scene {
 
     // If real GPS puts us more than 1 tile away from where the map is loaded, restart
     const tileThreshold = TILE_SIZE * 2;
-    if (Math.abs(nx - this.playerSprite.x) > tileThreshold ||
-        Math.abs(ny - this.playerSprite.y) > tileThreshold) {
+    if (Math.abs(nx - this.playerAvatar.x) > tileThreshold ||
+      Math.abs(ny - this.playerAvatar.y) > tileThreshold) {
       console.log('[WorldMap] GPS far from loaded area — recentering map');
       this.scene.restart({ lat, lng, rooms: this._rooms, onEnterRoom: this._onEnterRoom, onReady: this._onReady });
       return;
     }
 
-    const dx = nx - this.playerSprite.x;
-    const dy = ny - this.playerSprite.y;
+    const dx = nx - this.playerAvatar.x;
+    const dy = ny - this.playerAvatar.y;
 
     if (Math.abs(dx) > 1 || Math.abs(dy) > 1) {
       this.isMoving = true;
@@ -156,15 +165,15 @@ export class WorldMapScene extends Phaser.Scene {
         this.dir = dy > 0 ? 'front' : 'back';
       } else {
         this.dir = 'side';
-        this.playerSprite.setFlipX(dx < 0);
       }
     } else {
       this.isMoving = false;
     }
 
     this.tweens.add({
-      targets: [this.playerSprite, this.playerShadow],
+      targets: [this.playerAvatar],
       x: nx, y: ny, duration: 900, ease: 'Linear',
+      onUpdate: () => this.playerAvatar.syncLabel(),
     });
 
     this.currentLat = lat;
@@ -404,16 +413,14 @@ export class WorldMapScene extends Phaser.Scene {
   // ── Per-frame ────────────────────────────────────────────────────────────────
 
   update(_, delta) {
-    // Keep shadow at player feet
-    this.playerShadow.setPosition(this.playerSprite.x, this.playerSprite.y);
+    this.playerAvatar.syncLabel();
 
     // Refresh tiles on camera drift
-    this._refreshTiles(this.playerSprite.x, this.playerSprite.y);
+    this._refreshTiles(this.playerAvatar.x, this.playerAvatar.y);
 
     if (!this.isMoving) { this.stepFrame = 0; this.stepAccum = 0; return; }
     this.stepAccum += delta;
     if (this.stepAccum >= 200) { this.stepAccum -= 200; this.stepFrame = 1 - this.stepFrame; }
-    this.playerSprite.setTexture(`demon-${this.dir}-step${this.stepFrame + 1}`);
   }
 
   shutdown() {

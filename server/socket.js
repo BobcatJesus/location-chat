@@ -124,10 +124,14 @@ async function getPresenceRoomState(roomId) {
 }
 
 function mergeRoomState(memoryState, dbState) {
-  return {
-    ...(memoryState || {}),
-    ...(dbState || {}),
-  };
+  const merged = { ...(dbState || {}) };
+  Object.entries(memoryState || {}).forEach(([socketId, player]) => {
+    merged[socketId] = {
+      ...(merged[socketId] || {}),
+      ...(player || {}),
+    };
+  });
+  return merged;
 }
 
 const app = express();
@@ -224,8 +228,16 @@ io.on('connection', (socket) => {
       firstName: user?.firstName || '',
       photo: user?.photo || null,
       skinId: user?.skinId || 'blue',
-      hairStyle: user?.hairStyle || 'short',
+      hairStyle: user?.hairStyle || 'combed',
       bodyType: user?.bodyType || 'standard',
+      skinTone: user?.skinTone ?? user?.pigment ?? 45,
+      hairHue: user?.hairHue ?? user?.eyeHue ?? 26,
+      outfitHue: user?.outfitHue ?? user?.scarfHue ?? 220,
+      topStyle: user?.topStyle || 'hoodie',
+      bottomStyle: user?.bottomStyle || 'pants',
+      footwear: user?.footwear || 'sneakers',
+      glasses: Boolean(user?.glasses),
+      hasScythe: Boolean(user?.hasScythe),
       x: 640 + spawnOffsetX,
       y: 400 + spawnOffsetY,
     };
