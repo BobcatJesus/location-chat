@@ -108,6 +108,7 @@ async function getPresenceRoomState(roomId) {
     'SELECT socket_id, user_id, name, first_name, skin_id, x, y FROM room_presence WHERE room_id = $1',
     [roomId]
   );
+  if (!rows.length) return null;
   const state = {};
   rows.forEach((r) => {
     state[r.socket_id] = {
@@ -120,6 +121,13 @@ async function getPresenceRoomState(roomId) {
     };
   });
   return state;
+}
+
+function mergeRoomState(memoryState, dbState) {
+  return {
+    ...(memoryState || {}),
+    ...(dbState || {}),
+  };
 }
 
 const app = express();
@@ -258,7 +266,7 @@ io.on('connection', (socket) => {
     console.log(`👤 ${playerState.name} joined room: ${roomId}`);
 
     const dbRoomState = await getPresenceRoomState(roomId);
-    socket.emit('room_state', dbRoomState || rooms[roomId]);
+    socket.emit('room_state', mergeRoomState(rooms[roomId], dbRoomState));
     const roomDecorations = (await loadDecorationsForRoom(roomId)) || decorations[roomId] || [];
     decorations[roomId] = roomDecorations;
     socket.emit('room_decorations', roomDecorations);
@@ -286,7 +294,7 @@ io.on('connection', (socket) => {
       userId: socketUserMap[socket.id] || socket.id,
     });
     const dbRoomState = await getPresenceRoomState(roomId);
-    socket.emit('room_state', dbRoomState || rooms[roomId] || {});
+    socket.emit('room_state', mergeRoomState(rooms[roomId], dbRoomState));
   });
 
   // PLAYER MOVEMENT
