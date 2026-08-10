@@ -47,6 +47,12 @@ async function loadDecorations() {
   }, {});
 }
 
+async function loadDecorationsForRoom(roomId) {
+  if (!pool) return null;
+  const { rows } = await pool.query('SELECT data FROM decorations WHERE room_id = $1', [roomId]);
+  return rows.map((row) => row.data);
+}
+
 async function saveDecoration(roomId, decoration) {
   if (!pool) return;
   await pool.query(
@@ -137,7 +143,7 @@ io.on('connection', (socket) => {
   console.log(`⚡ Client connected: ${socket.id}`);
 
   // JOIN ROOM
-  socket.on('join_room', ({ roomId, user }) => {
+  socket.on('join_room', async ({ roomId, user }) => {
     socket.join(roomId);
 
     if (!rooms[roomId]) {
@@ -169,9 +175,18 @@ io.on('connection', (socket) => {
     console.log(`👤 ${playerState.name} joined room: ${roomId}`);
 
     socket.emit('room_state', rooms[roomId]);
-    socket.emit('room_decorations', decorations[roomId] || []);
+    const roomDecorations = (await loadDecorationsForRoom(roomId)) || decorations[roomId] || [];
+    decorations[roomId] = roomDecorations;
+    socket.emit('room_decorations', roomDecorations);
     socket.to(roomId).emit('player_joined', { socketId: socket.id, player: playerState });
     broadcastRoomCounts();
+  });
+
+  socket.on('get_room_decorations', async ({ roomId }) => {
+    if (!roomId) return;
+    const roomDecorations = (await loadDecorationsForRoom(roomId)) || decorations[roomId] || [];
+    decorations[roomId] = roomDecorations;
+    socket.emit('room_decorations', roomDecorations);
   });
 
   // PLAYER MOVEMENT

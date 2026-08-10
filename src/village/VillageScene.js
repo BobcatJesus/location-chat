@@ -156,6 +156,7 @@ export class VillageScene extends Phaser.Scene {
   _connectSocket() {
     const socket = io(SOCKET_SERVER_URL, { transports: ['websocket'] });
     this.socket = socket;
+    this._decorationSyncTimer = null;
     const userId = this.profile?.profile?.email || this.profile?.mode || 'guest';
     this.userId = userId;
     const userName = this.profile?.profile?.characterName || 'Traveler';
@@ -166,6 +167,18 @@ export class VillageScene extends Phaser.Scene {
         roomId: this.roomId,
         user: { id: userId, name: userName, firstName, skinId: this.skinId },
       });
+      socket.emit('get_room_decorations', { roomId: this.roomId });
+      if (this._decorationSyncTimer) clearInterval(this._decorationSyncTimer);
+      this._decorationSyncTimer = setInterval(() => {
+        if (socket.connected) socket.emit('get_room_decorations', { roomId: this.roomId });
+      }, 3000);
+    });
+
+    socket.on('disconnect', () => {
+      if (this._decorationSyncTimer) {
+        clearInterval(this._decorationSyncTimer);
+        this._decorationSyncTimer = null;
+      }
     });
 
     socket.on('room_state', (state) => {
@@ -398,6 +411,10 @@ export class VillageScene extends Phaser.Scene {
     window.removeEventListener('keydown', this._onKeyDown);
     window.removeEventListener('keyup', this._onKeyUp);
     this.socket?.disconnect();
+    if (this._decorationSyncTimer) {
+      clearInterval(this._decorationSyncTimer);
+      this._decorationSyncTimer = null;
+    }
     this.remotePlayers.forEach(a => a.destroy());
     this.remotePlayers.clear();
     this.roomLayout?.destroy();
