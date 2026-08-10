@@ -157,6 +157,7 @@ export class VillageScene extends Phaser.Scene {
     const socket = io(SOCKET_SERVER_URL, { transports: ['websocket'] });
     this.socket = socket;
     this._decorationSyncTimer = null;
+    this._presenceSyncTimer = null;
     const userId = this.profile?.profile?.email || this.profile?.mode || 'guest';
     this.userId = userId;
     const userName = this.profile?.profile?.characterName || 'Traveler';
@@ -167,11 +168,16 @@ export class VillageScene extends Phaser.Scene {
         roomId: this.roomId,
         user: { id: userId, name: userName, firstName, skinId: this.skinId },
       });
+      socket.emit('get_room_state', { roomId: this.roomId });
       socket.emit('get_room_decorations', { roomId: this.roomId });
       if (this._decorationSyncTimer) clearInterval(this._decorationSyncTimer);
       this._decorationSyncTimer = setInterval(() => {
         if (socket.connected) socket.emit('get_room_decorations', { roomId: this.roomId });
       }, 3000);
+      if (this._presenceSyncTimer) clearInterval(this._presenceSyncTimer);
+      this._presenceSyncTimer = setInterval(() => {
+        if (socket.connected) socket.emit('get_room_state', { roomId: this.roomId });
+      }, 1500);
     });
 
     socket.on('disconnect', () => {
@@ -179,11 +185,30 @@ export class VillageScene extends Phaser.Scene {
         clearInterval(this._decorationSyncTimer);
         this._decorationSyncTimer = null;
       }
+      if (this._presenceSyncTimer) {
+        clearInterval(this._presenceSyncTimer);
+        this._presenceSyncTimer = null;
+      }
     });
 
     socket.on('room_state', (state) => {
-      Object.entries(state).forEach(([sid, player]) => {
-        if (sid !== socket.id) this._spawnRemote(sid, player);
+      const nextIds = new Set(Object.keys(state || {}));
+      this.remotePlayers.forEach((actor, sid) => {
+        if (!nextIds.has(sid)) {
+          actor.destroy();
+          this.remotePlayers.delete(sid);
+        }
+      });
+      Object.entries(state || {}).forEach(([sid, player]) => {
+        if (sid === socket.id) return;
+        const actor = this.remotePlayers.get(sid);
+        if (actor) {
+          actor.gx = player.x ?? actor.gx;
+          actor.gy = player.y ?? actor.gy;
+          actor.sync();
+        } else {
+          this._spawnRemote(sid, player);
+        }
       });
     });
 
@@ -414,6 +439,10 @@ export class VillageScene extends Phaser.Scene {
     if (this._decorationSyncTimer) {
       clearInterval(this._decorationSyncTimer);
       this._decorationSyncTimer = null;
+    }
+    if (this._presenceSyncTimer) {
+      clearInterval(this._presenceSyncTimer);
+      this._presenceSyncTimer = null;
     }
     this.remotePlayers.forEach(a => a.destroy());
     this.remotePlayers.clear();

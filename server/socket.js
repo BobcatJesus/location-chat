@@ -35,6 +35,19 @@ async function initDb() {
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);  console.log('✅ Postgres decorations table ready');
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS room_presence (
+      socket_id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      room_id TEXT NOT NULL,
+      name TEXT,
+      first_name TEXT,
+      skin_id TEXT,
+      x DOUBLE PRECISION NOT NULL,
+      y DOUBLE PRECISION NOT NULL,
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
 }
 
 async function loadDecorations() {
@@ -64,6 +77,49 @@ async function saveDecoration(roomId, decoration) {
 async function deleteDecoration(id) {
   if (!pool) return;
   await pool.query('DELETE FROM decorations WHERE id = $1', [id]);
+}
+
+async function upsertPresence({ socketId, userId, roomId, name, firstName, skinId, x, y }) {
+  if (!pool) return;
+  await pool.query(
+    `INSERT INTO room_presence (socket_id, user_id, room_id, name, first_name, skin_id, x, y, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW())
+     ON CONFLICT (socket_id)
+     DO UPDATE SET user_id = EXCLUDED.user_id, room_id = EXCLUDED.room_id, name = EXCLUDED.name,
+       first_name = EXCLUDED.first_name, skin_id = EXCLUDED.skin_id, x = EXCLUDED.x, y = EXCLUDED.y, updated_at = NOW()`,
+    [socketId, userId, roomId, name || null, firstName || null, skinId || null, x, y]
+  );
+}
+
+async function touchPresencePosition({ socketId, x, y }) {
+  if (!pool) return;
+  await pool.query('UPDATE room_presence SET x = $2, y = $3, updated_at = NOW() WHERE socket_id = $1', [socketId, x, y]);
+}
+
+async function removePresence(socketId) {
+  if (!pool) return;
+  await pool.query('DELETE FROM room_presence WHERE socket_id = $1', [socketId]);
+}
+
+async function getPresenceRoomState(roomId) {
+  if (!pool) return null;
+  await pool.query("DELETE FROM room_presence WHERE updated_at < NOW() - INTERVAL '30 seconds'");
+  const { rows } = await pool.query(
+    'SELECT socket_id, user_id, name, first_name, skin_id, x, y FROM room_presence WHERE room_id = $1',
+    [roomId]
+  );
+  const state = {};
+  rows.forEach((r) => {
+    state[r.socket_id] = {
+      id: r.user_id,
+      name: r.name || `Guest_${String(r.socket_id).slice(0, 4)}`,
+      firstName: r.first_name || '',
+      skinId: r.skin_id || 'blue',
+      x: r.x,
+      y: r.y,
+    };
+  });
+  return state;
 }
 
 const app = express();
@@ -168,13 +224,24 @@ io.on('connection', (socket) => {
 
     rooms[roomId][socket.id] = playerState;
     socketUserMap[socket.id] = user?.id || socket.id;
+    await upsertPresence({
+      socketId: socket.id,
+      userId: playerState.id,
+      roomId,
+      name: playerState.name,
+      firstName: playerState.firstName,
+      skinId: playerState.skinId,
+      x: playerState.x,
+      y: playerState.y,
+    });
     if (user?.isCreator) {
       if (!socketCreatorRooms[socket.id]) socketCreatorRooms[socket.id] = new Set();
       socketCreatorRooms[socket.id].add(roomId);
     }
     console.log(`👤 ${playerState.name} joined room: ${roomId}`);
 
-    socket.emit('room_state', rooms[roomId]);
+    const dbRoomState = await getPresenceRoomState(roomId);
+    socket.emit('room_state', dbRoomState || rooms[roomId]);
     const roomDecorations = (await loadDecorationsForRoom(roomId)) || decorations[roomId] || [];
     decorations[roomId] = roomDecorations;
     socket.emit('room_decorations', roomDecorations);
@@ -187,6 +254,12 @@ io.on('connection', (socket) => {
     const roomDecorations = (await loadDecorationsForRoom(roomId)) || decorations[roomId] || [];
     decorations[roomId] = roomDecorations;
     socket.emit('room_decorations', roomDecorations);
+  });
+
+  socket.on('get_room_state', async ({ roomId }) => {
+    if (!roomId) return;
+    const dbRoomState = await getPresenceRoomState(roomId);
+    socket.emit('room_state', dbRoomState || rooms[roomId] || {});
   });
 
   // PLAYER MOVEMENT
@@ -202,6 +275,7 @@ io.on('connection', (socket) => {
         y,
         direction,
       });
+      touchPresencePosition({ socketId: socket.id, x, y }).catch(() => {});
     }
   });
 
@@ -263,6 +337,7 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     console.log(`❌ Client disconnected: ${socket.id}`);
     delete socketUserMap[socket.id];
+    removePresence(socket.id).catch(() => {});
     delete socketCreatorRooms[socket.id];
     Object.keys(rooms).forEach((roomId) => {
       if (rooms[roomId][socket.id]) {
