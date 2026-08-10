@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { latLngToWorld, tileUrl, TILE_SIZE } from './tileUtils.js';
 import { getDistanceMeters } from '../geo.js';
-import ModularAvatar from '../game/entities/ModularAvatar.js';
+import { createAvatarEntity, normalizeAvatarModel } from '../game/entities/avatarFactory.js';
 
 const GRID = 5;          // 5×5 tile pool — 25 requests vs 49 for 7×7
 const HALF = Math.floor(GRID / 2);
@@ -16,6 +16,7 @@ const C_LAVENDER = 0xede9fe;
 const C_OUTLINE  = 0x2b2b33;
 function normalizeAvatarState(source = {}) {
   return {
+    avatarModel: normalizeAvatarModel(source.avatarModel),
     skinId: source.skinId || 'slate',
     hairStyle: source.hairStyle || 'combed',
     bodyType: source.bodyType || 'standard',
@@ -65,7 +66,14 @@ export class WorldMapScene extends Phaser.Scene {
     this._readyFired = false;
   }
 
-  preload() {}
+  preload() {
+    const dirs = ['front', 'back', 'side'];
+    dirs.forEach((d) => {
+      [1, 2].forEach((s) => {
+        this.load.image(`demon-${d}-step${s}`, `/village-sprites/characters/demon-${d}-step${s}.png`);
+      });
+    });
+  }
 
   create() {
     this.originWorld = latLngToWorld(this.initLat, this.initLng);
@@ -96,7 +104,7 @@ export class WorldMapScene extends Phaser.Scene {
     // ── Player ─────────────────────────────────────────────────────────────────
     const displayName = this.profile?.profile?.characterName || this.profile?.mode || 'Traveler';
     const firstName = this.profile?.profile?.firstName || displayName.split(' ')[0] || 'You';
-    this.playerAvatar = new ModularAvatar(this, 0, 0, {
+    this.playerAvatar = createAvatarEntity(this, 0, 0, {
       ...this.avatarState,
       name: firstName,
       isLocal: true,
@@ -105,6 +113,7 @@ export class WorldMapScene extends Phaser.Scene {
     this.playerAvatar.setDepth(1000);
 
     this.dir = 'front'; this.stepFrame = 0; this.stepAccum = 0;
+    this.facingLeft = false;
     this.isMoving = false;
 
     // ── POI pins ───────────────────────────────────────────────────────────────
@@ -165,15 +174,26 @@ export class WorldMapScene extends Phaser.Scene {
         this.dir = dy > 0 ? 'front' : 'back';
       } else {
         this.dir = 'side';
+        this.facingLeft = dx < 0;
       }
     } else {
       this.isMoving = false;
     }
 
-    this.tweens.add({
+    this.playerAvatar.setMovementState({
+      moving: this.isMoving,
+      direction: this.dir,
+      facingLeft: this.facingLeft,
+    });
+
+    if (this._moveTween) this._moveTween.stop();
+    this._moveTween = this.tweens.add({
       targets: [this.playerAvatar],
       x: nx, y: ny, duration: 900, ease: 'Linear',
       onUpdate: () => this.playerAvatar.syncLabel(),
+      onComplete: () => {
+        this.isMoving = false;
+      },
     });
 
     this.currentLat = lat;
@@ -413,6 +433,12 @@ export class WorldMapScene extends Phaser.Scene {
   // ── Per-frame ────────────────────────────────────────────────────────────────
 
   update(_, delta) {
+    this.playerAvatar.setMovementState({
+      moving: this.isMoving,
+      direction: this.dir,
+      facingLeft: this.facingLeft,
+    });
+    this.playerAvatar.tick(delta);
     this.playerAvatar.syncLabel();
 
     // Refresh tiles on camera drift

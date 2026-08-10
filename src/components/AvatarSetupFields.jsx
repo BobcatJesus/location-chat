@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { AVATAR_SKINS, AVATAR_HAIR_STYLES, AVATAR_BODY_TYPES } from './SpatialCanvas';
 import { skinToneToColor, hairHueToColor, accessoryHueToColor } from '../utils/avatarColors';
+import { AVATAR_MODELS } from '../game/entities/avatarFactory';
 
 const AVATAR_PRESETS = [
   {
@@ -296,6 +297,73 @@ export default function AvatarSetupFields({
           />
           <div style={{ fontSize: 10, color: '#64748b', textTransform: 'uppercase' }}>
             {AVATAR_BODY_TYPES.find((b) => b.id === formData.bodyType)?.label || 'Core Build'} · {AVATAR_HAIR_STYLES.find((h) => h.id === formData.hairStyle)?.label || 'Combed Hair'}
+          </div>
+        </div>
+
+        <div style={{ marginBottom: 10 }}>
+          <label style={{ display: 'block', fontSize: 10, textTransform: 'uppercase', color: '#64748b', marginBottom: 4 }}>
+            Avatar Model
+          </label>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {AVATAR_MODELS.map((model) => {
+              const isSelected = (formData.avatarModel || 'hoodie') === model.id;
+              const isDefault = model.id === 'hoodie';
+              const iconAccent = model.id === 'bunny' ? '#fda4af' : '#cbd5e1';
+              return (
+                <button
+                  key={model.id}
+                  type="button"
+                  onClick={() => {
+                    setFormData((prev) => ({ ...prev, avatarModel: model.id }));
+                    showPreviewPulse(`${model.label} model`);
+                  }}
+                  style={{
+                    padding: isDefault ? '6px 10px' : '4px 7px',
+                    border: isSelected ? '2px solid #fbbf24' : (isDefault ? '2px solid #475569' : '2px solid #334155'),
+                    background: isSelected ? '#1f2937' : (isDefault ? '#0f172a' : 'transparent'),
+                    color: isSelected ? '#fbbf24' : (isDefault ? '#cbd5e1' : '#94a3b8'),
+                    fontFamily: 'Courier New, monospace',
+                    fontSize: isDefault ? 11 : 10,
+                    cursor: 'pointer',
+                    textTransform: 'uppercase',
+                    fontWeight: isDefault ? 700 : 500,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                  }}
+                >
+                  <span
+                    aria-hidden="true"
+                    style={{
+                      position: 'relative',
+                      width: 16,
+                      height: 16,
+                      display: 'inline-block',
+                      border: `1px solid ${isSelected ? '#fbbf24' : '#475569'}`,
+                      borderRadius: 4,
+                      background: '#111827',
+                    }}
+                  >
+                    {model.id === 'bunny' ? (
+                      <>
+                        <span style={{ position: 'absolute', left: 4, top: 1, width: 3, height: 5, borderRadius: 2, background: iconAccent }} />
+                        <span style={{ position: 'absolute', left: 9, top: 1, width: 3, height: 5, borderRadius: 2, background: iconAccent }} />
+                        <span style={{ position: 'absolute', left: 3, top: 6, width: 10, height: 8, borderRadius: 999, background: iconAccent }} />
+                      </>
+                    ) : (
+                      <>
+                        <span style={{ position: 'absolute', left: 2, top: 2, width: 12, height: 11, borderRadius: 5, background: iconAccent }} />
+                        <span style={{ position: 'absolute', left: 5, top: 10, width: 6, height: 3, borderRadius: 3, background: '#111827' }} />
+                      </>
+                    )}
+                  </span>
+                  <span>{model.label}</span>
+                  {isDefault && (
+                    <span style={{ fontSize: 9, color: '#94a3b8' }}>Default</span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         </div>
 

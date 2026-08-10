@@ -5,7 +5,7 @@ import { RoomLayout } from './RoomLayout.js';
 import { pickLayout } from './layoutPicker.js';
 import { RoomEditor } from './RoomEditor.js';
 import { Prop, PROP_DEFS } from './Prop.js';
-import ModularAvatar from '../game/entities/ModularAvatar.js';
+import { createAvatarEntity, normalizeAvatarModel } from '../game/entities/avatarFactory';
 
 const SOCKET_SERVER_URL = import.meta.env.VITE_BACKEND_URL ||
   (import.meta.env.PROD ? 'https://location-chat-production.up.railway.app' : 'http://localhost:4000');
@@ -20,6 +20,7 @@ const PRESENCE_SYNC_HEALTHY_MS = 20000;
 function normalizeAvatarState(source = {}) {
   return {
     photo: source.photo || null,
+    avatarModel: normalizeAvatarModel(source.avatarModel),
     skinId: source.skinId || 'slate',
     hairStyle: source.hairStyle || 'combed',
     bodyType: source.bodyType || 'standard',
@@ -63,6 +64,12 @@ export class VillageScene extends Phaser.Scene {
   }
 
   preload() {
+    const dirs = ['front', 'back', 'side'];
+    dirs.forEach((d) => {
+      [1, 2].forEach((s) => {
+        this.load.image(`demon-${d}-step${s}`, `/village-sprites/characters/demon-${d}-step${s}.png`);
+      });
+    });
     this.load.atlas('props', '/assets/props/props.png', '/assets/props/props.json');
   }
 
@@ -89,7 +96,7 @@ export class VillageScene extends Phaser.Scene {
     // Local player
     const displayName = this.profile?.profile?.characterName || this.profile?.mode || 'Traveler';
     const firstName = this.profile?.profile?.firstName || displayName.split(' ')[0] || 'You';
-    const localAvatar = new ModularAvatar(this, spawn.x, spawn.y, {
+    const localAvatar = createAvatarEntity(this, spawn.x, spawn.y, {
       ...this.avatarState,
       name: firstName,
       isLocal: true,
@@ -99,6 +106,7 @@ export class VillageScene extends Phaser.Scene {
       gx: spawn.x,
       gy: spawn.y,
       avatar: localAvatar,
+      facingLeft: false,
       sync: () => {
         localAvatar.setPosition(this.player.gx, this.player.gy);
         localAvatar.setDepth(DEPTH.ACTOR_MIN + Math.round(this.player.gy));
@@ -220,8 +228,21 @@ export class VillageScene extends Phaser.Scene {
         if (sid === socket.id) return;
         const remotePlayer = this.remotePlayers.get(sid);
         if (remotePlayer) {
+          const prevX = remotePlayer.gx;
+          const prevY = remotePlayer.gy;
           remotePlayer.gx = player.x ?? remotePlayer.gx;
           remotePlayer.gy = player.y ?? remotePlayer.gy;
+          const ddx = remotePlayer.gx - prevX;
+          const ddy = remotePlayer.gy - prevY;
+          if (Math.abs(ddx) > 0.5 || Math.abs(ddy) > 0.5) {
+            remotePlayer.movingUntil = this.time.now + 220;
+            if (Math.abs(ddy) >= Math.abs(ddx)) {
+              remotePlayer.dir = ddy > 0 ? 'front' : 'back';
+            } else {
+              remotePlayer.dir = 'side';
+              remotePlayer.facingLeft = ddx < 0;
+            }
+          }
           remotePlayer.sync();
         } else {
           this._spawnRemote(sid, player);
@@ -235,7 +256,20 @@ export class VillageScene extends Phaser.Scene {
 
     socket.on('player_moved', ({ socketId, x, y }) => {
       const remotePlayer = this.remotePlayers.get(socketId);
-      if (remotePlayer) { remotePlayer.gx = x; remotePlayer.gy = y; remotePlayer.sync(); }
+      if (remotePlayer) {
+        const ddx = x - remotePlayer.gx;
+        const ddy = y - remotePlayer.gy;
+        if (Math.abs(ddy) >= Math.abs(ddx)) {
+          remotePlayer.dir = ddy > 0 ? 'front' : 'back';
+        } else {
+          remotePlayer.dir = 'side';
+          remotePlayer.facingLeft = ddx < 0;
+        }
+        remotePlayer.movingUntil = this.time.now + 220;
+        remotePlayer.gx = x;
+        remotePlayer.gy = y;
+        remotePlayer.sync();
+      }
     });
 
     socket.on('player_left', ({ socketId }) => {
@@ -347,7 +381,7 @@ export class VillageScene extends Phaser.Scene {
   _spawnRemote(socketId, player) {
     if (this.remotePlayers.has(socketId)) return;
     const avatarState = normalizeAvatarState(player);
-    const avatar = new ModularAvatar(this, player.x ?? 400, player.y ?? 300, {
+    const avatar = createAvatarEntity(this, player.x ?? 400, player.y ?? 300, {
       ...avatarState,
       name: player?.firstName || player?.name || 'Traveler',
       isLocal: false,
@@ -357,6 +391,9 @@ export class VillageScene extends Phaser.Scene {
       gx: player.x ?? 400,
       gy: player.y ?? 300,
       avatar,
+      dir: 'front',
+      facingLeft: false,
+      movingUntil: 0,
       sync: () => {
         avatar.setPosition(remotePlayer.gx, remotePlayer.gy);
         avatar.setDepth(DEPTH.ACTOR_MIN + Math.round(remotePlayer.gy));
@@ -415,12 +452,32 @@ export class VillageScene extends Phaser.Scene {
       const len = Math.hypot(dx, dy) || 1;
       this.player.gx = Phaser.Math.Clamp(this.player.gx + (dx / len) * step, 20, W * 4 - 20);
       this.player.gy = Phaser.Math.Clamp(this.player.gy + (dy / len) * step, 60, H * 4 - 10);
-      if (Math.abs(dy) >= Math.abs(dx)) { this.dir = dy > 0 ? 'front' : 'back'; } else { this.dir = 'side'; }
+      if (Math.abs(dy) >= Math.abs(dx)) {
+        this.dir = dy > 0 ? 'front' : 'back';
+      } else {
+        this.dir = 'side';
+        this.player.facingLeft = dx < 0;
+      }
     } else {
       // no-op
     }
 
+    this.player.avatar.setMovementState({
+      moving: Boolean(dx || dy),
+      direction: this.dir,
+      facingLeft: this.player.facingLeft,
+    });
+    this.player.avatar.tick(delta);
     this.player.sync();
+
+    this.remotePlayers.forEach((remotePlayer) => {
+      remotePlayer.avatar.setMovementState({
+        moving: this.time.now < (remotePlayer.movingUntil || 0),
+        direction: remotePlayer.dir || 'front',
+        facingLeft: Boolean(remotePlayer.facingLeft),
+      });
+      remotePlayer.avatar.tick(delta);
+    });
 
     // Nearby count for chat gating UI
     let nearbyCount = 0;

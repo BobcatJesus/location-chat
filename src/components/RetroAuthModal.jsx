@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import AvatarSetupFields from './AvatarSetupFields';
 import { accessoryHueToColor, hairHueToColor, skinToneToColor } from '../utils/avatarColors';
 import { getAuthLayoutState } from './authLayout';
+import { normalizeAvatarModel } from '../game/entities/avatarFactory';
 
 const normalizeHairStyle = (hairStyle) => {
   if (hairStyle === 'messy' || hairStyle === 'combed') return hairStyle;
@@ -65,6 +66,7 @@ export default function RetroAuthModal({ onLogin }) {
     footwear: 'sneakers',
     glasses: false,
     hasScythe: false,
+    avatarModel: 'hoodie',
     playstyle: 'explorer',
     agreeConduct: false,
     agreeLocationRules: false,
@@ -378,6 +380,7 @@ export default function RetroAuthModal({ onLogin }) {
         photo: photoDataUrl,
         skinId: formData.skinId || 'slate',
         hairStyle: normalizeHairStyle(formData.hairStyle),
+        avatarModel: normalizeAvatarModel(formData.avatarModel),
         bodyType: formData.bodyType || 'standard',
         skinTone: formData.skinTone ?? 45,
         hairHue: formData.hairHue ?? 26,
@@ -406,6 +409,7 @@ export default function RetroAuthModal({ onLogin }) {
             ...existing,
             skinId: existing.skinId || 'slate',
             hairStyle: normalizeHairStyle(existing.hairStyle),
+            avatarModel: normalizeAvatarModel(existing.avatarModel),
             bodyType: existing.bodyType || 'standard',
             skinTone: existing.skinTone ?? existing.pigment ?? 45,
             hairHue: existing.hairHue ?? existing.eyeHue ?? 26,
@@ -442,6 +446,7 @@ export default function RetroAuthModal({ onLogin }) {
       photo: photoDataUrl,
       skinId: formData.skinId || 'slate',
       hairStyle: normalizeHairStyle(formData.hairStyle),
+      avatarModel: normalizeAvatarModel(formData.avatarModel),
       bodyType: formData.bodyType || 'standard',
       skinTone: formData.skinTone ?? 45,
       hairHue: formData.hairHue ?? 26,

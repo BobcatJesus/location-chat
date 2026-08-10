@@ -4,6 +4,7 @@ import AvatarSetupFields from './AvatarSetupFields';
 import { useGeofencedMap } from '../hooks/UseGeofencingApp';
 import { createUserRoom, loadUserRooms, acceptRoomInvite, findRoomByLocation, getAllRooms } from '../../rooms/rooms.js';
 import { getDistanceMeters } from '../geo';
+import { normalizeAvatarModel } from '../game/entities/avatarFactory';
 
 const VillageCanvas = lazy(() => import('../village/VillageCanvas.jsx'));
 const WorldMapCanvas = lazy(() => import('../village/WorldMapCanvas.jsx'));
@@ -45,6 +46,7 @@ const migrateProfileForAvatar = (savedProfile) => {
     footwear: hasText(profile.footwear) ? profile.footwear : 'sneakers',
     glasses: Boolean(profile.glasses),
     hasScythe: Boolean(profile.hasScythe),
+    avatarModel: normalizeAvatarModel(profile.avatarModel),
   };
 
   const changed = (
@@ -60,6 +62,7 @@ const migrateProfileForAvatar = (savedProfile) => {
     || migrated.footwear !== profile.footwear
     || migrated.glasses !== profile.glasses
     || migrated.hasScythe !== profile.hasScythe
+    || migrated.avatarModel !== profile.avatarModel
   );
 
   return { migrated, changed };
@@ -196,6 +199,7 @@ function App() {
     footwear: 'sneakers',
     glasses: false,
     hasScythe: false,
+    avatarModel: 'hoodie',
   });
   const [osmRoom, setOsmRoom] = useState(null);
   const [creatingRoom, setCreatingRoom] = useState(false);
@@ -230,6 +234,7 @@ function App() {
       footwear: profile?.profile?.footwear || 'sneakers',
       glasses: Boolean(profile?.profile?.glasses),
       hasScythe: Boolean(profile?.profile?.hasScythe),
+      avatarModel: normalizeAvatarModel(profile?.profile?.avatarModel),
     });
     setProfileError(null);
     setEditingProfile(true);
@@ -252,6 +257,7 @@ function App() {
       footwear: p.footwear || 'sneakers',
       glasses: Boolean(p.glasses),
       hasScythe: Boolean(p.hasScythe),
+      avatarModel: normalizeAvatarModel(p.avatarModel),
     });
     setProfileError(null);
     setOnboardingRequired(true);
@@ -289,6 +295,7 @@ function App() {
       footwear: editForm.footwear || 'sneakers',
       glasses: Boolean(editForm.glasses),
       hasScythe: Boolean(editForm.hasScythe),
+      avatarModel: normalizeAvatarModel(editForm.avatarModel),
       avatarOnboardingComplete: true,
     };
     localStorage.setItem('sidequest_profile', JSON.stringify(updated));
@@ -320,6 +327,7 @@ function App() {
       footwear: editForm.footwear || 'sneakers',
       glasses: Boolean(editForm.glasses),
       hasScythe: Boolean(editForm.hasScythe),
+      avatarModel: normalizeAvatarModel(editForm.avatarModel),
       avatarOnboardingComplete: true,
     };
 
@@ -353,6 +361,7 @@ function App() {
           footwear: 'sneakers',
           glasses: false,
           hasScythe: false,
+          avatarModel: 'hoodie',
           avatarOnboardingComplete: true,
           guestMode: true,
         };

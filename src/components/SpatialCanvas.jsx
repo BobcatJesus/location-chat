@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import Phaser from 'phaser';
 import { io } from 'socket.io-client';
-import ModularAvatar, { HAIR_STYLES as MODULAR_HAIR_STYLES, BODY_TYPES as MODULAR_BODY_TYPES } from '../game/entities/ModularAvatar';
+import { HAIR_STYLES as MODULAR_HAIR_STYLES, BODY_TYPES as MODULAR_BODY_TYPES } from '../game/entities/ModularAvatar';
+import { createAvatarEntity, normalizeAvatarModel } from '../game/entities/avatarFactory';
 import { FURNITURE, drawFurniture } from '../game/furniture';
 
 // Spawn a speech bubble above an avatar and auto-destroy it after 4s
@@ -136,7 +137,8 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
       }
 
       // Remote player — built from ModularAvatar class
-      const playerGroup = new ModularAvatar(scene, player.x, player.y, {
+      const playerGroup = createAvatarEntity(scene, player.x, player.y, {
+        avatarModel: normalizeAvatarModel(player.avatarModel),
         skinId: player.skinId || 'slate',
         hairStyle: player.hairStyle || 'combed',
         bodyType: player.bodyType || 'standard',
@@ -193,6 +195,7 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
           name: displayName,
           firstName: profile?.profile?.firstName || '',
           photo: profile?.profile?.photo || null,
+          avatarModel: normalizeAvatarModel(profile?.profile?.avatarModel),
           skinId: profile?.profile?.skinId || 'slate',
           hairStyle: profile?.profile?.hairStyle || 'combed',
           bodyType: profile?.profile?.bodyType || 'standard',
@@ -302,6 +305,7 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
     room?.id,
     profile?.profile?.email,
     profile?.profile?.characterName,
+    profile?.profile?.avatarModel,
     profile?.profile?.skinId,
     profile?.profile?.hairStyle,
     profile?.profile?.bodyType,
@@ -337,6 +341,14 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
         },
       },
       scene: {
+        preload() {
+          const dirs = ['front', 'back', 'side'];
+          dirs.forEach((d) => {
+            [1, 2].forEach((s) => {
+              this.load.image(`demon-${d}-step${s}`, `/village-sprites/characters/demon-${d}-step${s}.png`);
+            });
+          });
+        },
         create() {
           sceneRef.current = this;
           const W = this.scale.width;
@@ -635,7 +647,8 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
           }).setOrigin(0.5, 1);
 
           // Local player — built from ModularAvatar class
-          const playerGroup = new ModularAvatar(this, W / 2, H / 2, {
+          const playerGroup = createAvatarEntity(this, W / 2, H / 2, {
+            avatarModel: normalizeAvatarModel(profile?.profile?.avatarModel),
             skinId: profile?.profile?.skinId || 'slate',
             hairStyle: profile?.profile?.hairStyle || 'combed',
             bodyType: profile?.profile?.bodyType || 'standard',

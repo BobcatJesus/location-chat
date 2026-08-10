@@ -43,11 +43,13 @@ async function initDb() {
       name TEXT,
       first_name TEXT,
       skin_id TEXT,
+      avatar_model TEXT,
       x DOUBLE PRECISION NOT NULL,
       y DOUBLE PRECISION NOT NULL,
       updated_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+  await pool.query('ALTER TABLE room_presence ADD COLUMN IF NOT EXISTS avatar_model TEXT');
 }
 
 async function loadDecorations() {
@@ -79,15 +81,16 @@ async function deleteDecoration(id) {
   await pool.query('DELETE FROM decorations WHERE id = $1', [id]);
 }
 
-async function upsertPresence({ socketId, userId, roomId, name, firstName, skinId, x, y }) {
+async function upsertPresence({ socketId, userId, roomId, name, firstName, skinId, avatarModel, x, y }) {
   if (!pool) return;
   await pool.query(
-    `INSERT INTO room_presence (socket_id, user_id, room_id, name, first_name, skin_id, x, y, updated_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW())
+    `INSERT INTO room_presence (socket_id, user_id, room_id, name, first_name, skin_id, avatar_model, x, y, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW())
      ON CONFLICT (socket_id)
      DO UPDATE SET user_id = EXCLUDED.user_id, room_id = EXCLUDED.room_id, name = EXCLUDED.name,
-       first_name = EXCLUDED.first_name, skin_id = EXCLUDED.skin_id, x = EXCLUDED.x, y = EXCLUDED.y, updated_at = NOW()`,
-    [socketId, userId, roomId, name || null, firstName || null, skinId || null, x, y]
+       first_name = EXCLUDED.first_name, skin_id = EXCLUDED.skin_id, avatar_model = EXCLUDED.avatar_model,
+       x = EXCLUDED.x, y = EXCLUDED.y, updated_at = NOW()`,
+    [socketId, userId, roomId, name || null, firstName || null, skinId || null, avatarModel || 'hoodie', x, y]
   );
 }
 
@@ -105,7 +108,7 @@ async function getPresenceRoomState(roomId) {
   if (!pool) return null;
   await pool.query("DELETE FROM room_presence WHERE updated_at < NOW() - INTERVAL '30 seconds'");
   const { rows } = await pool.query(
-    'SELECT socket_id, user_id, name, first_name, skin_id, x, y FROM room_presence WHERE room_id = $1',
+    'SELECT socket_id, user_id, name, first_name, skin_id, avatar_model, x, y FROM room_presence WHERE room_id = $1',
     [roomId]
   );
   if (!rows.length) return null;
@@ -116,6 +119,7 @@ async function getPresenceRoomState(roomId) {
       name: r.name || `Guest_${String(r.socket_id).slice(0, 4)}`,
       firstName: r.first_name || '',
       skinId: r.skin_id || 'blue',
+      avatarModel: r.avatar_model || 'hoodie',
       x: r.x,
       y: r.y,
     };
@@ -227,6 +231,7 @@ io.on('connection', (socket) => {
       name: user?.name || `Guest_${socket.id.slice(0, 4)}`,
       firstName: user?.firstName || '',
       photo: user?.photo || null,
+      avatarModel: user?.avatarModel || 'hoodie',
       skinId: user?.skinId || 'blue',
       hairStyle: user?.hairStyle || 'combed',
       bodyType: user?.bodyType || 'standard',
@@ -251,6 +256,7 @@ io.on('connection', (socket) => {
       name: playerState.name,
       firstName: playerState.firstName,
       skinId: playerState.skinId,
+      avatarModel: playerState.avatarModel,
       x: playerState.x,
       y: playerState.y,
     });
