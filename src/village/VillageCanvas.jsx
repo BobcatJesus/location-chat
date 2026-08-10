@@ -11,16 +11,16 @@ function slugify(value) {
 
 function canonicalRoomId(room) {
   if (!room) return null;
-  const rawId = String(room.id || '').trim();
-  if (rawId) return rawId;
-
-  const nameKey = slugify(room.name || room.shop || room.amenity || 'room');
   const hasCoords = Number.isFinite(room.lat) && Number.isFinite(room.lng);
   if (hasCoords) {
     const lat = Number(room.lat).toFixed(4);
     const lng = Number(room.lng).toFixed(4);
-    return `geo-${lat}-${lng}-${nameKey}`;
+    return `geo-${lat}-${lng}`;
   }
+  const rawId = String(room.id || '').trim();
+  if (rawId) return rawId;
+
+  const nameKey = slugify(room.name || room.shop || room.amenity || 'room');
   return `name-${nameKey}`;
 }
 
