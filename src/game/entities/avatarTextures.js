@@ -1,4 +1,9 @@
 export const AVATAR_FRAME_KEYS = {
+  og: {
+    front: ['demon-front-step1', 'demon-front-step2'],
+    back: ['demon-back-step1', 'demon-back-step2'],
+    side: ['demon-side-step1', 'demon-side-step2'],
+  },
   hoodie: {
     front: ['hoodie-front-step1', 'hoodie-front-step2'],
     back: ['hoodie-back-step1', 'hoodie-back-step2'],

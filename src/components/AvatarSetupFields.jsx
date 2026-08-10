@@ -308,7 +308,7 @@ export default function AvatarSetupFields({
             {AVATAR_MODELS.map((model) => {
               const isSelected = (formData.avatarModel || 'hoodie') === model.id;
               const isDefault = model.id === 'hoodie';
-              const iconAccent = model.id === 'bunny' ? '#fda4af' : '#cbd5e1';
+              const iconAccent = model.id === 'bunny' ? '#fda4af' : (model.id === 'og' ? '#f97316' : '#cbd5e1');
               return (
                 <button
                   key={model.id}
@@ -349,6 +349,13 @@ export default function AvatarSetupFields({
                         <span style={{ position: 'absolute', left: 4, top: 1, width: 3, height: 5, borderRadius: 2, background: iconAccent }} />
                         <span style={{ position: 'absolute', left: 9, top: 1, width: 3, height: 5, borderRadius: 2, background: iconAccent }} />
                         <span style={{ position: 'absolute', left: 3, top: 6, width: 10, height: 8, borderRadius: 999, background: iconAccent }} />
+                      </>
+                    ) : model.id === 'og' ? (
+                      <>
+                        <span style={{ position: 'absolute', left: 4, top: 2, width: 8, height: 8, borderRadius: 999, background: '#111111' }} />
+                        <span style={{ position: 'absolute', left: 3, top: 1, width: 2, height: 4, transform: 'rotate(-25deg)', background: iconAccent, borderRadius: 2 }} />
+                        <span style={{ position: 'absolute', left: 11, top: 1, width: 2, height: 4, transform: 'rotate(25deg)', background: iconAccent, borderRadius: 2 }} />
+                        <span style={{ position: 'absolute', left: 3, top: 9, width: 10, height: 2, borderRadius: 2, background: '#ef4444' }} />
                       </>
                     ) : (
                       <>
