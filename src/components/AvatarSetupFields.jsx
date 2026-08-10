@@ -2,12 +2,12 @@ import React, { useRef } from 'react';
 import { AVATAR_SKINS, AVATAR_HAIR_STYLES, AVATAR_BODY_TYPES } from './SpatialCanvas';
 
 const AVATAR_PRESETS = [
-  { id: 'ranger', label: 'Ranger', skinId: 'green', hairStyle: 'side', bodyType: 'standard' },
-  { id: 'rogue', label: 'Rogue', skinId: 'slate', hairStyle: 'mohawk', bodyType: 'compact' },
-  { id: 'scholar', label: 'Scholar', skinId: 'blue', hairStyle: 'short', bodyType: 'standard' },
-  { id: 'bard', label: 'Bard', skinId: 'pink', hairStyle: 'side', bodyType: 'broad' },
-  { id: 'monk', label: 'Monk', skinId: 'orange', hairStyle: 'buzz', bodyType: 'compact' },
-  { id: 'sentinel', label: 'Sentinel', skinId: 'purple', hairStyle: 'short', bodyType: 'broad' },
+  { id: 'og-shadow', label: 'OG Shadow', skinId: 'slate', hairStyle: 'side', bodyType: 'standard', pigment: 92, scarfHue: 220, eyeHue: 42 },
+  { id: 'ember-imp', label: 'Ember Imp', skinId: 'red', hairStyle: 'mohawk', bodyType: 'compact', pigment: 75, scarfHue: 350, eyeHue: 22 },
+  { id: 'violet-void', label: 'Violet Void', skinId: 'purple', hairStyle: 'short', bodyType: 'broad', pigment: 88, scarfHue: 275, eyeHue: 310 },
+  { id: 'mint-wisp', label: 'Mint Wisp', skinId: 'green', hairStyle: 'buzz', bodyType: 'compact', pigment: 68, scarfHue: 148, eyeHue: 95 },
+  { id: 'sun-glyph', label: 'Sun Glyph', skinId: 'orange', hairStyle: 'side', bodyType: 'standard', pigment: 54, scarfHue: 26, eyeHue: 50 },
+  { id: 'rose-echo', label: 'Rose Echo', skinId: 'pink', hairStyle: 'short', bodyType: 'standard', pigment: 61, scarfHue: 330, eyeHue: 336 },
 ];
 
 export default function AvatarSetupFields({
@@ -30,6 +30,9 @@ export default function AvatarSetupFields({
       skinId: preset.skinId,
       hairStyle: preset.hairStyle,
       bodyType: preset.bodyType,
+      pigment: preset.pigment,
+      scarfHue: preset.scarfHue,
+      eyeHue: preset.eyeHue,
     }));
   };
 
@@ -37,7 +40,10 @@ export default function AvatarSetupFields({
     const skin = AVATAR_SKINS[Math.floor(Math.random() * AVATAR_SKINS.length)]?.id || 'blue';
     const hair = AVATAR_HAIR_STYLES[Math.floor(Math.random() * AVATAR_HAIR_STYLES.length)]?.id || 'short';
     const body = AVATAR_BODY_TYPES[Math.floor(Math.random() * AVATAR_BODY_TYPES.length)]?.id || 'standard';
-    setFormData((prev) => ({ ...prev, skinId: skin, hairStyle: hair, bodyType: body }));
+    const pigment = Math.floor(Math.random() * 101);
+    const scarfHue = Math.floor(Math.random() * 361);
+    const eyeHue = Math.floor(Math.random() * 361);
+    setFormData((prev) => ({ ...prev, skinId: skin, hairStyle: hair, bodyType: body, pigment, scarfHue, eyeHue }));
   };
 
   const handlePhotoChange = (e) => {
@@ -160,8 +166,50 @@ export default function AvatarSetupFields({
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
           <div style={{ width: 36, height: 36, borderRadius: '50%', border: '2px solid #fbbf24', background: (AVATAR_SKINS.find((s) => s.id === formData.skinId)?.swatch || '#3b82f6') }} />
           <div style={{ fontSize: 10, color: '#64748b', textTransform: 'uppercase' }}>
-            {AVATAR_BODY_TYPES.find((b) => b.id === formData.bodyType)?.label || 'Standard'} · {AVATAR_HAIR_STYLES.find((h) => h.id === formData.hairStyle)?.label || 'Short'}
+            {AVATAR_BODY_TYPES.find((b) => b.id === formData.bodyType)?.label || 'Classic'} · {AVATAR_HAIR_STYLES.find((h) => h.id === formData.hairStyle)?.label || 'Horns'}
           </div>
+        </div>
+
+        <div style={{ marginBottom: 10 }}>
+          <label style={{ display: 'block', fontSize: 10, textTransform: 'uppercase', color: '#64748b', marginBottom: 4 }}>
+            Pigmentation Spectrum ({formData.pigment ?? 82})
+          </label>
+          <input
+            type="range"
+            min="0"
+            max="100"
+            value={formData.pigment ?? 82}
+            onChange={(e) => setFormData((prev) => ({ ...prev, pigment: Number(e.target.value) }))}
+            style={{ width: '100%' }}
+          />
+        </div>
+
+        <div style={{ marginBottom: 10 }}>
+          <label style={{ display: 'block', fontSize: 10, textTransform: 'uppercase', color: '#64748b', marginBottom: 4 }}>
+            Scarf Hue ({formData.scarfHue ?? 220})
+          </label>
+          <input
+            type="range"
+            min="0"
+            max="360"
+            value={formData.scarfHue ?? 220}
+            onChange={(e) => setFormData((prev) => ({ ...prev, scarfHue: Number(e.target.value) }))}
+            style={{ width: '100%' }}
+          />
+        </div>
+
+        <div style={{ marginBottom: 10 }}>
+          <label style={{ display: 'block', fontSize: 10, textTransform: 'uppercase', color: '#64748b', marginBottom: 4 }}>
+            Eye Glow Hue ({formData.eyeHue ?? 42})
+          </label>
+          <input
+            type="range"
+            min="0"
+            max="360"
+            value={formData.eyeHue ?? 42}
+            onChange={(e) => setFormData((prev) => ({ ...prev, eyeHue: Number(e.target.value) }))}
+            style={{ width: '100%' }}
+          />
         </div>
 
         <div style={{ marginBottom: 10 }}>
@@ -211,7 +259,7 @@ export default function AvatarSetupFields({
         </div>
 
         <div style={{ marginBottom: 8 }}>
-          <label style={{ display: 'block', fontSize: 10, textTransform: 'uppercase', color: '#64748b', marginBottom: 4 }}>Hair</label>
+          <label style={{ display: 'block', fontSize: 10, textTransform: 'uppercase', color: '#64748b', marginBottom: 4 }}>Ears</label>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {AVATAR_HAIR_STYLES.map((hair) => (
               <button
@@ -236,7 +284,7 @@ export default function AvatarSetupFields({
         </div>
 
         <div>
-          <label style={{ display: 'block', fontSize: 10, textTransform: 'uppercase', color: '#64748b', marginBottom: 4 }}>Body</label>
+          <label style={{ display: 'block', fontSize: 10, textTransform: 'uppercase', color: '#64748b', marginBottom: 4 }}>Build</label>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {AVATAR_BODY_TYPES.map((body) => (
               <button

@@ -49,21 +49,28 @@ const SOCKET_SERVER_URL = import.meta.env.VITE_BACKEND_URL ||
   (import.meta.env.PROD ? 'https://location-chat-production.up.railway.app' : 'http://localhost:4000');
 
 export const AVATAR_SKINS = [
-  { id: 'blue',   label: 'Ocean',   shirt: 0x3b82f6, pants: 0x1e3a5f, hair: 0x7c4a1e, swatch: '#3b82f6' },
-  { id: 'red',    label: 'Ember',   shirt: 0xe53e3e, pants: 0x4a1a1a, hair: 0x2d1a0e, swatch: '#e53e3e' },
-  { id: 'green',  label: 'Forest',  shirt: 0x16a34a, pants: 0x0a2a10, hair: 0x5c3d1e, swatch: '#16a34a' },
-  { id: 'purple', label: 'Dusk',    shirt: 0x7c3aed, pants: 0x2a0a5a, hair: 0x2d1a0e, swatch: '#7c3aed' },
-  { id: 'orange', label: 'Blaze',   shirt: 0xea580c, pants: 0x3a1a0a, hair: 0x7c4a1e, swatch: '#ea580c' },
-  { id: 'pink',   label: 'Sakura',  shirt: 0xec4899, pants: 0x4a1a2a, hair: 0x7c4a1e, swatch: '#ec4899' },
-  { id: 'teal',   label: 'Tide',    shirt: 0x0891b2, pants: 0x0a2a3a, hair: 0x2d1a0e, swatch: '#0891b2' },
-  { id: 'slate',  label: 'Shadow',  shirt: 0x475569, pants: 0x111827, hair: 0xd1d5db, swatch: '#475569' },
+  { id: 'blue',   label: 'Sky Scarf',   shirt: 0x8fcde1, pants: 0x111111, hair: 0xf6e8cd, swatch: '#8fcde1' },
+  { id: 'red',    label: 'Rose Scarf',  shirt: 0xf2a7a0, pants: 0x111111, hair: 0xf6e8cd, swatch: '#f2a7a0' },
+  { id: 'green',  label: 'Mint Scarf',  shirt: 0xb8dccb, pants: 0x111111, hair: 0xf6e8cd, swatch: '#b8dccb' },
+  { id: 'purple', label: 'Lilac Scarf', shirt: 0xc9b8e6, pants: 0x111111, hair: 0xf6e8cd, swatch: '#c9b8e6' },
+  { id: 'orange', label: 'Peach Scarf', shirt: 0xf3c5a9, pants: 0x111111, hair: 0xf6e8cd, swatch: '#f3c5a9' },
+  { id: 'pink',   label: 'Blush Scarf', shirt: 0xf6c3cf, pants: 0x111111, hair: 0xf6e8cd, swatch: '#f6c3cf' },
+  { id: 'teal',   label: 'Aqua Scarf',  shirt: 0x9fd7d9, pants: 0x111111, hair: 0xf6e8cd, swatch: '#9fd7d9' },
+  { id: 'slate',  label: 'Night Scarf', shirt: 0x93a2b8, pants: 0x111111, hair: 0xf6e8cd, swatch: '#93a2b8' },
 ];
 
 export const AVATAR_HAIR_STYLES = Object.entries(MODULAR_HAIR_STYLES).map(([id, label]) => ({ id, label }));
-export const AVATAR_BODY_TYPES = Object.keys(MODULAR_BODY_TYPES).map((id) => ({
-  id,
-  label: id === 'compact' ? 'Compact' : id === 'broad' ? 'Broad' : 'Standard',
-}));
+export const AVATAR_BODY_TYPES = Object.keys(MODULAR_BODY_TYPES).map((id) => {
+  const labels = {
+    compact: 'Scout Build',
+    standard: 'Core Build',
+    broad: 'Brute Build',
+  };
+  return {
+    id,
+    label: labels[id] || 'Core Build',
+  };
+});
 
 export default function SpatialCanvas({ room, profile, onLeave }) {
   const gameRef = useRef(null);
@@ -130,9 +137,12 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
 
       // Remote player — built from ModularAvatar class
       const playerGroup = new ModularAvatar(scene, player.x, player.y, {
-        skinId: player.skinId || 'red',
-        hairStyle: player.hairStyle || 'short',
+        skinId: player.skinId || 'slate',
+        hairStyle: player.hairStyle || 'side',
         bodyType: player.bodyType || 'standard',
+        pigment: player.pigment ?? 92,
+        scarfHue: player.scarfHue ?? 220,
+        eyeHue: player.eyeHue ?? 42,
         name: player.firstName || player.name || 'Traveler',
         isLocal: false,
       });
@@ -178,9 +188,12 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
           name: displayName,
           firstName: profile?.profile?.firstName || '',
           photo: profile?.profile?.photo || null,
-          skinId: profile?.profile?.skinId || 'blue',
-          hairStyle: profile?.profile?.hairStyle || 'short',
+          skinId: profile?.profile?.skinId || 'slate',
+          hairStyle: profile?.profile?.hairStyle || 'side',
           bodyType: profile?.profile?.bodyType || 'standard',
+          pigment: profile?.profile?.pigment ?? 92,
+          scarfHue: profile?.profile?.scarfHue ?? 220,
+          eyeHue: profile?.profile?.eyeHue ?? 42,
           isCreator: room?.ownerId && (room.ownerId === (profile?.profile?.email || profile?.mode || 'guest')),
         },
       });    });
@@ -282,6 +295,9 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
     profile?.profile?.skinId,
     profile?.profile?.hairStyle,
     profile?.profile?.bodyType,
+    profile?.profile?.pigment,
+    profile?.profile?.scarfHue,
+    profile?.profile?.eyeHue,
     profile?.mode,
   ]);
 
@@ -605,9 +621,12 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
 
           // Local player — built from ModularAvatar class
           const playerGroup = new ModularAvatar(this, W / 2, H / 2, {
-            skinId: profile?.profile?.skinId || 'blue',
-            hairStyle: profile?.profile?.hairStyle || 'short',
+            skinId: profile?.profile?.skinId || 'slate',
+            hairStyle: profile?.profile?.hairStyle || 'side',
             bodyType: profile?.profile?.bodyType || 'standard',
+            pigment: profile?.profile?.pigment ?? 92,
+            scarfHue: profile?.profile?.scarfHue ?? 220,
+            eyeHue: profile?.profile?.eyeHue ?? 42,
             name: profile?.profile?.firstName || (profile?.profile?.characterName || 'YOU').split(' ')[0],
             isLocal: true,
           });

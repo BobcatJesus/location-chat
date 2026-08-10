@@ -25,9 +25,12 @@ const migrateProfileForAvatar = (savedProfile) => {
   const migrated = {
     ...profile,
     characterName: hasText(profile.characterName) ? profile.characterName : emailStem,
-    skinId: hasText(profile.skinId) ? profile.skinId : 'blue',
-    hairStyle: hasText(profile.hairStyle) ? profile.hairStyle : 'short',
+    skinId: hasText(profile.skinId) ? profile.skinId : 'slate',
+    hairStyle: hasText(profile.hairStyle) ? profile.hairStyle : 'side',
     bodyType: hasText(profile.bodyType) ? profile.bodyType : 'standard',
+    pigment: profile.pigment ?? 92,
+    scarfHue: profile.scarfHue ?? 220,
+    eyeHue: profile.eyeHue ?? 42,
   };
 
   const changed = (
@@ -35,6 +38,9 @@ const migrateProfileForAvatar = (savedProfile) => {
     || migrated.skinId !== profile.skinId
     || migrated.hairStyle !== profile.hairStyle
     || migrated.bodyType !== profile.bodyType
+    || migrated.pigment !== profile.pigment
+    || migrated.scarfHue !== profile.scarfHue
+    || migrated.eyeHue !== profile.eyeHue
   );
 
   return { migrated, changed };
@@ -53,9 +59,12 @@ function App() {
     characterName: '',
     firstName: '',
     photo: null,
-    skinId: 'blue',
-    hairStyle: 'short',
+    skinId: 'slate',
+    hairStyle: 'side',
     bodyType: 'standard',
+    pigment: 92,
+    scarfHue: 220,
+    eyeHue: 42,
   });
   const [osmRoom, setOsmRoom] = useState(null);
   const [creatingRoom, setCreatingRoom] = useState(false);
@@ -69,9 +78,12 @@ function App() {
       characterName: profile?.profile?.characterName || '',
       firstName: profile?.profile?.firstName || '',
       photo: profile?.profile?.photo || null,
-      skinId: profile?.profile?.skinId || 'blue',
-      hairStyle: profile?.profile?.hairStyle || 'short',
+      skinId: profile?.profile?.skinId || 'slate',
+      hairStyle: profile?.profile?.hairStyle || 'side',
       bodyType: profile?.profile?.bodyType || 'standard',
+      pigment: profile?.profile?.pigment ?? 92,
+      scarfHue: profile?.profile?.scarfHue ?? 220,
+      eyeHue: profile?.profile?.eyeHue ?? 42,
     });
     setProfileError(null);
     setEditingProfile(true);
@@ -83,9 +95,12 @@ function App() {
       characterName: p.characterName || '',
       firstName: p.firstName || '',
       photo: p.photo || null,
-      skinId: p.skinId || 'blue',
-      hairStyle: p.hairStyle || 'short',
+      skinId: p.skinId || 'slate',
+      hairStyle: p.hairStyle || 'side',
       bodyType: p.bodyType || 'standard',
+      pigment: p.pigment ?? 92,
+      scarfHue: p.scarfHue ?? 220,
+      eyeHue: p.eyeHue ?? 42,
     });
     setProfileError(null);
     setOnboardingRequired(true);
@@ -112,9 +127,12 @@ function App() {
       characterName: editForm.characterName.trim() || profile.profile.characterName,
       firstName: editForm.firstName.trim(),
       photo: editForm.photo,
-      skinId: editForm.skinId || 'blue',
-      hairStyle: editForm.hairStyle || 'short',
+      skinId: editForm.skinId || 'slate',
+      hairStyle: editForm.hairStyle || 'side',
       bodyType: editForm.bodyType || 'standard',
+      pigment: editForm.pigment ?? 92,
+      scarfHue: editForm.scarfHue ?? 220,
+      eyeHue: editForm.eyeHue ?? 42,
       avatarOnboardingComplete: true,
     };
     localStorage.setItem('sidequest_profile', JSON.stringify(updated));

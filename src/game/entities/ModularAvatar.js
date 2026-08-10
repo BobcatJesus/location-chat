@@ -1,22 +1,23 @@
 import Phaser from 'phaser';
+import { colorHexToInt, pigmentToBodyColor, pigmentToEarInnerColor, pigmentToLimbColor, pigmentToOutlineColor, scarfColorFromHue, eyeGlowColorFromHue } from '../../utils/avatarColors';
 
 // Predefined skin presets — id must match AVATAR_SKINS in SpatialCanvas.jsx
 export const SKINS = {
-  blue:   { shirt: 0x3b82f6, pants: 0x1e3a5f, hair: 0x7c4a1e },
-  red:    { shirt: 0xe53e3e, pants: 0x4a1a1a, hair: 0x2d1a0e },
-  green:  { shirt: 0x16a34a, pants: 0x0a2a10, hair: 0x5c3d1e },
-  purple: { shirt: 0x7c3aed, pants: 0x2a0a5a, hair: 0x2d1a0e },
-  orange: { shirt: 0xea580c, pants: 0x3a1a0a, hair: 0x7c4a1e },
-  pink:   { shirt: 0xec4899, pants: 0x4a1a2a, hair: 0x7c4a1e },
-  teal:   { shirt: 0x0891b2, pants: 0x0a2a3a, hair: 0x2d1a0e },
-  slate:  { shirt: 0x475569, pants: 0x111827, hair: 0xd1d5db },
+  blue:   { scarfHue: 210, eyeHue: 42, pigment: 82 },
+  red:    { scarfHue: 350, eyeHue: 22, pigment: 72 },
+  green:  { scarfHue: 135, eyeHue: 95, pigment: 76 },
+  purple: { scarfHue: 275, eyeHue: 310, pigment: 88 },
+  orange: { scarfHue: 24, eyeHue: 45, pigment: 68 },
+  pink:   { scarfHue: 330, eyeHue: 335, pigment: 62 },
+  teal:   { scarfHue: 178, eyeHue: 188, pigment: 80 },
+  slate:  { scarfHue: 220, eyeHue: 42, pigment: 92 },
 };
 
 export const HAIR_STYLES = {
-  short: 'Short',
-  side: 'Side Part',
-  mohawk: 'Mohawk',
-  buzz: 'Buzz',
+  short: 'Curved Horns',
+  side: 'Tall Horns',
+  mohawk: 'Tilt Horns',
+  buzz: 'Nub Horns',
 };
 
 export const BODY_TYPES = {
@@ -26,61 +27,77 @@ export const BODY_TYPES = {
 };
 
 export default class ModularAvatar extends Phaser.GameObjects.Container {
-  constructor(scene, x, y, { skinId = 'blue', name = '', isLocal = false, hairStyle = 'short', bodyType = 'standard' } = {}) {
+  constructor(scene, x, y, { skinId = 'blue', name = '', isLocal = false, hairStyle = 'short', bodyType = 'standard', pigment, eyeHue, scarfHue } = {}) {
     super(scene, x, y);
 
     const skin = SKINS[skinId] || SKINS.blue;
     const body = BODY_TYPES[bodyType] || BODY_TYPES.standard;
-    const { shirt, pants, hair } = skin;
-    const skin_color = 0xf5c27a;
+    const resolvedPigment = pigment ?? skin.pigment;
+    const resolvedScarfHue = scarfHue ?? skin.scarfHue;
+    const resolvedEyeHue = eyeHue ?? skin.eyeHue;
 
-    // Shadow
-    this.add(scene.add.ellipse(0, 14, 20, 6, 0x000000).setAlpha(0.3));
-    // Legs
-    this.add(scene.add.rectangle(-body.legGap, 10, 5, 8, pants));
-    this.add(scene.add.rectangle(body.legGap, 10, 5, 8, pants));
-    // Shoes
-    this.add(scene.add.rectangle(-body.legGap, 15, 6, 4, 0x222222));
-    this.add(scene.add.rectangle(body.legGap, 15, 6, 4, 0x222222));
-    // Body
-    this.add(scene.add.rectangle(0, 1, body.bodyW, body.bodyH, shirt));
-    // Belt
-    this.add(scene.add.rectangle(0, 7, body.bodyW, 2, 0x8B6914));
-    // Arms
-    this.add(scene.add.rectangle(-(body.bodyW / 2 + 2), 2, 4, body.armH, shirt));
-    this.add(scene.add.rectangle(body.bodyW / 2 + 2, 2, 4, body.armH, shirt));
-    // Hands
-    this.add(scene.add.circle(-(body.bodyW / 2 + 2), 7, 3, skin_color));
-    this.add(scene.add.circle(body.bodyW / 2 + 2, 7, 3, skin_color));
-    // Neck
-    this.add(scene.add.rectangle(0, -5, 5, 4, skin_color));
-    // Head
-    this.add(scene.add.rectangle(0, -12, 14, 12, skin_color));
+    const bodyColor = colorHexToInt(pigmentToBodyColor(resolvedPigment));
+    const innerColor = colorHexToInt(pigmentToEarInnerColor(resolvedPigment));
+    const limbColor = colorHexToInt(pigmentToLimbColor(resolvedPigment));
+    const outlineColor = colorHexToInt(pigmentToOutlineColor(resolvedPigment));
+    const scarfColor = colorHexToInt(scarfColorFromHue(resolvedScarfHue));
+    const eyeColor = colorHexToInt(eyeGlowColorFromHue(resolvedEyeHue));
 
-    // Hair variants
-    switch (hairStyle) {
-      case 'side':
-        this.add(scene.add.rectangle(1, -17, 13, 4, hair));
-        this.add(scene.add.rectangle(5, -14, 3, 7, hair));
-        break;
-      case 'mohawk':
-        this.add(scene.add.rectangle(0, -18, 4, 7, hair));
-        this.add(scene.add.rectangle(0, -14, 2, 3, 0xffffff).setAlpha(0.15));
-        break;
-      case 'buzz':
-        this.add(scene.add.rectangle(0, -16, 14, 3, hair));
-        break;
-      default:
-        this.add(scene.add.rectangle(0, -17, 14, 5, hair));
-        this.add(scene.add.rectangle(-6, -14, 3, 8, hair));
-        break;
+    const headR = bodyType === 'compact' ? 10 : bodyType === 'broad' ? 12 : 11;
+    const torsoW = bodyType === 'compact' ? 16 : bodyType === 'broad' ? 20 : 18;
+    const torsoH = bodyType === 'compact' ? 15 : bodyType === 'broad' ? 18 : 16;
+
+    this.add(scene.add.ellipse(0, 13, 24, 7, 0x08090d).setAlpha(0.4));
+
+    // Body and cloak silhouette
+    this.add(scene.add.ellipse(0, 1, torsoW, torsoH, bodyColor));
+    this.add(scene.add.circle(0, -11, headR, bodyColor));
+    this.add(scene.add.rectangle(0, 8, torsoW + 1, 3, bodyColor));
+
+    // Horn / ear shapes mapped from current style ids
+    if (hairStyle === 'side') {
+      this.add(scene.add.triangle(-7, -19, -1, 7, 4, 1, -5, -6, bodyColor));
+      this.add(scene.add.triangle(7, -19, 1, 7, -4, 1, 5, -6, bodyColor));
+    } else if (hairStyle === 'mohawk') {
+      this.add(scene.add.triangle(-5, -20, -1, 7, 4, 1, -6, -7, bodyColor));
+      this.add(scene.add.triangle(6, -18, 1, 7, -4, 1, 5, -5, bodyColor));
+    } else if (hairStyle === 'buzz') {
+      this.add(scene.add.triangle(-4, -17, -1, 5, 3, 1, -4, -4, bodyColor));
+      this.add(scene.add.triangle(4, -17, 1, 5, -3, 1, 4, -4, bodyColor));
+    } else {
+      this.add(scene.add.triangle(-6, -18, -1, 6, 4, 1, -5, -5, bodyColor));
+      this.add(scene.add.triangle(6, -18, 1, 6, -4, 1, 5, -5, bodyColor));
     }
-    // Eyes
-    this.add(scene.add.rectangle(-3, -13, 3, 3, 0x333333));
-    this.add(scene.add.rectangle(3, -13, 3, 3, 0x333333));
-    // Eye shine
-    this.add(scene.add.rectangle(-2, -14, 1, 1, 0xffffff));
-    this.add(scene.add.rectangle(4, -14, 1, 1, 0xffffff));
+
+    // Arms and legs
+    this.add(scene.add.ellipse(-(torsoW / 2 - 2), 2, 6, 10, limbColor));
+    this.add(scene.add.ellipse((torsoW / 2 - 2), 2, 6, 10, limbColor));
+    this.add(scene.add.ellipse(-(body.legGap + 2), 12, 8, 9, limbColor));
+    this.add(scene.add.ellipse((body.legGap + 2), 12, 8, 9, limbColor));
+
+    // Scarf + ragged hem
+    this.add(scene.add.ellipse(0, -3, torsoW - 1, 7, scarfColor));
+    this.add(scene.add.rectangle(4, 3, 4, 8, scarfColor));
+    this.add(scene.add.triangle(-6, 9, -2, 0, 2, 0, 0, 3, bodyColor));
+    this.add(scene.add.triangle(0, 9, -2, 0, 2, 0, 0, 3, bodyColor));
+    this.add(scene.add.triangle(6, 9, -2, 0, 2, 0, 0, 3, bodyColor));
+
+    // Tail
+    this.add(scene.add.rectangle(7, 10, 6, 2, bodyColor).setAngle(24));
+    this.add(scene.add.triangle(11, 12, -2, 1, 2, 0, 1, 3, bodyColor).setAngle(24));
+
+    // Face + eyes
+    this.add(scene.add.ellipse(-4, -11, 4, 6, eyeColor));
+    this.add(scene.add.ellipse(4, -11, 4, 6, eyeColor));
+
+    // Subtle inner ear accents on lighter pigments
+    if (resolvedPigment < 60) {
+      this.add(scene.add.circle(-5, -16, 2, innerColor).setAlpha(0.25));
+      this.add(scene.add.circle(5, -16, 2, innerColor).setAlpha(0.25));
+    }
+
+    // Outline pass to keep the OG sticker-like silhouette
+    this.add(scene.add.circle(0, -11, headR + 1.5, outlineColor).setAlpha(0.12));
 
     // Name label — use name as-is (callers now pass firstName directly)
     const labelText = (name || '').trim() || (isLocal ? 'YOU' : 'Traveler');

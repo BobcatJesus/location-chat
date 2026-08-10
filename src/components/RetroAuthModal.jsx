@@ -58,9 +58,12 @@ export default function RetroAuthModal({ onLogin }) {
     password: '',
     characterName: '',
     firstName: '',
-    skinId: 'blue',
-    hairStyle: 'short',
+    skinId: 'slate',
+    hairStyle: 'side',
     bodyType: 'standard',
+    pigment: 92,
+    scarfHue: 220,
+    eyeHue: 42,
   };
   const [formData, setFormData] = useState(initialForm);
   const [photoDataUrl, setPhotoDataUrl] = useState(null);
@@ -238,9 +241,12 @@ export default function RetroAuthModal({ onLogin }) {
         characterName,
         firstName: formData.firstName.trim(),
         photo: photoDataUrl,
-        skinId: formData.skinId || 'blue',
-        hairStyle: formData.hairStyle || 'short',
+        skinId: formData.skinId || 'slate',
+        hairStyle: formData.hairStyle || 'side',
         bodyType: formData.bodyType || 'standard',
+        pigment: formData.pigment ?? 92,
+        scarfHue: formData.scarfHue ?? 220,
+        eyeHue: formData.eyeHue ?? 42,
         avatarOnboardingComplete: isSignUp,
       };
 
@@ -258,9 +264,12 @@ export default function RetroAuthModal({ onLogin }) {
           // Login should restore the saved profile as source of truth.
           profile = {
             ...existing,
-            skinId: existing.skinId || 'blue',
-            hairStyle: existing.hairStyle || 'short',
+            skinId: existing.skinId || 'slate',
+            hairStyle: existing.hairStyle || 'side',
             bodyType: existing.bodyType || 'standard',
+            pigment: existing.pigment ?? 92,
+            scarfHue: existing.scarfHue ?? 220,
+            eyeHue: existing.eyeHue ?? 42,
           };
         } else {
           // First time login — save it
