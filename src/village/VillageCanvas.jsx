@@ -290,22 +290,6 @@ export default function VillageCanvas({ room, profile, onLeave }) {
           {editorActive ? 'Done' : 'Edit'}
         </button>
         <button
-          onClick={toggleCameraMode}
-          style={{
-            background: cameraMode === 'overview' ? '#93c5fd' : cameraMode === 'wide-follow' ? '#86efac' : 'rgba(0,0,0,0.55)',
-            color: cameraMode === 'overview' || cameraMode === 'wide-follow' ? '#0f172a' : '#fff',
-            border: 'none',
-            borderRadius: 8,
-            padding: isMobile ? '9px 12px' : '6px 12px',
-            minHeight: isMobile ? 40 : 0,
-            cursor: 'pointer',
-            fontSize: isMobile ? 12 : 13,
-            fontWeight: 'bold',
-          }}
-        >
-          {showFloatingZoomControl ? 'Zoom' : 'View'}: {cameraModeLabel}
-        </button>
-        <button
           onClick={toggleCollisionDebug}
           style={{
             background: collisionDebugActive ? '#22d3ee' : 'rgba(0,0,0,0.55)',
@@ -321,22 +305,23 @@ export default function VillageCanvas({ room, profile, onLeave }) {
         >
           Debug
         </button>
-        <button
-          onClick={openViewHelp}
-          style={{
-            background: 'rgba(15,23,42,0.72)',
-            color: '#bae6fd',
-            border: '1px solid #38bdf8',
-            borderRadius: 8,
-            padding: isMobile ? '9px 12px' : '6px 10px',
-            minHeight: isMobile ? 40 : 0,
-            cursor: 'pointer',
-            fontSize: isMobile ? 12 : 11,
-            fontWeight: 'bold',
-          }}
-        >
-          Legend
-        </button>
+        {!isMobile && (
+          <button
+            onClick={openViewHelp}
+            style={{
+              background: 'rgba(15,23,42,0.72)',
+              color: '#bae6fd',
+              border: '1px solid #38bdf8',
+              borderRadius: 8,
+              padding: '6px 10px',
+              cursor: 'pointer',
+              fontSize: 11,
+              fontWeight: 'bold',
+            }}
+          >
+            Legend
+          </button>
+        )}
         {isMobile && (
           <button
             onClick={() => setMobileChatOpen((v) => !v)}
@@ -382,7 +367,7 @@ export default function VillageCanvas({ room, profile, onLeave }) {
               boxShadow: '0 2px 10px rgba(0,0,0,0.28)',
             }}
           >
-            Zoom [-][+]: {cameraModeLabel}
+            Zoom: {cameraModeLabel}
           </button>
           <button
             onClick={openViewHelp}
@@ -405,30 +390,6 @@ export default function VillageCanvas({ room, profile, onLeave }) {
         </div>
       )}
 
-      {showFloatingZoomControl && (
-        <button
-          onClick={toggleCameraMode}
-          style={{
-            position: 'absolute',
-            right: 'calc(8px + env(safe-area-inset-right, 0px))',
-            bottom: 'calc(56px + env(safe-area-inset-bottom, 0px))',
-            zIndex: 2004,
-            background: cameraMode === 'overview' ? '#93c5fd' : cameraMode === 'wide-follow' ? '#86efac' : '#fbbf24',
-            color: '#0f172a',
-            border: '1px solid rgba(15,23,42,0.25)',
-            borderRadius: 999,
-            padding: '10px 14px',
-            minHeight: 42,
-            cursor: 'pointer',
-            fontSize: 12,
-            fontWeight: 'bold',
-            boxShadow: '0 4px 14px rgba(0,0,0,0.35)',
-          }}
-        >
-          Zoom: {cameraModeLabel}
-        </button>
-      )}
-
       {!isMobile && (
         <div style={{
           position: 'absolute',
@@ -449,7 +410,7 @@ export default function VillageCanvas({ room, profile, onLeave }) {
 
       <div style={{
         position: 'absolute',
-        top: isMobile ? 'calc(8px + env(safe-area-inset-top, 0px))' : 'calc(12px + env(safe-area-inset-top, 0px))',
+        top: isMobile ? 'calc(56px + env(safe-area-inset-top, 0px))' : 'calc(12px + env(safe-area-inset-top, 0px))',
         right: isMobile ? 'calc(8px + env(safe-area-inset-right, 0px))' : 'calc(12px + env(safe-area-inset-right, 0px))',
         zIndex: 1000,
         background: '#0f172acc',

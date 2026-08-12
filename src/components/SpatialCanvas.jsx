@@ -984,31 +984,31 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
         </div>
       )}
 
-      {/* Top-right: exit + edit toggle */}
-      <div style={{ position: 'absolute', top: 10, right: 10, zIndex: 50, display: 'flex', gap: 6 }}>
+      {/* Top-right: core room controls */}
+      <div style={{ position: 'absolute', top: 10, right: 10, zIndex: 50, display: 'flex', gap: 6, flexWrap: isMobile ? 'wrap' : 'nowrap', justifyContent: 'flex-end', maxWidth: isMobile ? '72vw' : 'none' }}>
         <button
           onClick={toggleCameraMode}
           style={{
             background: cameraMode === 'wide' ? '#86efac' : '#fbbf24',
             border: '2px solid #1f2937',
             color: '#0f172a',
-            padding: '5px 10px',
+            padding: isMobile ? '8px 10px' : '5px 10px',
             fontWeight: 'bold',
             cursor: 'pointer',
             fontFamily: 'Courier New',
-            fontSize: 11,
+            fontSize: isMobile ? 12 : 11,
             whiteSpace: 'nowrap',
           }}
           title="Toggle camera zoom"
         >
-          View: {cameraModeLabel}
+          Zoom: {cameraModeLabel}
         </button>
         <button onClick={() => setEditMode(!editModeRef.current)}
-          style={{ background: editMode ? '#fbbf24' : 'rgba(15,23,42,0.8)', border: `2px solid ${editMode ? '#fbbf24' : '#475569'}`, color: editMode ? '#000' : '#94a3b8', padding: '5px 10px', fontWeight: 'bold', cursor: 'pointer', fontFamily: 'Courier New', fontSize: 11, whiteSpace: 'nowrap' }}>
+          style={{ background: editMode ? '#fbbf24' : 'rgba(15,23,42,0.8)', border: `2px solid ${editMode ? '#fbbf24' : '#475569'}`, color: editMode ? '#000' : '#94a3b8', padding: isMobile ? '8px 10px' : '5px 10px', fontWeight: 'bold', cursor: 'pointer', fontFamily: 'Courier New', fontSize: isMobile ? 12 : 11, whiteSpace: 'nowrap' }}>
           🪑 {editMode ? 'Done' : 'Edit'}
         </button>
         <button onClick={onLeave}
-          style={{ background: '#e2b46c', border: 'none', padding: '6px 14px', fontWeight: 'bold', cursor: 'pointer', fontFamily: 'Courier New', whiteSpace: 'nowrap' }}>
+          style={{ background: '#e2b46c', border: 'none', padding: isMobile ? '8px 12px' : '6px 14px', fontWeight: 'bold', cursor: 'pointer', fontFamily: 'Courier New', whiteSpace: 'nowrap' }}>
           ← Exit
         </button>
       </div>
@@ -1108,39 +1108,12 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
         ))}
       </div>
 
-      {showFloatingZoomControl && (
-        <button
-          onClick={toggleCameraMode}
-          style={{
-            position: 'absolute',
-            right: 'calc(8px + env(safe-area-inset-right, 0px))',
-            bottom: 'calc(56px + env(safe-area-inset-bottom, 0px))',
-            zIndex: 2004,
-            background: cameraMode === 'wide' ? '#86efac' : '#fbbf24',
-            color: '#0f172a',
-            border: '2px solid #1f2937',
-            borderRadius: 999,
-            padding: '10px 12px',
-            minWidth: 88,
-            minHeight: 42,
-            fontWeight: 'bold',
-            fontFamily: 'Courier New',
-            fontSize: 12,
-            boxShadow: '0 6px 18px rgba(0,0,0,0.35)',
-            cursor: 'pointer',
-          }}
-          title="Toggle camera zoom"
-        >
-          Zoom: {cameraModeLabel}
-        </button>
-      )}
-
       {/* Bottom-right overlay: nearby travelers + chat */}
       <div
         style={{
           position: 'absolute',
           right: 'calc(12px + env(safe-area-inset-right, 0px))',
-          top: isMobile ? 'calc(60px + env(safe-area-inset-top, 0px))' : 'auto',
+          top: isMobile ? 'calc(112px + env(safe-area-inset-top, 0px))' : 'auto',
           bottom: isMobile ? 'auto' : 'calc(64px + env(safe-area-inset-bottom, 0px))',
           width: 'min(280px, calc(100vw - 24px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)))',
           display: 'flex',
