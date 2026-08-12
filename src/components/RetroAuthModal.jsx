@@ -495,31 +495,48 @@ export default function RetroAuthModal({ onLogin }) {
           password: formData.password,
         });
 
+        let cachedProfile = null;
+        try {
+          const raw = localStorage.getItem('sidequest_profile');
+          const parsed = raw ? JSON.parse(raw) : null;
+          if (parsed && typeof parsed === 'object') cachedProfile = parsed;
+        } catch {
+          cachedProfile = null;
+        }
+
         const baseProfile = loginResult?.profile && typeof loginResult.profile === 'object'
           ? loginResult.profile
           : null;
-        if (!baseProfile) {
-          throw new Error('No save file found for this email.');
+        const hasServerProfile = Boolean(baseProfile && Object.keys(baseProfile).length > 0);
+        const sameCachedAccount = Boolean(
+          cachedProfile
+          && normalizeAuthEmail(cachedProfile.email) === authEmail
+        );
+        const loginProfileSource = hasServerProfile
+          ? baseProfile
+          : (sameCachedAccount ? cachedProfile : null);
+        if (!loginProfileSource) {
+          throw new Error('Account found, but no avatar profile was saved yet.');
         }
 
         profile = {
-          ...baseProfile,
-          email: baseProfile.email || normalizedEmail,
-          characterName: baseProfile.characterName || characterName,
-          firstName: baseProfile.firstName || formData.firstName.trim(),
-          photo: baseProfile.photo || null,
-          skinId: baseProfile.skinId || 'slate',
-          hairStyle: normalizeHairStyle(baseProfile.hairStyle),
-          avatarModel: normalizeAvatarModel(baseProfile.avatarModel),
-          bodyType: baseProfile.bodyType || 'standard',
-          skinTone: baseProfile.skinTone ?? baseProfile.pigment ?? 45,
-          hairHue: baseProfile.hairHue ?? baseProfile.eyeHue ?? 26,
-          outfitHue: baseProfile.outfitHue ?? baseProfile.scarfHue ?? 220,
-          topStyle: baseProfile.topStyle || 'hoodie',
-          bottomStyle: baseProfile.bottomStyle || 'pants',
-          footwear: baseProfile.footwear || 'sneakers',
-          glasses: Boolean(baseProfile.glasses),
-          hasScythe: Boolean(baseProfile.hasScythe),
+          ...loginProfileSource,
+          email: loginProfileSource.email || normalizedEmail,
+          characterName: loginProfileSource.characterName || characterName,
+          firstName: loginProfileSource.firstName || formData.firstName.trim(),
+          photo: loginProfileSource.photo || loginProfileSource.photoDataUrl || loginProfileSource.avatarPhoto || null,
+          skinId: loginProfileSource.skinId || 'slate',
+          hairStyle: normalizeHairStyle(loginProfileSource.hairStyle),
+          avatarModel: normalizeAvatarModel(loginProfileSource.avatarModel),
+          bodyType: loginProfileSource.bodyType || 'standard',
+          skinTone: loginProfileSource.skinTone ?? loginProfileSource.pigment ?? 45,
+          hairHue: loginProfileSource.hairHue ?? loginProfileSource.eyeHue ?? 26,
+          outfitHue: loginProfileSource.outfitHue ?? loginProfileSource.scarfHue ?? 220,
+          topStyle: loginProfileSource.topStyle || 'hoodie',
+          bottomStyle: loginProfileSource.bottomStyle || 'pants',
+          footwear: loginProfileSource.footwear || 'sneakers',
+          glasses: Boolean(loginProfileSource.glasses),
+          hasScythe: Boolean(loginProfileSource.hasScythe),
         };
         localStorage.setItem('sidequest_profile', JSON.stringify(profile));
       }
