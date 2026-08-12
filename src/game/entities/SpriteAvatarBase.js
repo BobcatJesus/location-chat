@@ -181,15 +181,15 @@ export default class SpriteAvatarBase extends Phaser.GameObjects.Container {
   }
 
   attachPhoto(scene, photoDataUrl) {
-    if (typeof photoDataUrl !== 'string' || !photoDataUrl.startsWith('data:image/')) return;
+    if (typeof photoDataUrl !== 'string' || !photoDataUrl.trim()) return;
     const texKey = `photo_${Math.random().toString(36).slice(2)}`;
-    const createPhoto = () => {
-      if (this._photo || !scene.textures.exists(texKey)) return;
+    const createPhoto = (resolvedKey = texKey) => {
+      if (this._photo || !scene.textures.exists(resolvedKey)) return;
       const photoY = this.y - this._getPhotoYOffset();
       const photoSize = this._getPhotoSize();
       const photoRadius = Math.max(PHOTO_BASE_RADIUS, Math.round(photoSize / 2));
       const ringRadius = photoRadius + 3;
-      this._photo = scene.add.image(this.x, photoY, texKey).setDisplaySize(photoSize, photoSize).setOrigin(0.5);
+      this._photo = scene.add.image(this.x, photoY, resolvedKey).setDisplaySize(photoSize, photoSize).setOrigin(0.5);
       this._photoRing = scene.add.circle(this.x, photoY, ringRadius, 0x0f172a, 0.7)
         .setStrokeStyle(2, 0xf8fafc, 0.88);
       this._photoMask = scene.add.graphics().fillCircle(this.x, photoY, photoRadius);
@@ -201,14 +201,35 @@ export default class SpriteAvatarBase extends Phaser.GameObjects.Container {
       this.syncLabel();
     };
 
-    scene.textures.once(`addtexture-${texKey}`, createPhoto);
-    scene.textures.addBase64(texKey, photoDataUrl);
+    const value = photoDataUrl.trim();
+    const isDataImage = value.startsWith('data:image/');
 
-    if (scene.textures.exists(texKey)) {
-      createPhoto();
-    } else if (scene.time?.delayedCall) {
-      scene.time.delayedCall(0, createPhoto);
+    if (isDataImage) {
+      scene.textures.once(`addtexture-${texKey}`, createPhoto);
+      try {
+        scene.textures.addBase64(texKey, value);
+      } catch {
+        return;
+      }
+
+      if (scene.textures.exists(texKey)) {
+        createPhoto();
+      } else if (scene.time?.delayedCall) {
+        scene.time.delayedCall(0, createPhoto);
+      }
+      return;
     }
+
+    // Support persisted URL-based photos and preloaded texture keys.
+    if (scene.textures.exists(value)) {
+      createPhoto(value);
+      return;
+    }
+
+    if (!scene.load) return;
+    scene.load.image(texKey, value);
+    scene.load.once(Phaser.Loader.Events.COMPLETE, createPhoto);
+    if (!scene.load.isLoading()) scene.load.start();
   }
 
   destroy(fromScene) {
