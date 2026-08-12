@@ -490,10 +490,61 @@ export default function RetroAuthModal({ onLogin }) {
         setFormData((prev) => ({ ...prev, password: '' }));
         return;
       } else {
-        const loginResult = await callAuthApi('/api/auth/login', {
-          email: authEmail,
-          password: formData.password,
-        });
+        let loginResult;
+        try {
+          loginResult = await callAuthApi('/api/auth/login', {
+            email: authEmail,
+            password: formData.password,
+          });
+        } catch (authErr) {
+          const canRecover = authErr?.code === 'ACCOUNT_NOT_FOUND';
+          if (!canRecover) throw authErr;
+
+          let cachedProfile = null;
+          try {
+            const raw = localStorage.getItem('sidequest_profile');
+            const parsed = raw ? JSON.parse(raw) : null;
+            if (parsed && typeof parsed === 'object') cachedProfile = parsed;
+          } catch {
+            cachedProfile = null;
+          }
+
+          const sameCachedAccount = Boolean(
+            cachedProfile
+            && normalizeAuthEmail(cachedProfile.email) === authEmail
+          );
+
+          if (!sameCachedAccount) {
+            throw authErr;
+          }
+
+          const recoveredProfile = {
+            ...cachedProfile,
+            email: cachedProfile.email || normalizedEmail,
+            photo: cachedProfile.photo || cachedProfile.photoDataUrl || cachedProfile.avatarPhoto || null,
+            skinId: cachedProfile.skinId || 'slate',
+            hairStyle: normalizeHairStyle(cachedProfile.hairStyle),
+            avatarModel: normalizeAvatarModel(cachedProfile.avatarModel),
+            bodyType: cachedProfile.bodyType || 'standard',
+            skinTone: cachedProfile.skinTone ?? cachedProfile.pigment ?? 45,
+            hairHue: cachedProfile.hairHue ?? cachedProfile.eyeHue ?? 26,
+            outfitHue: cachedProfile.outfitHue ?? cachedProfile.scarfHue ?? 220,
+            topStyle: cachedProfile.topStyle || 'hoodie',
+            bottomStyle: cachedProfile.bottomStyle || 'pants',
+            footwear: cachedProfile.footwear || 'sneakers',
+            glasses: Boolean(cachedProfile.glasses),
+            hasScythe: Boolean(cachedProfile.hasScythe),
+          };
+
+          await callAuthApi('/api/auth/signup', {
+            email: authEmail,
+            password: formData.password,
+            profile: recoveredProfile,
+          });
+
+          setNotice('Recovered your saved profile on this device.');
+          loginResult = { profile: recoveredProfile };
+        }
 
         let cachedProfile = null;
         try {
