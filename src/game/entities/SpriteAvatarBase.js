@@ -159,18 +159,17 @@ export default class SpriteAvatarBase extends Phaser.GameObjects.Container {
       this._photo.setPosition(this.x, photoY);
       const hasRenderableFrame = Boolean(this._photo.frame?.sourceSize);
       if (!hasRenderableFrame) {
-        // Drop broken photo objects so movement/label sync never throws.
-        this._photo.destroy();
-        this._photo = null;
-        this._photoRing?.destroy();
-        this._photoRing = null;
-        this._photoMask?.destroy();
-        this._photoMask = null;
+        // Texture frame can be momentarily unavailable while base64 upload finalizes.
+        // Keep objects alive and hide them until the frame is renderable.
+        this._photo.setVisible(false);
+        if (this._photoRing) this._photoRing.setVisible(false);
         return;
       }
+      this._photo.setVisible(true);
       this._photo.setDisplaySize(photoSize, photoSize);
       if (this._photoMask) this._photoMask.clear().fillCircle(this.x, photoY, photoRadius);
       if (this._photoRing) {
+        this._photoRing.setVisible(true);
         this._photoRing.setPosition(this.x, photoY);
         if (typeof this._photoRing.setRadius === 'function') {
           this._photoRing.setRadius(ringRadius);
