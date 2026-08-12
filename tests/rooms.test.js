@@ -12,7 +12,7 @@ describe('getAllRooms', () => {
   it('includes system rooms', () => {
     const all = getAllRooms();
     expect(all.some(r => r.id === 'downtown-hub')).toBe(true);
-    expect(all.some(r => r.id === 'campfire-circle')).toBe(true);
+    expect(all.some(r => r.id === 'forest-gate')).toBe(true);
   });
 
   it('returns at least 4 rooms', () => {

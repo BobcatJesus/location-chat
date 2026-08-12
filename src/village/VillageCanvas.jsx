@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import Phaser from 'phaser';
 import { VillageScene } from './VillageScene.js';
 
+const VIEW_HELP_KEY = 'sidequest_view_help_seen_v1';
+
 function slugify(value) {
   return String(value || '')
     .toLowerCase()
@@ -29,18 +31,68 @@ function canonicalRoomId(room) {
 export default function VillageCanvas({ room, profile, onLeave }) {
   const containerRef = useRef(null);
   const gameRef = useRef(null);
+  const noticeTimerRef = useRef(null);
   const [editorActive, setEditorActive] = useState(false);
   const [nearbyCount, setNearbyCount] = useState(0);
   const [messages, setMessages] = useState([]);
   const [draft, setDraft] = useState('');
   const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768);
+  const [showEditHint, setShowEditHint] = useState(false);
+  const [systemNotice, setSystemNotice] = useState('');
+  const [collisionDebugActive, setCollisionDebugActive] = useState(false);
+  const [mobileChatOpen, setMobileChatOpen] = useState(false);
+  const [isTouchDevice, setIsTouchDevice] = useState(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
+    return window.matchMedia('(pointer: coarse)').matches || (navigator.maxTouchPoints || 0) > 0;
+  });
+  const [cameraMode, setCameraMode] = useState('follow');
+  const [roomPopulation, setRoomPopulation] = useState(1);
+  const [showViewHelp, setShowViewHelp] = useState(false);
+  const isLikelyMobileUA = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '');
+  const showFloatingZoomControl = isMobile || isTouchDevice || isLikelyMobileUA;
   const roomId = canonicalRoomId(room);
+  const cameraModeLabel = cameraMode === 'overview'
+    ? 'Overview'
+    : cameraMode === 'wide-follow'
+      ? 'Wide'
+      : 'Follow';
 
   useEffect(() => {
-    const onResize = () => setIsMobile(window.innerWidth <= 768);
+    const onResize = () => {
+      setIsMobile(window.innerWidth <= 768);
+      const touch = typeof window.matchMedia === 'function'
+        ? window.matchMedia('(pointer: coarse)').matches || (navigator.maxTouchPoints || 0) > 0
+        : false;
+      setIsTouchDevice(touch);
+    };
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
+
+  useEffect(() => {
+    if (!isMobile) setMobileChatOpen(true);
+  }, [isMobile]);
+
+  useEffect(() => {
+    try {
+      const seen = localStorage.getItem(VIEW_HELP_KEY);
+      if (!seen) setShowViewHelp(true);
+    } catch {
+      setShowViewHelp(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    window.__chatInputFocused = false;
+    return () => { window.__chatInputFocused = false; };
+  }, []);
+
+  useEffect(() => {
+    if (isMobile) return;
+    setShowEditHint(true);
+    const timer = setTimeout(() => setShowEditHint(false), 7000);
+    return () => clearTimeout(timer);
+  }, [roomId, isMobile]);
 
   useEffect(() => {
     if (!containerRef.current || !roomId) return;
@@ -52,13 +104,24 @@ export default function VillageCanvas({ room, profile, onLeave }) {
     VillageScene._boot = {
       roomId,
       roomName:   room?.name   || '',
+      roomOwnerId: room?.ownerId || '',
       amenityTag: room?.amenity || '',
       shopTag:    room?.shop    || '',
+      roomShape:  room?.footprint || null,
       profile,
       onEditorChange: setEditorActive,
       onNearbyChange: setNearbyCount,
+      onRoomPopulationChange: (count) => {
+        setRoomPopulation(Math.max(0, Number(count) || 0));
+      },
       onChatMessage: (msg) => {
         setMessages((prev) => [...prev.slice(-9), msg]);
+      },
+      onSystemNotice: (message) => {
+        if (!message) return;
+        setSystemNotice(message);
+        if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
+        noticeTimerRef.current = setTimeout(() => setSystemNotice(''), 2600);
       },
     };
 
@@ -81,10 +144,20 @@ export default function VillageCanvas({ room, profile, onLeave }) {
     return () => {
       game.destroy(true);
       gameRef.current = null;
+      if (noticeTimerRef.current) {
+        clearTimeout(noticeTimerRef.current);
+        noticeTimerRef.current = null;
+      }
       setEditorActive(false);
       setNearbyCount(0);
       setMessages([]);
       setDraft('');
+      setSystemNotice('');
+      setCollisionDebugActive(false);
+      setMobileChatOpen(false);
+      setCameraMode('follow');
+      setRoomPopulation(1);
+      setShowViewHelp(false);
     };
   }, [roomId, room?.name, room?.amenity, room?.shop, profile]);
 
@@ -92,6 +165,7 @@ export default function VillageCanvas({ room, profile, onLeave }) {
     const scene = gameRef.current?.scene?.getScene('VillageScene');
     if (scene?.sys?.isActive()) {
       scene.toggleEditor?.();
+      setShowEditHint(false);
     }
   };
 
@@ -106,22 +180,95 @@ export default function VillageCanvas({ room, profile, onLeave }) {
     }
   };
 
+  const toggleCollisionDebug = () => {
+    const scene = gameRef.current?.scene?.getScene('VillageScene');
+    if (scene?.sys?.isActive()) {
+      const next = scene.toggleCollisionDebug?.();
+      if (typeof next === 'boolean') setCollisionDebugActive(next);
+    }
+  };
+
+  const toggleCameraMode = () => {
+    const scene = gameRef.current?.scene?.getScene('VillageScene');
+    if (scene?.sys?.isActive()) {
+      const next = scene.toggleCameraMode?.();
+      if (next === 'overview' || next === 'follow' || next === 'wide-follow') setCameraMode(next);
+    }
+    if (showViewHelp) {
+      try { localStorage.setItem(VIEW_HELP_KEY, '1'); } catch {}
+      setShowViewHelp(false);
+    }
+  };
+
+  const dismissViewHelp = () => {
+    try { localStorage.setItem(VIEW_HELP_KEY, '1'); } catch {}
+    setShowViewHelp(false);
+  };
+
+  const openViewHelp = () => {
+    setShowViewHelp(true);
+  };
+
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
+      {showEditHint && !isMobile && (
+        <div style={{
+          position: 'absolute',
+          top: 'calc(12px + env(safe-area-inset-top, 0px))',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 1001,
+          background: '#0f172aee',
+          border: '1px solid #334155',
+          borderRadius: 8,
+          padding: '8px 12px',
+          color: '#e2e8f0',
+          fontFamily: 'Courier New, monospace',
+          fontSize: 12,
+          boxShadow: '0 4px 14px rgba(0,0,0,0.35)',
+        }}>
+          Edit Mode: press <strong>~</strong> to toggle
+        </div>
+      )}
+      {systemNotice && (
+        <div style={{
+          position: 'absolute',
+          top: showEditHint && !isMobile ? 'calc(52px + env(safe-area-inset-top, 0px))' : 'calc(12px + env(safe-area-inset-top, 0px))',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 1002,
+          background: '#7f1d1dcc',
+          border: '1px solid #ef4444',
+          borderRadius: 8,
+          padding: '8px 12px',
+          color: '#fee2e2',
+          fontFamily: 'Courier New, monospace',
+          fontSize: 12,
+          boxShadow: '0 4px 14px rgba(0,0,0,0.35)',
+        }}>
+          {systemNotice}
+        </div>
+      )}
       <div style={{
         position: 'absolute',
-        top: 'calc(12px + env(safe-area-inset-top, 0px))',
-        left: 'calc(12px + env(safe-area-inset-left, 0px))',
+        top: isMobile ? 'calc(8px + env(safe-area-inset-top, 0px))' : 'calc(12px + env(safe-area-inset-top, 0px))',
+        left: isMobile ? 'calc(8px + env(safe-area-inset-left, 0px))' : 'calc(12px + env(safe-area-inset-left, 0px))',
         zIndex: 1000,
         display: 'flex',
-        gap: 8,
+        gap: 6,
+        flexWrap: isMobile ? 'wrap' : 'nowrap',
+        maxWidth: isMobile ? 'calc(100vw - 16px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px))' : 'none',
       }}>
         <button
           onClick={onLeave}
           style={{
             background: 'rgba(0,0,0,0.55)', color: '#fff', border: 'none',
-            borderRadius: 8, padding: '6px 14px', cursor: 'pointer', fontSize: 14,
+            borderRadius: 8,
+            padding: isMobile ? '9px 14px' : '6px 14px',
+            minHeight: isMobile ? 40 : 0,
+            cursor: 'pointer',
+            fontSize: isMobile ? 13 : 14,
           }}
         >
           ← Leave
@@ -133,27 +280,242 @@ export default function VillageCanvas({ room, profile, onLeave }) {
             color: editorActive ? '#000' : '#fff',
             border: 'none',
             borderRadius: 8,
-            padding: '6px 14px',
+            padding: isMobile ? '9px 14px' : '6px 14px',
+            minHeight: isMobile ? 40 : 0,
             cursor: 'pointer',
-            fontSize: 14,
+            fontSize: isMobile ? 13 : 14,
             fontWeight: 'bold',
           }}
         >
           {editorActive ? 'Done' : 'Edit'}
         </button>
+        <button
+          onClick={toggleCameraMode}
+          style={{
+            background: cameraMode === 'overview' ? '#93c5fd' : cameraMode === 'wide-follow' ? '#86efac' : 'rgba(0,0,0,0.55)',
+            color: cameraMode === 'overview' || cameraMode === 'wide-follow' ? '#0f172a' : '#fff',
+            border: 'none',
+            borderRadius: 8,
+            padding: isMobile ? '9px 12px' : '6px 12px',
+            minHeight: isMobile ? 40 : 0,
+            cursor: 'pointer',
+            fontSize: isMobile ? 12 : 13,
+            fontWeight: 'bold',
+          }}
+        >
+          {showFloatingZoomControl ? 'Zoom' : 'View'}: {cameraModeLabel}
+        </button>
+        <button
+          onClick={toggleCollisionDebug}
+          style={{
+            background: collisionDebugActive ? '#22d3ee' : 'rgba(0,0,0,0.55)',
+            color: collisionDebugActive ? '#0f172a' : '#fff',
+            border: 'none',
+            borderRadius: 8,
+            padding: isMobile ? '9px 12px' : '6px 12px',
+            minHeight: isMobile ? 40 : 0,
+            cursor: 'pointer',
+            fontSize: isMobile ? 12 : 13,
+            fontWeight: 'bold',
+          }}
+        >
+          Debug
+        </button>
+        <button
+          onClick={openViewHelp}
+          style={{
+            background: 'rgba(15,23,42,0.72)',
+            color: '#bae6fd',
+            border: '1px solid #38bdf8',
+            borderRadius: 8,
+            padding: isMobile ? '9px 12px' : '6px 10px',
+            minHeight: isMobile ? 40 : 0,
+            cursor: 'pointer',
+            fontSize: isMobile ? 12 : 11,
+            fontWeight: 'bold',
+          }}
+        >
+          Legend
+        </button>
+        {isMobile && (
+          <button
+            onClick={() => setMobileChatOpen((v) => !v)}
+            style={{
+              background: mobileChatOpen ? '#4ade80' : 'rgba(0,0,0,0.55)',
+              color: mobileChatOpen ? '#052e16' : '#fff',
+              border: 'none',
+              borderRadius: 8,
+              padding: '9px 12px',
+              minHeight: 40,
+              cursor: 'pointer',
+              fontSize: 12,
+              fontWeight: 'bold',
+            }}
+          >
+            {mobileChatOpen ? 'Hide Chat' : 'Chat'}
+          </button>
+        )}
       </div>
+
+      {showFloatingZoomControl && (
+        <div style={{
+          position: 'absolute',
+          top: 'calc(8px + env(safe-area-inset-top, 0px))',
+          right: 'calc(8px + env(safe-area-inset-right, 0px))',
+          zIndex: 1001,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+        }}>
+          <button
+            onClick={toggleCameraMode}
+            style={{
+              background: cameraMode === 'overview' ? '#93c5fd' : cameraMode === 'wide-follow' ? '#86efac' : 'rgba(0,0,0,0.62)',
+              color: cameraMode === 'overview' || cameraMode === 'wide-follow' ? '#0f172a' : '#fff',
+              border: 'none',
+              borderRadius: 8,
+              padding: '9px 12px',
+              minHeight: 40,
+              cursor: 'pointer',
+              fontSize: 12,
+              fontWeight: 'bold',
+              boxShadow: '0 2px 10px rgba(0,0,0,0.28)',
+            }}
+          >
+            Zoom [-][+]: {cameraModeLabel}
+          </button>
+          <button
+            onClick={openViewHelp}
+            aria-label="Open camera legend"
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 999,
+              border: '1px solid #38bdf8',
+              background: 'rgba(15,23,42,0.8)',
+              color: '#bae6fd',
+              fontSize: 18,
+              fontWeight: 'bold',
+              cursor: 'pointer',
+              boxShadow: '0 2px 10px rgba(0,0,0,0.28)',
+            }}
+          >
+            ?
+          </button>
+        </div>
+      )}
+
+      {showFloatingZoomControl && (
+        <button
+          onClick={toggleCameraMode}
+          style={{
+            position: 'absolute',
+            right: 'calc(8px + env(safe-area-inset-right, 0px))',
+            bottom: 'calc(56px + env(safe-area-inset-bottom, 0px))',
+            zIndex: 2004,
+            background: cameraMode === 'overview' ? '#93c5fd' : cameraMode === 'wide-follow' ? '#86efac' : '#fbbf24',
+            color: '#0f172a',
+            border: '1px solid rgba(15,23,42,0.25)',
+            borderRadius: 999,
+            padding: '10px 14px',
+            minHeight: 42,
+            cursor: 'pointer',
+            fontSize: 12,
+            fontWeight: 'bold',
+            boxShadow: '0 4px 14px rgba(0,0,0,0.35)',
+          }}
+        >
+          Zoom: {cameraModeLabel}
+        </button>
+      )}
+
+      {!isMobile && (
+        <div style={{
+          position: 'absolute',
+          top: 'calc(52px + env(safe-area-inset-top, 0px))',
+          left: 'calc(12px + env(safe-area-inset-left, 0px))',
+          zIndex: 1000,
+          background: '#0f172acc',
+          border: '1px solid #334155',
+          borderRadius: 6,
+          padding: '5px 8px',
+          color: '#cbd5e1',
+          fontFamily: 'Courier New, monospace',
+          fontSize: 11,
+        }}>
+          Press ~ to toggle Edit Mode
+        </div>
+      )}
 
       <div style={{
         position: 'absolute',
-        right: 'calc(12px + env(safe-area-inset-right, 0px))',
-        top: isMobile ? 'calc(60px + env(safe-area-inset-top, 0px))' : 'auto',
-        bottom: isMobile ? 'auto' : 'calc(64px + env(safe-area-inset-bottom, 0px))',
-        width: 'min(280px, calc(100vw - 24px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)))',
+        top: isMobile ? 'calc(8px + env(safe-area-inset-top, 0px))' : 'calc(12px + env(safe-area-inset-top, 0px))',
+        right: isMobile ? 'calc(8px + env(safe-area-inset-right, 0px))' : 'calc(12px + env(safe-area-inset-right, 0px))',
         zIndex: 1000,
-        display: 'flex',
+        background: '#0f172acc',
+        border: '1px solid #334155',
+        borderRadius: 8,
+        padding: isMobile ? '8px 10px' : '6px 10px',
+        color: '#e2e8f0',
+        fontFamily: 'Courier New, monospace',
+        fontSize: isMobile ? 12 : 11,
+        fontWeight: 'bold',
+      }}>
+        In room: {roomPopulation}
+      </div>
+
+      {showViewHelp && (
+        <div style={{
+          position: 'absolute',
+          top: isMobile ? 'calc(56px + env(safe-area-inset-top, 0px))' : 'calc(58px + env(safe-area-inset-top, 0px))',
+          left: isMobile ? 'calc(8px + env(safe-area-inset-left, 0px))' : 'calc(12px + env(safe-area-inset-left, 0px))',
+          zIndex: 1003,
+          background: '#0f172af2',
+          border: '1px solid #38bdf8',
+          borderRadius: 8,
+          padding: '8px 10px',
+          color: '#e2e8f0',
+          fontFamily: 'Courier New, monospace',
+          fontSize: 11,
+          maxWidth: isMobile ? 'calc(100vw - 16px)' : 320,
+          boxShadow: '0 6px 20px rgba(0,0,0,0.35)',
+        }}>
+          <div style={{ color: '#93c5fd', fontWeight: 'bold', marginBottom: 6 }}>View Modes Legend</div>
+          <div style={{ lineHeight: 1.45, marginBottom: 8 }}>
+            Follow: normal camera<br />
+            Wide: zoomed out and follows you<br />
+            Overview: full room layout
+          </div>
+          <button
+            onClick={dismissViewHelp}
+            style={{
+              border: 'none',
+              borderRadius: 6,
+              padding: '6px 10px',
+              background: '#38bdf8',
+              color: '#0f172a',
+              fontWeight: 'bold',
+              cursor: 'pointer',
+              fontSize: 11,
+            }}
+          >
+            Got it
+          </button>
+        </div>
+      )}
+
+      <div style={{
+        position: 'absolute',
+        right: isMobile ? 'calc(8px + env(safe-area-inset-right, 0px))' : 'calc(12px + env(safe-area-inset-right, 0px))',
+        left: isMobile ? 'calc(8px + env(safe-area-inset-left, 0px))' : 'auto',
+        top: isMobile ? 'auto' : 'auto',
+        bottom: isMobile ? 'calc(8px + env(safe-area-inset-bottom, 0px))' : 'calc(64px + env(safe-area-inset-bottom, 0px))',
+        width: isMobile ? 'auto' : 'min(280px, calc(100vw - 24px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)))',
+        zIndex: 1000,
+        display: isMobile && !mobileChatOpen ? 'none' : 'flex',
         flexDirection: 'column',
         gap: 6,
-        maxHeight: '45vh',
+        maxHeight: isMobile ? '40vh' : '45vh',
       }}>
         <div style={{
           background: '#0f172acc',
@@ -192,6 +554,10 @@ export default function VillageCanvas({ room, profile, onLeave }) {
           <input
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
+            onFocus={() => { window.__chatInputFocused = true; }}
+            onBlur={() => { window.__chatInputFocused = false; }}
+            onKeyDown={(e) => e.stopPropagation()}
+            onKeyUp={(e) => e.stopPropagation()}
             placeholder={nearbyCount > 0 ? 'Say something nearby…' : 'No one nearby'}
             disabled={nearbyCount === 0}
             style={{

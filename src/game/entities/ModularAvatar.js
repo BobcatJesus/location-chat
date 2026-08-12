@@ -29,7 +29,7 @@ export default class ModularAvatar extends SpriteAvatarBase {
     super(scene, x, y, {
       ...options,
       frameKeys: AVATAR_FRAME_KEYS.bunny,
-      targetHeight: 44,
+      targetHeight: 64,
       shadowColor: 0xe9a89f,
     });
   }

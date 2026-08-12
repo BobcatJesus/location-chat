@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import AvatarSetupFields from './AvatarSetupFields';
 import { accessoryHueToColor, hairHueToColor, skinToneToColor } from '../utils/avatarColors';
 import { getAuthLayoutState } from './authLayout';
-import { normalizeAvatarModel } from '../game/entities/avatarFactory';
+import { normalizeAvatarModel } from '../game/entities/avatarModelInfo';
 
 const normalizeHairStyle = (hairStyle) => {
   if (hairStyle === 'messy' || hairStyle === 'combed') return hairStyle;
@@ -17,7 +17,8 @@ const sanitizeCharacterName = (value = '') => value
   .replace(/[^a-z0-9_]/g, '')
   .slice(0, 24);
 
-const getStepTitle = (isSignUp, signUpStep) => {
+const getStepTitle = (isSignUp, signUpStep, isResetMode) => {
+  if (!isSignUp && isResetMode) return 'Reset Password';
   if (!isSignUp) return 'Log In';
   if (signUpStep === 1) return 'Step 1: Build Your Avatar';
   if (signUpStep === 2) return 'Step 2: Account Security';
@@ -33,9 +34,38 @@ const formatLabel = (value = '') => {
 };
 
 const SIGNUP_DRAFT_KEY = 'sidequest_signup_draft_v1';
+const AUTH_SERVER_URL = import.meta.env.VITE_BACKEND_URL ||
+  (import.meta.env.PROD ? 'https://location-chat-production.up.railway.app' : 'http://localhost:4000');
+
+const normalizeAuthEmail = (value = '') => value.trim().toLowerCase();
+
+const callAuthApi = async (path, payload) => {
+  const response = await fetch(`${AUTH_SERVER_URL}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  let data = {};
+  try {
+    data = await response.json();
+  } catch {
+    data = {};
+  }
+
+  if (!response.ok) {
+    const err = new Error(data?.error || 'Authentication request failed.');
+    err.code = data?.code || 'AUTH_ERROR';
+    throw err;
+  }
+
+  return data;
+};
 
 export default function RetroAuthModal({ onLogin }) {
   const [isSignUp, setIsSignUp] = useState(true);
+  const [isResetMode, setIsResetMode] = useState(false);
+  const [resetCode, setResetCode] = useState('');
   const [signUpStep, setSignUpStep] = useState(1);
   const [transitionDirection, setTransitionDirection] = useState('mode');
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
@@ -45,6 +75,7 @@ export default function RetroAuthModal({ onLogin }) {
   });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [notice, setNotice] = useState(null);
   const [fieldErrors, setFieldErrors] = useState({});
   const [draftStatus, setDraftStatus] = useState('Idle');
   const [draftUpdatedAt, setDraftUpdatedAt] = useState(null);
@@ -76,18 +107,6 @@ export default function RetroAuthModal({ onLogin }) {
   const [photoDataUrl, setPhotoDataUrl] = useState(null);
   const firstInputRef = useRef(null);
   const heroPanelRef = useRef(null);
-
-  useEffect(() => {
-    const saved = localStorage.getItem('sidequest_profile');
-    if (saved) {
-      try {
-        const profile = JSON.parse(saved);
-        onLogin?.({ mode: 'returning', profile });
-      } catch {
-        localStorage.removeItem('sidequest_profile');
-      }
-    }
-  }, [onLogin]);
 
   useEffect(() => {
     setTimeout(() => firstInputRef.current?.focus(), 50);
@@ -178,7 +197,15 @@ export default function RetroAuthModal({ onLogin }) {
     const { name, value, type, checked } = e.target;
     setFormData((prev) => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
     if (error) setError(null);
+    if (notice) setNotice(null);
     clearFieldError(name);
+  };
+
+  const normalizeLoginEmail = () => {
+    const raw = String(formData.email || '').trim();
+    if (!raw) return '';
+    const normalizedEmail = raw.includes('@') ? raw : `${sanitizeCharacterName(raw) || 'player'}@side.quest`;
+    return normalizeAuthEmail(normalizedEmail);
   };
 
   const getAvatarFieldErrors = () => {
@@ -237,6 +264,18 @@ export default function RetroAuthModal({ onLogin }) {
     return null;
   };
 
+  const validateResetStep = () => {
+    const nextErrors = getAccountFieldErrors();
+    if (!String(resetCode || '').trim()) {
+      nextErrors.resetCode = 'Reset code is required.';
+    }
+    setFieldErrors((prev) => ({ ...prev, ...nextErrors }));
+    if (nextErrors.email) return 'INVALID SCROLL! Please enter a valid email address.';
+    if (nextErrors.resetCode) return 'MISSING RESET CODE! Request a code then paste it here.';
+    if (nextErrors.password) return 'DEFENSE TOO LOW! Password must be at least 8 characters.';
+    return null;
+  };
+
   const validateReadinessStep = () => {
     const nextErrors = getReadinessFieldErrors();
     setFieldErrors((prev) => ({ ...prev, ...nextErrors }));
@@ -248,9 +287,38 @@ export default function RetroAuthModal({ onLogin }) {
   const switchMode = (signUpMode) => {
     setTransitionDirection('mode');
     setIsSignUp(signUpMode);
+    setIsResetMode(false);
+    setResetCode('');
     setSignUpStep(1);
     setError(null);
+    setNotice(null);
     setFieldErrors({});
+  };
+
+  const requestResetCode = async () => {
+    const email = normalizeLoginEmail();
+    if (!email || !email.includes('@')) {
+      setFieldErrors((prev) => ({ ...prev, email: 'Enter your account email first.' }));
+      setError('TYPE YOUR EMAIL FIRST to request a reset code.');
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+    setNotice(null);
+
+    try {
+      const result = await callAuthApi('/api/auth/request-reset', { email });
+      const code = String(result?.resetCode || '').toUpperCase();
+      setIsResetMode(true);
+      setResetCode(code);
+      setNotice(`Reset code issued: ${code}. It expires in 15 minutes.`);
+      setFieldErrors({});
+    } catch (err) {
+      setError(err?.message || 'Could not request reset code.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const stepForward = () => {
@@ -359,7 +427,11 @@ export default function RetroAuthModal({ onLogin }) {
       return;
     }
 
-    const validationError = isSignUp ? validateReadinessStep() : validateAccountStep();
+    const validationError = isSignUp
+      ? validateReadinessStep()
+      : isResetMode
+        ? validateResetStep()
+        : validateAccountStep();
     if (validationError) {
       setError(validationError);
       return;
@@ -367,11 +439,13 @@ export default function RetroAuthModal({ onLogin }) {
 
     setIsLoading(true);
     setError(null);
+    setNotice(null);
 
     try {
       await new Promise((resolve) => setTimeout(resolve, 500));
 
-      const normalizedEmail = formData.email.includes('@') ? formData.email : `${sanitizeCharacterName(formData.email) || 'player'}@side.quest`;
+      const normalizedEmail = formData.email.includes('@') ? formData.email.trim() : `${sanitizeCharacterName(formData.email) || 'player'}@side.quest`;
+      const authEmail = normalizeAuthEmail(normalizedEmail);
       const characterName = sanitizeCharacterName(formData.characterName.trim() || normalizedEmail.split('@')[0]) || `traveler_${Date.now().toString().slice(-4)}`;
       let profile = {
         email: normalizedEmail,
@@ -396,40 +470,65 @@ export default function RetroAuthModal({ onLogin }) {
       };
 
       if (isSignUp) {
+        await callAuthApi('/api/auth/signup', {
+          email: authEmail,
+          password: formData.password,
+          profile,
+        });
+
         localStorage.removeItem('sidequest_profile');
         localStorage.setItem('sidequest_profile', JSON.stringify(profile));
+      } else if (isResetMode) {
+        await callAuthApi('/api/auth/reset-password', {
+          email: authEmail,
+          resetCode,
+          password: formData.password,
+        });
+        setIsResetMode(false);
+        setResetCode('');
+        setNotice('Password reset complete. Log in with your new password.');
+        setFormData((prev) => ({ ...prev, password: '' }));
+        return;
       } else {
-        const saved = localStorage.getItem('sidequest_profile');
-        if (saved) {
-          const existing = JSON.parse(saved);
-          if (existing.email !== formData.email) {
-            throw new Error('No save file found for this email.');
-          }
-          profile = {
-            ...existing,
-            skinId: existing.skinId || 'slate',
-            hairStyle: normalizeHairStyle(existing.hairStyle),
-            avatarModel: normalizeAvatarModel(existing.avatarModel),
-            bodyType: existing.bodyType || 'standard',
-            skinTone: existing.skinTone ?? existing.pigment ?? 45,
-            hairHue: existing.hairHue ?? existing.eyeHue ?? 26,
-            outfitHue: existing.outfitHue ?? existing.scarfHue ?? 220,
-            topStyle: existing.topStyle || 'hoodie',
-            bottomStyle: existing.bottomStyle || 'pants',
-            footwear: existing.footwear || 'sneakers',
-            glasses: Boolean(existing.glasses),
-            hasScythe: Boolean(existing.hasScythe),
-          };
-        } else {
-          localStorage.setItem('sidequest_profile', JSON.stringify(profile));
+        const loginResult = await callAuthApi('/api/auth/login', {
+          email: authEmail,
+          password: formData.password,
+        });
+
+        const baseProfile = loginResult?.profile && typeof loginResult.profile === 'object'
+          ? loginResult.profile
+          : null;
+        if (!baseProfile) {
+          throw new Error('No save file found for this email.');
         }
+
+        profile = {
+          ...baseProfile,
+          email: baseProfile.email || normalizedEmail,
+          characterName: baseProfile.characterName || characterName,
+          firstName: baseProfile.firstName || formData.firstName.trim(),
+          photo: baseProfile.photo || null,
+          skinId: baseProfile.skinId || 'slate',
+          hairStyle: normalizeHairStyle(baseProfile.hairStyle),
+          avatarModel: normalizeAvatarModel(baseProfile.avatarModel),
+          bodyType: baseProfile.bodyType || 'standard',
+          skinTone: baseProfile.skinTone ?? baseProfile.pigment ?? 45,
+          hairHue: baseProfile.hairHue ?? baseProfile.eyeHue ?? 26,
+          outfitHue: baseProfile.outfitHue ?? baseProfile.scarfHue ?? 220,
+          topStyle: baseProfile.topStyle || 'hoodie',
+          bottomStyle: baseProfile.bottomStyle || 'pants',
+          footwear: baseProfile.footwear || 'sneakers',
+          glasses: Boolean(baseProfile.glasses),
+          hasScythe: Boolean(baseProfile.hasScythe),
+        };
+        localStorage.setItem('sidequest_profile', JSON.stringify(profile));
       }
 
       onLogin?.({ mode: isSignUp ? 'signup' : 'login', profile });
       localStorage.removeItem(SIGNUP_DRAFT_KEY);
       setDraftUpdatedAt(null);
-    } catch {
-      setError('HP CRITICAL! Invalid credentials or connection error.');
+    } catch (err) {
+      setError(err?.message || 'HP CRITICAL! Invalid credentials or connection error.');
     } finally {
       setIsLoading(false);
     }
@@ -658,7 +757,7 @@ export default function RetroAuthModal({ onLogin }) {
         <section style={{ border: '4px solid #fef3c7', background: 'linear-gradient(170deg, #0b1226 0%, #111827 100%)', padding: 4, boxShadow: '10px 10px 0 #020617', animation: prefersReducedMotion || isCompactLayout ? 'none' : 'authGlowPulse 3.8s ease-in-out infinite', order: isCompactLayout ? 1 : 2 }}>
           <div style={{ border: '2px solid #3b82f6', background: 'linear-gradient(175deg, rgba(15,23,42,0.95), rgba(9,12,22,0.95))', padding: isCompactLayout ? 12 : 16 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, borderBottom: '2px solid #1e293b', paddingBottom: 10, marginBottom: 14 }}>
-              <h2 style={{ margin: 0, color: '#fbbf24', fontFamily: 'Bebas Neue, Impact, sans-serif', fontSize: 24, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{getStepTitle(isSignUp, signUpStep)}</h2>
+              <h2 style={{ margin: 0, color: '#fbbf24', fontFamily: 'Bebas Neue, Impact, sans-serif', fontSize: 24, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{getStepTitle(isSignUp, signUpStep, isResetMode)}</h2>
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
                 <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{isSignUp ? `Step ${signUpStep} of 3` : 'Returning player'}</div>
                 {isSignUp && (
@@ -714,6 +813,12 @@ export default function RetroAuthModal({ onLogin }) {
               </div>
             )}
 
+            {notice && (
+              <div style={{ marginBottom: 12, padding: '8px 10px', background: 'rgba(20,83,45,0.75)', border: '2px solid #22c55e', color: '#bbf7d0', fontSize: 11, fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                {notice}
+              </div>
+            )}
+
             <form onSubmit={handleSubmit} noValidate style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingBottom: isCompactLayout ? 74 : 0 }}>
               <div key={stepAnimationKey} style={{ display: 'flex', flexDirection: 'column', gap: 12, animation: stepAnimationValue }}>
                 {isSignUp && signUpStep === 1 && (
@@ -757,6 +862,58 @@ export default function RetroAuthModal({ onLogin }) {
                       />
                       {fieldErrors.password && <div style={{ marginTop: 4, fontSize: 10, color: '#fca5a5' }}>{fieldErrors.password}</div>}
                     </div>
+
+                    {!isSignUp && (
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                        <button
+                          type="button"
+                          onClick={requestResetCode}
+                          disabled={isLoading}
+                          style={{ padding: '6px 10px', background: '#111827', border: '1px solid #fbbf24', color: '#fde68a', fontFamily: 'Rajdhani, sans-serif', fontSize: 11, letterSpacing: '0.05em', textTransform: 'uppercase', cursor: isLoading ? 'not-allowed' : 'pointer' }}
+                        >
+                          Forgot Password
+                        </button>
+                        {isResetMode && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsResetMode(false);
+                              setResetCode('');
+                              setError(null);
+                            }}
+                            style={{ padding: '6px 10px', background: 'transparent', border: '1px solid #475569', color: '#94a3b8', fontFamily: 'Rajdhani, sans-serif', fontSize: 11, letterSpacing: '0.05em', textTransform: 'uppercase', cursor: 'pointer' }}
+                          >
+                            Back To Login
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {!isSignUp && isResetMode && (
+                      <div>
+                        <label style={{ display: 'block', fontSize: 11, textTransform: 'uppercase', color: '#94a3b8', marginBottom: 4 }}>Reset Code</label>
+                        <input
+                          type="text"
+                          name="resetCode"
+                          placeholder="Paste reset code"
+                          value={resetCode}
+                          onChange={(e) => {
+                            setResetCode(e.target.value.toUpperCase());
+                            if (error) setError(null);
+                            if (notice) setNotice(null);
+                            if (fieldErrors.resetCode) {
+                              setFieldErrors((prev) => {
+                                const next = { ...prev };
+                                delete next.resetCode;
+                                return next;
+                              });
+                            }
+                          }}
+                          style={{ width: '100%', boxSizing: 'border-box', background: '#000', border: '2px solid #475569', padding: '8px 10px', color: '#fbbf24', fontFamily: 'Courier New, monospace', fontSize: 13, outline: 'none', letterSpacing: '0.08em' }}
+                        />
+                        {fieldErrors.resetCode && <div style={{ marginTop: 4, fontSize: 10, color: '#fca5a5' }}>{fieldErrors.resetCode}</div>}
+                      </div>
+                    )}
                   </>
                 )}
 
@@ -818,7 +975,7 @@ export default function RetroAuthModal({ onLogin }) {
                     disabled={isLoading}
                     style={{ flex: 1, padding: '11px 0', background: isLoading ? '#1e293b' : 'linear-gradient(90deg, #16a34a, #22c55e)', border: '2px solid #000', boxShadow: '2px 2px 0 #000', color: '#fff', fontWeight: 'bold', fontFamily: 'Rajdhani, sans-serif', fontSize: 13, letterSpacing: '0.06em', textTransform: 'uppercase', cursor: isLoading ? 'not-allowed' : 'pointer' }}
                   >
-                    {isLoading ? 'Connecting...' : isSignUp ? 'Create and Enter' : 'Load Save'}
+                    {isLoading ? 'Connecting...' : isSignUp ? 'Create and Enter' : isResetMode ? 'Reset Password' : 'Load Save'}
                   </button>
                 )}
               </div>

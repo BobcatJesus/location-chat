@@ -10,12 +10,12 @@ const TAG_MAP = {
   library: bookstore,
 };
 
-export function pickLayout(roomId = '', roomName = '', amenityTag = '', shopTag = '') {
+export function pickLayout(roomId = '', roomName = '', amenityTag = '', shopTag = '', roomShape = null) {
   if (amenityTag && TAG_MAP[amenityTag]) return TAG_MAP[amenityTag];
   const lower = (roomName + ' ' + roomId).toLowerCase();
   for (const { words, layout } of NAME_KEYWORDS) {
     if (words.some(w => lower.includes(w))) return layout;
   }
   // Auto-generate themed layout from OSM tags — no user input needed
-  return buildAutoLayout(roomId, roomName, amenityTag, shopTag);
+  return buildAutoLayout(roomId, roomName, amenityTag, shopTag, roomShape);
 }

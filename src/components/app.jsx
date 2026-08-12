@@ -1,10 +1,11 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
+import { io } from 'socket.io-client';
 import RetroAuthModal from './RetroAuthModal';
 import AvatarSetupFields from './AvatarSetupFields';
 import { useGeofencedMap } from '../hooks/UseGeofencingApp';
 import { createUserRoom, deleteUserRoom, loadUserRooms, acceptRoomInvite, getAllRooms } from '../../rooms/rooms.js';
 import { getDistanceMeters } from '../geo';
-import { normalizeAvatarModel } from '../game/entities/avatarFactory';
+import { normalizeAvatarModel } from '../game/entities/avatarModelInfo';
 
 const VillageCanvas = lazy(() => import('../village/VillageCanvas.jsx'));
 const WorldMapCanvas = lazy(() => import('../village/WorldMapCanvas.jsx'));
@@ -15,6 +16,8 @@ const normalizeHairStyle = (hairStyle) => {
   if (hairStyle === 'side' || hairStyle === 'mohawk') return 'messy';
   return 'combed';
 };
+
+const normalizeEmailKey = (value = '') => String(value || '').trim().toLowerCase();
 
 const isAvatarOnboardingComplete = (savedProfile) => {
   if (!savedProfile) return false;
@@ -202,9 +205,242 @@ function AvatarStudioPage({
   );
 }
 
+function RetroLandingPage({ onEnter }) {
+  const referenceArtCandidates = ['/assets/landing-original.png', '/assets/landing-reference.png'];
+  const [useReferenceArt, setUseReferenceArt] = useState(true);
+  const [referenceArtIndex, setReferenceArtIndex] = useState(0);
+  const avatarDots = [
+    { left: '3%', top: '3%', size: 108, bg: '#cfe6ff', photo: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=320&h=320&q=80' },
+    { left: '26%', top: '9%', size: 154, bg: '#fff2cc', photo: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=320&h=320&q=80' },
+    { left: '64%', top: '5%', size: 130, bg: '#d8ecff', photo: 'https://images.unsplash.com/photo-1542206395-9feb3edaa68d?auto=format&fit=crop&w=320&h=320&q=80' },
+    { left: '82%', top: '10%', size: 138, bg: '#fce7ea', photo: 'https://images.unsplash.com/photo-1488426862026-3ee34a7d66df?auto=format&fit=crop&w=320&h=320&q=80' },
+    { left: '98%', top: '3%', size: 118, bg: '#ffe1d8', photo: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=320&h=320&q=80' },
+    { left: '93%', top: '16%', size: 112, bg: '#fff1cf', photo: 'https://images.unsplash.com/photo-1506863530036-1efeddceb993?auto=format&fit=crop&w=320&h=320&q=80' },
+    { left: '79%', top: '24%', size: 138, bg: '#bfe9ff', photo: 'https://images.unsplash.com/photo-1531123897727-8f129e1688ce?auto=format&fit=crop&w=320&h=320&q=80' },
+    { left: '0%', top: '24.5%', size: 108, bg: '#fff0d7', photo: 'https://images.unsplash.com/photo-1506277886164-e25aa3f4ef7f?auto=format&fit=crop&w=320&h=320&q=80' },
+    { left: '5%', top: '48.5%', size: 150, bg: '#cfe4ff', photo: 'https://images.unsplash.com/photo-1487412720507-e7ab37603c6f?auto=format&fit=crop&w=320&h=320&q=80' },
+    { left: '93.5%', top: '41%', size: 136, bg: '#fff0d7', photo: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=320&h=320&q=80' },
+    { left: '72.2%', top: '60.7%', size: 146, bg: '#fff0d7', photo: 'https://images.unsplash.com/photo-1552058544-f2b08422138a?auto=format&fit=crop&w=320&h=320&q=80' },
+    { left: '89%', top: '71.9%', size: 120, bg: '#fff1c7', photo: 'https://images.unsplash.com/photo-1504593811423-6dd665756598?auto=format&fit=crop&w=320&h=320&q=80' },
+    { left: '87.9%', top: '86.9%', size: 128, bg: '#fff0d7', photo: 'https://images.unsplash.com/photo-1521119989659-a83eee488004?auto=format&fit=crop&w=320&h=320&q=80' },
+    { left: '66.2%', top: '81.8%', size: 140, bg: '#fff0d7', photo: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=320&h=320&q=80' },
+    { left: '41.1%', top: '87.5%', size: 122, bg: '#f8cbe0', photo: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=320&h=320&q=80' },
+    { left: '16.3%', top: '79.6%', size: 145, bg: '#fde2c8', photo: 'https://images.unsplash.com/photo-1546961329-78bef0414d7c?auto=format&fit=crop&w=320&h=320&q=80' },
+    { left: '28.4%', top: '79.7%', size: 118, bg: '#fff0d7', photo: 'https://images.unsplash.com/photo-1525134479668-1bee5c7c6845?auto=format&fit=crop&w=320&h=320&q=80' },
+    { left: '4%', top: '67%', size: 138, bg: '#cbe9ff', photo: 'https://images.unsplash.com/photo-1541577141970-eebc83ebe30e?auto=format&fit=crop&w=320&h=320&q=80' },
+  ];
+
+  const useNextReferenceArtOrFallback = () => {
+    if (referenceArtIndex < referenceArtCandidates.length - 1) {
+      setReferenceArtIndex((value) => value + 1);
+      return;
+    }
+    setUseReferenceArt(false);
+  };
+
+  const validateArt = (event) => {
+    try {
+      const img = event.currentTarget;
+      const width = img.naturalWidth || 0;
+      const height = img.naturalHeight || 0;
+      if (!width || !height) {
+        useNextReferenceArtOrFallback();
+        return;
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.min(48, width);
+      canvas.height = Math.min(48, height);
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        useNextReferenceArtOrFallback();
+        return;
+      }
+
+      const sx = Math.floor(width * 0.2);
+      const sy = Math.floor(height * 0.2);
+      const sw = Math.max(1, Math.floor(width * 0.6));
+      const sh = Math.max(1, Math.floor(height * 0.6));
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+      const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+      let alphaSum = 0;
+      let minLuma = 255;
+      let maxLuma = 0;
+      for (let i = 3; i < pixels.length; i += 4) alphaSum += pixels[i];
+      for (let i = 0; i < pixels.length; i += 4) {
+        const r = pixels[i];
+        const g = pixels[i + 1];
+        const b = pixels[i + 2];
+        const luma = Math.round((r + g + b) / 3);
+        if (luma < minLuma) minLuma = luma;
+        if (luma > maxLuma) maxLuma = luma;
+      }
+
+      // Reject transparent or near-flat placeholder images.
+      if (alphaSum === 0 || maxLuma - minLuma < 8) {
+        useNextReferenceArtOrFallback();
+      }
+    } catch {
+      useNextReferenceArtOrFallback();
+    }
+  };
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 22000,
+        minHeight: '100vh',
+        width: '100%',
+        overflow: 'hidden',
+        color: '#111',
+        fontFamily: 'Helvetica Neue, Arial, sans-serif',
+        background: 'radial-gradient(circle at center, #f0c12a 0%, #e5b61f 60%, #d8ab16 100%)',
+      }}
+    >
+      {!useReferenceArt && (
+        <>
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              backgroundImage: 'radial-gradient(rgba(0,0,0,0.08) 1px, transparent 1px)',
+              backgroundSize: '6px 6px',
+              opacity: 0.45,
+              pointerEvents: 'none',
+            }}
+          />
+          {avatarDots.map((dot, index) => (
+            <div
+              key={`${dot.left}-${dot.top}-${index}`}
+              style={{
+                position: 'absolute',
+                left: dot.left,
+                top: dot.top,
+                width: dot.size,
+                height: dot.size,
+                transform: 'translate(-50%, -50%)',
+                borderRadius: '50%',
+                border: '2px solid rgba(0,0,0,0.8)',
+                background: `radial-gradient(circle at 50% 35%, ${dot.bg} 0 58%, rgba(255,255,255,0.94) 59% 100%)`,
+                boxShadow: '0 3px 0 rgba(0,0,0,0.2)',
+                display: 'grid',
+                placeItems: 'center',
+                backgroundColor: dot.bg,
+              }}
+            >
+              <img
+                src={dot.photo}
+                alt="person"
+                style={{
+                  width: Math.round(dot.size * 0.9),
+                  height: Math.round(dot.size * 0.9),
+                  borderRadius: '50%',
+                  objectFit: 'cover',
+                  border: '2px solid rgba(255,255,255,0.95)',
+                }}
+              />
+            </div>
+          ))}
+        </>
+      )}
+
+      {useReferenceArt && (
+        <img
+          src={referenceArtCandidates[referenceArtIndex]}
+          alt="Landing art"
+          onLoad={validateArt}
+          onError={useNextReferenceArtOrFallback}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            objectPosition: 'center',
+            pointerEvents: 'none',
+            userSelect: 'none',
+          }}
+        />
+      )}
+
+      <div
+        style={{
+          position: 'absolute',
+          left: '50%',
+          top: useReferenceArt ? 'auto' : '50%',
+          bottom: useReferenceArt ? '7.5%' : 'auto',
+          transform: useReferenceArt ? 'translateX(-50%)' : 'translate(-50%, -50%)',
+          textAlign: 'center',
+          zIndex: 2,
+          width: 'min(640px, calc(100vw - 32px))',
+        }}
+      >
+        {!useReferenceArt && (
+          <>
+            <h1
+              style={{
+                margin: 0,
+                color: '#111',
+                fontSize: 'clamp(2.8rem, 6.8vw, 5rem)',
+                lineHeight: 0.95,
+                letterSpacing: '-0.04em',
+                textTransform: 'uppercase',
+                fontWeight: 900,
+                textShadow: '2px 2px 0 rgba(255,255,255,0.08)',
+                fontFamily: 'Impact, Haettenschweiler, Arial Narrow Bold, sans-serif',
+              }}
+            >
+              A Location
+              <br />
+              Based
+              <br />
+              Adventure
+            </h1>
+            <p
+              style={{
+                margin: '16px 0 22px',
+                fontSize: 'clamp(1.15rem, 2.5vw, 1.9rem)',
+                lineHeight: 1.05,
+                color: '#111',
+                fontWeight: 500,
+              }}
+            >
+              Meet your people.
+              <br />
+              In the real world.
+            </p>
+          </>
+        )}
+
+        <button
+          onClick={onEnter}
+          style={{
+            padding: '12px 24px',
+            background: '#111',
+            border: '3px solid #111',
+            color: '#f6d24a',
+            fontWeight: 900,
+            cursor: 'pointer',
+            borderRadius: 999,
+            fontSize: 12,
+            textTransform: 'uppercase',
+            letterSpacing: '0.14em',
+            boxShadow: '0 5px 0 rgba(0,0,0,0.32)',
+          }}
+        >
+          Enter Lounge
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [profile, setProfile] = useState(null);
+  const [showLanding, setShowLanding] = useState(true);
   const [selectedRoom, setSelectedRoom] = useState('downtown-hub');
   const [activeScene, setActiveScene] = useState('world');
   const [gpsToast, setGpsToast] = useState(null);
@@ -247,6 +483,20 @@ function App() {
       const next = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ''}`;
       window.history.replaceState({}, '', next);
     } catch {}
+  };
+
+  const persistAuthProfile = async (nextProfile) => {
+    const email = String(nextProfile?.email || '').trim().toLowerCase();
+    if (!email || profile?.mode === 'guest') return;
+    try {
+      await fetch(`${SOCKET_SERVER_URL}/api/auth/profile`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, profile: nextProfile }),
+      });
+    } catch {
+      // Keep local avatar updates even if profile sync fails.
+    }
   };
 
   const openEditProfile = () => {
@@ -295,7 +545,7 @@ function App() {
     setEditingProfile(true);
   };
 
-  const saveEditProfile = () => {
+  const saveEditProfile = async () => {
     if (!editForm.firstName.trim()) {
       setProfileError('Enter your first name before saving.');
       return;
@@ -331,12 +581,13 @@ function App() {
     };
     localStorage.setItem('sidequest_profile', JSON.stringify(updated));
     setProfile({ ...profile, profile: updated });
+    await persistAuthProfile(updated);
     setProfileError(null);
     setOnboardingRequired(false);
     setEditingProfile(false);
   };
 
-  const forceEnterWorld = () => {
+  const forceEnterWorld = async () => {
     const base = profile?.profile || {};
     const fallbackFirst = editForm.firstName.trim() || base.firstName || 'Traveler';
     const rawName = editForm.characterName.trim() || base.characterName || fallbackFirst;
@@ -364,6 +615,7 @@ function App() {
 
     localStorage.setItem('sidequest_profile', JSON.stringify(updated));
     setProfile((prev) => ({ ...(prev || {}), profile: updated }));
+    await persistAuthProfile(updated);
     setProfileError(null);
     setOnboardingRequired(false);
     setEditingProfile(false);
@@ -426,11 +678,33 @@ function App() {
   const { location, currentVenue, isInsideVenue, error, isLocating } = useGeofencedMap('/api/geofence/check', isLoggedIn);
 
   const handleLogin = (authProfile) => {
-    const { migrated, changed } = migrateProfileForAvatar(authProfile?.profile);
+    let cachedProfile = null;
+    try {
+      const raw = localStorage.getItem('sidequest_profile');
+      const parsed = raw ? JSON.parse(raw) : null;
+      if (parsed && typeof parsed === 'object') cachedProfile = parsed;
+    } catch {
+      cachedProfile = null;
+    }
+
+    const authSource = authProfile?.profile && typeof authProfile.profile === 'object'
+      ? authProfile.profile
+      : {};
+    const sameAccount = normalizeEmailKey(cachedProfile?.email) &&
+      normalizeEmailKey(cachedProfile?.email) === normalizeEmailKey(authSource?.email);
+    const mergedSource = sameAccount
+      ? {
+        ...cachedProfile,
+        ...authSource,
+        photo: authSource.photo || cachedProfile.photo || null,
+      }
+      : authSource;
+
+    const { migrated, changed } = migrateProfileForAvatar(mergedSource);
     const normalizedAuthProfile = { ...authProfile, profile: migrated };
     setProfile(normalizedAuthProfile);
     setIsLoggedIn(true);
-    if (changed) {
+    if (changed || migrated.photo !== authSource.photo) {
       localStorage.setItem('sidequest_profile', JSON.stringify(migrated));
     }
     const uid = migrated?.email || authProfile?.mode || 'guest';
@@ -487,6 +761,26 @@ function App() {
     return () => {
       cancelled = true;
       clearInterval(timer);
+    };
+  }, [isLoggedIn, SOCKET_SERVER_URL]);
+
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    const socket = io(SOCKET_SERVER_URL, { transports: ['websocket'] });
+
+    socket.on('community_location_added', (room) => {
+      const normalized = normalizeCommunityRoom(room);
+      if (!normalized) return;
+      setCommunityRooms((prev) => mergeRoomsById(prev, [normalized]));
+    });
+
+    socket.on('community_location_removed', ({ id }) => {
+      if (!id) return;
+      setCommunityRooms((prev) => prev.filter((room) => room.id !== id));
+    });
+
+    return () => {
+      socket.disconnect();
     };
   }, [isLoggedIn, SOCKET_SERVER_URL]);
 
@@ -563,6 +857,8 @@ function App() {
     const cat = COMMUNITY_CATEGORIES.find(c => c.id === newRoomCategory) || COMMUNITY_CATEGORIES[0];
     const roomId = `user-${Date.now()}`;
 
+    let publicRoomCreated = !newRoomPublic;
+
     if (newRoomPublic) {
       const THREE_DAYS = 3 * 24 * 60 * 60 * 1000;
       const lastTs = parseInt(localStorage.getItem('sidequest_loc_ts') || '0', 10);
@@ -588,29 +884,40 @@ function App() {
         });
         if (!resp.ok) {
           const err = await resp.json().catch(() => ({}));
+          setCreatingRoom(false);
           setGpsToast(`Community save failed: ${err.error || resp.status}`);
           setTimeout(() => setGpsToast(null), 5000);
+          return;
         } else {
           const created = normalizeCommunityRoom(await resp.json().catch(() => null));
           if (created) {
             setCommunityRooms((prev) => mergeRoomsById(prev, [created]));
+            publicRoomCreated = true;
           }
           localStorage.setItem('sidequest_loc_ts', Date.now().toString());
         }
       } catch (e) {
+        setCreatingRoom(false);
         setGpsToast(`Community save error: ${e.message}`);
         setTimeout(() => setGpsToast(null), 5000);
+        return;
       }
     }
 
-    const newRoom = createUserRoom({
-      id: roomId, name: roomName,
-      lat: location.latitude, lng: location.longitude,
-      radiusMeters: 60, contributor: contributorName, ownerId, isPublic: newRoomPublic,
-    });
+    let newRoom = null;
+    if (!newRoomPublic || publicRoomCreated) {
+      newRoom = createUserRoom({
+        id: roomId, name: roomName,
+        lat: location.latitude, lng: location.longitude,
+        radiusMeters: 60, contributor: contributorName, ownerId, isPublic: newRoomPublic,
+      });
+    }
+
     setCreatingRoom(false);
-    setSelectedRoom(newRoom.id);
-    setActiveScene('room');
+    if (newRoom) {
+      setSelectedRoom(newRoom.id);
+      setActiveScene('room');
+    }
   };
 
   const roomCards = [
@@ -781,7 +1088,11 @@ function App() {
         </div>
       )}
 
-      {!isLoggedIn && <RetroAuthModal onLogin={handleLogin} />}
+      {!isLoggedIn && showLanding && (
+        <RetroLandingPage onEnter={() => setShowLanding(false)} />
+      )}
+
+      {!isLoggedIn && !showLanding && <RetroAuthModal onLogin={handleLogin} />}
 
       {avatarStudioOpen && (
         <AvatarStudioPage

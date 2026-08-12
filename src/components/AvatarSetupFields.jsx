@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { AVATAR_SKINS, AVATAR_HAIR_STYLES, AVATAR_BODY_TYPES } from './SpatialCanvas';
+import { AVATAR_SKINS, AVATAR_HAIR_STYLES, AVATAR_BODY_TYPES } from './avatarOptions';
 import { skinToneToColor, hairHueToColor, accessoryHueToColor } from '../utils/avatarColors';
-import { AVATAR_MODELS } from '../game/entities/avatarFactory';
+import { AVATAR_MODELS } from '../game/entities/avatarModelInfo';
 
 const AVATAR_PRESETS = [
   {

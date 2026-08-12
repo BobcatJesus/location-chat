@@ -1,28 +1,27 @@
-import ModularAvatar from './ModularAvatar';
-import OgDemonAvatar from './OgDemonAvatar';
-import HoodieAvatar from './HoodieAvatar';
 export { AVATAR_FRAME_KEYS, preloadAvatarTextures } from './avatarTextures';
+export { AVATAR_MODELS, normalizeAvatarModel } from './avatarModels.js';
+import { normalizeAvatarModel } from './avatarModels.js';
 
-export const AVATAR_MODELS = [
-  { id: 'og', label: 'OG Demon' },
-  { id: 'hoodie', label: 'Hoodie Avatar' },
-  { id: 'bunny', label: 'Bunny Avatar' },
-];
+function canInstantiateInScene(scene) {
+  if (!scene?.sys || !scene?.add) return false;
+  if (scene.sys.settings?.isDestroyed) return false;
+  if (typeof scene.sys.isActive === 'function' && !scene.sys.isActive()) return false;
+  return true;
+}
 
-export function normalizeAvatarModel(model) {
-  if (model === 'og') return 'og';
-  if (model === 'bunny') return 'bunny';
-  if (model === 'hoodie') return 'hoodie';
-  return 'hoodie';
+async function buildAvatar(scene, x, y, options, importer) {
+  const module = await importer();
+  if (!canInstantiateInScene(scene)) return null;
+  return new module.default(scene, x, y, options);
 }
 
 export function createAvatarEntity(scene, x, y, options = {}) {
   const avatarModel = normalizeAvatarModel(options.avatarModel);
   if (avatarModel === 'og') {
-    return new OgDemonAvatar(scene, x, y, options);
+    return buildAvatar(scene, x, y, options, () => import('./OgDemonAvatar.js'));
   }
   if (avatarModel === 'bunny') {
-    return new ModularAvatar(scene, x, y, options);
+    return buildAvatar(scene, x, y, options, () => import('./ModularAvatar.js'));
   }
-  return new HoodieAvatar(scene, x, y, options);
+  return buildAvatar(scene, x, y, options, () => import('./HoodieAvatar.js'));
 }

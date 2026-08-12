@@ -1,5 +1,8 @@
 import Phaser from 'phaser';
 
+const PHOTO_BASE_SIZE = 32;
+const PHOTO_BASE_RADIUS = PHOTO_BASE_SIZE / 2;
+
 function firstExistingTexture(scene, keys) {
   for (const key of keys) {
     if (scene.textures.exists(key)) return key;
@@ -24,7 +27,7 @@ export default class SpriteAvatarBase extends Phaser.GameObjects.Container {
     name = '',
     isLocal = false,
     frameKeys,
-    targetHeight = 42,
+    targetHeight = 52,
     shadowColor = 0x000000,
   } = {}) {
     super(scene, x, y);
@@ -39,7 +42,7 @@ export default class SpriteAvatarBase extends Phaser.GameObjects.Container {
     this._stepAccum = Math.random() * 120;
     this._stepFrame = 0;
 
-    this._shadow = scene.add.ellipse(0, 2, 26, 10, shadowColor, 0.22);
+    this._shadow = scene.add.ellipse(0, 3, 34, 12, shadowColor, 0.22);
     this.add(this._shadow);
 
     const initialTexture = this._resolveTexture('front', 0);
@@ -49,7 +52,7 @@ export default class SpriteAvatarBase extends Phaser.GameObjects.Container {
     this.add(this._sprite);
 
     const labelText = (name || '').trim() || (isLocal ? 'YOU' : 'Traveler');
-    this._label = scene.add.text(x, y - 30, labelText, {
+    this._label = scene.add.text(x, y - 38, labelText, {
       fontFamily: 'Courier New',
       fontSize: '10px',
       color: isLocal ? '#fef3c7' : '#fca5a5',
@@ -57,7 +60,7 @@ export default class SpriteAvatarBase extends Phaser.GameObjects.Container {
       padding: { x: 3, y: 2 },
     }).setOrigin(0.5);
 
-    this.setSize(34, 50);
+    this.setSize(44, 62);
     scene.add.existing(this);
   }
 
@@ -74,6 +77,31 @@ export default class SpriteAvatarBase extends Phaser.GameObjects.Container {
     this._sprite.setScale(this._baseScale);
   }
 
+  _getVisualScale() {
+    return Math.max(1, Number(this.scaleX) || Number(this.scaleY) || 1);
+  }
+
+  _getLabelYOffset() {
+    const scale = this._getVisualScale();
+    return 42 + (scale - 1) * 28;
+  }
+
+  _getPhotoYOffset() {
+    const scale = this._getVisualScale();
+    return 66 + (scale - 1) * 30;
+  }
+
+  _getPhotoSize() {
+    const scale = this._getVisualScale();
+    return Math.round(PHOTO_BASE_SIZE * Math.max(1.1, scale));
+  }
+
+  setScale(x, y = x) {
+    super.setScale(x, y);
+    this.syncLabel();
+    return this;
+  }
+
   setPosition(x, y) {
     this.x = x;
     this.y = y;
@@ -86,6 +114,7 @@ export default class SpriteAvatarBase extends Phaser.GameObjects.Container {
     this._shadow.setDepth(Math.max(0, depth - 1000));
     this._sprite.setDepth(depth);
     this._label.setDepth(depth + 10);
+    if (this._photoRing) this._photoRing.setDepth(depth + 10);
     if (this._photo) this._photo.setDepth(depth + 11);
   }
 
@@ -120,25 +149,72 @@ export default class SpriteAvatarBase extends Phaser.GameObjects.Container {
 
   syncLabel() {
     if (!this._label) return;
-    this._label.setPosition(this.x, this.y - 30);
+    this._label.setPosition(this.x, this.y - this._getLabelYOffset());
     if (this._photo) {
-      this._photo.setPosition(this.x, this.y - 48);
-      if (this._photoMask) this._photoMask.clear().fillCircle(this.x, this.y - 48, 13);
+      const photoY = this.y - this._getPhotoYOffset();
+      const photoSize = this._getPhotoSize();
+      const photoRadius = Math.max(PHOTO_BASE_RADIUS, Math.round(photoSize / 2));
+      const ringRadius = photoRadius + 3;
+      const ringDiameter = ringRadius * 2;
+      this._photo.setPosition(this.x, photoY);
+      const hasRenderableFrame = Boolean(this._photo.frame?.sourceSize);
+      if (!hasRenderableFrame) {
+        // Drop broken photo objects so movement/label sync never throws.
+        this._photo.destroy();
+        this._photo = null;
+        this._photoRing?.destroy();
+        this._photoRing = null;
+        this._photoMask?.destroy();
+        this._photoMask = null;
+        return;
+      }
+      this._photo.setDisplaySize(photoSize, photoSize);
+      if (this._photoMask) this._photoMask.clear().fillCircle(this.x, photoY, photoRadius);
+      if (this._photoRing) {
+        this._photoRing.setPosition(this.x, photoY);
+        if (typeof this._photoRing.setRadius === 'function') {
+          this._photoRing.setRadius(ringRadius);
+        } else {
+          this._photoRing.setDisplaySize(ringDiameter, ringDiameter);
+        }
+      }
     }
   }
 
   attachPhoto(scene, photoDataUrl) {
+    if (typeof photoDataUrl !== 'string' || !photoDataUrl.startsWith('data:image/')) return;
     const texKey = `photo_${Math.random().toString(36).slice(2)}`;
-    scene.textures.addBase64(texKey, photoDataUrl);
-    scene.textures.once(`addtexture-${texKey}`, () => {
-      this._photo = scene.add.image(this.x, this.y - 48, texKey).setDisplaySize(26, 26).setOrigin(0.5);
-      this._photoMask = scene.add.graphics().fillCircle(this.x, this.y - 48, 13);
+    const createPhoto = () => {
+      if (this._photo || !scene.textures.exists(texKey)) return;
+      const photoY = this.y - this._getPhotoYOffset();
+      const photoSize = this._getPhotoSize();
+      const photoRadius = Math.max(PHOTO_BASE_RADIUS, Math.round(photoSize / 2));
+      const ringRadius = photoRadius + 3;
+      this._photo = scene.add.image(this.x, photoY, texKey).setDisplaySize(photoSize, photoSize).setOrigin(0.5);
+      this._photoRing = scene.add.circle(this.x, photoY, ringRadius, 0x0f172a, 0.7)
+        .setStrokeStyle(2, 0xf8fafc, 0.88);
+      this._photoMask = scene.add.graphics().fillCircle(this.x, photoY, photoRadius);
+      this._photoMask.setVisible(false);
       this._photo.setMask(this._photoMask.createGeometryMask());
-    });
+      this._photoRing.setDepth((this.depth || 0) + 10);
+      this._photo.setDepth((this.depth || 0) + 11);
+      this._photoMask.setDepth((this.depth || 0) + 10);
+      this.syncLabel();
+    };
+
+    scene.textures.once(`addtexture-${texKey}`, createPhoto);
+    scene.textures.addBase64(texKey, photoDataUrl);
+
+    if (scene.textures.exists(texKey)) {
+      createPhoto();
+    } else if (scene.time?.delayedCall) {
+      scene.time.delayedCall(0, createPhoto);
+    }
   }
 
   destroy(fromScene) {
     this._label?.destroy();
+    this._photoRing?.destroy();
     this._photo?.destroy();
     this._photoMask?.destroy();
     super.destroy(fromScene);

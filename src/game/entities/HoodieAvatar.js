@@ -6,7 +6,7 @@ export default class HoodieAvatar extends SpriteAvatarBase {
     super(scene, x, y, {
       ...options,
       frameKeys: AVATAR_FRAME_KEYS.hoodie,
-      targetHeight: 44,
+      targetHeight: 64,
       shadowColor: 0x000000,
     });
   }

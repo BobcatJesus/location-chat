@@ -3,6 +3,7 @@ import express from 'express';
 import http from 'http';
 import { Server } from 'socket.io';
 import pg from 'pg';
+import { createAuthService, registerAuthRoutes } from './auth.js';
 
 const { Pool } = pg;
 
@@ -10,6 +11,7 @@ const { Pool } = pg;
 const pool = process.env.DATABASE_URL
   ? new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } })
   : null;
+const authService = createAuthService({ pool });
 
 async function initDb() {
   if (!pool) return;
@@ -50,6 +52,7 @@ async function initDb() {
     )
   `);
   await pool.query('ALTER TABLE room_presence ADD COLUMN IF NOT EXISTS avatar_model TEXT');
+  await authService.init();
 }
 
 async function loadDecorations() {
@@ -102,6 +105,14 @@ async function touchPresencePosition({ socketId, x, y }) {
 async function removePresence(socketId) {
   if (!pool) return;
   await pool.query('DELETE FROM room_presence WHERE socket_id = $1', [socketId]);
+}
+
+async function removeDuplicatePresenceByUser({ roomId, userId, keepSocketId }) {
+  if (!pool || !roomId || !userId) return;
+  await pool.query(
+    'DELETE FROM room_presence WHERE room_id = $1 AND user_id = $2 AND socket_id <> $3',
+    [roomId, userId, keepSocketId]
+  );
 }
 
 async function getPresenceRoomState(roomId) {
@@ -163,9 +174,10 @@ const rooms = {};
 const decorations = {}; // populated on startup from Postgres
 
 // Rate limit: { userId: { count: N, windowStart: timestamp } }
-const CHANGE_LIMIT = 10;
-const CREATOR_LIMIT = 15;
-const WINDOW_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
+// Keep anti-spam protection, but allow active in-room editing sessions.
+const CHANGE_LIMIT = 250;
+const CREATOR_LIMIT = 500;
+const WINDOW_MS = 10 * 60 * 1000; // 10 minutes
 const changeRates = {};
 const creatorRates = {}; // keyed by `${userId}:${roomId}`
 const socketCreatorRooms = {}; // socketId → Set<roomId>
@@ -179,8 +191,8 @@ function checkRateLimit(userId) {
     return { allowed: true, remaining: CHANGE_LIMIT - 1 };
   }
   if (r.count >= CHANGE_LIMIT) {
-    const resetIn = Math.ceil((r.windowStart + WINDOW_MS - now) / 3600000);
-    return { allowed: false, remaining: 0, resetIn };
+    const resetInMinutes = Math.max(1, Math.ceil((r.windowStart + WINDOW_MS - now) / 60000));
+    return { allowed: false, remaining: 0, resetInMinutes };
   }
   r.count += 1;
   return { allowed: true, remaining: CHANGE_LIMIT - r.count };
@@ -195,8 +207,8 @@ function checkCreatorRate(userId, roomId) {
     return { allowed: true, remaining: CREATOR_LIMIT - 1, isCreator: true };
   }
   if (r.count >= CREATOR_LIMIT) {
-    const resetIn = Math.ceil((r.windowStart + WINDOW_MS - now) / 3600000);
-    return { allowed: false, remaining: 0, resetIn, isCreator: true };
+    const resetInMinutes = Math.max(1, Math.ceil((r.windowStart + WINDOW_MS - now) / 60000));
+    return { allowed: false, remaining: 0, resetInMinutes, isCreator: true };
   }
   r.count += 1;
   return { allowed: true, remaining: CREATOR_LIMIT - r.count, isCreator: true };
@@ -222,12 +234,22 @@ io.on('connection', (socket) => {
       rooms[roomId] = {};
     }
 
+    const userId = user?.id || socket.id;
+
+    // Ensure one active avatar per user per room (prevents self-clones on reconnect/mobile handoff).
+    Object.keys(rooms[roomId]).forEach((sid) => {
+      if (sid !== socket.id && rooms[roomId][sid]?.id === userId) {
+        delete rooms[roomId][sid];
+        io.in(roomId).emit('player_left', { socketId: sid });
+      }
+    });
+
     // Default spawn position with slight random offset to prevent stacking
     const spawnOffsetX = (Math.random() - 0.5) * 80;
     const spawnOffsetY = (Math.random() - 0.5) * 80;
     
     const playerState = {
-      id: user?.id || socket.id,
+      id: userId,
       name: user?.name || `Guest_${socket.id.slice(0, 4)}`,
       firstName: user?.firstName || '',
       photo: user?.photo || null,
@@ -248,10 +270,11 @@ io.on('connection', (socket) => {
     };
 
     rooms[roomId][socket.id] = playerState;
-    socketUserMap[socket.id] = user?.id || socket.id;
+    socketUserMap[socket.id] = userId;
+    await removeDuplicatePresenceByUser({ roomId, userId, keepSocketId: socket.id });
     await upsertPresence({
       socketId: socket.id,
-      userId: playerState.id,
+      userId,
       roomId,
       name: playerState.name,
       firstName: playerState.firstName,
@@ -311,7 +334,7 @@ io.on('connection', (socket) => {
     const isCreator = socketCreatorRooms[socket.id]?.has(roomId);
     const rate = isCreator ? checkCreatorRate(userId, roomId) : checkRateLimit(userId);
     if (!rate.allowed) {
-      socket.emit('decoration_error', { message: `Limit reached. Resets in ~${rate.resetIn}h.` });
+      socket.emit('decoration_error', { message: `Limit reached. Resets in ~${rate.resetInMinutes}m.` });
       return;
     }
     if (!decorations[roomId]) decorations[roomId] = [];
@@ -334,7 +357,7 @@ io.on('connection', (socket) => {
     const isCreator = socketCreatorRooms[socket.id]?.has(roomId);
     const rate = isCreator ? checkCreatorRate(userId, roomId) : checkRateLimit(userId);
     if (!rate.allowed) {
-      socket.emit('decoration_error', { message: `Limit reached. Resets in ~${rate.resetIn}h.` });
+      socket.emit('decoration_error', { message: `Limit reached. Resets in ~${rate.resetInMinutes}m.` });
       return;
     }
     decorations[roomId] = decorations[roomId].filter(d => d.id !== id);
@@ -393,6 +416,7 @@ app.get('/api/community-locations', async (req, res) => {
 app.get('/health', (req, res) => {
   res.json({ db: !!pool, env: !!process.env.DATABASE_URL });
 });
+registerAuthRoutes(app, authService);
 
 app.post('/api/community-locations', async (req, res) => {
   if (!pool) return res.status(503).json({ error: 'No database' });

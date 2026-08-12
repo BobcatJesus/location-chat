@@ -165,18 +165,48 @@ function pickTheme(amenityTag = '', shopTag = '', name = '') {
   return 'default';
 }
 
-export function buildAutoLayout(roomId, roomName, amenityTag, shopTag = '') {
+function normalizeFootprint(roomShape) {
+  if (!Array.isArray(roomShape) || roomShape.length < 3) return null;
+  const pts = roomShape
+    .map((p) => ({ lat: Number(p?.lat), lon: Number(p?.lon ?? p?.lng) }))
+    .filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lon));
+  if (pts.length < 3) return null;
+
+  const minLon = Math.min(...pts.map((p) => p.lon));
+  const maxLon = Math.max(...pts.map((p) => p.lon));
+  const minLat = Math.min(...pts.map((p) => p.lat));
+  const maxLat = Math.max(...pts.map((p) => p.lat));
+  const spanLon = maxLon - minLon;
+  const spanLat = maxLat - minLat;
+  if (spanLon <= 0 || spanLat <= 0) return null;
+
+  const pad = 70;
+  const drawW = FLOOR_W - pad * 2;
+  const drawH = FLOOR_H - pad * 2;
+  const scale = Math.min(drawW / spanLon, drawH / spanLat);
+  const ox = (FLOOR_W - spanLon * scale) / 2;
+  const oy = (FLOOR_H - spanLat * scale) / 2;
+
+  return pts.map((p) => ({
+    x: ox + (p.lon - minLon) * scale,
+    y: oy + (maxLat - p.lat) * scale,
+  }));
+}
+
+export function buildAutoLayout(roomId, roomName, amenityTag, shopTag = '', roomShape = null) {
   const rng = makeRng(roomId || roomName || 'default');
   const themeKey = pickTheme(amenityTag, shopTag, roomName);
   const theme = THEMES[themeKey];
+  const footprint = normalizeFootprint(roomShape);
 
-  const zones = [
-    { type: 'wall', x: 0, y: 0, w: FLOOR_W, h: FLOOR_H },
-    ...theme.zones(rng),
-  ];
+  const wallZone = footprint
+    ? { type: 'wall_polygon', points: footprint }
+    : { type: 'wall', x: 0, y: 0, w: FLOOR_W, h: FLOOR_H };
+
+  const zones = [wallZone, ...theme.zones(rng)];
 
   return {
-    id: `auto-${themeKey}`,
+    id: `auto-${themeKey}${footprint ? '-poly' : ''}`,
     name: roomName || theme.name,
     spawnF1: { x: FLOOR_W / 2, y: 750 },
     floors: [{ carpet: theme.carpet, zones }],

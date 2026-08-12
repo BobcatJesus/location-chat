@@ -2,8 +2,10 @@ import React, { useEffect, useRef, useState } from 'react';
 import Phaser from 'phaser';
 import { io } from 'socket.io-client';
 import { HAIR_STYLES as MODULAR_HAIR_STYLES, BODY_TYPES as MODULAR_BODY_TYPES } from '../game/entities/ModularAvatar';
-import { createAvatarEntity, normalizeAvatarModel, preloadAvatarTextures } from '../game/entities/avatarFactory';
+import { createAvatarEntity, preloadAvatarTextures } from '../game/entities/avatarFactory';
+import { normalizeAvatarModel } from '../game/entities/avatarModels';
 import { FURNITURE, drawFurniture } from '../game/furniture';
+import { AVATAR_SKINS, AVATAR_HAIR_STYLES, AVATAR_BODY_TYPES } from './avatarOptions';
 
 // Spawn a speech bubble above an avatar and auto-destroy it after 4s
 function spawnBubble(scene, avatarContainer, text) {
@@ -49,36 +51,14 @@ function spawnBubble(scene, avatarContainer, text) {
 const SOCKET_SERVER_URL = import.meta.env.VITE_BACKEND_URL ||
   (import.meta.env.PROD ? 'https://location-chat-production.up.railway.app' : 'http://localhost:4000');
 
-export const AVATAR_SKINS = [
-  { id: 'blue', label: 'Cool Palette', swatch: '#8fcde1' },
-  { id: 'red', label: 'Warm Palette', swatch: '#f2a7a0' },
-  { id: 'green', label: 'Earth Palette', swatch: '#b8dccb' },
-  { id: 'purple', label: 'Night Palette', swatch: '#c9b8e6' },
-  { id: 'orange', label: 'Sunset Palette', swatch: '#f3c5a9' },
-  { id: 'pink', label: 'Rose Palette', swatch: '#f6c3cf' },
-  { id: 'teal', label: 'Aqua Palette', swatch: '#9fd7d9' },
-  { id: 'slate', label: 'Urban Palette', swatch: '#93a2b8' },
-];
-
-export const AVATAR_HAIR_STYLES = Object.entries(MODULAR_HAIR_STYLES).map(([id, label]) => ({ id, label }));
-export const AVATAR_BODY_TYPES = Object.keys(MODULAR_BODY_TYPES).map((id) => {
-  const labels = {
-    compact: 'Scout Build',
-    standard: 'Core Build',
-    broad: 'Brute Build',
-  };
-  return {
-    id,
-    label: labels[id] || 'Core Build',
-  };
-});
-
 export default function SpatialCanvas({ room, profile, onLeave }) {
   const gameRef = useRef(null);
   const socketRef = useRef(null);
   const sceneRef = useRef(null);
+  const placementFlashTimerRef = useRef(null);
   const localPlayerRef = useRef(null);
   const remotePlayersRef = useRef(new Map());
+  const pendingRemotePlayersRef = useRef(new Set());
   const playersRef = useRef({});
   const inputRef = useRef(null);
   const lastMoveAtRef = useRef(0);
@@ -91,6 +71,8 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
   const [quotaRemaining, setQuotaRemaining] = useState(10);
   const [quotaIsCreator, setQuotaIsCreator] = useState(false);
   const [decorError, setDecorError] = useState(null);
+  const [placementFlash, setPlacementFlash] = useState('');
+  const [paletteCollapsed, setPaletteCollapsed] = useState(false);
 
   const setEditMode = (val) => { editModeRef.current = val; setEditModeState(val); };
   const setSelectedFurniture = (val) => { selectedFurnitureRef.current = val; setSelectedFurnitureState(val); };
@@ -101,11 +83,94 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
   const [connectionState, setConnectionState] = useState('Connecting…');
   const [nearbyCount, setNearbyCount] = useState(0);
   const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768);
+  const [isTouchDevice, setIsTouchDevice] = useState(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
+    return window.matchMedia('(pointer: coarse)').matches || (navigator.maxTouchPoints || 0) > 0;
+  });
+  const [cameraMode, setCameraMode] = useState('wide');
+  const cameraModeRef = useRef('wide');
+  const walkPolygonRef = useRef(null);
+  const worldInsetRef = useRef(20);
+  const solidObstaclesRef = useRef([]);
   const localPlayerPosRef = useRef({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
   const PROXIMITY_RADIUS = 150;
+  const PLAYER_COLLISION_RADIUS = 20;
+  const isLikelyMobileUA = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '');
+  const showFloatingZoomControl = isMobile || isTouchDevice || isLikelyMobileUA;
+  const cameraModeLabel = cameraMode === 'wide' ? 'Wide' : 'Close';
+
+  const applyCameraMode = (mode, sceneOverride = null) => {
+    const scene = sceneOverride || sceneRef.current;
+    if (!scene?.cameras?.main) return;
+
+    const camera = scene.cameras.main;
+    camera.setZoom(mode === 'wide' ? 0.82 : 1);
+
+    if (localPlayerRef.current) {
+      camera.startFollow(localPlayerRef.current, true, 0.2, 0.2);
+      return;
+    }
+
+    camera.stopFollow();
+    camera.centerOn((scene.scale?.width || 0) / 2, (scene.scale?.height || 0) / 2);
+  };
+
+  const toggleCameraMode = () => {
+    const nextMode = cameraModeRef.current === 'wide' ? 'close' : 'wide';
+    cameraModeRef.current = nextMode;
+    setCameraMode(nextMode);
+    applyCameraMode(nextMode);
+  };
+
+  const canOccupyPosition = (x, y) => {
+    const scene = sceneRef.current;
+    if (!scene) return true;
+
+    const polygon = walkPolygonRef.current;
+    if (polygon) {
+      return Phaser.Geom.Polygon.Contains(polygon, x, y);
+    }
+
+    const inset = worldInsetRef.current;
+    const minX = inset;
+    const maxX = (scene.scale?.width ?? 640) - inset;
+    const minY = inset;
+    const maxY = (scene.scale?.height ?? 480) - inset;
+    if (!(x >= minX && x <= maxX && y >= minY && y <= maxY)) return false;
+
+    // Block movement through room furniture/bookshelves using circle-vs-rect checks.
+    for (const rect of solidObstaclesRef.current) {
+      const nearestX = Math.max(rect.x, Math.min(x, rect.x + rect.w));
+      const nearestY = Math.max(rect.y, Math.min(y, rect.y + rect.h));
+      const dx = x - nearestX;
+      const dy = y - nearestY;
+      if ((dx * dx + dy * dy) < PLAYER_COLLISION_RADIUS * PLAYER_COLLISION_RADIUS) return false;
+    }
+    return true;
+  };
+
+  const getCanvasCoordinatesFromEvent = (event) => {
+    const container = document.getElementById('phaser-container');
+    if (!container) return null;
+    const rect = container.getBoundingClientRect();
+    const canvas = container.querySelector('canvas');
+    if (!canvas || rect.width === 0 || rect.height === 0) return null;
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    return {
+      x: Math.round((event.clientX - rect.left) * scaleX),
+      y: Math.round((event.clientY - rect.top) * scaleY),
+    };
+  };
 
   useEffect(() => {
-    const onResize = () => setIsMobile(window.innerWidth <= 768);
+    const onResize = () => {
+      setIsMobile(window.innerWidth <= 768);
+      const touch = typeof window.matchMedia === 'function'
+        ? window.matchMedia('(pointer: coarse)').matches || (navigator.maxTouchPoints || 0) > 0
+        : false;
+      setIsTouchDevice(touch);
+    };
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
   }, []);
@@ -119,14 +184,16 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
     const playerId = profile?.profile?.email || `guest-${socket.id}`;
 
     const syncPlayerList = (state) => {
-      const nextPlayers = Object.entries(state || {}).map(([socketId, player]) => ({ socketId, ...player }));
+      const nextPlayers = Object.entries(state || {})
+        .map(([socketId, player]) => ({ socketId, ...player }))
+        .filter((player) => player.socketId === socket.id || player.id !== playerId);
       playersRef.current = Object.fromEntries(nextPlayers.map((player) => [player.socketId, player]));
       setPlayers(nextPlayers.filter((player) => player.socketId !== socket.id));
     };
 
     const ensureRemoteSprite = (socketId, player) => {
       const scene = sceneRef.current;
-      if (!scene || !player || socketId === socket.id) return;
+      if (!scene || !player || socketId === socket.id || player.id === playerId) return;
 
       if (remotePlayersRef.current.has(socketId)) {
         const sprite = remotePlayersRef.current.get(socketId);
@@ -135,9 +202,11 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
         sprite.syncLabel();
         return;
       }
+      if (pendingRemotePlayersRef.current.has(socketId)) return;
+      pendingRemotePlayersRef.current.add(socketId);
 
       // Remote player — built from ModularAvatar class
-      const playerGroup = createAvatarEntity(scene, player.x, player.y, {
+      createAvatarEntity(scene, player.x, player.y, {
         avatarModel: normalizeAvatarModel(player.avatarModel),
         skinId: player.skinId || 'slate',
         hairStyle: player.hairStyle || 'combed',
@@ -152,18 +221,25 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
         hasScythe: Boolean(player.hasScythe),
         name: player.firstName || player.name || 'Traveler',
         isLocal: false,
+      }).then((playerGroup) => {
+        pendingRemotePlayersRef.current.delete(socketId);
+        if (!sceneRef.current || !socketRef.current || socketRef.current?.id === socketId) {
+          playerGroup.destroy();
+          return;
+        }
+        if (player.photo) playerGroup.attachPhoto(scene, player.photo);
+
+        scene.physics.add.existing(playerGroup);
+        playerGroup.body.setCircle(8);
+        playerGroup.body.setCollideWorldBounds(true);
+        playerGroup.body.setBounce(0);
+
+        remotePlayersRef.current.set(socketId, playerGroup);
       });
-      if (player.photo) playerGroup.attachPhoto(scene, player.photo);
-
-      scene.physics.add.existing(playerGroup);
-      playerGroup.body.setCircle(8);
-      playerGroup.body.setCollideWorldBounds(true);
-      playerGroup.body.setBounce(0);
-
-      remotePlayersRef.current.set(socketId, playerGroup);
     };
 
     const removeRemoteSprite = (socketId) => {
+      pendingRemotePlayersRef.current.delete(socketId);
       const sprite = remotePlayersRef.current.get(socketId);
       if (sprite) {
         sprite.destroy();
@@ -174,12 +250,13 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
     const syncRemotePlayers = (state) => {
       const currentIds = new Set(Object.keys(state || {}));
       for (const id of remotePlayersRef.current.keys()) {
-        if (!currentIds.has(id)) {
+        const statePlayer = state?.[id];
+        if (!currentIds.has(id) || (statePlayer?.id && statePlayer.id === playerId)) {
           removeRemoteSprite(id);
         }
       }
       Object.entries(state || {}).forEach(([socketId, player]) => {
-        if (socketId !== socket.id) {
+        if (socketId !== socket.id && player?.id !== playerId) {
           ensureRemoteSprite(socketId, player);
         }
       });
@@ -229,6 +306,11 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
       if (sceneRef.current && !decorationObjectsRef.current.has(item.id)) {
         const obj = drawFurniture(sceneRef.current, item);
         decorationObjectsRef.current.set(item.id, obj);
+      }
+      if (item?.placedBy === playerId) {
+        setPlacementFlash('Placed');
+        if (placementFlashTimerRef.current) clearTimeout(placementFlashTimerRef.current);
+        placementFlashTimerRef.current = setTimeout(() => setPlacementFlash(''), 850);
       }
     });
 
@@ -298,6 +380,11 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
       socketRef.current = null;
       setMessages([]);
       setPlayers([]);
+      setPlacementFlash('');
+      if (placementFlashTimerRef.current) {
+        clearTimeout(placementFlashTimerRef.current);
+        placementFlashTimerRef.current = null;
+      }
       remotePlayersRef.current.forEach((sprite) => sprite.destroy());
       remotePlayersRef.current.clear();
     };
@@ -349,6 +436,17 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
           const W = this.scale.width;
           const H = this.scale.height;
           const T = 32; // tile size
+          solidObstaclesRef.current = [];
+          applyCameraMode(cameraModeRef.current, this);
+
+          const addSolidRect = (cx, cy, w, h, padding = 2) => {
+            solidObstaclesRef.current.push({
+              x: cx - w / 2 - padding,
+              y: cy - h / 2 - padding,
+              w: w + padding * 2,
+              h: h + padding * 2,
+            });
+          };
 
           // --- Environment themes per room ---
           const themes = {
@@ -405,6 +503,7 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
             });
             // Bookshelf along right wall
             this.add.rectangle(W-16, H/2, 24, H*0.7, 0x1a0022); this.add.rectangle(W-16, H/2, 20, H*0.7-4, 0x22002e);
+            addSolidRect(W - 16, H / 2, 26, H * 0.7, 3);
             [0x8B0000,0x00448B,0x2d6e1a,0x4B0082].forEach((c,i) => this.add.rectangle(W-16, H/2-60+i*30, 16, 10, c));
             // Glow
             this.add.circle(W/2, H/2, 80, 0x9333ea).setAlpha(0.05);
@@ -413,6 +512,7 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
             // Counter along top wall
             this.add.rectangle(W / 2, 40, W - 60, 28, 0x3d1a00);
             this.add.rectangle(W / 2, 40, W - 64, 24, 0x5c2800);
+            addSolidRect(W / 2, 40, W - 64, 24, 4);
             // Espresso machines on counter
             [[120, 35], [200, 35], [280, 35]].forEach(([x, y]) => {
               this.add.rectangle(x, y, 18, 14, 0x222222);
@@ -426,6 +526,7 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
             [[140, 200], [280, 200], [200, 320], [360, 280]].forEach(([x, y]) => {
               this.add.circle(x, y, 22, 0x3d2200);
               this.add.circle(x, y, 18, 0x5c3300);
+              addSolidRect(x, y, 38, 38, 2);
               // Chairs
               [[0, -30], [0, 30], [-30, 0], [30, 0]].forEach(([dx, dy]) => {
                 this.add.circle(x + dx, y + dy, 10, 0x2a1a00);
@@ -547,10 +648,12 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
             for (let i=0;i<4;i++) {
               const sy=60+i*90;
               this.add.rectangle(36,sy,32,70,0x3d1a00); this.add.rectangle(36,sy,28,66,0x5c2800);
+              addSolidRect(36, sy, 32, 70, 3);
               [0x8B0000,0x00448B,0x006400,0x4B0082,0x8B4513].forEach((bc,b) => { this.add.rectangle(22+b*4,sy-20+b*8,3,18+b*3,bc); });
             }
             [[W/2-60,H/2],[W/2+60,H/2],[W/2,H/2+80]].forEach(([x,y]) => {
               this.add.rectangle(x,y,50,24,0x3d2200); this.add.rectangle(x,y,46,20,0x5c3300); this.add.circle(x,y-4,5,0xffee88).setAlpha(0.6);
+              addSolidRect(x, y, 50, 24, 3);
             });
 
           } else if (roomType === 'gym' || roomType === 'fitness_centre') {
@@ -562,9 +665,11 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
 
           } else if (roomType === 'supermarket' || roomType === 'shop') {
             this.add.rectangle(W/2,35,W-40,24,0x14141e); this.add.rectangle(W/2,35,W-44,20,0x1e1e2e);
+            addSolidRect(W / 2, 35, W - 44, 20, 4);
             for (let i=0;i<3;i++) {
               const ax=100+i*110;
               this.add.rectangle(ax,H/2,28,H*0.6,0x14141e); this.add.rectangle(ax,H/2,24,H*0.6-4,0x1e1e2e);
+              addSolidRect(ax, H / 2, 28, H * 0.6, 3);
               [0xff4444,0x44ff44,0x4444ff,0xffff44,0xff44ff].forEach((sc,s) => this.add.rectangle(ax,H/2-80+s*36,20,6,sc).setAlpha(0.6));
             }
 
@@ -591,6 +696,8 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
             const toX = lng => pad + ((lng - minLng) / (maxLng - minLng || 1)) * (W - pad * 2);
             const toY = lat => pad + (1 - (lat - minLat) / (maxLat - minLat || 1)) * (H - pad * 2);
             const pts = footprint.map(p => ({ x: toX(p.lng), y: toY(p.lat) }));
+            walkPolygonRef.current = new Phaser.Geom.Polygon(pts);
+            worldInsetRef.current = PLAYER_COLLISION_RADIUS;
 
             // Filled interior
             const fill = this.add.graphics();
@@ -620,6 +727,8 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
           } else {
             // Fallback rectangular walls
             const wt = 8;
+            walkPolygonRef.current = null;
+            worldInsetRef.current = Math.max(PLAYER_COLLISION_RADIUS, wt + 12);
             this.add.rectangle(W / 2, wt / 2, W, wt, th.wall);
             this.add.rectangle(W / 2, H - wt / 2, W, wt, th.wall);
             this.add.rectangle(wt / 2, H / 2, wt, H, th.wall);
@@ -642,7 +751,7 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
           }).setOrigin(0.5, 1);
 
           // Local player — built from ModularAvatar class
-          const playerGroup = createAvatarEntity(this, W / 2, H / 2, {
+          createAvatarEntity(this, W / 2, H / 2, {
             avatarModel: normalizeAvatarModel(profile?.profile?.avatarModel),
             skinId: profile?.profile?.skinId || 'slate',
             hairStyle: profile?.profile?.hairStyle || 'combed',
@@ -657,17 +766,23 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
             hasScythe: Boolean(profile?.profile?.hasScythe),
             name: profile?.profile?.firstName || (profile?.profile?.characterName || 'YOU').split(' ')[0],
             isLocal: true,
+          }).then((playerGroup) => {
+            if (!gameRef.current) {
+              playerGroup.destroy();
+              return;
+            }
+            if (profile?.profile?.photo) playerGroup.attachPhoto(this, profile.profile.photo);
+
+            localPlayerRef.current = playerGroup;
+
+            this.physics.add.existing(playerGroup);
+            playerGroup.body.setCircle(8);
+            playerGroup.body.setCollideWorldBounds(true);
+            playerGroup.body.setBounce(0);
+
+            this.input.keyboard.createCursorKeys();
+            applyCameraMode(cameraModeRef.current, this);
           });
-          if (profile?.profile?.photo) playerGroup.attachPhoto(this, profile.profile.photo);
-
-          localPlayerRef.current = playerGroup;
-
-          this.physics.add.existing(playerGroup);
-          playerGroup.body.setCircle(8);
-          playerGroup.body.setCollideWorldBounds(true);
-          playerGroup.body.setBounce(0);
-
-          this.input.keyboard.createCursorKeys();
         },
         update() {
           const speed = 160 / 60;
@@ -715,12 +830,24 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
             }
             
             if (canMove) {
-              localPlayerRef.current.x = nextX;
-              localPlayerRef.current.y = nextY;
+              const canMoveBoth = canOccupyPosition(nextX, nextY);
+              const canMoveX = canOccupyPosition(nextX, localPlayerRef.current.y);
+              const canMoveY = canOccupyPosition(localPlayerRef.current.x, nextY);
 
-              // Clamp to canvas bounds (inside border wall)
-              localPlayerRef.current.x = Math.max(16, Math.min((sceneRef.current?.scale?.width ?? 640) - 16, localPlayerRef.current.x));
-              localPlayerRef.current.y = Math.max(16, Math.min((sceneRef.current?.scale?.height ?? 480) - 16, localPlayerRef.current.y));
+              if (canMoveBoth) {
+                localPlayerRef.current.x = nextX;
+                localPlayerRef.current.y = nextY;
+              } else if (canMoveX) {
+                localPlayerRef.current.x = nextX;
+              } else if (canMoveY) {
+                localPlayerRef.current.y = nextY;
+              }
+
+              if (!walkPolygonRef.current) {
+                const inset = worldInsetRef.current;
+                localPlayerRef.current.x = Math.max(inset, Math.min((sceneRef.current?.scale?.width ?? 640) - inset, localPlayerRef.current.x));
+                localPlayerRef.current.y = Math.max(inset, Math.min((sceneRef.current?.scale?.height ?? 480) - inset, localPlayerRef.current.y));
+              }
 
               // Keep "YOU" label above the local avatar
               const youLabel = localPlayerRef.current.getData('youLabel');
@@ -794,7 +921,10 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
       game.destroy(true);
       gameRef.current = null;
       sceneRef.current = null;
+      walkPolygonRef.current = null;
+      solidObstaclesRef.current = [];
       localPlayerRef.current = null;
+      pendingRemotePlayersRef.current.clear();
     };
   }, [room?.id, room?.name]);
 
@@ -834,11 +964,18 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
       ></div>
 
       {/* Top-left HUD: room name + status */}
-      <div style={{ position: 'absolute', top: 10, left: 10, display: 'flex', gap: '8px', alignItems: 'center', pointerEvents: 'none' }}>
+      <div style={{ position: 'absolute', top: 10, left: 10, display: 'flex', gap: '8px', alignItems: 'center', pointerEvents: 'none', opacity: editMode ? 0.62 : 1 }}>
         <div style={{ background: '#00000099', color: '#e2b46c', fontFamily: 'Courier New', fontSize: '12px', padding: '4px 10px', border: '1px solid #e2b46c' }}>
           {connectionState} · {players.length + 1} in room
         </div>
       </div>
+
+      {/* Placement success flash */}
+      {placementFlash && (
+        <div style={{ position: 'absolute', top: 48, left: '50%', transform: 'translateX(-50%)', zIndex: 60, background: '#052e16ee', border: '1px solid #22c55e', color: '#bbf7d0', padding: '6px 12px', fontFamily: 'Courier New', fontSize: 11, borderRadius: 4 }}>
+          {placementFlash}
+        </div>
+      )}
 
       {/* Decoration error toast */}
       {decorError && (
@@ -849,6 +986,23 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
 
       {/* Top-right: exit + edit toggle */}
       <div style={{ position: 'absolute', top: 10, right: 10, zIndex: 50, display: 'flex', gap: 6 }}>
+        <button
+          onClick={toggleCameraMode}
+          style={{
+            background: cameraMode === 'wide' ? '#86efac' : '#fbbf24',
+            border: '2px solid #1f2937',
+            color: '#0f172a',
+            padding: '5px 10px',
+            fontWeight: 'bold',
+            cursor: 'pointer',
+            fontFamily: 'Courier New',
+            fontSize: 11,
+            whiteSpace: 'nowrap',
+          }}
+          title="Toggle camera zoom"
+        >
+          View: {cameraModeLabel}
+        </button>
         <button onClick={() => setEditMode(!editModeRef.current)}
           style={{ background: editMode ? '#fbbf24' : 'rgba(15,23,42,0.8)', border: `2px solid ${editMode ? '#fbbf24' : '#475569'}`, color: editMode ? '#000' : '#94a3b8', padding: '5px 10px', fontWeight: 'bold', cursor: 'pointer', fontFamily: 'Courier New', fontSize: 11, whiteSpace: 'nowrap' }}>
           🪑 {editMode ? 'Done' : 'Edit'}
@@ -861,18 +1015,37 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
 
       {/* Furniture palette — visible in edit mode */}
       {editMode && (
-        <div style={{ position: 'absolute', top: 50, right: 10, zIndex: 50, background: 'rgba(15,23,42,0.95)', border: '2px solid #334155', borderRadius: 8, padding: 8, display: 'flex', flexDirection: 'column', gap: 4, maxHeight: '70vh', overflowY: 'auto' }}>
-          <div style={{ color: '#fbbf24', fontFamily: 'Courier New', fontSize: 10, textTransform: 'uppercase', letterSpacing: 2, marginBottom: 4 }}>Place item</div>
-          {FURNITURE.map(f => (
-            <button key={f.type} onClick={() => setSelectedFurniture(f.type)}
-              style={{ background: selectedFurnitureRef.current === f.type ? '#1e3a5f' : 'transparent', border: `1px solid ${selectedFurnitureRef.current === f.type ? '#3b82f6' : '#334155'}`, color: '#e2e8f0', padding: '5px 10px', cursor: 'pointer', fontFamily: 'Courier New', fontSize: 11, textAlign: 'left', borderRadius: 4, whiteSpace: 'nowrap' }}>
-              {f.emoji} {f.label}
+        <div style={{ position: 'absolute', top: 50, right: 10, zIndex: 50, background: 'rgba(15,23,42,0.95)', border: '2px solid #334155', borderRadius: 8, padding: 8, display: 'flex', flexDirection: 'column', gap: 4, maxHeight: '70vh', overflowY: 'auto', width: paletteCollapsed ? 190 : 235 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+            <div style={{ color: '#fbbf24', fontFamily: 'Courier New', fontSize: 10, textTransform: 'uppercase', letterSpacing: 2 }}>Place item</div>
+            <button
+              onClick={() => setPaletteCollapsed((v) => !v)}
+              style={{ background: '#0b1222', border: '1px solid #334155', color: '#94a3b8', padding: '2px 6px', cursor: 'pointer', fontFamily: 'Courier New', fontSize: 10, borderRadius: 4 }}
+              title={paletteCollapsed ? 'Expand palette' : 'Collapse palette'}
+            >
+              {paletteCollapsed ? '+' : '-'}
             </button>
-          ))}
+          </div>
+
+          {paletteCollapsed ? (
+            <div style={{ color: '#cbd5e1', fontFamily: 'Courier New', fontSize: 11, border: '1px solid #334155', borderRadius: 4, padding: '6px 8px', background: '#0b1222' }}>
+              {FURNITURE.find((f) => f.type === selectedFurnitureRef.current)?.emoji} {FURNITURE.find((f) => f.type === selectedFurnitureRef.current)?.label}
+            </div>
+          ) : (
+            <>
+              {FURNITURE.map(f => (
+                <button key={f.type} onClick={() => setSelectedFurniture(f.type)}
+                  style={{ background: selectedFurnitureRef.current === f.type ? '#1e3a5f' : 'transparent', border: `1px solid ${selectedFurnitureRef.current === f.type ? '#3b82f6' : '#334155'}`, color: '#e2e8f0', padding: '5px 10px', cursor: 'pointer', fontFamily: 'Courier New', fontSize: 11, textAlign: 'left', borderRadius: 4, whiteSpace: 'nowrap' }}>
+                  {f.emoji} {f.label}
+                </button>
+              ))}
+            </>
+          )}
+
           <div style={{ marginTop: 4, color: quotaRemaining > 3 ? '#475569' : '#f97316', fontFamily: 'Courier New', fontSize: 9, borderTop: '1px solid #1e293b', paddingTop: 4 }}>
-            Click canvas to place<br/>Right-click to remove yours<br/>
+            Click canvas to place • Right-click to remove yours<br/>
             <span style={{ color: quotaRemaining > 3 ? '#4ade80' : '#ef4444' }}>{quotaRemaining} changes left</span>
-            <span style={{ color: '#475569' }}> ({quotaIsCreator ? '🏠 15 creator slots' : '10 / 3 days'})</span>
+            <span style={{ color: '#475569' }}> ({quotaIsCreator ? 'creator quota' : 'standard quota'})</span>
           </div>
         </div>
       )}
@@ -880,34 +1053,25 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
       {/* Edit mode click-capture overlay — sits above canvas, below palette/buttons */}
       {editMode && (
         <div
-          style={{ position: 'absolute', inset: 0, zIndex: 10, cursor: 'crosshair' }}
-          onClick={(e) => {
-            const container = document.getElementById('phaser-container');
-            if (!container) return;
-            const rect = container.getBoundingClientRect();
-            const canvas = container.querySelector('canvas');
-            const scaleX = canvas ? canvas.width / rect.width : 1;
-            const scaleY = canvas ? canvas.height / rect.height : 1;
-            const x = Math.round((e.clientX - rect.left) * scaleX);
-            const y = Math.round((e.clientY - rect.top) * scaleY);
+          style={{ position: 'absolute', inset: 0, zIndex: 10, cursor: 'crosshair', touchAction: 'none' }}
+          onPointerDown={(e) => {
+            if (e.button !== 0) return;
+            e.preventDefault();
+            e.stopPropagation();
+            const coords = getCanvasCoordinatesFromEvent(e);
+            if (!coords) return;
             socketRef.current?.emit('place_decoration', {
               roomId: room?.id || 'default-room',
-              item: { type: selectedFurnitureRef.current, x, y },
+              item: { type: selectedFurnitureRef.current, x: coords.x, y: coords.y },
             });
           }}
           onContextMenu={(e) => {
             e.preventDefault();
-            const container = document.getElementById('phaser-container');
-            if (!container) return;
-            const rect = container.getBoundingClientRect();
-            const canvas = container.querySelector('canvas');
-            const scaleX = canvas ? canvas.width / rect.width : 1;
-            const scaleY = canvas ? canvas.height / rect.height : 1;
-            const cx = (e.clientX - rect.left) * scaleX;
-            const cy = (e.clientY - rect.top) * scaleY;
+            const coords = getCanvasCoordinatesFromEvent(e);
+            if (!coords) return;
             let closestId = null, minDist = 40;
             decorationObjectsRef.current.forEach((obj, id) => {
-              const d = Math.hypot(obj.x - cx, obj.y - cy);
+              const d = Math.hypot(obj.x - coords.x, obj.y - coords.y);
               if (d < minDist) { minDist = d; closestId = id; }
             });
             if (closestId) socketRef.current?.emit('remove_decoration', { roomId: room?.id || 'default-room', id: closestId });
@@ -943,6 +1107,33 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
           </button>
         ))}
       </div>
+
+      {showFloatingZoomControl && (
+        <button
+          onClick={toggleCameraMode}
+          style={{
+            position: 'absolute',
+            right: 'calc(8px + env(safe-area-inset-right, 0px))',
+            bottom: 'calc(56px + env(safe-area-inset-bottom, 0px))',
+            zIndex: 2004,
+            background: cameraMode === 'wide' ? '#86efac' : '#fbbf24',
+            color: '#0f172a',
+            border: '2px solid #1f2937',
+            borderRadius: 999,
+            padding: '10px 12px',
+            minWidth: 88,
+            minHeight: 42,
+            fontWeight: 'bold',
+            fontFamily: 'Courier New',
+            fontSize: 12,
+            boxShadow: '0 6px 18px rgba(0,0,0,0.35)',
+            cursor: 'pointer',
+          }}
+          title="Toggle camera zoom"
+        >
+          Zoom: {cameraModeLabel}
+        </button>
+      )}
 
       {/* Bottom-right overlay: nearby travelers + chat */}
       <div

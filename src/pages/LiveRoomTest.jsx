@@ -100,3 +100,35 @@ const styles = {
   input: { flex: 1, padding: '10px', borderRadius: '4px', border: '1px solid #444', backgroundColor: '#222', color: '#fff', fontFamily: 'monospace' },
   sendBtn: { padding: '10px 16px', backgroundColor: '#28a745', color: '#fff', border: 'none', borderRadius: '4px', cursor: 'pointer', fontFamily: 'monospace', fontWeight: 'bold' }
 };
+// ...existing code...
+useEffect(() => {
+  const handleKeyDown = (e) => {
+    const tag = e.target?.tagName;
+
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target?.isContentEditable) {
+      return;
+    }
+
+    if (e.key === 'ArrowUp' || e.key === 'w') handleMoveDirection('UP');
+    if (e.key === 'ArrowDown' || e.key === 's') handleMoveDirection('DOWN');
+    if (e.key === 'ArrowLeft' || e.key === 'a') handleMoveDirection('LEFT');
+    if (e.key === 'ArrowRight' || e.key === 'd') handleMoveDirection('RIGHT');
+  };
+
+  window.addEventListener('keydown', handleKeyDown);
+  return () => window.removeEventListener('keydown', handleKeyDown);
+}, [localPos, sendMove]);
+// ...existing code...
+<form onSubmit={handleSendChat} style={styles.chatForm}>
+  <input
+    type="text"
+    placeholder="Type a speech bubble..."
+    value={chatInput}
+    onChange={(e) => setChatInput(e.target.value)}
+    onKeyDown={(e) => e.stopPropagation()}
+    onKeyUp={(e) => e.stopPropagation()}
+    style={styles.input}
+  />
+  <button type="submit" style={styles.sendBtn}>Chat 💬</button>
+</form>
+// ...existing code...

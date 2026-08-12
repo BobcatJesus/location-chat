@@ -1,7 +1,8 @@
 import Phaser from 'phaser';
 import { latLngToWorld, tileUrl, TILE_SIZE } from './tileUtils.js';
 import { getDistanceMeters } from '../geo.js';
-import { createAvatarEntity, normalizeAvatarModel, preloadAvatarTextures } from '../game/entities/avatarFactory.js';
+import { createAvatarEntity, preloadAvatarTextures } from '../game/entities/avatarFactory.js';
+import { normalizeAvatarModel } from '../game/entities/avatarModels.js';
 
 const GRID = 5;          // 5×5 tile pool — 25 requests vs 49 for 7×7
 const HALF = Math.floor(GRID / 2);
@@ -15,6 +16,7 @@ const C_SAGE     = 0xd1fae5;
 const C_LAVENDER = 0xede9fe;
 const C_OUTLINE  = 0x2b2b33;
 function normalizeAvatarState(source = {}) {
+  const resolvedPhoto = source.photo || source.photoDataUrl || source.avatarPhoto || null;
   return {
     avatarModel: normalizeAvatarModel(source.avatarModel),
     skinId: source.skinId || 'slate',
@@ -28,7 +30,7 @@ function normalizeAvatarState(source = {}) {
     footwear: source.footwear || 'sneakers',
     glasses: Boolean(source.glasses),
     hasScythe: Boolean(source.hasScythe),
-    photo: source.photo || null,
+    photo: resolvedPhoto,
   };
 }
 
@@ -99,13 +101,22 @@ export class WorldMapScene extends Phaser.Scene {
     // ── Player ─────────────────────────────────────────────────────────────────
     const displayName = this.profile?.profile?.characterName || this.profile?.mode || 'Traveler';
     const firstName = this.profile?.profile?.firstName || displayName.split(' ')[0] || 'You';
-    this.playerAvatar = createAvatarEntity(this, 0, 0, {
+    this.playerAvatar = null;
+    createAvatarEntity(this, 0, 0, {
       ...this.avatarState,
       name: firstName,
       isLocal: true,
+    }).then((playerAvatar) => {
+      this.playerAvatar = playerAvatar;
+      if (this.avatarState.photo) this.playerAvatar.attachPhoto(this, this.avatarState.photo);
+      this.playerAvatar.setDepth(1000);
+      this.cameras.main.startFollow(this.playerAvatar, true, 0.08, 0.08);
+      if (this._pendingGPS) {
+        const { lat, lng } = this._pendingGPS;
+        this._pendingGPS = null;
+        this.updateGPS(lat, lng);
+      }
     });
-    if (this.avatarState.photo) this.playerAvatar.attachPhoto(this, this.avatarState.photo);
-    this.playerAvatar.setDepth(1000);
 
     this.dir = 'front'; this.stepFrame = 0; this.stepAccum = 0;
     this.facingLeft = false;
@@ -121,8 +132,6 @@ export class WorldMapScene extends Phaser.Scene {
     }).setDepth(9999999).setScrollFactor(0).setOrigin(0, 1);
 
     // ── Camera ─────────────────────────────────────────────────────────────────
-    this.cameras.main.startFollow(this.playerAvatar, true, 0.08, 0.08);
-
     this._lastCenterTX = null;
     this._lastCenterTY = null;
     this._refreshTiles(0, 0);
@@ -147,6 +156,10 @@ export class WorldMapScene extends Phaser.Scene {
   // ── Public API (called from React) ──────────────────────────────────────────
 
   updateGPS(lat, lng) {
+    if (!this.playerAvatar) {
+      this._pendingGPS = { lat, lng };
+      return;
+    }
     const absNew = latLngToWorld(lat, lng);
     const nx = absNew.x - this.originWorld.x;
     const ny = absNew.y - this.originWorld.y;
@@ -306,7 +319,7 @@ export class WorldMapScene extends Phaser.Scene {
       `way["amenity"~"cafe|restaurant|fast_food|bar|pub|library|theatre|cinema|school|gym|marketplace"]${ar600};`,
       `way["shop"~"supermarket|convenience|bakery|deli|books|music|art|clothes|wine"]${ar600};`,
       `way["leisure"~"park|garden|playground|sports_centre"]${ar600};`,
-      `);out center;`,
+      `);out center geom;`,
     ].join('');
 
     let nodeElements = [];
@@ -347,6 +360,7 @@ export class WorldMapScene extends Phaser.Scene {
 
   _drawBuildings(elements) {
     this.buildingGfx.clear();
+    this.buildingFootprints = [];
     elements.forEach(el => {
       const geom = el.geometry;
       if (!geom || geom.length < 3) return;
@@ -363,6 +377,14 @@ export class WorldMapScene extends Phaser.Scene {
       this.buildingGfx.closePath();
       this.buildingGfx.fillPath();
       this.buildingGfx.strokePath();
+
+      const centerLat = geom.reduce((acc, p) => acc + p.lat, 0) / geom.length;
+      const centerLon = geom.reduce((acc, p) => acc + p.lon, 0) / geom.length;
+      this.buildingFootprints.push({
+        centerLat,
+        centerLon,
+        geometry: geom.map((p) => ({ lat: p.lat, lon: p.lon })),
+      });
     });
   }
 
@@ -382,12 +404,30 @@ export class WorldMapScene extends Phaser.Scene {
       const tag = el.tags?.amenity || el.tags?.shop || el.tags?.leisure || el.tags?.tourism;
       const name = el.tags?.name || tag || 'Place';
       const { emoji, color } = POI_STYLE[tag] || { emoji: '📍', color: '#94a3b8' };
-      this._addPin(elLat, elLon, name, emoji, color, `osm-${el.id}`, true);
+      const footprint = Array.isArray(el.geometry) && el.geometry.length >= 3
+        ? el.geometry.map((p) => ({ lat: p.lat, lon: p.lon }))
+        : null;
+      this._addPin(elLat, elLon, name, emoji, color, `osm-${el.id}`, true, {
+        amenity: el.tags?.amenity || '',
+        shop: el.tags?.shop || '',
+        footprint,
+      });
     });
     this._updatePOIStates(this.currentLat, this.currentLng);
   }
 
-  _addPin(lat, lng, name, emoji, colorHex, roomId, isOSM) {
+  _nearestBuildingFootprint(lat, lng) {
+    if (!Array.isArray(this.buildingFootprints) || this.buildingFootprints.length === 0) return null;
+    let best = null;
+    let bestDist = Infinity;
+    this.buildingFootprints.forEach((b) => {
+      const d = getDistanceMeters(lat, lng, b.centerLat, b.centerLon);
+      if (d < bestDist) { bestDist = d; best = b; }
+    });
+    return bestDist <= 120 ? best?.geometry || null : null;
+  }
+
+  _addPin(lat, lng, name, emoji, colorHex, roomId, isOSM, meta = {}) {
     const pos = this._toScene(lat, lng);
     const colNum = parseInt(colorHex.replace('#', ''), 16);
 
@@ -404,11 +444,20 @@ export class WorldMapScene extends Phaser.Scene {
     container.setDepth(500).setSize(40, 40).setInteractive();
     container.on('pointerdown', () => {
       if (getDistanceMeters(this.currentLat, this.currentLng, lat, lng) <= ENTRY_RADIUS) {
-        this.onEnterRoom(roomId, { lat, lng, name });
+        const resolvedFootprint = meta.footprint || this._nearestBuildingFootprint(lat, lng);
+        this.onEnterRoom(roomId, {
+          lat,
+          lng,
+          name,
+          amenity: meta.amenity || '',
+          shop: meta.shop || '',
+          radius: ENTRY_RADIUS,
+          footprint: resolvedFootprint,
+        });
       }
     });
 
-    this.poiList.push({ container, circle, label, lat, lng, roomId, isOSM, colNum });
+    this.poiList.push({ container, circle, label, lat, lng, roomId, isOSM, colNum, meta });
   }
 
   _updatePOIStates(playerLat, playerLng) {
@@ -428,6 +477,7 @@ export class WorldMapScene extends Phaser.Scene {
   // ── Per-frame ────────────────────────────────────────────────────────────────
 
   update(_, delta) {
+    if (!this.playerAvatar) return;
     this.playerAvatar.setMovementState({
       moving: this.isMoving,
       direction: this.dir,

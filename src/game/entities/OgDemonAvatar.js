@@ -6,7 +6,7 @@ export default class OgDemonAvatar extends SpriteAvatarBase {
     super(scene, x, y, {
       ...options,
       frameKeys: AVATAR_FRAME_KEYS.og,
-      targetHeight: 44,
+      targetHeight: 64,
       shadowColor: 0x000000,
     });
   }

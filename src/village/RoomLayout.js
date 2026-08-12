@@ -11,6 +11,19 @@ const SIGN_STYLE = {
   color: '#faf0d7', backgroundColor: '#2b2b33',
   padding: { x: 4, y: 3 },
 };
+const OUTSIDE_ROOM_COLOR = 0x0f172a;
+
+const SOLID_ZONE_TYPES = new Set([
+  'shelf',
+  'wall_shelf',
+  'counter',
+  'magazine_rack',
+  'book_table',
+  'cafe_counter',
+  'toy_display',
+  'cd_rack',
+  'bathroom',
+]);
 
 export class RoomLayout {
   constructor(scene, layout) {
@@ -22,6 +35,12 @@ export class RoomLayout {
     this.escalatorZones = []; // { x, y, w, h, toFloor, type }
     this.interactZones  = []; // { x, y, w, h, label, type }
     this.currentZones   = []; // All zones drawn on current floor (for editor)
+    this.roomBoundary = { type: 'rect', x: 0, y: 0, w: 1600, h: 900 };
+    this._boundaryCentroid = { x: 800, y: 450 };
+    this.staticSolidZones = []; // fixed furniture/fixtures from floor layout
+    this.dynamicSolidZones = []; // player-placed props
+    this.showCollisionDebug = false;
+    this.debugGfx = scene.add.graphics().setDepth(DEPTH.UI - 2).setVisible(true);
   }
 
   drawFloor(floorIndex) {
@@ -35,6 +54,10 @@ export class RoomLayout {
     this.escalatorZones = [];
     this.interactZones  = [];
     this.currentZones   = [];
+    this.staticSolidZones = [];
+    this.dynamicSolidZones = [];
+
+    this._computeBoundary(floor);
 
     const wall = floor.zones.find(z => z.type === 'wall');
     const W = wall?.w || 1600, H = wall?.h || 900;
@@ -42,15 +65,18 @@ export class RoomLayout {
     // Carpet fill
     this.gfx.fillStyle(floor.carpet, 1);
     this.gfx.fillRect(0, 0, W, H);
+    this._drawOutsideRoomMask(W, H, floor.carpet);
 
     // Draw all zones
     floor.zones.forEach(z => {
       this._draw(z);
       this.currentZones.push(z);
+      if (this._isZoneSolid(z)) this._registerStaticSolid(z);
     });
 
     // Draw custom zones from editor (if any)
     const customZones = this.scene.roomEditor?.customZones || [];
+    this.setDynamicSolids(customZones);
     customZones.forEach(z => {
       this._drawCustomZone(z);
       this.currentZones.push(z);
@@ -65,6 +91,321 @@ export class RoomLayout {
       ).setDepth(DEPTH.UI).setScrollFactor(0);
       this.labels.push(badge);
     }
+
+    this._redrawDebugOverlay();
+  }
+
+  _drawOutsideRoomMask(worldW, worldH, carpetColor) {
+    const g = this.gfx;
+    const boundary = this.roomBoundary;
+
+    if (boundary.type === 'rect') {
+      const x = boundary.x;
+      const y = boundary.y;
+      const w = boundary.w;
+      const h = boundary.h;
+
+      g.fillStyle(OUTSIDE_ROOM_COLOR, 0.65);
+      if (y > 0) g.fillRect(0, 0, worldW, y);
+      if (x > 0) g.fillRect(0, y, x, h);
+      if (x + w < worldW) g.fillRect(x + w, y, worldW - (x + w), h);
+      if (y + h < worldH) g.fillRect(0, y + h, worldW, worldH - (y + h));
+      return;
+    }
+
+    const points = boundary.points || [];
+    if (points.length < 3) return;
+
+    // Dim whole canvas first, then repaint room interior polygon with the carpet color.
+    g.fillStyle(OUTSIDE_ROOM_COLOR, 0.65);
+    g.fillRect(0, 0, worldW, worldH);
+
+    g.fillStyle(carpetColor, 1);
+    g.beginPath();
+    g.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) g.lineTo(points[i].x, points[i].y);
+    g.closePath();
+    g.fillPath();
+  }
+
+
+  _isZoneSolid(z) {
+    if (!z || z.type === 'wall' || z.type === 'wall_polygon') return false;
+    if (z.solid === false) return false;
+    return Boolean(z.solid) || SOLID_ZONE_TYPES.has(z.type);
+  }
+
+  _computeBoundary(floor) {
+    const polygonWall = floor?.zones?.find((z) => z.type === 'wall_polygon' && Array.isArray(z.points) && z.points.length >= 3);
+    if (polygonWall) {
+      const points = polygonWall.points.map((p) => ({ x: Number(p.x), y: Number(p.y) }))
+        .filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
+      if (points.length >= 3) {
+        this.roomBoundary = { type: 'polygon', points };
+        const centroid = points.reduce((acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y }), { x: 0, y: 0 });
+        this._boundaryCentroid = { x: centroid.x / points.length, y: centroid.y / points.length };
+        return;
+      }
+    }
+
+    const wall = floor?.zones?.find((z) => z.type === 'wall');
+    const w = wall?.w || 1600;
+    const h = wall?.h || 900;
+    this.roomBoundary = { type: 'rect', x: 0, y: 0, w, h };
+    this._boundaryCentroid = { x: w / 2, y: h / 2 };
+  }
+
+  _distancePointToSegment(px, py, ax, ay, bx, by) {
+    const abx = bx - ax;
+    const aby = by - ay;
+    const apx = px - ax;
+    const apy = py - ay;
+    const abLenSq = abx * abx + aby * aby;
+    if (abLenSq === 0) return Math.hypot(px - ax, py - ay);
+    const t = Math.max(0, Math.min(1, (apx * abx + apy * aby) / abLenSq));
+    const cx = ax + abx * t;
+    const cy = ay + aby * t;
+    return Math.hypot(px - cx, py - cy);
+  }
+
+  _isPointInPolygon(x, y, points) {
+    let inside = false;
+    for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+      const xi = points[i].x;
+      const yi = points[i].y;
+      const xj = points[j].x;
+      const yj = points[j].y;
+
+      const intersects = ((yi > y) !== (yj > y)) &&
+        (x < ((xj - xi) * (y - yi)) / ((yj - yi) || 1e-9) + xi);
+      if (intersects) inside = !inside;
+    }
+    return inside;
+  }
+
+  isPointInsideRoom(x, y, margin = 0) {
+    const boundary = this.roomBoundary;
+    if (boundary.type === 'rect') {
+      return x >= boundary.x + margin &&
+        x <= boundary.x + boundary.w - margin &&
+        y >= boundary.y + margin &&
+        y <= boundary.y + boundary.h - margin;
+    }
+
+    const points = boundary.points;
+    if (!this._isPointInPolygon(x, y, points)) return false;
+    if (margin <= 0) return true;
+
+    let minDist = Infinity;
+    for (let i = 0; i < points.length; i++) {
+      const a = points[i];
+      const b = points[(i + 1) % points.length];
+      minDist = Math.min(minDist, this._distancePointToSegment(x, y, a.x, a.y, b.x, b.y));
+    }
+    return minDist >= margin;
+  }
+
+  clampPointToRoom(x, y, margin = 0) {
+    if (this.isPointInsideRoom(x, y, margin)) return { x, y };
+
+    const boundary = this.roomBoundary;
+    if (boundary.type === 'rect') {
+      return {
+        x: Math.max(boundary.x + margin, Math.min(boundary.x + boundary.w - margin, x)),
+        y: Math.max(boundary.y + margin, Math.min(boundary.y + boundary.h - margin, y)),
+      };
+    }
+
+    const points = boundary.points;
+    let best = null;
+    let bestDist = Infinity;
+    for (let i = 0; i < points.length; i++) {
+      const a = points[i];
+      const b = points[(i + 1) % points.length];
+      const abx = b.x - a.x;
+      const aby = b.y - a.y;
+      const abLenSq = abx * abx + aby * aby;
+      if (abLenSq === 0) continue;
+      const t = Math.max(0, Math.min(1, ((x - a.x) * abx + (y - a.y) * aby) / abLenSq));
+      const px = a.x + abx * t;
+      const py = a.y + aby * t;
+      const d = Math.hypot(x - px, y - py);
+      if (d < bestDist) {
+        bestDist = d;
+        best = { x: px, y: py };
+      }
+    }
+
+    if (!best) return { ...this._boundaryCentroid };
+
+    const cx = this._boundaryCentroid.x - best.x;
+    const cy = this._boundaryCentroid.y - best.y;
+    const clen = Math.hypot(cx, cy) || 1;
+    const nudged = {
+      x: best.x + (cx / clen) * (margin + 1),
+      y: best.y + (cy / clen) * (margin + 1),
+    };
+
+    if (this.isPointInsideRoom(nudged.x, nudged.y, margin)) return nudged;
+    if (this.isPointInsideRoom(best.x, best.y, 0)) return best;
+    return { ...this._boundaryCentroid };
+  }
+
+  getBoundaryBounds() {
+    const boundary = this.roomBoundary;
+    if (boundary.type === 'rect') {
+      return { x: boundary.x, y: boundary.y, w: boundary.w, h: boundary.h };
+    }
+    const xs = boundary.points.map((p) => p.x);
+    const ys = boundary.points.map((p) => p.y);
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+  }
+
+  isRectFullyInsideRoom(cx, cy, w, h, margin = 0) {
+    const hw = (w || 0) / 2;
+    const hh = (h || 0) / 2;
+    return this.isPointInsideRoom(cx - hw, cy - hh, margin) &&
+      this.isPointInsideRoom(cx + hw, cy - hh, margin) &&
+      this.isPointInsideRoom(cx - hw, cy + hh, margin) &&
+      this.isPointInsideRoom(cx + hw, cy + hh, margin);
+  }
+
+  _registerStaticSolid(z) {
+    // Room boundary walls are enforced by boundary geometry checks, not obstacle collisions.
+    if (z?.type === 'wall' || z?.type === 'wall_polygon') return;
+    const w = Number(z?.w);
+    const h = Number(z?.h);
+    const x = Number(z?.x);
+    const y = Number(z?.y);
+    if (!Number.isFinite(w) || !Number.isFinite(h) || !Number.isFinite(x) || !Number.isFinite(y)) return;
+    if (w <= 0 || h <= 0) return;
+    this.staticSolidZones.push({
+      left: x,
+      top: y,
+      right: x + w,
+      bottom: y + h,
+    });
+  }
+
+  setDynamicSolids(customZones = []) {
+    this.dynamicSolidZones = (customZones || [])
+      .map((z) => {
+        const w = Number(z?.w || 0);
+        const h = Number(z?.h || 0);
+        const x = Number(z?.x);
+        const y = Number(z?.y);
+        if (!Number.isFinite(w) || !Number.isFinite(h) || !Number.isFinite(x) || !Number.isFinite(y)) return null;
+        if (w <= 0 || h <= 0) return null;
+        return {
+          left: x - w / 2,
+          top: y - h / 2,
+          right: x + w / 2,
+          bottom: y + h / 2,
+        };
+      })
+      .filter(Boolean);
+    this._redrawDebugOverlay();
+  }
+
+  _allSolidZones() {
+    return [...this.staticSolidZones, ...this.dynamicSolidZones];
+  }
+
+  _circleIntersectsRect(cx, cy, radius, rect) {
+    const nearestX = Math.max(rect.left, Math.min(cx, rect.right));
+    const nearestY = Math.max(rect.top, Math.min(cy, rect.bottom));
+    const dx = cx - nearestX;
+    const dy = cy - nearestY;
+    return (dx * dx + dy * dy) < radius * radius;
+  }
+
+  collidesWithSolid(x, y, radius = 16) {
+    return this._allSolidZones().some((rect) => this._circleIntersectsRect(x, y, radius, rect));
+  }
+
+  canPlaceRect(cx, cy, w, h, padding = 4) {
+    const left = cx - w / 2 - padding;
+    const right = cx + w / 2 + padding;
+    const top = cy - h / 2 - padding;
+    const bottom = cy + h / 2 + padding;
+    return !this._allSolidZones().some((rect) =>
+      left < rect.right && right > rect.left && top < rect.bottom && bottom > rect.top
+    );
+  }
+
+  resolveAgainstSolids(prevX, prevY, nextX, nextY, radius = 16) {
+    let x = nextX;
+    let y = nextY;
+
+    if (this.collidesWithSolid(x, y, radius)) {
+      const dx = nextX - prevX;
+      const dy = nextY - prevY;
+      const steps = 5;
+      let best = { x: prevX, y: prevY };
+      for (let i = 1; i <= steps; i++) {
+        const t = i / steps;
+        const tx = prevX + dx * t;
+        const ty = prevY + dy * t;
+        if (!this.collidesWithSolid(tx, ty, radius)) {
+          best = { x: tx, y: ty };
+        } else {
+          break;
+        }
+      }
+
+      if (!this.collidesWithSolid(x, prevY, radius)) {
+        y = prevY;
+      } else if (!this.collidesWithSolid(prevX, y, radius)) {
+        x = prevX;
+      } else {
+        x = best.x;
+        y = best.y;
+      }
+    }
+
+    return { x, y };
+  }
+
+  setCollisionDebug(enabled) {
+    this.showCollisionDebug = Boolean(enabled);
+    this.debugGfx.setVisible(true);
+    this._redrawDebugOverlay();
+  }
+
+  _redrawDebugOverlay() {
+    if (!this.debugGfx) return;
+    this.debugGfx.clear();
+
+    const g = this.debugGfx;
+    const b = this.roomBoundary;
+    g.lineStyle(2, 0x22d3ee, 0.95);
+    if (b.type === 'rect') {
+      g.strokeRect(b.x, b.y, b.w, b.h);
+    } else if (Array.isArray(b.points) && b.points.length >= 3) {
+      g.beginPath();
+      g.moveTo(b.points[0].x, b.points[0].y);
+      for (let i = 1; i < b.points.length; i++) g.lineTo(b.points[i].x, b.points[i].y);
+      g.closePath();
+      g.strokePath();
+    }
+
+    if (!this.showCollisionDebug) return;
+
+    const drawRects = (rects, fill, stroke) => {
+      rects.forEach((r) => {
+        g.fillStyle(fill, 0.22);
+        g.fillRect(r.left, r.top, r.right - r.left, r.bottom - r.top);
+        g.lineStyle(1, stroke, 0.95);
+        g.strokeRect(r.left, r.top, r.right - r.left, r.bottom - r.top);
+      });
+    };
+
+    drawRects(this.staticSolidZones, 0xef4444, 0xfca5a5);
+    drawRects(this.dynamicSolidZones, 0xf59e0b, 0xfde68a);
   }
 
   // ── Per-zone renderer ──────────────────────────────────────────────────────────
@@ -80,6 +421,21 @@ export class RoomLayout {
         g.lineStyle(5, C.WALL, 1);
         g.strokeRect(0, 0, w, h);
         break;
+
+      case 'wall_polygon': {
+        const points = Array.isArray(z.points) ? z.points : [];
+        if (points.length < 3) break;
+        g.lineStyle(5, C.WALL, 1);
+        g.beginPath();
+        g.moveTo(points[0].x, points[0].y);
+        for (let i = 1; i < points.length; i++) g.lineTo(points[i].x, points[i].y);
+        g.closePath();
+        g.strokePath();
+        // Corner markers make irregular footprints easier to read in-game.
+        g.fillStyle(C.WALL, 1);
+        points.forEach((p) => g.fillCircle(p.x, p.y, 3));
+        break;
+      }
 
       case 'entry':
         g.fillStyle(C.ENTRY_MAT, 1);
@@ -350,6 +706,7 @@ export class RoomLayout {
   }
 
   destroy() {
+    this.debugGfx.destroy();
     this.gfx.destroy();
     this.labels.forEach(l => l.destroy());
   }

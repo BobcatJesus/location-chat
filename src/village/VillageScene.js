@@ -5,7 +5,8 @@ import { RoomLayout } from './RoomLayout.js';
 import { pickLayout } from './layoutPicker.js';
 import { RoomEditor } from './RoomEditor.js';
 import { Prop, PROP_DEFS } from './Prop.js';
-import { createAvatarEntity, normalizeAvatarModel, preloadAvatarTextures } from '../game/entities/avatarFactory';
+import { createAvatarEntity, preloadAvatarTextures } from '../game/entities/avatarFactory';
+import { normalizeAvatarModel } from '../game/entities/avatarModels';
 
 const SOCKET_SERVER_URL = import.meta.env.VITE_BACKEND_URL ||
   (import.meta.env.PROD ? 'https://location-chat-production.up.railway.app' : 'http://localhost:4000');
@@ -17,9 +18,17 @@ const DECOR_SYNC_MS = 8000;
 const PRESENCE_SYNC_MS = 4000;
 const DECOR_SYNC_HEALTHY_MS = 30000;
 const PRESENCE_SYNC_HEALTHY_MS = 20000;
+const EDIT_TOGGLE_KEY_CODE = 'Backquote';
+const COLLISION_DEBUG_KEY_CODE = 'F2';
+const FOLLOW_ZOOM = 1.2;
+const WIDE_FOLLOW_ZOOM = 0.78;
+const FOLLOW_AVATAR_SCALE = 1;
+const WIDE_AVATAR_SCALE = 1.3;
+const OVERVIEW_AVATAR_SCALE = 1.42;
 function normalizeAvatarState(source = {}) {
+  const resolvedPhoto = source.photo || source.photoDataUrl || source.avatarPhoto || null;
   return {
-    photo: source.photo || null,
+    photo: resolvedPhoto,
     avatarModel: normalizeAvatarModel(source.avatarModel),
     skinId: source.skinId || 'slate',
     hairStyle: source.hairStyle || 'combed',
@@ -54,13 +63,17 @@ export class VillageScene extends Phaser.Scene {
     VillageScene._boot = null;
     this.roomId     = d.roomId     ?? 'default-room';
     this.roomName   = d.roomName   ?? '';
+    this.roomOwnerId = d.roomOwnerId ?? '';
     this.amenityTag = d.amenityTag ?? '';
     this.shopTag    = d.shopTag    ?? '';
+    this.roomShape  = d.roomShape  ?? null;
     this.profile    = d.profile    ?? {};
     this.avatarState = normalizeAvatarState(d.profile?.profile || {});
     this.onEditorChange = d.onEditorChange ?? (() => {});
     this.onNearbyChange = d.onNearbyChange ?? (() => {});
+    this.onRoomPopulationChange = d.onRoomPopulationChange ?? (() => {});
     this.onChatMessage = d.onChatMessage ?? (() => {});
+    this.onSystemNotice = d.onSystemNotice ?? (() => {});
   }
 
   preload() {
@@ -72,16 +85,19 @@ export class VillageScene extends Phaser.Scene {
     const W = this.scale.width, H = this.scale.height;
 
     // Pick and draw layout
-    this.layout = pickLayout(this.roomId, this.roomName, this.amenityTag, this.shopTag);
+    this.layout = pickLayout(this.roomId, this.roomName, this.amenityTag, this.shopTag, this.roomShape);
     console.log('[VillageScene] room:', this.roomId, '| name:', this.roomName, '| layout:', this.layout.id);
     this.roomLayout = new RoomLayout(this, this.layout);
     this.currentFloor = 0;
     this.roomLayout.drawFloor(0);
+    this.showCollisionDebug = false;
+    this.cameraMode = 'follow';
 
-    // Initialize room editor (press E or use the UI toggle)
+    // Initialize room editor (press ~ or use the UI toggle)
     this.roomEditor = new RoomEditor(this);
     this.customZones = [];
     this.onEditorChange(false);
+    this.roomLayout.setDynamicSolids(this.customZones);
     // Render any custom zones already saved
     this._propSprites = [];
     this._renderSavedProps();
@@ -91,27 +107,36 @@ export class VillageScene extends Phaser.Scene {
     // Local player
     const displayName = this.profile?.profile?.characterName || this.profile?.mode || 'Traveler';
     const firstName = this.profile?.profile?.firstName || displayName.split(' ')[0] || 'You';
-    const localAvatar = createAvatarEntity(this, spawn.x, spawn.y, {
-      ...this.avatarState,
-      name: firstName,
-      isLocal: true,
-    });
-    if (this.avatarState.photo) localAvatar.attachPhoto(this, this.avatarState.photo);
     this.player = {
       gx: spawn.x,
       gy: spawn.y,
-      avatar: localAvatar,
+      avatar: null,
       facingLeft: false,
       sync: () => {
-        localAvatar.setPosition(this.player.gx, this.player.gy);
-        localAvatar.setDepth(DEPTH.ACTOR_MIN + Math.round(this.player.gy));
-        localAvatar.syncLabel();
+        if (!this.player?.avatar) return;
+        this.player.avatar.setPosition(this.player.gx, this.player.gy);
+        this.player.avatar.setDepth(DEPTH.ACTOR_MIN + Math.round(this.player.gy));
+        this.player.avatar.syncLabel();
       },
       destroy: () => {
-        localAvatar.destroy();
+        this.player?.avatar?.destroy();
       },
     };
-    this.player.sync();
+    this.pendingRemoteSpawns = new Set();
+    createAvatarEntity(this, spawn.x, spawn.y, {
+      ...this.avatarState,
+      name: firstName,
+      isLocal: true,
+    }).then((localAvatar) => {
+      if (!this.player || !localAvatar) return;
+      this.player.avatar = localAvatar;
+      if (this.avatarState.photo) localAvatar.attachPhoto(this, this.avatarState.photo);
+      if (this.cameraMode === 'follow') {
+        this.cameras.main.startFollow(localAvatar, true, 0.1, 0.1);
+      }
+      this.player.sync();
+      this._applyCameraMode();
+    });
 
     // Coffee cup overhead (shown near café)
     this.coffeeCup = this.add.text(0, 0, '☕', { fontSize: '18px' })
@@ -132,34 +157,74 @@ export class VillageScene extends Phaser.Scene {
     this.lastPos = { x: this.player.gx, y: this.player.gy };
 
     // Camera
-    this.cameras.main.startFollow(this.player.avatar, true, 0.1, 0.1);
-    this.cameras.main.setZoom(1.8);
+    this.cameras.main.setZoom(FOLLOW_ZOOM);
     const { FLOOR_W, FLOOR_H } = { FLOOR_W: 1600, FLOOR_H: 900 };
     this.cameras.main.setBounds(0, 0, FLOOR_W, FLOOR_H);
+    this._emitRoomPopulation();
 
     // Input
     this.cursors = this.input.keyboard?.createCursorKeys();
     this.wasd = this.input.keyboard?.addKeys('W,A,S,D');
-    this._eKeyPressed = false;
+    this._isTypingContext = (event) => {
+      if (window.__chatInputFocused) return true;
+      const target = event?.target;
+      const active = document.activeElement;
+      const isEditableElement = (el) => {
+        if (!el || !el.tagName) return false;
+        const tag = String(el.tagName).toUpperCase();
+        return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || Boolean(el.isContentEditable);
+      };
+      return isEditableElement(target) || isEditableElement(active);
+    };
+
     this._onKeyDown = (e) => {
-      if (e.key === 'e' || e.key === 'E') {
-        if (!this._eKeyPressed) {
-          this._eKeyPressed = true;
-          console.log('[VillageScene] E pressed — toggling editor');
-          this.toggleEditor();
-        }
+      if (!e) return;
+      if (e.isComposing || e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (this._isTypingContext(e)) return;
+
+      const key = String(e.key || '').toLowerCase();
+      const isEditToggleKey = e.code === EDIT_TOGGLE_KEY_CODE || key === '`' || key === '~';
+      if (isEditToggleKey) {
+        this.toggleEditor();
+        return;
+      }
+
+      if (e.code === COLLISION_DEBUG_KEY_CODE) {
+        this.toggleCollisionDebug();
+        return;
+      }
+
+      if (key === 'escape' && this.roomEditor?.isActive) {
+        this.toggleEditor();
       }
     };
-    this._onKeyUp = (e) => { if (e.key === 'e' || e.key === 'E') this._eKeyPressed = false; };
+
+    this._onKeyUp = () => {};
+    this._onWindowBlur = () => {
+      // Clear sticky movement keys when focus leaves the tab/window.
+      this.target = null;
+      this.cursors?.left?.reset?.();
+      this.cursors?.right?.reset?.();
+      this.cursors?.up?.reset?.();
+      this.cursors?.down?.reset?.();
+      this.wasd?.W?.reset?.();
+      this.wasd?.A?.reset?.();
+      this.wasd?.S?.reset?.();
+      this.wasd?.D?.reset?.();
+    };
+
     window.addEventListener('keydown', this._onKeyDown);
     window.addEventListener('keyup', this._onKeyUp);
+    window.addEventListener('blur', this._onWindowBlur);
 
     // Tap-to-move
     this.target = null;
     this.tapDot = this.add.circle(0, 0, 6, 0xffffff, 0).setDepth(DEPTH.OVERHEAD);
     this.input.on('pointerdown', (ptr) => {
       if (this.roomEditor?.isActive) return; // editor handles its own clicks
-      this.target = { x: Phaser.Math.Clamp(ptr.worldX, 20, W * 4 - 20), y: Phaser.Math.Clamp(ptr.worldY, 60, H * 4 - 10) };
+      const target = this.roomLayout?.clampPointToRoom(ptr.worldX, ptr.worldY, 20)
+        || { x: Phaser.Math.Clamp(ptr.worldX, 20, W * 4 - 20), y: Phaser.Math.Clamp(ptr.worldY, 60, H * 4 - 10) };
+      this.target = target;
       this.tapDot.setPosition(ptr.worldX, ptr.worldY).setAlpha(0.7);
       this.tweens.add({ targets: this.tapDot, alpha: 0, duration: 400 });
     });
@@ -174,6 +239,73 @@ export class VillageScene extends Phaser.Scene {
     this.onEditorChange(!!this.roomEditor?.isActive);
   }
 
+  toggleCollisionDebug() {
+    this.showCollisionDebug = !this.showCollisionDebug;
+    this.roomLayout?.setCollisionDebug(this.showCollisionDebug);
+    this.onSystemNotice(this.showCollisionDebug ? 'Collision debug ON' : 'Collision debug OFF');
+    return this.showCollisionDebug;
+  }
+
+  toggleCameraMode() {
+    const modes = ['follow', 'wide-follow', 'overview'];
+    const currentIndex = Math.max(0, modes.indexOf(this.cameraMode));
+    this.cameraMode = modes[(currentIndex + 1) % modes.length];
+    this._applyCameraMode();
+    if (this.cameraMode === 'overview') {
+      this.onSystemNotice('Overview camera ON');
+    } else if (this.cameraMode === 'wide-follow') {
+      this.onSystemNotice('Wide follow camera ON');
+    } else {
+      this.onSystemNotice('Follow camera ON');
+    }
+    return this.cameraMode;
+  }
+
+  _applyCameraMode() {
+    const cam = this.cameras.main;
+    if (!cam || !this.roomLayout) return;
+
+    if (this.cameraMode === 'overview') {
+      const b = this.roomLayout.getBoundaryBounds();
+      const fitZoom = Math.max(0.45, Math.min(2, Math.min(this.scale.width / Math.max(1, b.w), this.scale.height / Math.max(1, b.h)) * 0.94));
+      cam.stopFollow();
+      cam.setZoom(fitZoom);
+      cam.centerOn(b.x + b.w / 2, b.y + b.h / 2);
+      this._applyAvatarVisualScale();
+      return;
+    }
+
+    cam.setZoom(this.cameraMode === 'wide-follow' ? WIDE_FOLLOW_ZOOM : FOLLOW_ZOOM);
+    if (this.player?.avatar) {
+      cam.startFollow(this.player.avatar, true, 0.1, 0.1);
+    }
+    this._applyAvatarVisualScale();
+  }
+
+  _currentAvatarScale() {
+    if (this.cameraMode === 'overview') return OVERVIEW_AVATAR_SCALE;
+    if (this.cameraMode === 'wide-follow') return WIDE_AVATAR_SCALE;
+    return FOLLOW_AVATAR_SCALE;
+  }
+
+  _applyAvatarVisualScale() {
+    const scale = this._currentAvatarScale();
+    if (this.player?.avatar?.setScale) {
+      this.player.avatar.setScale(scale);
+      this.player.avatar.syncLabel?.();
+    }
+    this.remotePlayers?.forEach((remotePlayer) => {
+      if (remotePlayer?.avatar?.setScale) {
+        remotePlayer.avatar.setScale(scale);
+        remotePlayer.avatar.syncLabel?.();
+      }
+    });
+  }
+
+  _emitRoomPopulation() {
+    this.onRoomPopulationChange(Math.max(1, 1 + this.remotePlayers.size));
+  }
+
   _connectSocket() {
     const socket = io(SOCKET_SERVER_URL, { transports: ['websocket'] });
     this.socket = socket;
@@ -184,6 +316,8 @@ export class VillageScene extends Phaser.Scene {
     this.userId = userId;
     const userName = this.profile?.profile?.characterName || 'Traveler';
     const firstName = this.profile?.profile?.firstName || userName.split(' ')[0];
+    const ownerId = String(this.roomOwnerId || '').trim();
+    const isCreator = Boolean(ownerId && (ownerId === String(userId) || ownerId === String(userName)));
 
     socket.on('connect', () => {
       socket.emit('join_room', {
@@ -192,6 +326,7 @@ export class VillageScene extends Phaser.Scene {
           id: userId,
           name: userName,
           firstName,
+          isCreator,
           ...this.avatarState,
         },
       });
@@ -214,13 +349,16 @@ export class VillageScene extends Phaser.Scene {
     socket.on('room_state', (state) => {
       const nextIds = new Set(Object.keys(state || {}));
       this.remotePlayers.forEach((remotePlayer, sid) => {
-        if (!nextIds.has(sid)) {
+        const statePlayer = state?.[sid];
+        const isSelfDuplicate = statePlayer?.id && this.userId && String(statePlayer.id) === String(this.userId);
+        if (!nextIds.has(sid) || isSelfDuplicate) {
           remotePlayer.destroy();
           this.remotePlayers.delete(sid);
         }
       });
       Object.entries(state || {}).forEach(([sid, player]) => {
         if (sid === socket.id) return;
+        if (player?.id && this.userId && String(player.id) === String(this.userId)) return;
         const remotePlayer = this.remotePlayers.get(sid);
         if (remotePlayer) {
           const prevX = remotePlayer.gx;
@@ -243,10 +381,14 @@ export class VillageScene extends Phaser.Scene {
           this._spawnRemote(sid, player);
         }
       });
+      this._emitRoomPopulation();
     });
 
     socket.on('player_joined', ({ socketId, player }) => {
-      if (socketId !== socket.id) this._spawnRemote(socketId, player);
+      if (socketId !== socket.id && !(player?.id && this.userId && String(player.id) === String(this.userId))) {
+        this._spawnRemote(socketId, player);
+      }
+      this._emitRoomPopulation();
     });
 
     socket.on('player_moved', ({ socketId, x, y }) => {
@@ -270,6 +412,8 @@ export class VillageScene extends Phaser.Scene {
     socket.on('player_left', ({ socketId }) => {
       const remotePlayer = this.remotePlayers.get(socketId);
       if (remotePlayer) { remotePlayer.destroy(); this.remotePlayers.delete(socketId); }
+      this.pendingRemoteSpawns?.delete(socketId);
+      this._emitRoomPopulation();
     });
 
     socket.on('room_decorations', (items) => {
@@ -278,6 +422,7 @@ export class VillageScene extends Phaser.Scene {
         const zone = this._normalizeDecoration(item);
         if (zone) this.customZones.push(zone);
       });
+      this.roomLayout?.setDynamicSolids(this.customZones);
       this.roomEditor?.setZones(this.customZones);
       this._renderSavedProps();
     });
@@ -287,6 +432,7 @@ export class VillageScene extends Phaser.Scene {
       if (!zone) return;
       if (this.customZones.some(z => z.id === zone.id)) return;
       this.customZones.push(zone);
+      this.roomLayout?.setDynamicSolids(this.customZones);
       this.roomEditor?.setZones(this.customZones);
       this._renderSavedProps();
     });
@@ -294,12 +440,16 @@ export class VillageScene extends Phaser.Scene {
     socket.on('decoration_removed', ({ id }) => {
       if (!id) return;
       this.customZones = this.customZones.filter(z => z.id !== id);
+      this.roomLayout?.setDynamicSolids(this.customZones);
       this.roomEditor?.setZones(this.customZones);
       this._renderSavedProps();
     });
 
     socket.on('decoration_error', ({ message }) => {
-      if (message) console.warn('[VillageScene] decoration_error:', message);
+      if (message) {
+        console.warn('[VillageScene] decoration_error:', message);
+        this.onSystemNotice(message);
+      }
     });
 
     socket.on('receive_message', (payload) => {
@@ -329,7 +479,29 @@ export class VillageScene extends Phaser.Scene {
   }
 
   placeDecoration(zone) {
-    if (!this.socket?.connected) return;
+    if (!this.socket?.connected) return false;
+    const inside = this.roomLayout?.isRectFullyInsideRoom(
+      zone.x,
+      zone.y,
+      zone.w || 60,
+      zone.h || 60,
+      6,
+    );
+    if (!inside) {
+      this.onSystemNotice('Placement is outside the room boundary.');
+      return false;
+    }
+    const clearOfSolids = this.roomLayout?.canPlaceRect(
+      zone.x,
+      zone.y,
+      zone.w || 60,
+      zone.h || 60,
+      8,
+    );
+    if (!clearOfSolids) {
+      this.onSystemNotice('Placement overlaps furniture or another item.');
+      return false;
+    }
     this.socket.emit('place_decoration', {
       roomId: this.roomId,
       item: {
@@ -341,6 +513,7 @@ export class VillageScene extends Phaser.Scene {
         h: zone.h || 60,
       },
     });
+    return true;
   }
 
   removeDecoration(id) {
@@ -373,33 +546,44 @@ export class VillageScene extends Phaser.Scene {
     };
   }
 
-  _spawnRemote(socketId, player) {
-    if (this.remotePlayers.has(socketId)) return;
+  async _spawnRemote(socketId, player) {
+    if (this.remotePlayers.has(socketId) || this.pendingRemoteSpawns.has(socketId)) return;
+    this.pendingRemoteSpawns.add(socketId);
     const avatarState = normalizeAvatarState(player);
-    const avatar = createAvatarEntity(this, player.x ?? 400, player.y ?? 300, {
-      ...avatarState,
-      name: player?.firstName || player?.name || 'Traveler',
-      isLocal: false,
-    });
-    if (avatarState.photo) avatar.attachPhoto(this, avatarState.photo);
-    const remotePlayer = {
-      gx: player.x ?? 400,
-      gy: player.y ?? 300,
-      avatar,
-      dir: 'front',
-      facingLeft: false,
-      movingUntil: 0,
-      sync: () => {
-        avatar.setPosition(remotePlayer.gx, remotePlayer.gy);
-        avatar.setDepth(DEPTH.ACTOR_MIN + Math.round(remotePlayer.gy));
-        avatar.syncLabel();
-      },
-      destroy: () => {
-        avatar.destroy();
-      },
-    };
-    remotePlayer.sync();
-    this.remotePlayers.set(socketId, remotePlayer);
+    try {
+      const avatar = await createAvatarEntity(this, player.x ?? 400, player.y ?? 300, {
+        ...avatarState,
+        name: player?.firstName || player?.name || 'Traveler',
+        isLocal: false,
+      });
+      if (!avatar || this.remotePlayers.has(socketId)) return;
+      if (avatarState.photo) avatar.attachPhoto(this, avatarState.photo);
+      const remotePlayer = {
+        gx: player.x ?? 400,
+        gy: player.y ?? 300,
+        avatar,
+        dir: 'front',
+        facingLeft: false,
+        movingUntil: 0,
+        sync: () => {
+          avatar.setPosition(remotePlayer.gx, remotePlayer.gy);
+          avatar.setDepth(DEPTH.ACTOR_MIN + Math.round(remotePlayer.gy));
+          avatar.syncLabel();
+        },
+        destroy: () => {
+          avatar.destroy();
+        },
+      };
+      remotePlayer.sync();
+      remotePlayer.avatar.setScale?.(this._currentAvatarScale());
+      remotePlayer.avatar.syncLabel?.();
+      this.remotePlayers.set(socketId, remotePlayer);
+      this._emitRoomPopulation();
+    } catch (error) {
+      console.warn('[VillageScene] failed to spawn remote avatar', error);
+    } finally {
+      this.pendingRemoteSpawns.delete(socketId);
+    }
   }
 
   _runFallbackSync() {
@@ -422,6 +606,7 @@ export class VillageScene extends Phaser.Scene {
   }
 
   update(_t, delta) {
+    if (!this.player?.avatar) return;
 
     const step = (SPEED * delta) / 1000;
     let dx = 0, dy = 0;
@@ -444,9 +629,31 @@ export class VillageScene extends Phaser.Scene {
 
     const W = this.scale.width, H = this.scale.height;
     if (dx || dy) {
+      const prevX = this.player.gx;
+      const prevY = this.player.gy;
       const len = Math.hypot(dx, dy) || 1;
-      this.player.gx = Phaser.Math.Clamp(this.player.gx + (dx / len) * step, 20, W * 4 - 20);
-      this.player.gy = Phaser.Math.Clamp(this.player.gy + (dy / len) * step, 60, H * 4 - 10);
+      const nx = this.player.gx + (dx / len) * step;
+      const ny = this.player.gy + (dy / len) * step;
+
+      if (this.roomLayout?.isPointInsideRoom(nx, ny, 18)) {
+        this.player.gx = nx;
+        this.player.gy = ny;
+      } else if (this.roomLayout?.isPointInsideRoom(nx, this.player.gy, 18)) {
+        this.player.gx = nx;
+      } else if (this.roomLayout?.isPointInsideRoom(this.player.gx, ny, 18)) {
+        this.player.gy = ny;
+      } else {
+        const clamped = this.roomLayout?.clampPointToRoom(nx, ny, 18)
+          || { x: Phaser.Math.Clamp(nx, 20, W * 4 - 20), y: Phaser.Math.Clamp(ny, 60, H * 4 - 10) };
+        this.player.gx = clamped.x;
+        this.player.gy = clamped.y;
+      }
+
+      const solidResolved = this.roomLayout?.resolveAgainstSolids(prevX, prevY, this.player.gx, this.player.gy, 16);
+      if (solidResolved) {
+        this.player.gx = solidResolved.x;
+        this.player.gy = solidResolved.y;
+      }
       if (Math.abs(dy) >= Math.abs(dx)) {
         this.dir = dy > 0 ? 'front' : 'back';
       } else {
@@ -534,6 +741,7 @@ export class VillageScene extends Phaser.Scene {
   shutdown() {
     window.removeEventListener('keydown', this._onKeyDown);
     window.removeEventListener('keyup', this._onKeyUp);
+    window.removeEventListener('blur', this._onWindowBlur);
     this.socket?.disconnect();
     if (this._fallbackSyncTimer) {
       clearInterval(this._fallbackSyncTimer);
@@ -541,11 +749,13 @@ export class VillageScene extends Phaser.Scene {
     }
     this.remotePlayers.forEach(a => a.destroy());
     this.remotePlayers.clear();
+    this.onRoomPopulationChange(0);
     this.roomLayout?.destroy();
     this.roomEditor?.destroy();
     this._propSprites?.forEach(p => p.destroy());
     this.onEditorChange(false);
     this.onNearbyChange(0);
+        this.pendingRemoteSpawns?.clear();
   }
 
   _switchFloor(floorIndex) {
@@ -553,6 +763,9 @@ export class VillageScene extends Phaser.Scene {
     if (!this.layout.floors[floorIndex]) return;
     this.currentFloor = floorIndex;
     this.roomLayout.drawFloor(floorIndex);
+    this.roomLayout.setDynamicSolids(this.customZones);
+    this.roomLayout.setCollisionDebug(this.showCollisionDebug);
+    this._applyCameraMode();
     const spawn = floorIndex === 0
       ? (this.layout.spawnF1 || { x: 800, y: 750 })
       : (this.layout.spawnF2 || { x: 900, y: 370 });
