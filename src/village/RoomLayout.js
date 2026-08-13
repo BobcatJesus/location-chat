@@ -11,8 +11,8 @@ const SIGN_STYLE = {
   color: '#faf0d7', backgroundColor: '#2b2b33',
   padding: { x: 4, y: 3 },
 };
-const OUTSIDE_ROOM_COLOR = 0x7d6a55;
-const OUTSIDE_ROOM_ALPHA = 0.34;
+const OUTSIDE_ROOM_COLOR = 0x0f172a;
+const OUTSIDE_ROOM_ALPHA = 0.62;
 const ROOM_EDGE_CORE = 0xf8f1dc;
 const ROOM_EDGE_TRIM = 0xc9a66b;
 const ROOM_EDGE_SHADOW = 0x000000;

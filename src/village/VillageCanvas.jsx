@@ -98,7 +98,7 @@ export default function VillageCanvas({ room, profile, onLeave }) {
       parent: el,
       width: BASE_WIDTH,
       height: BASE_HEIGHT,
-      backgroundColor: '#fef3c7',
+      backgroundColor: '#0f172a',
       scene: VillageScene,
       scale: {
         mode: Phaser.Scale.FIT,
