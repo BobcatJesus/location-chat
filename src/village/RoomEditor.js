@@ -252,7 +252,9 @@ export class RoomEditor {
     if (this._pointerMove) this.scene.input.off('pointermove', this._pointerMove);
     if (this._pointerDown) this.scene.input.off('pointerdown', this._pointerDown);
     if (this._onContextMenu) canvas?.removeEventListener('contextmenu', this._onContextMenu);
-    this.scene.input.mouse?.enableContextMenu();
+    if (typeof this.scene.input.mouse?.enableContextMenu === 'function') {
+      this.scene.input.mouse.enableContextMenu();
+    }
     this._pointerMove = null;
     this._pointerDown = null;
     this._onContextMenu = null;
