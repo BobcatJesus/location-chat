@@ -268,7 +268,7 @@ export class RoomLayout {
     const h = wall?.h || 900;
 
     // If the room has no explicit footprint/polygon, create a practical inset
-    // boundary so mobile users can still perceive and interact with the realm edge.
+    // beveled polygon so users still get a visible, intentional realm edge.
     const hasExplicitRoomShape = Boolean(this.scene?.roomShape);
     const compactViewport = Number(this.scene?.scale?.width || 0) <= 820;
     const looksLikeFullCanvasDefault = Number.isFinite(w) && Number.isFinite(h) && w >= 1400 && h >= 800;
@@ -277,8 +277,23 @@ export class RoomLayout {
       const insetY = Math.max(54, Math.min(compactViewport ? 140 : 100, Math.floor(h * 0.24)));
       const innerW = Math.max(320, w - insetX * 2);
       const innerH = Math.max(220, h - insetY * 2);
-      this.roomBoundary = { type: 'rect', x: insetX, y: insetY, w: innerW, h: innerH };
-      this._boundaryCentroid = { x: insetX + innerW / 2, y: insetY + innerH / 2 };
+      const chamfer = Math.max(44, Math.min(compactViewport ? 132 : 96, Math.floor(Math.min(innerW, innerH) * 0.18)));
+      const x = insetX;
+      const y = insetY;
+      const right = insetX + innerW;
+      const bottom = insetY + innerH;
+      const points = [
+        { x: x + chamfer, y },
+        { x: right - chamfer, y },
+        { x: right, y: y + chamfer },
+        { x: right, y: bottom - chamfer },
+        { x: right - chamfer, y: bottom },
+        { x: x + chamfer, y: bottom },
+        { x, y: bottom - chamfer },
+        { x, y: y + chamfer },
+      ];
+      this.roomBoundary = { type: 'polygon', points };
+      this._boundaryCentroid = { x: x + innerW / 2, y: y + innerH / 2 };
       return;
     }
 
