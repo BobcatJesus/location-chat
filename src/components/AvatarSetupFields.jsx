@@ -1,6 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { AVATAR_SKINS, AVATAR_HAIR_STYLES, AVATAR_BODY_TYPES } from './avatarOptions';
-import { skinToneToColor, hairHueToColor, accessoryHueToColor } from '../utils/avatarColors';
+import {
+  skinToneToColor,
+  hairHueToColor,
+  accessoryHueToColor,
+  skinToneToSpectrumIndex,
+} from '../utils/avatarColors';
 import { AVATAR_MODELS } from '../game/entities/avatarModelInfo';
 
 const AVATAR_PRESETS = [
@@ -140,7 +145,7 @@ export default function AvatarSetupFields({
   };
 
   const randomizeAvatar = () => {
-    const skin = AVATAR_SKINS[Math.floor(Math.random() * AVATAR_SKINS.length)]?.id || 'blue';
+    const randomSkin = AVATAR_SKINS[Math.floor(Math.random() * AVATAR_SKINS.length)] || AVATAR_SKINS[0];
     const hair = AVATAR_HAIR_STYLES[Math.floor(Math.random() * AVATAR_HAIR_STYLES.length)]?.id || 'combed';
     const body = AVATAR_BODY_TYPES[Math.floor(Math.random() * AVATAR_BODY_TYPES.length)]?.id || 'standard';
     const topStyle = TOP_OPTIONS[Math.floor(Math.random() * TOP_OPTIONS.length)]?.id || 'hoodie';
@@ -148,10 +153,10 @@ export default function AvatarSetupFields({
     const footwear = FOOTWEAR_OPTIONS[Math.floor(Math.random() * FOOTWEAR_OPTIONS.length)]?.id || 'sneakers';
     setFormData((prev) => ({
       ...prev,
-      skinId: skin,
+      skinId: randomSkin.id,
       hairStyle: hair,
       bodyType: body,
-      skinTone: Math.floor(Math.random() * 101),
+      skinTone: Number.isFinite(randomSkin.tone) ? randomSkin.tone : Math.floor(Math.random() * 101),
       hairHue: Math.floor(Math.random() * 361),
       outfitHue: Math.floor(Math.random() * 361),
       topStyle,
@@ -466,22 +471,33 @@ export default function AvatarSetupFields({
         </div>
 
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
-          {AVATAR_SKINS.map((skin) => (
+          {AVATAR_SKINS.map((skin, idx) => {
+            const selectedSkinIndex = skinToneToSpectrumIndex(formData.skinTone ?? 45);
+            const isSelected = selectedSkinIndex === idx;
+            return (
             <button
               key={skin.id}
               type="button"
-              onClick={() => setFormData((prev) => ({ ...prev, skinId: skin.id }))}
+              onClick={() => {
+                setFormData((prev) => ({
+                  ...prev,
+                  skinId: skin.id,
+                  skinTone: Number.isFinite(skin.tone) ? skin.tone : (prev.skinTone ?? 45),
+                }));
+                showPreviewPulse(`${skin.label} tone`);
+              }}
               style={{
                 width: 26,
                 height: 26,
                 borderRadius: '50%',
-                border: formData.skinId === skin.id ? '2px solid #fbbf24' : '2px solid #334155',
+                border: isSelected ? '2px solid #fbbf24' : '2px solid #334155',
                 background: skin.swatch,
                 cursor: 'pointer',
               }}
               title={skin.label}
             />
-          ))}
+            );
+          })}
         </div>
 
         <div style={{ marginBottom: 8 }}>

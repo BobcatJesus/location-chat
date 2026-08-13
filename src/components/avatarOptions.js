@@ -1,12 +1,16 @@
 export const AVATAR_SKINS = [
-  { id: 'blue', label: 'Cool Palette', swatch: '#8fcde1' },
-  { id: 'red', label: 'Warm Palette', swatch: '#f2a7a0' },
-  { id: 'green', label: 'Earth Palette', swatch: '#b8dccb' },
-  { id: 'purple', label: 'Night Palette', swatch: '#c9b8e6' },
-  { id: 'orange', label: 'Sunset Palette', swatch: '#f3c5a9' },
-  { id: 'pink', label: 'Rose Palette', swatch: '#f6c3cf' },
-  { id: 'teal', label: 'Aqua Palette', swatch: '#9fd7d9' },
-  { id: 'slate', label: 'Urban Palette', swatch: '#93a2b8' },
+  { id: 'tone-01', label: 'Porcelain', swatch: '#fbe5cf', tone: 0 },
+  { id: 'tone-02', label: 'Ivory', swatch: '#f3d8b8', tone: 9 },
+  { id: 'tone-03', label: 'Sand', swatch: '#eec18f', tone: 18 },
+  { id: 'tone-04', label: 'Honey', swatch: '#dc9f67', tone: 27 },
+  { id: 'tone-05', label: 'Amber', swatch: '#b97753', tone: 36 },
+  { id: 'tone-06', label: 'Cocoa', swatch: '#815644', tone: 45 },
+  { id: 'tone-07', label: 'Alabaster', swatch: '#ffedcf', tone: 55 },
+  { id: 'tone-08', label: 'Olive Sand', swatch: '#e0cc8f', tone: 64 },
+  { id: 'tone-09', label: 'Golden Tan', swatch: '#ebb569', tone: 73 },
+  { id: 'tone-10', label: 'Caramel', swatch: '#d08a52', tone: 82 },
+  { id: 'tone-11', label: 'Mahogany', swatch: '#8b5641', tone: 91 },
+  { id: 'tone-12', label: 'Espresso', swatch: '#5d3d38', tone: 100 },
 ];
 
 export const AVATAR_HAIR_STYLES = [

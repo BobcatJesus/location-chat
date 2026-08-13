@@ -1,13 +1,16 @@
 const SKIN_TONE_STOPS = [
-  '#fbe3cf',
-  '#f4cfb5',
-  '#e6b893',
-  '#cf9a74',
-  '#b37d5d',
-  '#8f6247',
-  '#684634',
-  '#493122',
-  '#2f2016',
+  '#fbe5cf',
+  '#f3d8b8',
+  '#eec18f',
+  '#dc9f67',
+  '#b97753',
+  '#815644',
+  '#ffedcf',
+  '#e0cc8f',
+  '#ebb569',
+  '#d08a52',
+  '#8b5641',
+  '#5d3d38',
 ];
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
@@ -90,6 +93,18 @@ export const skinToneToColor = (skinTone = 45) => {
 };
 
 export const skinToneToShade = (skinTone = 45, amount = -20) => shiftColor(skinToneToColor(skinTone), amount);
+
+export const skinToneToSpectrumIndex = (skinTone = 45) => {
+  const p = clamp(Number(skinTone), 0, 100);
+  const slots = SKIN_TONE_STOPS.length - 1;
+  return Math.round((p / 100) * slots);
+};
+
+export const spectrumIndexToSkinTone = (index = 0) => {
+  const slots = SKIN_TONE_STOPS.length - 1;
+  const i = clamp(Number(index), 0, slots);
+  return Math.round((i / slots) * 100);
+};
 
 export const hueToColor = (hue = 24, saturation = 70, lightness = 45) => {
   const { r, g, b } = hslToRgb(Number(hue), Number(saturation), Number(lightness));
