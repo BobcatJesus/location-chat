@@ -157,7 +157,24 @@ export default class SpriteAvatarBase extends Phaser.GameObjects.Container {
       const ringRadius = photoRadius + 3;
       const ringDiameter = ringRadius * 2;
       this._photo.setPosition(this.x, photoY);
-      const hasRenderableFrame = Boolean(this._photo.frame?.sourceSize);
+      const frame = this._photo.frame;
+      const frameWidth = Number(
+        frame?.cutWidth
+        || frame?.width
+        || frame?.realWidth
+        || frame?.sourceSize?.w
+        || frame?.sourceSize?.width
+        || 0
+      );
+      const frameHeight = Number(
+        frame?.cutHeight
+        || frame?.height
+        || frame?.realHeight
+        || frame?.sourceSize?.h
+        || frame?.sourceSize?.height
+        || 0
+      );
+      const hasRenderableFrame = frameWidth > 0 && frameHeight > 0;
       if (!hasRenderableFrame) {
         // Texture frame can be momentarily unavailable while base64 upload finalizes.
         // Keep objects alive and hide them until the frame is renderable.
