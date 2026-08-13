@@ -2,8 +2,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import Phaser from 'phaser';
 import { VillageScene } from './VillageScene.js';
 
-const VIEW_HELP_KEY = 'sidequest_view_help_seen_v1';
-
 function slugify(value) {
   return String(value || '')
     .toLowerCase()
@@ -39,7 +37,6 @@ export default function VillageCanvas({ room, profile, onLeave }) {
   const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768);
   const [showEditHint, setShowEditHint] = useState(false);
   const [systemNotice, setSystemNotice] = useState('');
-  const [collisionDebugActive, setCollisionDebugActive] = useState(false);
   const [mobileChatOpen, setMobileChatOpen] = useState(false);
   const [isTouchDevice, setIsTouchDevice] = useState(() => {
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
@@ -47,15 +44,10 @@ export default function VillageCanvas({ room, profile, onLeave }) {
   });
   const [cameraMode, setCameraMode] = useState('follow');
   const [roomPopulation, setRoomPopulation] = useState(1);
-  const [showViewHelp, setShowViewHelp] = useState(false);
   const isLikelyMobileUA = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '');
   const showFloatingZoomControl = isMobile || isTouchDevice || isLikelyMobileUA;
   const roomId = canonicalRoomId(room);
-  const cameraModeLabel = cameraMode === 'overview'
-    ? 'Overview'
-    : cameraMode === 'wide-follow'
-      ? 'Wide'
-      : 'Follow';
+  const cameraModeLabel = cameraMode === 'wide-follow' ? 'Wide' : 'Follow';
 
   useEffect(() => {
     const onResize = () => {
@@ -72,15 +64,6 @@ export default function VillageCanvas({ room, profile, onLeave }) {
   useEffect(() => {
     if (!isMobile) setMobileChatOpen(true);
   }, [isMobile]);
-
-  useEffect(() => {
-    try {
-      const seen = localStorage.getItem(VIEW_HELP_KEY);
-      if (!seen) setShowViewHelp(true);
-    } catch {
-      setShowViewHelp(true);
-    }
-  }, []);
 
   useEffect(() => {
     window.__chatInputFocused = false;
@@ -153,11 +136,9 @@ export default function VillageCanvas({ room, profile, onLeave }) {
       setMessages([]);
       setDraft('');
       setSystemNotice('');
-      setCollisionDebugActive(false);
       setMobileChatOpen(false);
       setCameraMode('follow');
       setRoomPopulation(1);
-      setShowViewHelp(false);
     };
   }, [roomId, room?.name, room?.amenity, room?.shop, profile]);
 
@@ -180,33 +161,12 @@ export default function VillageCanvas({ room, profile, onLeave }) {
     }
   };
 
-  const toggleCollisionDebug = () => {
-    const scene = gameRef.current?.scene?.getScene('VillageScene');
-    if (scene?.sys?.isActive()) {
-      const next = scene.toggleCollisionDebug?.();
-      if (typeof next === 'boolean') setCollisionDebugActive(next);
-    }
-  };
-
   const toggleCameraMode = () => {
     const scene = gameRef.current?.scene?.getScene('VillageScene');
     if (scene?.sys?.isActive()) {
       const next = scene.toggleCameraMode?.();
-      if (next === 'overview' || next === 'follow' || next === 'wide-follow') setCameraMode(next);
+      if (next === 'follow' || next === 'wide-follow') setCameraMode(next);
     }
-    if (showViewHelp) {
-      try { localStorage.setItem(VIEW_HELP_KEY, '1'); } catch {}
-      setShowViewHelp(false);
-    }
-  };
-
-  const dismissViewHelp = () => {
-    try { localStorage.setItem(VIEW_HELP_KEY, '1'); } catch {}
-    setShowViewHelp(false);
-  };
-
-  const openViewHelp = () => {
-    setShowViewHelp(true);
   };
 
   return (
@@ -289,39 +249,6 @@ export default function VillageCanvas({ room, profile, onLeave }) {
         >
           {editorActive ? 'Done' : 'Edit'}
         </button>
-        <button
-          onClick={toggleCollisionDebug}
-          style={{
-            background: collisionDebugActive ? '#22d3ee' : 'rgba(0,0,0,0.55)',
-            color: collisionDebugActive ? '#0f172a' : '#fff',
-            border: 'none',
-            borderRadius: 8,
-            padding: isMobile ? '9px 12px' : '6px 12px',
-            minHeight: isMobile ? 40 : 0,
-            cursor: 'pointer',
-            fontSize: isMobile ? 12 : 13,
-            fontWeight: 'bold',
-          }}
-        >
-          Debug
-        </button>
-        {!isMobile && (
-          <button
-            onClick={openViewHelp}
-            style={{
-              background: 'rgba(15,23,42,0.72)',
-              color: '#bae6fd',
-              border: '1px solid #38bdf8',
-              borderRadius: 8,
-              padding: '6px 10px',
-              cursor: 'pointer',
-              fontSize: 11,
-              fontWeight: 'bold',
-            }}
-          >
-            Legend
-          </button>
-        )}
         {isMobile && (
           <button
             onClick={() => setMobileChatOpen((v) => !v)}
@@ -349,14 +276,12 @@ export default function VillageCanvas({ room, profile, onLeave }) {
           right: 'calc(8px + env(safe-area-inset-right, 0px))',
           zIndex: 1001,
           display: 'flex',
-          alignItems: 'center',
-          gap: 6,
         }}>
           <button
             onClick={toggleCameraMode}
             style={{
-              background: cameraMode === 'overview' ? '#93c5fd' : cameraMode === 'wide-follow' ? '#86efac' : 'rgba(0,0,0,0.62)',
-              color: cameraMode === 'overview' || cameraMode === 'wide-follow' ? '#0f172a' : '#fff',
+              background: cameraMode === 'wide-follow' ? '#86efac' : 'rgba(0,0,0,0.62)',
+              color: cameraMode === 'wide-follow' ? '#0f172a' : '#fff',
               border: 'none',
               borderRadius: 8,
               padding: '9px 12px',
@@ -367,25 +292,7 @@ export default function VillageCanvas({ room, profile, onLeave }) {
               boxShadow: '0 2px 10px rgba(0,0,0,0.28)',
             }}
           >
-            Zoom: {cameraModeLabel}
-          </button>
-          <button
-            onClick={openViewHelp}
-            aria-label="Open camera legend"
-            style={{
-              width: 40,
-              height: 40,
-              borderRadius: 999,
-              border: '1px solid #38bdf8',
-              background: 'rgba(15,23,42,0.8)',
-              color: '#bae6fd',
-              fontSize: 18,
-              fontWeight: 'bold',
-              cursor: 'pointer',
-              boxShadow: '0 2px 10px rgba(0,0,0,0.28)',
-            }}
-          >
-            ?
+            View: {cameraModeLabel}
           </button>
         </div>
       )}
@@ -424,46 +331,6 @@ export default function VillageCanvas({ room, profile, onLeave }) {
       }}>
         In room: {roomPopulation}
       </div>
-
-      {showViewHelp && (
-        <div style={{
-          position: 'absolute',
-          top: isMobile ? 'calc(56px + env(safe-area-inset-top, 0px))' : 'calc(58px + env(safe-area-inset-top, 0px))',
-          left: isMobile ? 'calc(8px + env(safe-area-inset-left, 0px))' : 'calc(12px + env(safe-area-inset-left, 0px))',
-          zIndex: 1003,
-          background: '#0f172af2',
-          border: '1px solid #38bdf8',
-          borderRadius: 8,
-          padding: '8px 10px',
-          color: '#e2e8f0',
-          fontFamily: 'Courier New, monospace',
-          fontSize: 11,
-          maxWidth: isMobile ? 'calc(100vw - 16px)' : 320,
-          boxShadow: '0 6px 20px rgba(0,0,0,0.35)',
-        }}>
-          <div style={{ color: '#93c5fd', fontWeight: 'bold', marginBottom: 6 }}>View Modes Legend</div>
-          <div style={{ lineHeight: 1.45, marginBottom: 8 }}>
-            Follow: normal camera<br />
-            Wide: zoomed out and follows you<br />
-            Overview: full room layout
-          </div>
-          <button
-            onClick={dismissViewHelp}
-            style={{
-              border: 'none',
-              borderRadius: 6,
-              padding: '6px 10px',
-              background: '#38bdf8',
-              color: '#0f172a',
-              fontWeight: 'bold',
-              cursor: 'pointer',
-              fontSize: 11,
-            }}
-          >
-            Got it
-          </button>
-        </div>
-      )}
 
       <div style={{
         position: 'absolute',
