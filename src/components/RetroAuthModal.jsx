@@ -56,6 +56,8 @@ const callAuthApi = async (path, payload) => {
   if (!response.ok) {
     const err = new Error(data?.error || 'Authentication request failed.');
     err.code = data?.code || 'AUTH_ERROR';
+    err.retryAfterSeconds = Number(data?.retryAfterSeconds || response.headers.get('Retry-After') || 0) || 0;
+    err.diagnostics = data?.diagnostics || null;
     throw err;
   }
 
@@ -596,7 +598,19 @@ export default function RetroAuthModal({ onLogin }) {
       localStorage.removeItem(SIGNUP_DRAFT_KEY);
       setDraftUpdatedAt(null);
     } catch (err) {
-      setError(err?.message || 'HP CRITICAL! Invalid credentials or connection error.');
+      if (err?.code === 'RATE_LIMITED' && err?.retryAfterSeconds) {
+        const waitMin = Math.max(1, Math.ceil(err.retryAfterSeconds / 60));
+        setError(`Too many attempts. Wait about ${waitMin} minute${waitMin === 1 ? '' : 's'} and try again.`);
+      } else if (err?.code === 'ACCOUNT_NOT_FOUND') {
+        setError('No account found for that email. Use Sign Up or Reset Password.');
+      } else if (err?.code === 'INVALID_CREDENTIALS') {
+        const formatHint = err?.diagnostics?.passwordStorageFormat
+          ? ` (stored format: ${err.diagnostics.passwordStorageFormat})`
+          : '';
+        setError(`Password rejected for this account${formatHint}. Try Reset Password.`);
+      } else {
+        setError(err?.message || 'HP CRITICAL! Invalid credentials or connection error.');
+      }
     } finally {
       setIsLoading(false);
     }

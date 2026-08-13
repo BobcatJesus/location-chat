@@ -266,6 +266,17 @@ export function registerAuthRoutes(app, authService) {
   const AUTH_WINDOW_MS = 15 * 60 * 1000;
   const AUTH_LIMIT = 8;
 
+  const detectPasswordStorageFormat = (user) => {
+    const salt = String(user?.password_salt || '');
+    const hash = String(user?.password_hash || '');
+    if (salt && /^[0-9a-f]{32}$/i.test(salt) && /^[0-9a-f]{128}$/i.test(hash)) return 'scrypt';
+    if (/^\$2[aby]\$\d{2}\$/.test(hash)) return 'bcrypt';
+    if (/^[0-9a-f]{64}$/i.test(hash)) return 'sha256';
+    if (/^[0-9a-f]{128}$/i.test(hash)) return 'sha512';
+    if (hash) return 'plaintext_or_unknown';
+    return 'missing';
+  };
+
   const getClientKey = (req, email) => {
     const forwarded = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
     const ip = forwarded || req.ip || req.socket?.remoteAddress || 'unknown';
@@ -322,7 +333,11 @@ export function registerAuthRoutes(app, authService) {
     const rateLimit = checkAuthRateLimit(req, email, 'login');
     if (!rateLimit.allowed) {
       res.setHeader('Retry-After', String(rateLimit.retryAfterSeconds));
-      return res.status(429).json({ error: 'Too many auth attempts. Please try again later.', code: 'RATE_LIMITED' });
+      return res.status(429).json({
+        error: 'Too many auth attempts. Please try again later.',
+        code: 'RATE_LIMITED',
+        retryAfterSeconds: rateLimit.retryAfterSeconds,
+      });
     }
     if (!email || !password) {
       return res.status(400).json({ error: 'Email and password are required.', code: 'MISSING_FIELDS' });
@@ -336,7 +351,14 @@ export function registerAuthRoutes(app, authService) {
 
       const verified = authService.verifyPasswordRecord(password, user);
       if (!verified.ok) {
-        return res.status(401).json({ error: 'Invalid email or password.', code: 'INVALID_CREDENTIALS' });
+        return res.status(401).json({
+          error: 'Invalid email or password.',
+          code: 'INVALID_CREDENTIALS',
+          diagnostics: {
+            accountExists: true,
+            passwordStorageFormat: detectPasswordStorageFormat(user),
+          },
+        });
       }
 
       if (verified.needsRehash) {
