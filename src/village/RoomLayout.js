@@ -30,10 +30,12 @@ function getBoundaryVisualTuning(scene) {
       coreAlpha: 0.95,
       polygonShadowLine: 24,
       polygonShadowAlpha: 0.16,
-      polygonTrimLine: 12,
-      polygonTrimAlpha: 0.18,
-      polygonInnerLine: 8,
-      polygonInnerAlpha: 0.1,
+      polygonTrimLine: 14,
+      polygonTrimAlpha: 0.24,
+      polygonInnerLine: 9,
+      polygonInnerAlpha: 0.14,
+      polygonCoreLine: 3,
+      polygonCoreAlpha: 0.98,
     };
   }
   return {
@@ -44,10 +46,12 @@ function getBoundaryVisualTuning(scene) {
     coreAlpha: 1,
     polygonShadowLine: 28,
     polygonShadowAlpha: 0.2,
-    polygonTrimLine: 15,
-    polygonTrimAlpha: 0.24,
-    polygonInnerLine: 10,
-    polygonInnerAlpha: 0.14,
+    polygonTrimLine: 17,
+    polygonTrimAlpha: 0.32,
+    polygonInnerLine: 12,
+    polygonInnerAlpha: 0.2,
+    polygonCoreLine: 4,
+    polygonCoreAlpha: 1,
   };
 }
 
@@ -241,6 +245,13 @@ export class RoomLayout {
     for (let i = 1; i < points.length; i++) g.lineTo(points[i].x, points[i].y);
     g.closePath();
     g.strokePath();
+
+    g.lineStyle(tuning.polygonCoreLine, ROOM_EDGE_CORE, tuning.polygonCoreAlpha);
+    g.beginPath();
+    g.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) g.lineTo(points[i].x, points[i].y);
+    g.closePath();
+    g.strokePath();
   }
 
 
@@ -277,20 +288,25 @@ export class RoomLayout {
       const insetY = Math.max(54, Math.min(compactViewport ? 140 : 100, Math.floor(h * 0.24)));
       const innerW = Math.max(320, w - insetX * 2);
       const innerH = Math.max(220, h - insetY * 2);
-      const chamfer = Math.max(44, Math.min(compactViewport ? 132 : 96, Math.floor(Math.min(innerW, innerH) * 0.18)));
+      const chamfer = Math.max(52, Math.min(compactViewport ? 148 : 108, Math.floor(Math.min(innerW, innerH) * 0.22)));
+      const shoulder = Math.max(32, Math.min(compactViewport ? 92 : 72, Math.floor(Math.min(innerW, innerH) * 0.12)));
       const x = insetX;
       const y = insetY;
       const right = insetX + innerW;
       const bottom = insetY + innerH;
       const points = [
         { x: x + chamfer, y },
+        { x: x + chamfer + shoulder, y: y + Math.floor(shoulder * 0.18) },
+        { x: right - chamfer - shoulder, y: y + Math.floor(shoulder * 0.18) },
         { x: right - chamfer, y },
-        { x: right, y: y + chamfer },
-        { x: right, y: bottom - chamfer },
+        { x: right - Math.floor(shoulder * 0.18), y: y + chamfer + shoulder },
+        { x: right - Math.floor(shoulder * 0.18), y: bottom - chamfer - shoulder },
         { x: right - chamfer, y: bottom },
+        { x: right - chamfer - shoulder, y: bottom - Math.floor(shoulder * 0.18) },
+        { x: x + chamfer + shoulder, y: bottom - Math.floor(shoulder * 0.18) },
         { x: x + chamfer, y: bottom },
-        { x, y: bottom - chamfer },
-        { x, y: y + chamfer },
+        { x: x + Math.floor(shoulder * 0.18), y: bottom - chamfer - shoulder },
+        { x: x + Math.floor(shoulder * 0.18), y: y + chamfer + shoulder },
       ];
       this.roomBoundary = { type: 'polygon', points };
       this._boundaryCentroid = { x: x + innerW / 2, y: y + innerH / 2 };
