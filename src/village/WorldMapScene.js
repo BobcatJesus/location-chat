@@ -57,6 +57,7 @@ export class WorldMapScene extends Phaser.Scene {
     this.profile     = d.profile || {};
     this.avatarState = normalizeAvatarState(d.profile?.profile || {});
     this.rooms       = d.rooms || [];
+    this.debugShowAllPOI = Boolean(d.debugShowAllPOI);
     this.onEnterRoom = d.onEnterRoom || (() => {});
     this.onReady     = d.onReady || (() => {});
     // Keep refs for scene.restart in updateGPS
@@ -463,10 +464,16 @@ export class WorldMapScene extends Phaser.Scene {
   _updatePOIStates(playerLat, playerLng) {
     this.poiList.forEach(pin => {
       const inRange = getDistanceMeters(playerLat, playerLng, pin.lat, pin.lng) <= ENTRY_RADIUS;
-      pin.circle.setAlpha(inRange ? 1 : 0.45);
-      pin.label.setAlpha(inRange ? 1 : 0.5);
+      const visibleAsDebug = this.debugShowAllPOI === true;
+      pin.circle.setAlpha(inRange || visibleAsDebug ? 1 : 0.45);
+      pin.label.setAlpha(inRange || visibleAsDebug ? 1 : 0.5);
       pin.circle.setStrokeStyle(inRange ? 3 : 1.5, inRange ? 0xfbbf24 : C_OUTLINE);
     });
+  }
+
+  setDebugShowAllPOI(enabled) {
+    this.debugShowAllPOI = Boolean(enabled);
+    this._updatePOIStates(this.currentLat, this.currentLng);
   }
 
   _toScene(lat, lng) {
