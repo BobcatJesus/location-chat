@@ -7,21 +7,17 @@ const spinnerStyle = `
 @keyframes wm-pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
 `;
 
-export default function WorldMapCanvas({ location, rooms, onEnterRoom, profile, onPickMapLocation }) {
+export default function WorldMapCanvas({ location, rooms, onEnterRoom, profile }) {
   const containerRef = useRef(null);
   const gameRef      = useRef(null);
   const onEnterRef   = useRef(onEnterRoom);
-  const onPickRef    = useRef(onPickMapLocation);
   const roomsHashRef = useRef('');
   onEnterRef.current = onEnterRoom;
-  onPickRef.current = onPickMapLocation;
 
   const [loadState, setLoadState] = useState('gps'); // 'gps' | 'tiles' | 'ready'
   const [effectiveLoc, setEffectiveLoc] = useState(null);
   const [gpsBusy, setGpsBusy] = useState(false);
   const [gpsError, setGpsError] = useState('');
-  const [showAllMapPins, setShowAllMapPins] = useState(false);
-  const [pickLocationMode, setPickLocationMode] = useState(false);
 
   // Get GPS directly — bypasses the geofence hook which may stall on mobile
   useEffect(() => {
@@ -52,10 +48,7 @@ export default function WorldMapCanvas({ location, rooms, onEnterRoom, profile, 
       lng: effectiveLoc.longitude,
       profile,
       rooms,
-      debugShowAllPOI: showAllMapPins,
-      pickLocationMode,
       onEnterRoom: (id, meta) => onEnterRef.current(id, meta),
-      onPickLocation: (lat, lng) => onPickRef.current?.(lat, lng),
       onReady: () => setLoadState('ready'),
     };
 
@@ -71,7 +64,7 @@ export default function WorldMapCanvas({ location, rooms, onEnterRoom, profile, 
     gameRef.current = game;
 
     return () => { game.destroy(true); gameRef.current = null; };
-  }, [!!effectiveLoc, showAllMapPins, pickLocationMode]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [!!effectiveLoc]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Forward GPS updates to the running scene
   useEffect(() => {
@@ -96,28 +89,11 @@ export default function WorldMapCanvas({ location, rooms, onEnterRoom, profile, 
         lng: effectiveLoc.longitude,
         profile,
         rooms,
-        debugShowAllPOI: showAllMapPins,
-        pickLocationMode,
         onEnterRoom: (id, meta) => onEnterRef.current(id, meta),
-        onPickLocation: (lat, lng) => onPickRef.current?.(lat, lng),
         onReady: () => setLoadState('ready'),
       });
     }
-  }, [rooms, profile, effectiveLoc, showAllMapPins, pickLocationMode]);
-
-  useEffect(() => {
-    const scene = gameRef.current?.scene?.getScene('WorldMapScene');
-    if (scene?.sys?.isActive()) {
-      scene.setDebugShowAllPOI?.(showAllMapPins);
-    }
-  }, [showAllMapPins]);
-
-  useEffect(() => {
-    const scene = gameRef.current?.scene?.getScene('WorldMapScene');
-    if (scene?.sys?.isActive()) {
-      scene.setPickLocationMode?.(pickLocationMode);
-    }
-  }, [pickLocationMode]);
+  }, [rooms, profile, effectiveLoc]);
 
   const recenterToGPS = () => {
     if (!navigator.geolocation || gpsBusy) return;
@@ -138,10 +114,7 @@ export default function WorldMapCanvas({ location, rooms, onEnterRoom, profile, 
             lng,
             profile,
             rooms,
-            debugShowAllPOI: showAllMapPins,
-            pickLocationMode,
             onEnterRoom: (id, meta) => onEnterRef.current(id, meta),
-            onPickLocation: (lat, lng) => onPickRef.current?.(lat, lng),
             onReady: () => setLoadState('ready'),
           });
         }
@@ -226,44 +199,6 @@ export default function WorldMapCanvas({ location, rooms, onEnterRoom, profile, 
           {gpsError}
         </div>
       )}
-      <button
-        onClick={() => setShowAllMapPins((v) => !v)}
-        style={{
-          position: 'absolute',
-          right: 12,
-          top: 'calc(92px + env(safe-area-inset-top, 0px))',
-          zIndex: 12,
-          background: showAllMapPins ? '#fbbf24' : '#2b2b33',
-          color: showAllMapPins ? '#2b2b33' : '#faf0d7',
-          border: 'none',
-          borderRadius: 8,
-          padding: '8px 12px',
-          fontFamily: 'Courier New, monospace',
-          fontSize: 12,
-          cursor: 'pointer',
-        }}
-      >
-        {showAllMapPins ? 'Debug: All Pins ON' : 'Debug: All Pins OFF'}
-      </button>
-      <button
-        onClick={() => setPickLocationMode((v) => !v)}
-        style={{
-          position: 'absolute',
-          right: 12,
-          top: 'calc(132px + env(safe-area-inset-top, 0px))',
-          zIndex: 12,
-          background: pickLocationMode ? '#34d399' : '#2b2b33',
-          color: pickLocationMode ? '#052e2b' : '#faf0d7',
-          border: 'none',
-          borderRadius: 8,
-          padding: '8px 12px',
-          fontFamily: 'Courier New, monospace',
-          fontSize: 12,
-          cursor: 'pointer',
-        }}
-      >
-        {pickLocationMode ? 'Pick Spot: ON' : 'Pick Spot: OFF'}
-      </button>
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
     </div>
   );

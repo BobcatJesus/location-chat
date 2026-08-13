@@ -469,7 +469,6 @@ function App() {
   const [newRoomName, setNewRoomName] = useState('');
   const [newRoomCategory, setNewRoomCategory] = useState('social');
   const [newRoomPublic, setNewRoomPublic] = useState(false);
-  const [newRoomCoordinate, setNewRoomCoordinate] = useState(null);
   const [inviteToast, setInviteToast] = useState(null);
   const [communityRooms, setCommunityRooms] = useState([]);
 
@@ -804,19 +803,7 @@ function App() {
     setNewRoomName('');
     setNewRoomCategory('social');
     setNewRoomPublic(false);
-    setNewRoomCoordinate(null);
     setCreatingRoom(true);
-  };
-
-  const handlePickMapLocation = (lat, lng) => {
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
-    setNewRoomCoordinate({ lat, lng });
-    setNewRoomName('');
-    setNewRoomCategory('social');
-    setNewRoomPublic(false);
-    setCreatingRoom(true);
-    setGpsToast(`Picked map spot (${lat.toFixed(5)}, ${lng.toFixed(5)})`);
-    setTimeout(() => setGpsToast(null), 2600);
   };
 
   const handleDeleteRoom = async (room) => {
@@ -869,15 +856,6 @@ function App() {
     const roomName = newRoomName.trim() || `${contributorName}'s Spot`;
     const cat = COMMUNITY_CATEGORIES.find(c => c.id === newRoomCategory) || COMMUNITY_CATEGORIES[0];
     const roomId = `user-${Date.now()}`;
-    const targetLat = newRoomCoordinate?.lat ?? location?.latitude;
-    const targetLng = newRoomCoordinate?.lng ?? location?.longitude;
-
-    if (!Number.isFinite(targetLat) || !Number.isFinite(targetLng)) {
-      setCreatingRoom(false);
-      setGpsToast('No valid location selected yet.');
-      setTimeout(() => setGpsToast(null), 3000);
-      return;
-    }
 
     let publicRoomCreated = !newRoomPublic;
 
@@ -898,7 +876,7 @@ function App() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             id: roomId, name: roomName,
-            lat: targetLat, lng: targetLng,
+            lat: location.latitude, lng: location.longitude,
             radius: 60, category: cat.id,
             emoji: cat.emoji, color: cat.color,
             creator: contributorName, description: '',
@@ -930,7 +908,7 @@ function App() {
     if (!newRoomPublic || publicRoomCreated) {
       newRoom = createUserRoom({
         id: roomId, name: roomName,
-        lat: targetLat, lng: targetLng,
+        lat: location.latitude, lng: location.longitude,
         radiusMeters: 60, contributor: contributorName, ownerId, isPublic: newRoomPublic,
       });
     }
@@ -1178,7 +1156,6 @@ function App() {
                     profile={profile}
                     rooms={allRooms.map((r) => ({ ...r, radiusMeters: r.radiusMeters || r.radius || 100 }))}
                     onEnterRoom={handleEnterRoom}
-                    onPickMapLocation={handlePickMapLocation}
                   />
                 </Suspense>
                 {/* Create room at current GPS location */}
