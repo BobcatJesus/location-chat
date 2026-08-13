@@ -27,6 +27,8 @@ function canonicalRoomId(room) {
 }
 
 export default function VillageCanvas({ room, profile, onLeave }) {
+  const BASE_WIDTH = 1600;
+  const BASE_HEIGHT = 900;
   const containerRef = useRef(null);
   const gameRef = useRef(null);
   const noticeTimerRef = useRef(null);
@@ -34,58 +36,10 @@ export default function VillageCanvas({ room, profile, onLeave }) {
   const [nearbyCount, setNearbyCount] = useState(0);
   const [messages, setMessages] = useState([]);
   const [draft, setDraft] = useState('');
-  const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768);
   const [showEditHint, setShowEditHint] = useState(false);
   const [systemNotice, setSystemNotice] = useState('');
-  const [mobileChatOpen, setMobileChatOpen] = useState(false);
-  const [isTouchDevice, setIsTouchDevice] = useState(() => {
-    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
-    return window.matchMedia('(pointer: coarse)').matches || (navigator.maxTouchPoints || 0) > 0;
-  });
-  const [mobileViewportInsetBottom, setMobileViewportInsetBottom] = useState(0);
-  const [cameraMode, setCameraMode] = useState(() => (window.innerWidth <= 768 ? 'wide-follow' : 'follow'));
   const [roomPopulation, setRoomPopulation] = useState(1);
   const roomId = canonicalRoomId(room);
-  const cameraModeLabel = cameraMode === 'overview'
-    ? 'Overview'
-    : cameraMode === 'wide-follow'
-      ? 'Wide'
-      : 'Follow';
-
-  useEffect(() => {
-    const onResize = () => {
-      setIsMobile(window.innerWidth <= 768);
-      const touch = typeof window.matchMedia === 'function'
-        ? window.matchMedia('(pointer: coarse)').matches || (navigator.maxTouchPoints || 0) > 0
-        : false;
-      setIsTouchDevice(touch);
-    };
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === 'undefined' || !window.visualViewport) return;
-    const updateInset = () => {
-      const vv = window.visualViewport;
-      const hiddenByBrowserUi = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
-      setMobileViewportInsetBottom(Math.round(hiddenByBrowserUi));
-    };
-
-    updateInset();
-    window.visualViewport.addEventListener('resize', updateInset);
-    window.visualViewport.addEventListener('scroll', updateInset);
-    window.addEventListener('orientationchange', updateInset);
-    return () => {
-      window.visualViewport.removeEventListener('resize', updateInset);
-      window.visualViewport.removeEventListener('scroll', updateInset);
-      window.removeEventListener('orientationchange', updateInset);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!isMobile) setMobileChatOpen(true);
-  }, [isMobile]);
 
   useEffect(() => {
     window.__chatInputFocused = false;
@@ -93,18 +47,15 @@ export default function VillageCanvas({ room, profile, onLeave }) {
   }, []);
 
   useEffect(() => {
-    if (isMobile) return;
     setShowEditHint(true);
     const timer = setTimeout(() => setShowEditHint(false), 7000);
     return () => clearTimeout(timer);
-  }, [roomId, isMobile]);
+  }, [roomId]);
 
   useEffect(() => {
     if (!containerRef.current || !roomId) return;
 
     const el = containerRef.current;
-    const width = el.clientWidth || window.innerWidth;
-    const height = el.clientHeight || window.innerHeight;
 
     VillageScene._boot = {
       roomId,
@@ -114,7 +65,7 @@ export default function VillageCanvas({ room, profile, onLeave }) {
       shopTag:    room?.shop    || '',
       roomShape:  room?.footprint || null,
       profile,
-      preferredCameraMode: isMobile || isTouchDevice ? 'wide-follow' : 'follow',
+      preferredCameraMode: 'follow',
       onEditorChange: setEditorActive,
       onNearbyChange: setNearbyCount,
       onRoomPopulationChange: (count) => {
@@ -134,12 +85,12 @@ export default function VillageCanvas({ room, profile, onLeave }) {
     const config = {
       type: Phaser.AUTO,
       parent: el,
-      width,
-      height,
-      backgroundColor: '#6aab45',
+      width: BASE_WIDTH,
+      height: BASE_HEIGHT,
+      backgroundColor: '#fef3c7',
       scene: VillageScene,
       scale: {
-        mode: Phaser.Scale.RESIZE,
+        mode: Phaser.Scale.FIT,
         autoCenter: Phaser.Scale.CENTER_BOTH,
       },
     };
@@ -159,11 +110,9 @@ export default function VillageCanvas({ room, profile, onLeave }) {
       setMessages([]);
       setDraft('');
       setSystemNotice('');
-      setMobileChatOpen(false);
-      setCameraMode(isMobile || isTouchDevice ? 'wide-follow' : 'follow');
       setRoomPopulation(1);
     };
-  }, [roomId, room?.name, room?.amenity, room?.shop, profile, isMobile, isTouchDevice]);
+  }, [roomId, room?.name, room?.amenity, room?.shop, profile]);
 
   const toggleEditor = () => {
     const scene = gameRef.current?.scene?.getScene('VillageScene');
@@ -184,25 +133,13 @@ export default function VillageCanvas({ room, profile, onLeave }) {
     }
   };
 
-  const toggleCameraMode = () => {
-    const scene = gameRef.current?.scene?.getScene('VillageScene');
-    if (scene?.sys?.isActive()) {
-      const next = scene.toggleCameraMode?.();
-      if (next === 'overview' || next === 'follow' || next === 'wide-follow') setCameraMode(next);
-    }
-  };
-
-  const mobileBottomLift = isMobile
-    ? Math.max(18, mobileViewportInsetBottom + (isTouchDevice ? 18 : 12))
-    : 0;
-
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
-      {showEditHint && !isMobile && (
+      {showEditHint && (
         <div style={{
           position: 'absolute',
-          top: 'calc(12px + env(safe-area-inset-top, 0px))',
+          top: 12,
           left: '50%',
           transform: 'translateX(-50%)',
           zIndex: 1001,
@@ -221,7 +158,7 @@ export default function VillageCanvas({ room, profile, onLeave }) {
       {systemNotice && (
         <div style={{
           position: 'absolute',
-          top: showEditHint && !isMobile ? 'calc(52px + env(safe-area-inset-top, 0px))' : 'calc(12px + env(safe-area-inset-top, 0px))',
+          top: showEditHint ? 52 : 12,
           left: '50%',
           transform: 'translateX(-50%)',
           zIndex: 1002,
@@ -239,23 +176,22 @@ export default function VillageCanvas({ room, profile, onLeave }) {
       )}
       <div style={{
         position: 'absolute',
-        top: isMobile ? 'calc(8px + env(safe-area-inset-top, 0px))' : 'calc(12px + env(safe-area-inset-top, 0px))',
-        left: isMobile ? 'calc(8px + env(safe-area-inset-left, 0px))' : 'calc(12px + env(safe-area-inset-left, 0px))',
+        top: 12,
+        left: 12,
         zIndex: 1000,
         display: 'flex',
         gap: 6,
-        flexWrap: isMobile ? 'wrap' : 'nowrap',
-        maxWidth: isMobile ? 'calc(100vw - 16px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px))' : 'none',
+        flexWrap: 'nowrap',
       }}>
         <button
           onClick={onLeave}
           style={{
             background: 'rgba(0,0,0,0.55)', color: '#fff', border: 'none',
             borderRadius: 8,
-            padding: isMobile ? '9px 14px' : '6px 14px',
-            minHeight: isMobile ? 40 : 0,
+            padding: '6px 14px',
+            minHeight: 0,
             cursor: 'pointer',
-            fontSize: isMobile ? 13 : 14,
+            fontSize: 14,
           }}
         >
           ← Leave
@@ -267,91 +203,45 @@ export default function VillageCanvas({ room, profile, onLeave }) {
             color: editorActive ? '#000' : '#fff',
             border: 'none',
             borderRadius: 8,
-            padding: isMobile ? '9px 14px' : '6px 14px',
-            minHeight: isMobile ? 40 : 0,
+            padding: '6px 14px',
+            minHeight: 0,
             cursor: 'pointer',
-            fontSize: isMobile ? 13 : 14,
+            fontSize: 14,
             fontWeight: 'bold',
           }}
         >
           {editorActive ? 'Done' : 'Edit'}
         </button>
-        {isMobile && (
-          <button
-            onClick={() => setMobileChatOpen((v) => !v)}
-            style={{
-              background: mobileChatOpen ? '#4ade80' : 'rgba(0,0,0,0.55)',
-              color: mobileChatOpen ? '#052e16' : '#fff',
-              border: 'none',
-              borderRadius: 8,
-              padding: '9px 12px',
-              minHeight: 40,
-              cursor: 'pointer',
-              fontSize: 12,
-              fontWeight: 'bold',
-            }}
-          >
-            {mobileChatOpen ? 'Hide Chat' : 'Chat'}
-          </button>
-        )}
       </div>
 
       <div style={{
         position: 'absolute',
-        top: 'calc(8px + env(safe-area-inset-top, 0px))',
-        right: 'calc(8px + env(safe-area-inset-right, 0px))',
-        zIndex: 1001,
-        display: 'flex',
+        top: 52,
+        left: 12,
+        zIndex: 1000,
+        background: '#0f172acc',
+        border: '1px solid #334155',
+        borderRadius: 6,
+        padding: '5px 8px',
+        color: '#cbd5e1',
+        fontFamily: 'Courier New, monospace',
+        fontSize: 11,
       }}>
-        <button
-          onClick={toggleCameraMode}
-          style={{
-            background: cameraMode === 'overview' ? '#93c5fd' : cameraMode === 'wide-follow' ? '#86efac' : 'rgba(0,0,0,0.62)',
-            color: cameraMode === 'overview' || cameraMode === 'wide-follow' ? '#0f172a' : '#fff',
-            border: 'none',
-            borderRadius: 8,
-            padding: '9px 12px',
-            minHeight: 40,
-            cursor: 'pointer',
-            fontSize: 12,
-            fontWeight: 'bold',
-            boxShadow: '0 2px 10px rgba(0,0,0,0.28)',
-          }}
-        >
-          Zoom: {cameraModeLabel}
-        </button>
+        Press ~ to toggle Edit Mode
       </div>
-
-      {!isMobile && (
-        <div style={{
-          position: 'absolute',
-          top: 'calc(52px + env(safe-area-inset-top, 0px))',
-          left: 'calc(12px + env(safe-area-inset-left, 0px))',
-          zIndex: 1000,
-          background: '#0f172acc',
-          border: '1px solid #334155',
-          borderRadius: 6,
-          padding: '5px 8px',
-          color: '#cbd5e1',
-          fontFamily: 'Courier New, monospace',
-          fontSize: 11,
-        }}>
-          Press ~ to toggle Edit Mode
-        </div>
-      )}
 
       <div style={{
         position: 'absolute',
-        top: isMobile ? 'calc(56px + env(safe-area-inset-top, 0px))' : 'calc(12px + env(safe-area-inset-top, 0px))',
-        right: isMobile ? 'calc(8px + env(safe-area-inset-right, 0px))' : 'calc(12px + env(safe-area-inset-right, 0px))',
+        top: 12,
+        right: 12,
         zIndex: 1000,
         background: '#0f172acc',
         border: '1px solid #334155',
         borderRadius: 8,
-        padding: isMobile ? '8px 10px' : '6px 10px',
+        padding: '6px 10px',
         color: '#e2e8f0',
         fontFamily: 'Courier New, monospace',
-        fontSize: isMobile ? 12 : 11,
+        fontSize: 11,
         fontWeight: 'bold',
       }}>
         In room: {roomPopulation}
@@ -359,18 +249,17 @@ export default function VillageCanvas({ room, profile, onLeave }) {
 
       <div style={{
         position: 'absolute',
-        right: isMobile ? 'calc(8px + env(safe-area-inset-right, 0px))' : 'calc(12px + env(safe-area-inset-right, 0px))',
-        left: isMobile ? 'calc(8px + env(safe-area-inset-left, 0px))' : 'auto',
-        top: isMobile ? 'auto' : 'auto',
-        bottom: isMobile ? `calc(${8 + mobileBottomLift}px + env(safe-area-inset-bottom, 0px))` : 'calc(64px + env(safe-area-inset-bottom, 0px))',
-        width: isMobile ? 'auto' : 'min(280px, calc(100vw - 24px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)))',
+        right: 12,
+        left: 'auto',
+        bottom: 64,
+        width: 'min(280px, calc(100vw - 24px))',
         zIndex: 1000,
-        display: isMobile && !mobileChatOpen ? 'none' : 'flex',
+        display: 'flex',
         flexDirection: 'column',
         gap: 6,
-        maxHeight: isMobile ? `min(50dvh, calc(100dvh - ${148 + mobileBottomLift}px - env(safe-area-inset-top, 0px)))` : '45vh',
-        overflowY: isMobile ? 'auto' : 'visible',
-        paddingBottom: isMobile ? `calc(env(safe-area-inset-bottom, 0px) + ${8 + Math.floor(mobileBottomLift / 4)}px)` : 0,
+        maxHeight: '45vh',
+        overflowY: 'visible',
+        paddingBottom: 0,
       }}>
         <div style={{
           background: '#0f172acc',
@@ -386,7 +275,7 @@ export default function VillageCanvas({ room, profile, onLeave }) {
 
         {messages.length > 0 && (
           <div style={{
-            maxHeight: isMobile ? '16vh' : '22vh',
+            maxHeight: '22vh',
             overflowY: 'auto',
             background: '#0f172acc',
             border: '1px solid #334155',

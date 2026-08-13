@@ -89,6 +89,7 @@ export class RoomLayout {
     this.gfx.fillStyle(floor.carpet, 1);
     this.gfx.fillRect(0, 0, W, H);
     this._drawOutsideRoomMask(W, H, floor.carpet);
+    this._applyInteriorWarmth(W, H);
 
     // Draw all zones
     floor.zones.forEach(z => {
@@ -172,6 +173,26 @@ export class RoomLayout {
     for (let i = 1; i < points.length; i++) g.lineTo(points[i].x, points[i].y);
     g.closePath();
     g.strokePath();
+  }
+
+  _applyInteriorWarmth(worldW, worldH) {
+    const g = this.gfx;
+    const boundary = this.roomBoundary;
+
+    g.fillStyle(0xfff7dd, 0.14);
+    if (boundary.type === 'rect') {
+      g.fillRect(boundary.x, boundary.y, boundary.w, boundary.h);
+      return;
+    }
+
+    const points = boundary.points || [];
+    if (points.length < 3) return;
+
+    g.beginPath();
+    g.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) g.lineTo(points[i].x, points[i].y);
+    g.closePath();
+    g.fillPath();
   }
 
   _drawRectBoundaryDressings(x, y, w, h, carpetColor) {
