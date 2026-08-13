@@ -85,13 +85,6 @@ const FOOTWEAR_OPTIONS = [
   { id: 'heels', label: 'Heels' },
 ];
 
-function resolveHairVariant(hairStyle = 'bun', hairHue = 26) {
-  if (hairStyle === 'bun' || hairStyle === 'bob' || hairStyle === 'curly' || hairStyle === 'lob') return hairStyle;
-  if (hairStyle === 'combed') return 'bob';
-  if (hairStyle === 'messy') return (Math.round(Number(hairHue) || 26) % 2 === 0) ? 'bun' : 'curly';
-  return 'bun';
-}
-
 function buildAvatarPreviewData(formData = {}) {
   const skinTone = Number(formData.skinTone ?? 45);
   const hairHue = Number(formData.hairHue ?? 26);
@@ -103,7 +96,6 @@ function buildAvatarPreviewData(formData = {}) {
     pants: '#55516a',
     pantsShade: '#444156',
     shoe: '#141313',
-    hairVariant: resolveHairVariant(formData.hairStyle, hairHue),
   };
 }
 
@@ -136,34 +128,10 @@ function AvatarBuildPreview({ formData }) {
           <circle cx="24" cy="37" r="7" fill={avatar.skin} />
           <circle cx="72" cy="37" r="7" fill={avatar.skin} />
 
-          {avatar.hairVariant === 'curly' ? (
-            <>
-              <circle cx="34" cy="20" r="8" fill={avatar.hair} />
-              <circle cx="44" cy="16" r="8" fill={avatar.hair} />
-              <circle cx="54" cy="16" r="8" fill={avatar.hair} />
-              <circle cx="63" cy="20" r="8" fill={avatar.hair} />
-              <circle cx="30" cy="27" r="7" fill={avatar.hair} />
-              <circle cx="40" cy="25" r="7" fill={avatar.hair} />
-              <circle cx="50" cy="25" r="7" fill={avatar.hair} />
-              <circle cx="60" cy="25" r="7" fill={avatar.hair} />
-            </>
-          ) : (
-            <>
-              <ellipse cx="48" cy="20" rx="24" ry="12" fill={avatar.hair} />
-              <rect x="24" y="18" width="48" height="14" rx="6" fill={avatar.hair} />
-              <path d="M24 28 L30 34 L36 30 L47 35 L58 30 L64 34 L72 28 L72 18 L24 18 Z" fill={avatar.hair} />
-              <rect x="38" y="12" width="20" height="5" rx="3" fill="rgba(255,255,255,0.15)" />
-            </>
-          )}
-
-          {avatar.hairVariant === 'bun' && <circle cx="56" cy="8" r="6" fill={avatar.hair} />}
-          {avatar.hairVariant === 'bob' && <rect x="26" y="29" width="44" height="9" rx="5" fill={avatar.hair} />}
-          {avatar.hairVariant === 'lob' && (
-            <>
-              <rect x="24" y="30" width="10" height="15" rx="5" fill={avatar.hair} />
-              <rect x="62" y="30" width="10" height="15" rx="5" fill={avatar.hair} />
-            </>
-          )}
+          <ellipse cx="48" cy="20" rx="24" ry="12" fill={avatar.hair} />
+          <rect x="24" y="18" width="48" height="14" rx="6" fill={avatar.hair} />
+          <path d="M24 28 L30 34 L36 30 L47 35 L58 30 L64 34 L72 28 L72 18 L24 18 Z" fill={avatar.hair} />
+          <rect x="38" y="12" width="20" height="5" rx="3" fill="rgba(255,255,255,0.15)" />
 
           <rect x="44" y="50" width="8" height="8" rx="3" fill="rgba(0,0,0,0.1)" />
 
