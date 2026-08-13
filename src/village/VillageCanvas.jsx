@@ -39,7 +39,14 @@ export default function VillageCanvas({ room, profile, onLeave }) {
   const [showEditHint, setShowEditHint] = useState(false);
   const [systemNotice, setSystemNotice] = useState('');
   const [roomPopulation, setRoomPopulation] = useState(1);
+  const [cameraMode, setCameraMode] = useState('wide-follow');
   const roomId = canonicalRoomId(room);
+
+  const zoomLabel = cameraMode === 'overview'
+    ? 'Overview'
+    : cameraMode === 'wide-follow'
+      ? 'Wide'
+      : 'Follow';
 
   useEffect(() => {
     window.__chatInputFocused = false;
@@ -50,6 +57,10 @@ export default function VillageCanvas({ room, profile, onLeave }) {
     setShowEditHint(true);
     const timer = setTimeout(() => setShowEditHint(false), 7000);
     return () => clearTimeout(timer);
+  }, [roomId]);
+
+  useEffect(() => {
+    setCameraMode('wide-follow');
   }, [roomId]);
 
   useEffect(() => {
@@ -65,7 +76,7 @@ export default function VillageCanvas({ room, profile, onLeave }) {
       shopTag:    room?.shop    || '',
       roomShape:  room?.footprint || null,
       profile,
-      preferredCameraMode: 'follow',
+      preferredCameraMode: 'wide-follow',
       onEditorChange: setEditorActive,
       onNearbyChange: setNearbyCount,
       onRoomPopulationChange: (count) => {
@@ -111,6 +122,7 @@ export default function VillageCanvas({ room, profile, onLeave }) {
       setDraft('');
       setSystemNotice('');
       setRoomPopulation(1);
+      setCameraMode('wide-follow');
     };
   }, [roomId, room?.name, room?.amenity, room?.shop, profile]);
 
@@ -131,6 +143,13 @@ export default function VillageCanvas({ room, profile, onLeave }) {
       scene.sendChatMessage?.(text);
       setDraft('');
     }
+  };
+
+  const toggleZoom = () => {
+    const scene = gameRef.current?.scene?.getScene('VillageScene');
+    if (!scene?.sys?.isActive()) return;
+    const nextMode = scene.toggleCameraMode?.();
+    if (nextMode) setCameraMode(nextMode);
   };
 
   return (
@@ -211,6 +230,22 @@ export default function VillageCanvas({ room, profile, onLeave }) {
           }}
         >
           {editorActive ? 'Done' : 'Edit'}
+        </button>
+        <button
+          onClick={toggleZoom}
+          style={{
+            background: 'rgba(0,0,0,0.55)',
+            color: '#fff',
+            border: 'none',
+            borderRadius: 8,
+            padding: '6px 14px',
+            minHeight: 0,
+            cursor: 'pointer',
+            fontSize: 14,
+            fontWeight: 'bold',
+          }}
+        >
+          Zoom: {zoomLabel}
         </button>
       </div>
 
