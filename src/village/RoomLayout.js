@@ -12,6 +12,9 @@ const SIGN_STYLE = {
   padding: { x: 4, y: 3 },
 };
 const OUTSIDE_ROOM_COLOR = 0x0f172a;
+const OUTSIDE_ROOM_ALPHA = 0.78;
+const ROOM_EDGE_GLOW = 0x38bdf8;
+const ROOM_EDGE_CORE = 0xf8fafc;
 
 const SOLID_ZONE_TYPES = new Set([
   'shelf',
@@ -105,11 +108,17 @@ export class RoomLayout {
       const w = boundary.w;
       const h = boundary.h;
 
-      g.fillStyle(OUTSIDE_ROOM_COLOR, 0.65);
+      g.fillStyle(OUTSIDE_ROOM_COLOR, OUTSIDE_ROOM_ALPHA);
       if (y > 0) g.fillRect(0, 0, worldW, y);
       if (x > 0) g.fillRect(0, y, x, h);
       if (x + w < worldW) g.fillRect(x + w, y, worldW - (x + w), h);
       if (y + h < worldH) g.fillRect(0, y + h, worldW, worldH - (y + h));
+
+      // Layered stroke gives the room edge a soft glow and a crisp core line.
+      g.lineStyle(8, ROOM_EDGE_GLOW, 0.26);
+      g.strokeRect(x, y, w, h);
+      g.lineStyle(2.5, ROOM_EDGE_CORE, 0.9);
+      g.strokeRect(x, y, w, h);
       return;
     }
 
@@ -117,7 +126,7 @@ export class RoomLayout {
     if (points.length < 3) return;
 
     // Dim whole canvas first, then repaint room interior polygon with the carpet color.
-    g.fillStyle(OUTSIDE_ROOM_COLOR, 0.65);
+    g.fillStyle(OUTSIDE_ROOM_COLOR, OUTSIDE_ROOM_ALPHA);
     g.fillRect(0, 0, worldW, worldH);
 
     g.fillStyle(carpetColor, 1);
@@ -126,6 +135,20 @@ export class RoomLayout {
     for (let i = 1; i < points.length; i++) g.lineTo(points[i].x, points[i].y);
     g.closePath();
     g.fillPath();
+
+    g.lineStyle(8, ROOM_EDGE_GLOW, 0.26);
+    g.beginPath();
+    g.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) g.lineTo(points[i].x, points[i].y);
+    g.closePath();
+    g.strokePath();
+
+    g.lineStyle(2.5, ROOM_EDGE_CORE, 0.9);
+    g.beginPath();
+    g.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) g.lineTo(points[i].x, points[i].y);
+    g.closePath();
+    g.strokePath();
   }
 
 
