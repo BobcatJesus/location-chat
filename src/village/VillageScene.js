@@ -361,10 +361,11 @@ export class VillageScene extends Phaser.Scene {
         if (player?.id && this.userId && String(player.id) === String(this.userId)) return;
         const remotePlayer = this.remotePlayers.get(sid);
         if (remotePlayer) {
+          const nextPoint = this._clampRemotePosition(player.x ?? remotePlayer.gx, player.y ?? remotePlayer.gy);
           const prevX = remotePlayer.gx;
           const prevY = remotePlayer.gy;
-          remotePlayer.gx = player.x ?? remotePlayer.gx;
-          remotePlayer.gy = player.y ?? remotePlayer.gy;
+          remotePlayer.gx = nextPoint.x;
+          remotePlayer.gy = nextPoint.y;
           const ddx = remotePlayer.gx - prevX;
           const ddy = remotePlayer.gy - prevY;
           if (Math.abs(ddx) > 0.5 || Math.abs(ddy) > 0.5) {
@@ -394,8 +395,9 @@ export class VillageScene extends Phaser.Scene {
     socket.on('player_moved', ({ socketId, x, y }) => {
       const remotePlayer = this.remotePlayers.get(socketId);
       if (remotePlayer) {
-        const ddx = x - remotePlayer.gx;
-        const ddy = y - remotePlayer.gy;
+        const nextPoint = this._clampRemotePosition(x, y);
+        const ddx = nextPoint.x - remotePlayer.gx;
+        const ddy = nextPoint.y - remotePlayer.gy;
         if (Math.abs(ddy) >= Math.abs(ddx)) {
           remotePlayer.dir = ddy > 0 ? 'front' : 'back';
         } else {
@@ -403,8 +405,8 @@ export class VillageScene extends Phaser.Scene {
           remotePlayer.facingLeft = ddx < 0;
         }
         remotePlayer.movingUntil = this.time.now + 220;
-        remotePlayer.gx = x;
-        remotePlayer.gy = y;
+        remotePlayer.gx = nextPoint.x;
+        remotePlayer.gy = nextPoint.y;
         remotePlayer.sync();
       }
     });
@@ -530,18 +532,33 @@ export class VillageScene extends Phaser.Scene {
       .forEach(z => this.removeDecoration(z.id));
   }
 
+  _clampRemotePosition(x, y, margin = 18) {
+    const fallback = {
+      x: Number.isFinite(Number(x)) ? Number(x) : 400,
+      y: Number.isFinite(Number(y)) ? Number(y) : 300,
+    };
+    if (!this.roomLayout) return fallback;
+    return this.roomLayout.clampPointToRoom(fallback.x, fallback.y, margin) || fallback;
+  }
+
   _normalizeDecoration(item) {
     if (!item) return null;
     const frameKey = item.frameKey || LEGACY_TYPE_TO_FRAME_KEY[item.type] || null;
     if (!frameKey || !PROP_DEFS[frameKey]) return null;
+    const width = Number(item.w || 60);
+    const height = Number(item.h || 60);
+    const boundaryMargin = Math.ceil(Math.max(width, height) / 2) + 6;
+    const clamped = this.roomLayout?.clampPointToRoom(item.x, item.y, boundaryMargin) || { x: item.x, y: item.y };
+    const isInside = this.roomLayout?.isRectFullyInsideRoom(clamped.x, clamped.y, width, height, 6) ?? true;
+    if (!isInside) return null;
     return {
       id: item.id,
       frameKey,
       type: item.type || frameKey,
-      x: item.x,
-      y: item.y,
-      w: item.w || 60,
-      h: item.h || 60,
+      x: clamped.x,
+      y: clamped.y,
+      w: width,
+      h: height,
       placedBy: item.placedBy,
     };
   }
@@ -550,8 +567,9 @@ export class VillageScene extends Phaser.Scene {
     if (this.remotePlayers.has(socketId) || this.pendingRemoteSpawns.has(socketId)) return;
     this.pendingRemoteSpawns.add(socketId);
     const avatarState = normalizeAvatarState(player);
+    const spawnPoint = this._clampRemotePosition(player.x, player.y);
     try {
-      const avatar = await createAvatarEntity(this, player.x ?? 400, player.y ?? 300, {
+      const avatar = await createAvatarEntity(this, spawnPoint.x, spawnPoint.y, {
         ...avatarState,
         name: player?.firstName || player?.name || 'Traveler',
         isLocal: false,
@@ -559,8 +577,8 @@ export class VillageScene extends Phaser.Scene {
       if (!avatar || this.remotePlayers.has(socketId)) return;
       if (avatarState.photo) avatar.attachPhoto(this, avatarState.photo);
       const remotePlayer = {
-        gx: player.x ?? 400,
-        gy: player.y ?? 300,
+        gx: spawnPoint.x,
+        gy: spawnPoint.y,
         avatar,
         dir: 'front',
         facingLeft: false,
