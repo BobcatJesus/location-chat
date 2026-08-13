@@ -42,6 +42,7 @@ export default function VillageCanvas({ room, profile, onLeave }) {
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
     return window.matchMedia('(pointer: coarse)').matches || (navigator.maxTouchPoints || 0) > 0;
   });
+  const [mobileViewportInsetBottom, setMobileViewportInsetBottom] = useState(0);
   const [cameraMode, setCameraMode] = useState(() => (window.innerWidth <= 768 ? 'wide-follow' : 'follow'));
   const [roomPopulation, setRoomPopulation] = useState(1);
   const roomId = canonicalRoomId(room);
@@ -61,6 +62,25 @@ export default function VillageCanvas({ room, profile, onLeave }) {
     };
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.visualViewport) return;
+    const updateInset = () => {
+      const vv = window.visualViewport;
+      const hiddenByBrowserUi = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+      setMobileViewportInsetBottom(Math.round(hiddenByBrowserUi));
+    };
+
+    updateInset();
+    window.visualViewport.addEventListener('resize', updateInset);
+    window.visualViewport.addEventListener('scroll', updateInset);
+    window.addEventListener('orientationchange', updateInset);
+    return () => {
+      window.visualViewport.removeEventListener('resize', updateInset);
+      window.visualViewport.removeEventListener('scroll', updateInset);
+      window.removeEventListener('orientationchange', updateInset);
+    };
   }, []);
 
   useEffect(() => {
@@ -171,6 +191,10 @@ export default function VillageCanvas({ room, profile, onLeave }) {
       if (next === 'overview' || next === 'follow' || next === 'wide-follow') setCameraMode(next);
     }
   };
+
+  const mobileBottomLift = isMobile
+    ? Math.max(18, mobileViewportInsetBottom + (isTouchDevice ? 18 : 12))
+    : 0;
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
@@ -338,15 +362,15 @@ export default function VillageCanvas({ room, profile, onLeave }) {
         right: isMobile ? 'calc(8px + env(safe-area-inset-right, 0px))' : 'calc(12px + env(safe-area-inset-right, 0px))',
         left: isMobile ? 'calc(8px + env(safe-area-inset-left, 0px))' : 'auto',
         top: isMobile ? 'auto' : 'auto',
-        bottom: isMobile ? 'calc(8px + env(safe-area-inset-bottom, 0px))' : 'calc(64px + env(safe-area-inset-bottom, 0px))',
+        bottom: isMobile ? `calc(${8 + mobileBottomLift}px + env(safe-area-inset-bottom, 0px))` : 'calc(64px + env(safe-area-inset-bottom, 0px))',
         width: isMobile ? 'auto' : 'min(280px, calc(100vw - 24px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)))',
         zIndex: 1000,
         display: isMobile && !mobileChatOpen ? 'none' : 'flex',
         flexDirection: 'column',
         gap: 6,
-        maxHeight: isMobile ? 'min(50vh, calc(100vh - 132px - env(safe-area-inset-top, 0px)))' : '45vh',
+        maxHeight: isMobile ? `min(50dvh, calc(100dvh - ${148 + mobileBottomLift}px - env(safe-area-inset-top, 0px)))` : '45vh',
         overflowY: isMobile ? 'auto' : 'visible',
-        paddingBottom: isMobile ? 'calc(env(safe-area-inset-bottom, 0px) + 6px)' : 0,
+        paddingBottom: isMobile ? `calc(env(safe-area-inset-bottom, 0px) + ${8 + Math.floor(mobileBottomLift / 4)}px)` : 0,
       }}>
         <div style={{
           background: '#0f172acc',
