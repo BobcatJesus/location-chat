@@ -12,7 +12,7 @@ const SIGN_STYLE = {
   padding: { x: 4, y: 3 },
 };
 const OUTSIDE_ROOM_COLOR = 0x0f172a;
-const OUTSIDE_ROOM_ALPHA = 0.78;
+const OUTSIDE_ROOM_ALPHA = 0.72;
 const ROOM_EDGE_GLOW = 0x38bdf8;
 const ROOM_EDGE_CORE = 0xf8fafc;
 const ROOM_EDGE_TRIM = 0xe7d7b1;
@@ -128,11 +128,11 @@ export class RoomLayout {
       this._drawRectBoundaryDressings(x, y, w, h, carpetColor);
 
       // Layered stroke gives the room edge a soft glow and a crisp core line.
-      g.lineStyle(8, ROOM_EDGE_GLOW, 0.18);
+      g.lineStyle(6, ROOM_EDGE_GLOW, 0.09);
       g.strokeRect(x, y, w, h);
-      g.lineStyle(3, ROOM_EDGE_TRIM, 0.9);
+      g.lineStyle(2, ROOM_EDGE_TRIM, 0.72);
       g.strokeRect(x + 1, y + 1, w - 2, h - 2);
-      g.lineStyle(1.5, ROOM_EDGE_CORE, 0.9);
+      g.lineStyle(1, ROOM_EDGE_CORE, 0.72);
       g.strokeRect(x + 2, y + 2, w - 4, h - 4);
       return;
     }
@@ -154,21 +154,21 @@ export class RoomLayout {
 
     this._drawPolygonBoundaryDressings(points);
 
-    g.lineStyle(8, ROOM_EDGE_GLOW, 0.18);
+    g.lineStyle(6, ROOM_EDGE_GLOW, 0.09);
     g.beginPath();
     g.moveTo(points[0].x, points[0].y);
     for (let i = 1; i < points.length; i++) g.lineTo(points[i].x, points[i].y);
     g.closePath();
     g.strokePath();
 
-    g.lineStyle(3, ROOM_EDGE_TRIM, 0.9);
+    g.lineStyle(2, ROOM_EDGE_TRIM, 0.72);
     g.beginPath();
     g.moveTo(points[0].x, points[0].y);
     for (let i = 1; i < points.length; i++) g.lineTo(points[i].x, points[i].y);
     g.closePath();
     g.strokePath();
 
-    g.lineStyle(1.5, ROOM_EDGE_CORE, 0.9);
+    g.lineStyle(1, ROOM_EDGE_CORE, 0.72);
     g.beginPath();
     g.moveTo(points[0].x, points[0].y);
     for (let i = 1; i < points.length; i++) g.lineTo(points[i].x, points[i].y);
@@ -184,12 +184,12 @@ export class RoomLayout {
       const w = Number(region?.w || 0);
       const h = Number(region?.h || 0);
       if (w <= 0 || h <= 0) return;
-      for (let py = y + 14; py < y + h; py += 72) {
-        for (let px = x + 14; px < x + w; px += 72) {
-          g.fillStyle(OUTSIDE_PATTERN_COLOR, 0.08);
-          g.fillRect(px, py, 34, 34);
-          g.fillStyle(0x000000, 0.06);
-          g.fillRect(px + 6, py + 6, 22, 22);
+      for (let py = y + 18; py < y + h; py += 86) {
+        for (let px = x + 18; px < x + w; px += 86) {
+          g.fillStyle(OUTSIDE_PATTERN_COLOR, 0.035);
+          g.fillRect(px, py, 24, 24);
+          g.fillStyle(0x000000, 0.03);
+          g.fillRect(px + 5, py + 5, 14, 14);
         }
       }
     });
@@ -197,23 +197,23 @@ export class RoomLayout {
 
   _drawRectBoundaryDressings(x, y, w, h, carpetColor) {
     const g = this.gfx;
-    const shadowDepth = 30;
-    const trimDepth = 14;
-    const postSize = 18;
+    const shadowDepth = 24;
+    const trimDepth = 10;
+    const postSize = 12;
 
-    g.fillStyle(ROOM_EDGE_SHADOW, 0.14);
+    g.fillStyle(ROOM_EDGE_SHADOW, 0.08);
     g.fillRect(x, y, w, shadowDepth);
     g.fillRect(x, y + h - shadowDepth, w, shadowDepth);
     g.fillRect(x, y, shadowDepth, h);
     g.fillRect(x + w - shadowDepth, y, shadowDepth, h);
 
-    g.fillStyle(ROOM_EDGE_TRIM, 0.18);
+    g.fillStyle(ROOM_EDGE_TRIM, 0.1);
     g.fillRect(x + 4, y + 4, w - 8, trimDepth);
     g.fillRect(x + 4, y + h - trimDepth - 4, w - 8, trimDepth);
     g.fillRect(x + 4, y + 4, trimDepth, h - 8);
     g.fillRect(x + w - trimDepth - 4, y + 4, trimDepth, h - 8);
 
-    g.fillStyle(carpetColor, 0.08);
+    g.fillStyle(carpetColor, 0.045);
     g.fillRect(x + trimDepth + 8, y + trimDepth + 8, Math.max(0, w - ((trimDepth + 8) * 2)), Math.max(0, h - ((trimDepth + 8) * 2)));
 
     [
@@ -222,12 +222,12 @@ export class RoomLayout {
       [x + 10, y + h - 10 - postSize],
       [x + w - 10 - postSize, y + h - 10 - postSize],
     ].forEach(([px, py]) => {
-      g.fillStyle(ROOM_CORNER_POST, 0.95);
+      g.fillStyle(ROOM_CORNER_POST, 0.62);
       g.fillRect(px, py, postSize, postSize);
-      g.lineStyle(1.5, ROOM_EDGE_CORE, 0.45);
+      g.lineStyle(1, ROOM_EDGE_CORE, 0.24);
       g.strokeRect(px, py, postSize, postSize);
-      g.fillStyle(0x365314, 0.82);
-      g.fillCircle(px + postSize / 2, py + postSize / 2, 5);
+      g.fillStyle(0x365314, 0.45);
+      g.fillCircle(px + postSize / 2, py + postSize / 2, 3);
     });
   }
 
@@ -235,14 +235,14 @@ export class RoomLayout {
     const g = this.gfx;
     if (points.length < 3) return;
 
-    g.lineStyle(24, ROOM_EDGE_SHADOW, 0.13);
+    g.lineStyle(16, ROOM_EDGE_SHADOW, 0.08);
     g.beginPath();
     g.moveTo(points[0].x, points[0].y);
     for (let i = 1; i < points.length; i++) g.lineTo(points[i].x, points[i].y);
     g.closePath();
     g.strokePath();
 
-    g.lineStyle(12, ROOM_EDGE_TRIM, 0.16);
+    g.lineStyle(8, ROOM_EDGE_TRIM, 0.09);
     g.beginPath();
     g.moveTo(points[0].x, points[0].y);
     for (let i = 1; i < points.length; i++) g.lineTo(points[i].x, points[i].y);
@@ -250,12 +250,12 @@ export class RoomLayout {
     g.strokePath();
 
     points.forEach((p) => {
-      g.fillStyle(ROOM_CORNER_POST, 0.95);
-      g.fillCircle(p.x, p.y, 8);
-      g.fillStyle(0x365314, 0.82);
-      g.fillCircle(p.x, p.y, 4.5);
-      g.lineStyle(1.5, ROOM_EDGE_CORE, 0.4);
-      g.strokeCircle(p.x, p.y, 8);
+      g.fillStyle(ROOM_CORNER_POST, 0.55);
+      g.fillCircle(p.x, p.y, 5);
+      g.fillStyle(0x365314, 0.36);
+      g.fillCircle(p.x, p.y, 2.5);
+      g.lineStyle(1, ROOM_EDGE_CORE, 0.2);
+      g.strokeCircle(p.x, p.y, 5);
     });
   }
 
