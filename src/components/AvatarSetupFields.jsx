@@ -3,24 +3,10 @@ import { AVATAR_SKINS, AVATAR_HAIR_STYLES, AVATAR_BODY_TYPES } from './avatarOpt
 import {
   skinToneToColor,
   hairHueToColor,
+  accessoryHueToColor,
   skinToneToSpectrumIndex,
 } from '../utils/avatarColors';
 import { AVATAR_MODELS } from '../game/entities/avatarModelInfo';
-
-const REFERENCE_HAIR_SWATCHES = [
-  '#5a4745',
-  '#7b614f',
-  '#e6b755',
-  '#c8874e',
-  '#945a40',
-  '#5e423d',
-  '#f6e5c5',
-  '#c7bb71',
-  '#e2a64b',
-  '#b66f45',
-  '#7f4f3f',
-  '#5b3b3b',
-];
 
 function mixHex(a, b, t = 0.5) {
   const cleanA = a.replace('#', '');
@@ -121,16 +107,15 @@ const FOOTWEAR_OPTIONS = [
 function buildAvatarPreviewData(formData = {}) {
   const skinTone = Number(formData.skinTone ?? 45);
   const hairHue = Number(formData.hairHue ?? 26);
-  const toneIndex = skinToneToSpectrumIndex(skinTone);
-  const referenceHair = REFERENCE_HAIR_SWATCHES[toneIndex] || REFERENCE_HAIR_SWATCHES[5];
-  const userHair = hairHueToColor(hairHue);
+  const outfitHue = Number(formData.outfitHue ?? 156);
+  const hoodie = accessoryHueToColor(outfitHue);
   return {
     skin: skinToneToColor(skinTone),
-    hair: mixHex(referenceHair, userHair, 0.2),
-    shirt: '#f8f2e8',
-    shirtShade: '#ede2d1',
+    hair: hairHueToColor(hairHue),
+    hoodie,
+    hoodieShade: mixHex(hoodie, '#1f2937', 0.18),
+    hoodieTrim: '#2e2a30',
     pants: '#55516a',
-    pantsShade: '#444156',
     shoe: '#141313',
   };
 }
@@ -157,51 +142,48 @@ function AvatarBuildPreview({ formData }) {
           </filter>
         </defs>
 
-          <ellipse cx="48" cy="96" rx="26" ry="4" fill="rgba(0,0,0,0.13)" />
+        <rect x="23" y="95" width="50" height="4" rx="2" fill="rgba(0,0,0,0.2)" />
 
         <g filter="url(#soft-shadow)">
-          <circle cx="48" cy="32" r="22" fill={avatar.skin} />
-          <circle cx="24" cy="37" r="7" fill={avatar.skin} />
-          <circle cx="72" cy="37" r="7" fill={avatar.skin} />
+          <circle cx="48" cy="32" r="19" fill={avatar.skin} />
+          <circle cx="29" cy="37" r="7" fill={avatar.skin} />
+          <circle cx="67" cy="37" r="7" fill={avatar.skin} />
 
-          <ellipse cx="48" cy="20" rx="24" ry="12" fill={avatar.hair} />
-          <rect x="24" y="18" width="48" height="14" rx="6" fill={avatar.hair} />
-          <path d="M24 28 L30 34 L36 30 L47 35 L58 30 L64 34 L72 28 L72 18 L24 18 Z" fill={avatar.hair} />
-          <ellipse cx="48" cy="16" rx="13" ry="3.5" fill="rgba(255,255,255,0.16)" />
+          <ellipse cx="48" cy="22" rx="23" ry="11.5" fill={avatar.hair} />
+          <rect x="25" y="19" width="46" height="14" rx="6" fill={avatar.hair} />
+          <path d="M25 28 L30 35 L34 31 L40 35 L46 31 L52 35 L58 31 L64 33 L68 28 L71 21 L25 21 Z" fill={avatar.hair} />
+          <circle cx="50" cy="12" r="2.4" fill={avatar.hair} />
 
-          <rect x="44" y="50" width="8" height="8" rx="3" fill="rgba(0,0,0,0.1)" />
+          <rect x="44" y="50" width="8" height="7" rx="3" fill="rgba(0,0,0,0.12)" />
 
-          <rect x="29" y="54" width="38" height="23" rx="10" fill={avatar.shirt} />
-          <rect x="35" y="57" width="19" height="5" rx="3" fill="rgba(255,255,255,0.3)" />
-          <rect x="34" y="67" width="28" height="9" rx="6" fill={avatar.shirtShade} />
-          <path d="M40 54 Q48 60 56 54" stroke="#d8c9b4" strokeWidth="2" fill="none" strokeLinecap="round" />
+          <rect x="28" y="54" width="40" height="24" rx="11" fill={avatar.hoodie} />
+          <rect x="34" y="68" width="28" height="8" rx="5" fill="rgba(0,0,0,0.2)" />
+          <rect x="38" y="50" width="20" height="10" rx="6" fill={avatar.hoodieShade} />
+          <line x1="42" y1="60" x2="42" y2="74" stroke={avatar.hoodieTrim} strokeWidth="1.7" strokeLinecap="round" />
+          <line x1="54" y1="60" x2="54" y2="74" stroke={avatar.hoodieTrim} strokeWidth="1.7" strokeLinecap="round" />
+          <path d="M35 73 L37 68 L59 68 L61 73" stroke="rgba(0,0,0,0.25)" strokeWidth="1.5" fill="none" strokeLinecap="round" />
 
-          <rect x="25" y="58" width="9" height="15" rx="4" fill={avatar.shirt} />
-          <rect x="62" y="58" width="9" height="15" rx="4" fill={avatar.shirt} />
-          <circle cx="29" cy="74" r="5" fill={avatar.skin} />
-          <circle cx="66" cy="74" r="5" fill={avatar.skin} />
+          <rect x="24" y="58" width="8" height="15" rx="4" fill={avatar.hoodie} />
+          <rect x="64" y="58" width="8" height="15" rx="4" fill={avatar.hoodie} />
+          <circle cx="28" cy="74" r="5" fill={avatar.skin} />
+          <circle cx="68" cy="74" r="5" fill={avatar.skin} />
 
-          <rect x="35" y="77" width="12" height="15" rx="5" fill={avatar.pants} />
-          <rect x="49" y="77" width="12" height="15" rx="5" fill={avatar.pants} />
-          <rect x="35" y="84" width="26" height="6" rx="3" fill={avatar.pantsShade} />
+          <rect x="36" y="78" width="11" height="15" rx="5" fill={avatar.pants} />
+          <rect x="50" y="78" width="11" height="15" rx="5" fill={avatar.pants} />
+          <rect x="33" y="92" width="15" height="9" rx="5" fill={avatar.shoe} />
+          <rect x="50" y="92" width="15" height="9" rx="5" fill={avatar.shoe} />
 
-          <rect x="37" y="89" width="7" height="5" rx="2" fill={avatar.skin} />
-          <rect x="52" y="89" width="7" height="5" rx="2" fill={avatar.skin} />
-          <rect x="32" y="92" width="15" height="8" rx="4" fill={avatar.shoe} />
-          <rect x="49" y="92" width="15" height="8" rx="4" fill={avatar.shoe} />
+          <ellipse cx="40" cy="40" rx="4.2" ry="6.4" fill="#4a3f58" />
+          <ellipse cx="56" cy="40" rx="4.2" ry="6.4" fill="#4a3f58" />
+          <circle cx="33" cy="46" r="3.6" fill="rgba(246,195,165,0.65)" />
+          <circle cx="63" cy="46" r="3.6" fill="rgba(246,195,165,0.65)" />
+          <path d="M45.6 46 Q48 49.4 50.4 46" stroke="#df8168" strokeWidth="1.7" fill="none" strokeLinecap="round" />
 
-          <ellipse cx="41" cy="40" rx="4" ry="6.2" fill="#4b3a36" />
-          <ellipse cx="55" cy="40" rx="4" ry="6.2" fill="#4b3a36" />
-          <circle cx="35" cy="46" r="3.9" fill="rgba(248,197,169,0.58)" />
-          <circle cx="61" cy="46" r="3.9" fill="rgba(248,197,169,0.58)" />
-          <path d="M45.5 46 Q48 49.6 50.5 46" stroke="#db886a" strokeWidth="1.7" fill="none" strokeLinecap="round" />
-
-          <circle cx="48" cy="32" r="22" fill="none" stroke="rgba(58,47,49,0.88)" strokeWidth="1.8" />
-          <circle cx="24" cy="37" r="7" fill="none" stroke="rgba(58,47,49,0.88)" strokeWidth="1.8" />
-          <circle cx="72" cy="37" r="7" fill="none" stroke="rgba(58,47,49,0.88)" strokeWidth="1.8" />
-          <rect x="29" y="54" width="38" height="23" rx="10" fill="none" stroke="rgba(58,47,49,0.88)" strokeWidth="1.8" />
-          <rect x="35" y="77" width="26" height="15" rx="5" fill="none" stroke="rgba(58,47,49,0.88)" strokeWidth="1.8" />
-          <rect x="32" y="92" width="32" height="8" rx="4" fill="none" stroke="rgba(58,47,49,0.88)" strokeWidth="1.8" />
+          <circle cx="48" cy="32" r="19" fill="none" stroke="rgba(52,45,51,0.92)" strokeWidth="1.9" />
+          <circle cx="29" cy="37" r="7" fill="none" stroke="rgba(52,45,51,0.92)" strokeWidth="1.9" />
+          <circle cx="67" cy="37" r="7" fill="none" stroke="rgba(52,45,51,0.92)" strokeWidth="1.9" />
+          <rect x="28" y="54" width="40" height="24" rx="11" fill="none" stroke="rgba(52,45,51,0.92)" strokeWidth="1.9" />
+          <rect x="32" y="92" width="34" height="9" rx="5" fill="none" stroke="rgba(52,45,51,0.92)" strokeWidth="1.9" />
         </g>
       </svg>
       <div style={{ color: '#475569', fontSize: 10, textAlign: 'center', textTransform: 'uppercase', letterSpacing: '0.06em' }}>

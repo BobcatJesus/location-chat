@@ -2,6 +2,7 @@ import SpriteAvatarBase from './SpriteAvatarBase';
 import {
   skinToneToColor,
   hairHueToColor,
+  accessoryHueToColor,
   colorHexToInt,
 } from '../../utils/avatarColors';
 
@@ -16,76 +17,192 @@ function tintInt(color, amount) {
   return (clamp255(r + amount) << 16) | (clamp255(g + amount) << 8) | clamp255(b + amount);
 }
 
-function mixInt(a, b, t = 0.5) {
-  const r1 = (a >> 16) & 255;
-  const g1 = (a >> 8) & 255;
-  const b1 = a & 255;
-  const r2 = (b >> 16) & 255;
-  const g2 = (b >> 8) & 255;
-  const b2 = b & 255;
-  return (
-    (clamp255(r1 + (r2 - r1) * t) << 16)
-    | (clamp255(g1 + (g2 - g1) * t) << 8)
-    | clamp255(b1 + (b2 - b1) * t)
-  );
-}
-
-function skinToneToIndex(skinTone = 45) {
-  const clamped = Math.max(0, Math.min(100, Number(skinTone) || 0));
-  return Math.round((clamped / 100) * 11);
-}
-
-const REFERENCE_HAIR_COLORS = [
-  0x5a4745,
-  0x7b614f,
-  0xe6b755,
-  0xc8874e,
-  0x945a40,
-  0x5e423d,
-  0xf6e5c5,
-  0xc7bb71,
-  0xe2a64b,
-  0xb66f45,
-  0x7f4f3f,
-  0x5b3b3b,
-];
-
-function drawHair(g, cfg) {
-  const {
-    hair,
-    facingBack,
-    facingSide,
-  } = cfg;
-
+function drawHair(g, { hair, facingBack, facingSide }) {
+  const shine = tintInt(hair, 18);
   g.fillStyle(hair, 1);
-  const shine = tintInt(hair, 14);
-  g.fillEllipse(48, 20, 48, 24);
-  g.fillRoundedRect(24, 18, 48, 14, 6);
-  if (!facingBack) {
-    g.beginPath();
-    g.moveTo(24, 28);
-    g.lineTo(30, 34);
-    g.lineTo(36, 30);
-    g.lineTo(47, 35);
-    g.lineTo(58, 30);
-    g.lineTo(64, 34);
-    g.lineTo(72, 28);
-    g.lineTo(72, 18);
-    g.lineTo(24, 18);
-    g.closePath();
-    g.fillPath();
+
+  if (facingBack) {
+    g.fillEllipse(48, 23, 44, 23);
+    g.fillRoundedRect(30, 23, 36, 14, 7);
+    g.fillCircle(50, 12, 2.3);
     g.fillStyle(shine, 0.16);
-    g.fillEllipse(48, 16, 26, 7);
-  } else {
-    g.fillRoundedRect(26, 26, 44, 10, 5);
+    g.fillEllipse(48, 18, 18, 5);
+    return;
   }
 
   if (facingSide) {
-    g.fillStyle(shine, 0.25);
-    g.fillRoundedRect(50, 13, 12, 6, 3);
-  } else if (!facingBack) {
-    g.fillStyle(shine, 0.22);
-    g.fillRoundedRect(38, 12, 20, 5, 3);
+    g.fillEllipse(49, 23, 44, 23);
+    g.fillRoundedRect(25, 20, 42, 13, 6);
+    g.beginPath();
+    g.moveTo(29, 27);
+    g.lineTo(36, 25);
+    g.lineTo(42, 30);
+    g.lineTo(48, 28);
+    g.lineTo(56, 32);
+    g.lineTo(65, 28);
+    g.lineTo(68, 20);
+    g.lineTo(25, 20);
+    g.closePath();
+    g.fillPath();
+    g.fillCircle(54, 12, 2);
+    g.lineStyle(1.1, shine, 0.75);
+    g.lineBetween(39, 15, 48, 18);
+    g.lineBetween(44, 13, 51, 17);
+    return;
+  }
+
+  g.fillEllipse(48, 22, 46, 23);
+  g.fillRoundedRect(25, 19, 46, 14, 6);
+  g.beginPath();
+  g.moveTo(25, 28);
+  g.lineTo(30, 35);
+  g.lineTo(34, 31);
+  g.lineTo(40, 35);
+  g.lineTo(46, 31);
+  g.lineTo(52, 35);
+  g.lineTo(58, 31);
+  g.lineTo(64, 33);
+  g.lineTo(68, 28);
+  g.lineTo(71, 21);
+  g.lineTo(25, 21);
+  g.closePath();
+  g.fillPath();
+  g.fillCircle(50, 12, 2.4);
+  g.lineStyle(1.1, shine, 0.75);
+  g.lineBetween(39, 16, 46, 18);
+  g.lineBetween(47, 14, 55, 18);
+  g.lineBetween(52, 18, 57, 21);
+}
+
+function drawBody(g, cfg) {
+  const {
+    skin,
+    skinShade,
+    hoodie,
+    hoodieShade,
+    hoodieTrim,
+    pants,
+    shoe,
+    facingBack,
+    facingSide,
+    isWalkingFrame,
+  } = cfg;
+
+  const armShift = isWalkingFrame ? 1 : 0;
+
+  if (!facingBack) {
+    g.fillStyle(skinShade, 1);
+    g.fillRoundedRect(44, 50, 8, 7, 3);
+  }
+
+  g.fillStyle(hoodie, 1);
+  g.fillRoundedRect(28, 54, 40, 24, 11);
+  g.fillStyle(hoodieShade, 0.45);
+  g.fillRoundedRect(34, 68, 28, 8, 5);
+
+  if (facingBack) {
+    g.fillStyle(hoodieShade, 1);
+    g.fillRoundedRect(35, 52, 26, 10, 7);
+  } else {
+    g.fillStyle(hoodieShade, 1);
+    g.fillRoundedRect(38, 50, 20, 10, 6);
+    g.lineStyle(1.7, hoodieTrim, 1);
+    g.lineBetween(42, 60, 42, 74);
+    g.lineBetween(54, 60, 54, 74);
+
+    if (!facingSide) {
+      g.lineStyle(1.5, tintInt(hoodieShade, -20), 0.9);
+      g.beginPath();
+      g.moveTo(35, 73);
+      g.lineTo(37, 68);
+      g.lineTo(48, 68);
+      g.lineTo(59, 68);
+      g.lineTo(61, 73);
+      g.strokePath();
+    }
+  }
+
+  g.fillStyle(hoodie, 1);
+  g.fillRoundedRect(24 + armShift, 58, 8, 15, 4);
+  g.fillRoundedRect(64 - armShift, 58, 8, 15, 4);
+  g.fillStyle(skin, 1);
+  g.fillCircle(28 + armShift, 74, 5);
+  g.fillCircle(68 - armShift, 74, 5);
+
+  g.fillStyle(pants, 1);
+  if (facingSide && isWalkingFrame) {
+    g.fillRoundedRect(34, 78, 13, 15, 5);
+    g.fillRoundedRect(50, 78, 12, 15, 5);
+  } else {
+    g.fillRoundedRect(36, 78, 11, 15, 5);
+    g.fillRoundedRect(50, 78, 11, 15, 5);
+  }
+
+  g.fillStyle(shoe, 1);
+  if (facingSide && isWalkingFrame) {
+    g.fillRoundedRect(31, 92, 17, 9, 5);
+    g.fillRoundedRect(50, 91, 14, 9, 5);
+  } else {
+    g.fillRoundedRect(33, 92, 15, 9, 5);
+    g.fillRoundedRect(50, 92, 15, 9, 5);
+  }
+}
+
+function drawFace(g, { facingBack, facingSide, stepX }) {
+  if (facingBack) return;
+
+  g.fillStyle(0x4a3f58, 1);
+  if (facingSide) {
+    g.fillEllipse(43 + stepX, 40, 4.2, 6.2);
+  } else {
+    g.fillEllipse(40 + stepX, 40, 4.2, 6.2);
+    g.fillEllipse(56 + stepX, 40, 4.2, 6.2);
+  }
+
+  g.fillStyle(0xf6c3a5, 0.65);
+  if (!facingSide) {
+    g.fillCircle(33, 46, 3.6);
+    g.fillCircle(63, 46, 3.6);
+  } else {
+    g.fillCircle(33, 45, 3.2);
+  }
+
+  g.lineStyle(1.7, 0xdf8168, 0.95);
+  g.beginPath();
+  g.arc(facingSide ? 34 : 48 + stepX, 46, 2.4, 0.2, Math.PI - 0.2, false);
+  g.strokePath();
+}
+
+function drawOutline(g, { outline, facingBack, facingSide, isWalkingFrame }) {
+  g.lineStyle(1.9, outline, 0.92);
+
+  if (facingBack) {
+    g.strokeEllipse(48, 31, 38, 36);
+  } else if (facingSide) {
+    g.strokeEllipse(49, 31, 38, 36);
+    g.strokeCircle(32, 38, 7);
+  } else {
+    g.strokeCircle(48, 32, 19);
+    g.strokeCircle(29, 37, 7);
+    g.strokeCircle(67, 37, 7);
+  }
+
+  g.strokeRoundedRect(28, 54, 40, 24, 11);
+  if (facingSide && isWalkingFrame) {
+    g.strokeRoundedRect(30, 91, 35, 10, 5);
+  } else {
+    g.strokeRoundedRect(32, 92, 34, 9, 5);
+  }
+
+  if (!facingBack) {
+    g.lineStyle(1.4, tintInt(outline, 16), 0.35);
+    if (facingSide) {
+      g.lineBetween(43, 15, 49, 18);
+    } else {
+      g.lineBetween(39, 16, 46, 18);
+      g.lineBetween(47, 14, 55, 18);
+      g.lineBetween(52, 18, 57, 21);
+    }
   }
 }
 
@@ -93,148 +210,52 @@ function ensureChibiFrame(scene, key, palette, direction = 'front', step = 0) {
   if (scene.textures.exists(key)) return;
 
   const g = scene.make.graphics({ x: 0, y: 0, add: false });
-  const w = 96;
-  const h = 96;
 
   const skin = palette.skin;
-  const skinShade = tintInt(skin, -10);
-  const skinGlow = tintInt(skin, 14);
+  const skinShade = tintInt(skin, -12);
   const hair = palette.hair;
-  const shirt = 0xf8f2e8;
-  const shirtShade = 0xede2d1;
-  const shirtCollar = 0xd8c9b4;
-  const pants = 0x55516a;
-  const pantsShade = 0x444156;
-  const shoe = 0x141313;
-  const outline = 0x3a2f31;
+  const hoodie = palette.hoodie;
+  const hoodieShade = tintInt(hoodie, -14);
+  const hoodieTrim = 0x2e2a30;
+  const pants = 0x514c5b;
+  const shoe = 0x0d0d0e;
+  const outline = 0x342d33;
 
   const isWalkingFrame = step === 1;
   const stepX = isWalkingFrame ? 1 : 0;
-  const legOffset = isWalkingFrame ? 5 : 0;
-  const armSwing = isWalkingFrame ? 2 : 0;
-
   const facingSide = direction === 'side';
   const facingBack = direction === 'back';
 
-  g.fillStyle(0x000000, 0.14);
-  g.fillEllipse(48, 95, 52, 9);
+  g.fillStyle(0x000000, 0.2);
+  g.fillRoundedRect(23, 95, 50, 4, 2);
 
   g.fillStyle(skin, 1);
-  g.fillCircle(48, 32, 22);
+  g.fillCircle(48, 32, 19);
   if (!facingBack) {
-    g.fillStyle(skinGlow, 0.3);
-    g.fillEllipse(48, 43, 24, 11);
-  }
-  if (!facingBack) {
-    g.fillCircle(facingSide ? 68 : 24, 37, 7);
-    if (!facingSide) g.fillCircle(72, 37, 7);
+    g.fillCircle(facingSide ? 32 : 29, 37, 7);
+    if (!facingSide) g.fillCircle(67, 37, 7);
   }
 
-  drawHair(g, {
-    hair,
+  drawHair(g, { hair, facingBack, facingSide });
+
+  drawBody(g, {
+    skin,
+    skinShade,
+    hoodie,
+    hoodieShade,
+    hoodieTrim,
+    pants,
+    shoe,
     facingBack,
     facingSide,
+    isWalkingFrame,
   });
 
-  // Neck.
-  g.fillStyle(skinShade, 1);
-  g.fillRoundedRect(44, 50, 8, 8, 3);
+  drawFace(g, { facingBack, facingSide, stepX });
 
-  // Shirt + sleeves.
-  g.fillStyle(shirt, 1);
-  g.fillRoundedRect(29, 54, 38, 23, 10);
-  g.fillStyle(0xffffff, 0.3);
-  g.fillRoundedRect(35, 57, 19, 5, 3);
-  g.lineStyle(2, shirtCollar, 0.9);
-  g.beginPath();
-  g.arc(48, 55, 8, 0.3, Math.PI - 0.3, false);
-  g.strokePath();
-  g.fillStyle(shirtShade, 1);
-  g.fillRoundedRect(34, 67, 28, 9, 6);
-  g.fillRoundedRect(25 + armSwing, 58, 9, 15, 4);
-  g.fillRoundedRect(62 - armSwing, 58, 9, 15, 4);
+  drawOutline(g, { outline, facingBack, facingSide, isWalkingFrame });
 
-  // Hands.
-  g.fillStyle(skin, 1);
-  g.fillCircle(29 + armSwing, 74, 5);
-  g.fillCircle(66 - armSwing, 74, 5);
-
-  // Pants.
-  g.fillStyle(pants, 1);
-  if (facingSide && isWalkingFrame) {
-    g.fillRoundedRect(34, 77, 13, 15, 5);
-    g.fillRoundedRect(50, 77, 12, 15, 5);
-  } else {
-    g.fillRoundedRect(35, 77, 12, 15, 5);
-    g.fillRoundedRect(49, 77, 12, 15, 5);
-  }
-  g.fillStyle(pantsShade, 1);
-  g.fillRoundedRect(35, 84, 26, 6, 3);
-
-  // Ankles + shoes.
-  g.fillStyle(skin, 1);
-  if (facingSide && isWalkingFrame) {
-    g.fillRoundedRect(35 - legOffset, 89, 8, 5, 2);
-    g.fillRoundedRect(53 + legOffset, 88, 7, 5, 2);
-    g.fillStyle(shoe, 1);
-    g.fillRoundedRect(31 - legOffset, 92, 16, 8, 4);
-    g.fillRoundedRect(49 + legOffset, 91, 14, 8, 4);
-  } else {
-    g.fillRoundedRect(37 - legOffset, 89, 7, 5, 2);
-    g.fillRoundedRect(52 + legOffset, 89, 7, 5, 2);
-    g.fillStyle(shoe, 1);
-    g.fillRoundedRect(32 - legOffset, 92, 15, 8, 4);
-    g.fillRoundedRect(49 + legOffset, 92, 15, 8, 4);
-  }
-
-  if (!facingBack) {
-    g.fillStyle(0x4b3a36, 1);
-    if (facingSide) {
-      g.fillEllipse(55 + stepX, 40, 4, 6.2);
-    } else {
-      g.fillEllipse(41 + stepX, 40, 4, 6.2);
-      g.fillEllipse(55 + stepX, 40, 4, 6.2);
-    }
-
-    g.fillStyle(0xf8c5a9, 0.58);
-    if (!facingSide) {
-      g.fillCircle(35, 46, 3.9);
-      g.fillCircle(61, 46, 3.9);
-    }
-
-    g.lineStyle(1.6, 0xdb886a, 0.95);
-    g.beginPath();
-    g.arc(facingSide ? 50 : 48 + stepX, 46, 2.4, 0.25, Math.PI - 0.25, false);
-    g.strokePath();
-  }
-
-  // Outline pass to lock the reference style silhouette.
-  g.lineStyle(1.8, outline, 0.88);
-  g.strokeCircle(48, 32, 22);
-  if (!facingBack) {
-    g.strokeCircle(facingSide ? 68 : 24, 37, 7);
-    if (!facingSide) g.strokeCircle(72, 37, 7);
-  }
-  g.strokeRoundedRect(29, 54, 38, 23, 10);
-  g.strokeRoundedRect(35, 77, 26, 15, 5);
-  if (facingSide && isWalkingFrame) {
-    g.strokeRoundedRect(31 - legOffset, 91, 32, 9, 4);
-  } else {
-    g.strokeRoundedRect(32 - legOffset, 92, 32, 8, 4);
-  }
-  g.strokeRoundedRect(24, 18, 48, 14, 6);
-  if (!facingBack) {
-    g.lineStyle(1.2, tintInt(outline, 16), 0.35);
-    g.beginPath();
-    g.moveTo(31, 34);
-    g.lineTo(36, 30);
-    g.moveTo(47, 35);
-    g.lineTo(58, 30);
-    g.lineTo(64, 34);
-    g.strokePath();
-  }
-
-  g.generateTexture(key, w, h);
+  g.generateTexture(key, 96, 96);
   g.destroy();
 }
 
@@ -267,18 +288,16 @@ function makeFrameKeys(scene, paletteKey, palette) {
 export default class HumanChibiAvatar extends SpriteAvatarBase {
   constructor(scene, x, y, options = {}) {
     const skinTone = options.skinTone ?? options.pigment ?? 45;
-    const hairHue = options.hairHue ?? options.eyeHue;
-    const toneIndex = skinToneToIndex(skinTone);
-    const referenceHair = REFERENCE_HAIR_COLORS[toneIndex] ?? REFERENCE_HAIR_COLORS[5];
+    const hairHue = options.hairHue ?? options.eyeHue ?? 36;
+    const outfitHue = options.outfitHue ?? options.scarfHue ?? 156;
 
     const palette = {
       skin: colorHexToInt(skinToneToColor(skinTone)),
-      hair: Number.isFinite(Number(hairHue))
-        ? mixInt(referenceHair, colorHexToInt(hairHueToColor(hairHue)), 0.2)
-        : referenceHair,
+      hair: colorHexToInt(hairHueToColor(hairHue)),
+      hoodie: tintInt(colorHexToInt(accessoryHueToColor(outfitHue)), 26),
     };
 
-    const paletteKey = `${Math.round(Number(skinTone) || 45)}-${Math.round(Number(hairHue) || 26)}`;
+    const paletteKey = `${Math.round(Number(skinTone) || 45)}-${Math.round(Number(hairHue) || 36)}-${Math.round(Number(outfitHue) || 156)}`;
     const frameKeys = makeFrameKeys(scene, paletteKey, palette);
 
     super(scene, x, y, {
