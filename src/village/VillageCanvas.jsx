@@ -47,7 +47,11 @@ export default function VillageCanvas({ room, profile, onLeave }) {
   const isLikelyMobileUA = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '');
   const showFloatingZoomControl = isMobile || isTouchDevice || isLikelyMobileUA;
   const roomId = canonicalRoomId(room);
-  const cameraModeLabel = cameraMode === 'wide-follow' ? 'Wide' : 'Follow';
+  const cameraModeLabel = cameraMode === 'overview'
+    ? 'Overview'
+    : cameraMode === 'wide-follow'
+      ? 'Wide'
+      : 'Follow';
 
   useEffect(() => {
     const onResize = () => {
@@ -165,7 +169,7 @@ export default function VillageCanvas({ room, profile, onLeave }) {
     const scene = gameRef.current?.scene?.getScene('VillageScene');
     if (scene?.sys?.isActive()) {
       const next = scene.toggleCameraMode?.();
-      if (next === 'follow' || next === 'wide-follow') setCameraMode(next);
+      if (next === 'overview' || next === 'follow' || next === 'wide-follow') setCameraMode(next);
     }
   };
 
@@ -280,8 +284,8 @@ export default function VillageCanvas({ room, profile, onLeave }) {
           <button
             onClick={toggleCameraMode}
             style={{
-              background: cameraMode === 'wide-follow' ? '#86efac' : 'rgba(0,0,0,0.62)',
-              color: cameraMode === 'wide-follow' ? '#0f172a' : '#fff',
+              background: cameraMode === 'overview' ? '#93c5fd' : cameraMode === 'wide-follow' ? '#86efac' : 'rgba(0,0,0,0.62)',
+              color: cameraMode === 'overview' || cameraMode === 'wide-follow' ? '#0f172a' : '#fff',
               border: 'none',
               borderRadius: 8,
               padding: '9px 12px',
@@ -292,7 +296,7 @@ export default function VillageCanvas({ room, profile, onLeave }) {
               boxShadow: '0 2px 10px rgba(0,0,0,0.28)',
             }}
           >
-            View: {cameraModeLabel}
+            Zoom: {cameraModeLabel}
           </button>
         </div>
       )}

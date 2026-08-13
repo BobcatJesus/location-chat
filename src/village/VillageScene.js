@@ -247,11 +247,13 @@ export class VillageScene extends Phaser.Scene {
   }
 
   toggleCameraMode() {
-    const modes = ['follow', 'wide-follow'];
+    const modes = ['follow', 'wide-follow', 'overview'];
     const currentIndex = Math.max(0, modes.indexOf(this.cameraMode));
     this.cameraMode = modes[(currentIndex + 1) % modes.length];
     this._applyCameraMode();
-    if (this.cameraMode === 'wide-follow') {
+    if (this.cameraMode === 'overview') {
+      this.onSystemNotice('Overview camera ON');
+    } else if (this.cameraMode === 'wide-follow') {
       this.onSystemNotice('Wide follow camera ON');
     } else {
       this.onSystemNotice('Follow camera ON');
