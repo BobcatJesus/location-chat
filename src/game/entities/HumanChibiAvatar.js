@@ -25,75 +25,99 @@ function ensureChibiFrame(scene, key, palette, direction = 'front', step = 0) {
   const h = 96;
 
   const skin = palette.skin;
-  const skinShade = tintInt(skin, -22);
+  const skinShade = tintInt(skin, -20);
+  const skinGlow = tintInt(skin, 18);
   const hair = palette.hair;
-  const outfit = palette.outfit;
-  const outfitShade = tintInt(outfit, -26);
-  const outline = 0x3a2f2f;
+  const shirt = 0xf6f1e9;
+  const shirtShade = 0xe7dece;
+  const pants = tintInt(palette.outfit, -56);
+  const pantsShade = tintInt(pants, -18);
+  const outline = 0x3b2f30;
 
   const stepX = step === 0 ? 0 : 1;
   const legOffset = step === 0 ? 0 : 2;
+  const armSwing = step === 0 ? 0 : 1;
 
   // Soft floor shadow.
-  g.fillStyle(0x000000, 0.14);
-  g.fillEllipse(48, 84, 26, 8);
+  g.fillStyle(0x000000, 0.16);
+  g.fillEllipse(48, 85, 28, 8);
 
-  // Head + ears.
+  // Head + ears + neck.
   g.fillStyle(skin, 1);
-  g.fillCircle(48, 30, 20);
-  g.fillCircle(31, 36, 6);
-  g.fillCircle(65, 36, 6);
+  g.fillCircle(48, 29, 21);
+  g.fillCircle(30, 35, 6);
+  g.fillCircle(66, 35, 6);
+  g.fillRoundedRect(44, 45, 8, 6, 3);
+
+  g.fillStyle(skinGlow, 0.24);
+  g.fillEllipse(48, 30, 26, 18);
 
   // Hair cap.
   g.fillStyle(hair, 1);
-  g.fillEllipse(48, 24, 42, 26);
-  if (direction === 'front') {
-    g.fillRoundedRect(34, 25, 28, 8, 4);
+  g.fillEllipse(48, 22, 44, 26);
+  if (direction === 'back') {
+    g.fillRoundedRect(31, 20, 34, 12, 6);
+  } else if (direction === 'front') {
+    g.fillRoundedRect(33, 23, 30, 8, 4);
   } else if (direction === 'side') {
-    g.fillRoundedRect(40, 24, 20, 10, 4);
+    g.fillRoundedRect(38, 22, 24, 10, 4);
   }
 
-  // Torso + hoodie/tee body.
-  g.fillStyle(outfit, 1);
-  g.fillRoundedRect(34, 47, 28, 26, 8);
-  g.fillStyle(tintInt(outfit, 34), 0.42);
-  g.fillRoundedRect(38, 52, 20, 10, 6);
+  // Shirt body.
+  g.fillStyle(shirt, 1);
+  g.fillRoundedRect(33, 48, 30, 24, 8);
+  g.fillStyle(shirtShade, 0.64);
+  g.fillRoundedRect(36, 58, 24, 10, 6);
+
+  // Collar.
+  g.fillStyle(0xffffff, 0.9);
+  g.fillRoundedRect(42, 48, 12, 4, 2);
 
   // Arms.
-  g.fillStyle(outfitShade, 1);
-  g.fillRoundedRect(28, 50, 8, 22, 4);
-  g.fillRoundedRect(60, 50, 8, 22, 4);
+  g.fillStyle(shirt, 1);
+  g.fillRoundedRect(27 + armSwing, 50, 8, 21, 4);
+  g.fillRoundedRect(61 - armSwing, 50, 8, 21, 4);
   g.fillStyle(skinShade, 1);
-  g.fillCircle(32, 73, 4);
-  g.fillCircle(64, 73, 4);
+  g.fillCircle(31 + armSwing, 73, 4);
+  g.fillCircle(65 - armSwing, 73, 4);
 
   // Legs + shoes.
-  g.fillStyle(tintInt(outfit, -12), 1);
+  g.fillStyle(pants, 1);
   g.fillRoundedRect(39 - legOffset, 71, 8, 11, 3);
   g.fillRoundedRect(49 + legOffset, 71, 8, 11, 3);
+  g.fillStyle(pantsShade, 1);
+  g.fillRoundedRect(39 - legOffset, 75, 8, 7, 3);
+  g.fillRoundedRect(49 + legOffset, 75, 8, 7, 3);
   g.fillStyle(0x1b1b1b, 1);
   g.fillRoundedRect(37 - legOffset, 80, 10, 6, 3);
   g.fillRoundedRect(49 + legOffset, 80, 10, 6, 3);
 
   // Face details.
   if (direction !== 'back') {
-    g.fillStyle(0x2d2120, 1);
+    g.fillStyle(0x3a2b2a, 1);
     if (direction === 'side') {
-      g.fillCircle(52 + stepX, 33, 2);
+      g.fillEllipse(52 + stepX, 33, 4, 5);
     } else {
-      g.fillCircle(42 + stepX, 33, 2);
-      g.fillCircle(54 + stepX, 33, 2);
+      g.fillEllipse(42 + stepX, 33, 4, 5);
+      g.fillEllipse(54 + stepX, 33, 4, 5);
     }
-    g.lineStyle(2, 0xc86f5a, 0.9);
+
+    // Blush + mouth.
+    g.fillStyle(0xf8c29f, 0.58);
+    g.fillCircle(38, 39, 3.5);
+    g.fillCircle(58, 39, 3.5);
+
+    g.lineStyle(2, 0xd68062, 0.95);
     g.beginPath();
-    g.arc(48 + stepX, 39, 3, 0.2, Math.PI - 0.2, false);
+    g.arc(48 + stepX, 40, 2.8, 0.2, Math.PI - 0.2, false);
     g.strokePath();
   }
 
   // Soft outline pass for chibi readability.
-  g.lineStyle(2, outline, 0.72);
-  g.strokeCircle(48, 30, 20);
-  g.strokeRoundedRect(34, 47, 28, 26, 8);
+  g.lineStyle(2, outline, 0.82);
+  g.strokeCircle(48, 29, 21);
+  g.strokeRoundedRect(33, 48, 30, 24, 8);
+  g.strokeRoundedRect(37 - legOffset, 80, 22, 6, 3);
 
   g.generateTexture(key, w, h);
   g.destroy();
@@ -143,7 +167,7 @@ export default class HumanChibiAvatar extends SpriteAvatarBase {
     super(scene, x, y, {
       ...options,
       frameKeys,
-      targetHeight: 68,
+      targetHeight: 72,
       shadowColor: 0x000000,
     });
   }
