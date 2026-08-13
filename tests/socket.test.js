@@ -9,19 +9,47 @@ function createTestServer() {
   const io = new Server(httpServer, { cors: { origin: '*' } });
   const rooms = {};
 
+  const canonicalizeRoomStateByUser = (state = {}) => {
+    const byUser = new Map();
+    Object.entries(state).forEach(([socketId, player]) => {
+      if (!player) return;
+      const key = player.id ? `user:${String(player.id)}` : `socket:${socketId}`;
+      if (!byUser.has(key)) byUser.set(key, { socketId, player });
+    });
+    const canonical = {};
+    byUser.forEach(({ socketId, player }) => {
+      canonical[socketId] = player;
+    });
+    return canonical;
+  };
+
   io.on('connection', (socket) => {
     socket.on('join_room', ({ roomId, user }) => {
       socket.join(roomId);
       if (!rooms[roomId]) rooms[roomId] = {};
+      const userId = user?.id || socket.id;
+
+      // Keep one active socket entry per logical user in a room.
+      Object.keys(rooms[roomId]).forEach((sid) => {
+        if (sid !== socket.id && rooms[roomId][sid]?.id === userId) {
+          delete rooms[roomId][sid];
+          io.in(roomId).emit('player_left', { socketId: sid });
+        }
+      });
+
       const player = {
-        id: user?.id || socket.id,
+        id: userId,
         name: user?.name || 'Guest',
         x: 320 + (Math.random() - 0.5) * 60,
         y: 240 + (Math.random() - 0.5) * 60,
       };
       rooms[roomId][socket.id] = player;
-      socket.emit('room_state', rooms[roomId]);
+      socket.emit('room_state', canonicalizeRoomStateByUser(rooms[roomId]));
       socket.to(roomId).emit('player_joined', { socketId: socket.id, player });
+    });
+
+    socket.on('get_room_state', ({ roomId }) => {
+      socket.emit('room_state', canonicalizeRoomStateByUser(rooms[roomId] || {}));
     });
 
     socket.on('send_move', ({ roomId, x, y }) => {
@@ -59,7 +87,7 @@ function createTestServer() {
 
 describe('Socket server', () => {
   let httpServer, io, port;
-  let client1, client2;
+  let client1, client2, client3;
 
   beforeAll(async () => {
     ({ httpServer, io } = createTestServer());
@@ -75,6 +103,7 @@ describe('Socket server', () => {
   afterEach(() => {
     client1?.disconnect();
     client2?.disconnect();
+    client3?.disconnect();
   });
 
   const connect = () =>
@@ -155,5 +184,29 @@ describe('Socket server', () => {
     });
 
     expect(left).toHaveProperty('socketId');
+  });
+
+  it('deduplicates same user joining from multiple sockets in room_state', async () => {
+    client1 = await connect();
+    client2 = await connect();
+
+    await new Promise((r) => {
+      client1.on('room_state', r);
+      client1.emit('join_room', { roomId: 'dupe-test', user: { id: 'dup-user', name: 'CloneUser' } });
+    });
+
+    await new Promise((r) => {
+      client2.on('room_state', r);
+      client2.emit('join_room', { roomId: 'dupe-test', user: { id: 'dup-user', name: 'CloneUser' } });
+    });
+
+    client3 = await connect();
+    const state = await new Promise((r) => {
+      client3.on('room_state', r);
+      client3.emit('join_room', { roomId: 'dupe-test', user: { id: 'observer', name: 'Observer' } });
+    });
+
+    const duplicateEntries = Object.values(state || {}).filter((p) => p?.id === 'dup-user');
+    expect(duplicateEntries.length).toBe(1);
   });
 });
