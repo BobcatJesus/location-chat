@@ -266,6 +266,22 @@ export class RoomLayout {
     const wall = floor?.zones?.find((z) => z.type === 'wall');
     const w = wall?.w || 1600;
     const h = wall?.h || 900;
+
+    // If the room has no explicit footprint/polygon, create a practical inset
+    // boundary so mobile users can still perceive and interact with the realm edge.
+    const hasExplicitRoomShape = Boolean(this.scene?.roomShape);
+    const compactViewport = Number(this.scene?.scale?.width || 0) <= 820;
+    const looksLikeFullCanvasDefault = Number.isFinite(w) && Number.isFinite(h) && w >= 1400 && h >= 800;
+    if (!hasExplicitRoomShape && looksLikeFullCanvasDefault) {
+      const insetX = Math.max(72, Math.min(compactViewport ? 180 : 130, Math.floor(w * 0.24)));
+      const insetY = Math.max(54, Math.min(compactViewport ? 140 : 100, Math.floor(h * 0.24)));
+      const innerW = Math.max(320, w - insetX * 2);
+      const innerH = Math.max(220, h - insetY * 2);
+      this.roomBoundary = { type: 'rect', x: insetX, y: insetY, w: innerW, h: innerH };
+      this._boundaryCentroid = { x: insetX + innerW / 2, y: insetY + innerH / 2 };
+      return;
+    }
+
     this.roomBoundary = { type: 'rect', x: 0, y: 0, w, h };
     this._boundaryCentroid = { x: w / 2, y: h / 2 };
   }
