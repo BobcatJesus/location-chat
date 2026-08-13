@@ -25,6 +25,7 @@ const WIDE_FOLLOW_ZOOM = 0.78;
 const FOLLOW_AVATAR_SCALE = 1;
 const WIDE_AVATAR_SCALE = 1.3;
 const OVERVIEW_AVATAR_SCALE = 1.42;
+
 function normalizeAvatarState(source = {}) {
   const resolvedPhoto = source.photo || source.photoDataUrl || source.avatarPhoto || null;
   return {
@@ -309,6 +310,30 @@ export class VillageScene extends Phaser.Scene {
     this.onRoomPopulationChange(Math.max(1, 1 + this.remotePlayers.size));
   }
 
+  _remoteUserKey(player, socketId) {
+    const raw = player?.id;
+    if (raw === undefined || raw === null || raw === '') return `socket:${socketId}`;
+    return `user:${String(raw)}`;
+  }
+
+  _findRemoteSocketIdByUserKey(userKey, excludeSocketId = null) {
+    if (!userKey) return null;
+    for (const [sid, remotePlayer] of this.remotePlayers.entries()) {
+      if (sid === excludeSocketId) continue;
+      if (remotePlayer?.userKey === userKey) return sid;
+    }
+    return null;
+  }
+
+  _removeRemoteBySocketId(socketId) {
+    const remotePlayer = this.remotePlayers.get(socketId);
+    if (remotePlayer) {
+      remotePlayer.destroy();
+      this.remotePlayers.delete(socketId);
+    }
+    this.pendingRemoteSpawns?.delete(socketId);
+  }
+
   _connectSocket() {
     const socket = io(SOCKET_SERVER_URL, { transports: ['websocket'] });
     this.socket = socket;
@@ -350,18 +375,37 @@ export class VillageScene extends Phaser.Scene {
     });
 
     socket.on('room_state', (state) => {
-      const nextIds = new Set(Object.keys(state || {}));
+      const groupedState = new Map();
+      const canonicalState = new Map();
+      const nextIds = new Set();
+
+      Object.entries(state || {}).forEach(([sid, player]) => {
+        if (!sid || sid === socket.id) return;
+        if (player?.id && this.userId && String(player.id) === String(this.userId)) return;
+
+        const userKey = this._remoteUserKey(player, sid);
+        if (!groupedState.has(userKey)) groupedState.set(userKey, []);
+        groupedState.get(userKey).push({ sid, player });
+      });
+
+      groupedState.forEach((entries, userKey) => {
+        const activeSidForUser = this._findRemoteSocketIdByUserKey(userKey);
+        const activeEntry = activeSidForUser
+          ? entries.find((entry) => entry.sid === activeSidForUser)
+          : null;
+        const chosen = activeEntry || entries[0];
+        if (chosen) canonicalState.set(userKey, chosen);
+      });
+
+      canonicalState.forEach(({ sid }) => nextIds.add(sid));
+
       this.remotePlayers.forEach((remotePlayer, sid) => {
-        const statePlayer = state?.[sid];
-        const isSelfDuplicate = statePlayer?.id && this.userId && String(statePlayer.id) === String(this.userId);
-        if (!nextIds.has(sid) || isSelfDuplicate) {
-          remotePlayer.destroy();
-          this.remotePlayers.delete(sid);
+        if (!nextIds.has(sid)) {
+          this._removeRemoteBySocketId(sid);
         }
       });
-      Object.entries(state || {}).forEach(([sid, player]) => {
-        if (sid === socket.id) return;
-        if (player?.id && this.userId && String(player.id) === String(this.userId)) return;
+
+      canonicalState.forEach(({ sid, player }) => {
         const remotePlayer = this.remotePlayers.get(sid);
         if (remotePlayer) {
           const nextPoint = this._clampRemotePosition(player.x ?? remotePlayer.gx, player.y ?? remotePlayer.gy);
@@ -415,9 +459,7 @@ export class VillageScene extends Phaser.Scene {
     });
 
     socket.on('player_left', ({ socketId }) => {
-      const remotePlayer = this.remotePlayers.get(socketId);
-      if (remotePlayer) { remotePlayer.destroy(); this.remotePlayers.delete(socketId); }
-      this.pendingRemoteSpawns?.delete(socketId);
+      this._removeRemoteBySocketId(socketId);
       this._emitRoomPopulation();
     });
 
@@ -568,6 +610,13 @@ export class VillageScene extends Phaser.Scene {
 
   async _spawnRemote(socketId, player) {
     if (this.remotePlayers.has(socketId) || this.pendingRemoteSpawns.has(socketId)) return;
+    const userKey = this._remoteUserKey(player, socketId);
+    const existingSocketForUser = this._findRemoteSocketIdByUserKey(userKey, socketId);
+    if (existingSocketForUser) {
+      // Replace stale/duplicate socket representation for same logical user.
+      this._removeRemoteBySocketId(existingSocketForUser);
+    }
+
     this.pendingRemoteSpawns.add(socketId);
     const avatarState = normalizeAvatarState(player);
     const spawnPoint = this._clampRemotePosition(player.x, player.y);
@@ -580,6 +629,7 @@ export class VillageScene extends Phaser.Scene {
       if (!avatar || this.remotePlayers.has(socketId)) return;
       if (avatarState.photo) avatar.attachPhoto(this, avatarState.photo);
       const remotePlayer = {
+        userKey,
         gx: spawnPoint.x,
         gy: spawnPoint.y,
         avatar,
