@@ -97,6 +97,7 @@ function ensureChibiFrame(scene, key, palette, direction = 'front', step = 0) {
   const hair = palette.hair;
   const shirt = 0xf8f2e8;
   const shirtShade = 0xede2d1;
+  const shirtCollar = 0xd8c9b4;
   const pants = 0x55516a;
   const pantsShade = 0x444156;
   const shoe = 0x141313;
@@ -112,14 +113,14 @@ function ensureChibiFrame(scene, key, palette, direction = 'front', step = 0) {
 
   const hairVariant = palette.hairVariant || 'bun';
 
-  g.fillStyle(0x000000, 0.18);
+  g.fillStyle(0x000000, 0.14);
   g.fillEllipse(48, 95, 52, 9);
 
   g.fillStyle(skin, 1);
-  g.fillCircle(48, 32, 23);
+  g.fillCircle(48, 32, 22);
   if (!facingBack) {
-    g.fillCircle(facingSide ? 69 : 23, 38, 8);
-    if (!facingSide) g.fillCircle(73, 38, 8);
+    g.fillCircle(facingSide ? 68 : 24, 37, 7);
+    if (!facingSide) g.fillCircle(72, 37, 7);
   }
 
   drawHair(g, {
@@ -131,11 +132,15 @@ function ensureChibiFrame(scene, key, palette, direction = 'front', step = 0) {
 
   // Neck.
   g.fillStyle(skinShade, 1);
-  g.fillRoundedRect(43, 50, 10, 8, 3);
+  g.fillRoundedRect(44, 50, 8, 8, 3);
 
   // Shirt + sleeves.
   g.fillStyle(shirt, 1);
-  g.fillRoundedRect(29, 54, 38, 24, 10);
+  g.fillRoundedRect(29, 54, 38, 23, 10);
+  g.lineStyle(2, shirtCollar, 0.9);
+  g.beginPath();
+  g.arc(48, 55, 8, 0.3, Math.PI - 0.3, false);
+  g.strokePath();
   g.fillStyle(shirtShade, 1);
   g.fillRoundedRect(34, 67, 28, 9, 6);
   g.fillRoundedRect(25 + armSwing, 58, 9, 15, 4);
@@ -177,32 +182,32 @@ function ensureChibiFrame(scene, key, palette, direction = 'front', step = 0) {
   if (!facingBack) {
     g.fillStyle(0x4b3a36, 1);
     if (facingSide) {
-      g.fillEllipse(55 + stepX, 40, 4, 6);
+      g.fillEllipse(55 + stepX, 40, 4, 6.2);
     } else {
-      g.fillEllipse(41 + stepX, 40, 4.5, 7);
-      g.fillEllipse(55 + stepX, 40, 4.5, 7);
+      g.fillEllipse(41 + stepX, 40, 4, 6.2);
+      g.fillEllipse(55 + stepX, 40, 4, 6.2);
     }
 
     g.fillStyle(0xf8c5a9, 0.58);
     if (!facingSide) {
-      g.fillCircle(34, 46, 4.2);
-      g.fillCircle(62, 46, 4.2);
+      g.fillCircle(35, 46, 3.9);
+      g.fillCircle(61, 46, 3.9);
     }
 
-    g.lineStyle(1.8, 0xdb886a, 0.95);
+    g.lineStyle(1.7, 0xdb886a, 0.95);
     g.beginPath();
-    g.arc(facingSide ? 50 : 48 + stepX, 46, 2.8, 0.2, Math.PI - 0.2, false);
+    g.arc(facingSide ? 50 : 48 + stepX, 46, 2.4, 0.25, Math.PI - 0.25, false);
     g.strokePath();
   }
 
   // Outline pass to lock the reference style silhouette.
-  g.lineStyle(2, outline, 0.86);
-  g.strokeCircle(48, 32, 23);
+  g.lineStyle(1.8, outline, 0.88);
+  g.strokeCircle(48, 32, 22);
   if (!facingBack) {
-    g.strokeCircle(facingSide ? 69 : 23, 38, 8);
-    if (!facingSide) g.strokeCircle(73, 38, 8);
+    g.strokeCircle(facingSide ? 68 : 24, 37, 7);
+    if (!facingSide) g.strokeCircle(72, 37, 7);
   }
-  g.strokeRoundedRect(29, 54, 38, 24, 10);
+  g.strokeRoundedRect(29, 54, 38, 23, 10);
   g.strokeRoundedRect(35, 77, 26, 15, 5);
   if (facingSide && isWalkingFrame) {
     g.strokeRoundedRect(31 - legOffset, 91, 32, 9, 4);

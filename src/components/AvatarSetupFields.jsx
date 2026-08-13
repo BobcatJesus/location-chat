@@ -3,7 +3,6 @@ import { AVATAR_SKINS, AVATAR_HAIR_STYLES, AVATAR_BODY_TYPES } from './avatarOpt
 import {
   skinToneToColor,
   hairHueToColor,
-  accessoryHueToColor,
   skinToneToSpectrumIndex,
 } from '../utils/avatarColors';
 import { AVATAR_MODELS } from '../game/entities/avatarModelInfo';
@@ -130,12 +129,12 @@ function AvatarBuildPreview({ formData }) {
           </filter>
         </defs>
 
-        <ellipse cx="48" cy="96" rx="26" ry="4" fill="rgba(0,0,0,0.16)" />
+        <ellipse cx="48" cy="96" rx="26" ry="4" fill="rgba(0,0,0,0.14)" />
 
         <g filter="url(#soft-shadow)">
-          <circle cx="48" cy="32" r="23" fill={avatar.skin} />
-          <circle cx="23" cy="38" r="8" fill={avatar.skin} />
-          <circle cx="73" cy="38" r="8" fill={avatar.skin} />
+          <circle cx="48" cy="32" r="22" fill={avatar.skin} />
+          <circle cx="24" cy="37" r="7" fill={avatar.skin} />
+          <circle cx="72" cy="37" r="7" fill={avatar.skin} />
 
           {avatar.hairVariant === 'curly' ? (
             <>
@@ -166,11 +165,11 @@ function AvatarBuildPreview({ formData }) {
             </>
           )}
 
-          <rect x="43" y="50" width="10" height="8" rx="3" fill="rgba(0,0,0,0.1)" />
+          <rect x="44" y="50" width="8" height="8" rx="3" fill="rgba(0,0,0,0.1)" />
 
-          <rect x="29" y="54" width="38" height="24" rx="10" fill={avatar.shirt} />
+          <rect x="29" y="54" width="38" height="23" rx="10" fill={avatar.shirt} />
           <rect x="34" y="67" width="28" height="9" rx="6" fill={avatar.shirtShade} />
-          <path d="M40 54 Q48 61 56 54" stroke="#d8c9b4" strokeWidth="2" fill="none" strokeLinecap="round" />
+          <path d="M40 54 Q48 60 56 54" stroke="#d8c9b4" strokeWidth="2" fill="none" strokeLinecap="round" />
 
           <rect x="25" y="58" width="9" height="15" rx="4" fill={avatar.shirt} />
           <rect x="62" y="58" width="9" height="15" rx="4" fill={avatar.shirt} />
@@ -186,18 +185,18 @@ function AvatarBuildPreview({ formData }) {
           <rect x="32" y="92" width="15" height="8" rx="4" fill={avatar.shoe} />
           <rect x="49" y="92" width="15" height="8" rx="4" fill={avatar.shoe} />
 
-          <ellipse cx="41" cy="40" rx="4.5" ry="7" fill="#4b3a36" />
-          <ellipse cx="55" cy="40" rx="4.5" ry="7" fill="#4b3a36" />
-          <circle cx="34" cy="46" r="4.2" fill="rgba(248,197,169,0.58)" />
-          <circle cx="62" cy="46" r="4.2" fill="rgba(248,197,169,0.58)" />
-          <path d="M45 46 Q48 50 51 46" stroke="#db886a" strokeWidth="1.8" fill="none" strokeLinecap="round" />
+          <ellipse cx="41" cy="40" rx="4" ry="6.2" fill="#4b3a36" />
+          <ellipse cx="55" cy="40" rx="4" ry="6.2" fill="#4b3a36" />
+          <circle cx="35" cy="46" r="3.9" fill="rgba(248,197,169,0.58)" />
+          <circle cx="61" cy="46" r="3.9" fill="rgba(248,197,169,0.58)" />
+          <path d="M45.5 46 Q48 49.6 50.5 46" stroke="#db886a" strokeWidth="1.7" fill="none" strokeLinecap="round" />
 
-          <circle cx="48" cy="32" r="23" fill="none" stroke="rgba(58,47,49,0.86)" strokeWidth="2" />
-          <circle cx="23" cy="38" r="8" fill="none" stroke="rgba(58,47,49,0.86)" strokeWidth="2" />
-          <circle cx="73" cy="38" r="8" fill="none" stroke="rgba(58,47,49,0.86)" strokeWidth="2" />
-          <rect x="29" y="54" width="38" height="24" rx="10" fill="none" stroke="rgba(58,47,49,0.86)" strokeWidth="2" />
-          <rect x="35" y="77" width="26" height="15" rx="5" fill="none" stroke="rgba(58,47,49,0.86)" strokeWidth="2" />
-          <rect x="32" y="92" width="32" height="8" rx="4" fill="none" stroke="rgba(58,47,49,0.86)" strokeWidth="2" />
+          <circle cx="48" cy="32" r="22" fill="none" stroke="rgba(58,47,49,0.88)" strokeWidth="1.8" />
+          <circle cx="24" cy="37" r="7" fill="none" stroke="rgba(58,47,49,0.88)" strokeWidth="1.8" />
+          <circle cx="72" cy="37" r="7" fill="none" stroke="rgba(58,47,49,0.88)" strokeWidth="1.8" />
+          <rect x="29" y="54" width="38" height="23" rx="10" fill="none" stroke="rgba(58,47,49,0.88)" strokeWidth="1.8" />
+          <rect x="35" y="77" width="26" height="15" rx="5" fill="none" stroke="rgba(58,47,49,0.88)" strokeWidth="1.8" />
+          <rect x="32" y="92" width="32" height="8" rx="4" fill="none" stroke="rgba(58,47,49,0.88)" strokeWidth="1.8" />
         </g>
       </svg>
       <div style={{ color: '#475569', fontSize: 10, textAlign: 'center', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
