@@ -2,6 +2,11 @@ import Phaser from 'phaser';
 
 const PHOTO_BASE_SIZE = 32;
 const PHOTO_BASE_RADIUS = PHOTO_BASE_SIZE / 2;
+const BODY_TYPE_SCALE = {
+  compact: 0.92,
+  standard: 1,
+  broad: 1.08,
+};
 
 function firstExistingTexture(scene, keys) {
   for (const key of keys) {
@@ -29,6 +34,7 @@ export default class SpriteAvatarBase extends Phaser.GameObjects.Container {
     frameKeys,
     targetHeight = 52,
     shadowColor = 0x000000,
+    bodyType = 'standard',
   } = {}) {
     super(scene, x, y);
     this.scene = scene;
@@ -41,13 +47,14 @@ export default class SpriteAvatarBase extends Phaser.GameObjects.Container {
     this._facingLeft = false;
     this._stepAccum = Math.random() * 120;
     this._stepFrame = 0;
+    this._bodyScale = BODY_TYPE_SCALE[bodyType] || BODY_TYPE_SCALE.standard;
 
     this._shadow = scene.add.ellipse(0, 3, 34, 12, shadowColor, 0.22);
     this.add(this._shadow);
 
     const initialTexture = this._resolveTexture('front', 0);
     this._sprite = scene.add.image(0, 0, initialTexture).setOrigin(0.5, 1);
-    this._baseScale = inferSpriteScale(scene, initialTexture, this._targetHeight);
+    this._baseScale = inferSpriteScale(scene, initialTexture, this._targetHeight) * this._bodyScale;
     this._sprite.setScale(this._baseScale);
     this.add(this._sprite);
 
