@@ -1,6 +1,6 @@
 export const AVATAR_MODELS = [
   { id: 'og', label: 'OG Demon' },
-  { id: 'hoodie', label: 'Hoodie Avatar' },
+  { id: 'hoodie', label: 'Human Chibi' },
   { id: 'bunny', label: 'Bunny Avatar' },
 ];
 

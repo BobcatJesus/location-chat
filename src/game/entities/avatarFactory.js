@@ -23,5 +23,5 @@ export function createAvatarEntity(scene, x, y, options = {}) {
   if (avatarModel === 'bunny') {
     return buildAvatar(scene, x, y, options, () => import('./ModularAvatar.js'));
   }
-  return buildAvatar(scene, x, y, options, () => import('./HoodieAvatar.js'));
+  return buildAvatar(scene, x, y, options, () => import('./HumanChibiAvatar.js'));
 }
