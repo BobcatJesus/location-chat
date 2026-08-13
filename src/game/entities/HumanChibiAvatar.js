@@ -16,6 +16,40 @@ function tintInt(color, amount) {
   return (clamp255(r + amount) << 16) | (clamp255(g + amount) << 8) | clamp255(b + amount);
 }
 
+function mixInt(a, b, t = 0.5) {
+  const r1 = (a >> 16) & 255;
+  const g1 = (a >> 8) & 255;
+  const b1 = a & 255;
+  const r2 = (b >> 16) & 255;
+  const g2 = (b >> 8) & 255;
+  const b2 = b & 255;
+  return (
+    (clamp255(r1 + (r2 - r1) * t) << 16)
+    | (clamp255(g1 + (g2 - g1) * t) << 8)
+    | clamp255(b1 + (b2 - b1) * t)
+  );
+}
+
+function skinToneToIndex(skinTone = 45) {
+  const clamped = Math.max(0, Math.min(100, Number(skinTone) || 0));
+  return Math.round((clamped / 100) * 11);
+}
+
+const REFERENCE_HAIR_COLORS = [
+  0x5a4745,
+  0x7b614f,
+  0xe6b755,
+  0xc8874e,
+  0x945a40,
+  0x5e423d,
+  0xf6e5c5,
+  0xc7bb71,
+  0xe2a64b,
+  0xb66f45,
+  0x7f4f3f,
+  0x5b3b3b,
+];
+
 function drawHair(g, cfg) {
   const {
     hair,
@@ -40,6 +74,8 @@ function drawHair(g, cfg) {
     g.lineTo(24, 18);
     g.closePath();
     g.fillPath();
+    g.fillStyle(shine, 0.16);
+    g.fillEllipse(48, 16, 26, 7);
   } else {
     g.fillRoundedRect(26, 26, 44, 10, 5);
   }
@@ -61,7 +97,8 @@ function ensureChibiFrame(scene, key, palette, direction = 'front', step = 0) {
   const h = 96;
 
   const skin = palette.skin;
-  const skinShade = tintInt(skin, -12);
+  const skinShade = tintInt(skin, -10);
+  const skinGlow = tintInt(skin, 14);
   const hair = palette.hair;
   const shirt = 0xf8f2e8;
   const shirtShade = 0xede2d1;
@@ -85,6 +122,10 @@ function ensureChibiFrame(scene, key, palette, direction = 'front', step = 0) {
   g.fillStyle(skin, 1);
   g.fillCircle(48, 32, 22);
   if (!facingBack) {
+    g.fillStyle(skinGlow, 0.3);
+    g.fillEllipse(48, 43, 24, 11);
+  }
+  if (!facingBack) {
     g.fillCircle(facingSide ? 68 : 24, 37, 7);
     if (!facingSide) g.fillCircle(72, 37, 7);
   }
@@ -102,6 +143,8 @@ function ensureChibiFrame(scene, key, palette, direction = 'front', step = 0) {
   // Shirt + sleeves.
   g.fillStyle(shirt, 1);
   g.fillRoundedRect(29, 54, 38, 23, 10);
+  g.fillStyle(0xffffff, 0.3);
+  g.fillRoundedRect(35, 57, 19, 5, 3);
   g.lineStyle(2, shirtCollar, 0.9);
   g.beginPath();
   g.arc(48, 55, 8, 0.3, Math.PI - 0.3, false);
@@ -159,7 +202,7 @@ function ensureChibiFrame(scene, key, palette, direction = 'front', step = 0) {
       g.fillCircle(61, 46, 3.9);
     }
 
-    g.lineStyle(1.7, 0xdb886a, 0.95);
+    g.lineStyle(1.6, 0xdb886a, 0.95);
     g.beginPath();
     g.arc(facingSide ? 50 : 48 + stepX, 46, 2.4, 0.25, Math.PI - 0.25, false);
     g.strokePath();
@@ -180,6 +223,16 @@ function ensureChibiFrame(scene, key, palette, direction = 'front', step = 0) {
     g.strokeRoundedRect(32 - legOffset, 92, 32, 8, 4);
   }
   g.strokeRoundedRect(24, 18, 48, 14, 6);
+  if (!facingBack) {
+    g.lineStyle(1.2, tintInt(outline, 16), 0.35);
+    g.beginPath();
+    g.moveTo(31, 34);
+    g.lineTo(36, 30);
+    g.moveTo(47, 35);
+    g.lineTo(58, 30);
+    g.lineTo(64, 34);
+    g.strokePath();
+  }
 
   g.generateTexture(key, w, h);
   g.destroy();
@@ -214,11 +267,15 @@ function makeFrameKeys(scene, paletteKey, palette) {
 export default class HumanChibiAvatar extends SpriteAvatarBase {
   constructor(scene, x, y, options = {}) {
     const skinTone = options.skinTone ?? options.pigment ?? 45;
-    const hairHue = options.hairHue ?? options.eyeHue ?? 26;
+    const hairHue = options.hairHue ?? options.eyeHue;
+    const toneIndex = skinToneToIndex(skinTone);
+    const referenceHair = REFERENCE_HAIR_COLORS[toneIndex] ?? REFERENCE_HAIR_COLORS[5];
 
     const palette = {
       skin: colorHexToInt(skinToneToColor(skinTone)),
-      hair: colorHexToInt(hairHueToColor(hairHue)),
+      hair: Number.isFinite(Number(hairHue))
+        ? mixInt(referenceHair, colorHexToInt(hairHueToColor(hairHue)), 0.2)
+        : referenceHair,
     };
 
     const paletteKey = `${Math.round(Number(skinTone) || 45)}-${Math.round(Number(hairHue) || 26)}`;

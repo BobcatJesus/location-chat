@@ -7,6 +7,39 @@ import {
 } from '../utils/avatarColors';
 import { AVATAR_MODELS } from '../game/entities/avatarModelInfo';
 
+const REFERENCE_HAIR_SWATCHES = [
+  '#5a4745',
+  '#7b614f',
+  '#e6b755',
+  '#c8874e',
+  '#945a40',
+  '#5e423d',
+  '#f6e5c5',
+  '#c7bb71',
+  '#e2a64b',
+  '#b66f45',
+  '#7f4f3f',
+  '#5b3b3b',
+];
+
+function mixHex(a, b, t = 0.5) {
+  const cleanA = a.replace('#', '');
+  const cleanB = b.replace('#', '');
+  const ai = parseInt(cleanA, 16);
+  const bi = parseInt(cleanB, 16);
+  const ar = (ai >> 16) & 255;
+  const ag = (ai >> 8) & 255;
+  const ab = ai & 255;
+  const br = (bi >> 16) & 255;
+  const bg = (bi >> 8) & 255;
+  const bb = bi & 255;
+  const clamp = (v) => Math.max(0, Math.min(255, Math.round(v)));
+  const rr = clamp(ar + (br - ar) * t);
+  const rg = clamp(ag + (bg - ag) * t);
+  const rb = clamp(ab + (bb - ab) * t);
+  return `#${rr.toString(16).padStart(2, '0')}${rg.toString(16).padStart(2, '0')}${rb.toString(16).padStart(2, '0')}`;
+}
+
 const AVATAR_PRESETS = [
   {
     id: 'street-commander',
@@ -88,9 +121,12 @@ const FOOTWEAR_OPTIONS = [
 function buildAvatarPreviewData(formData = {}) {
   const skinTone = Number(formData.skinTone ?? 45);
   const hairHue = Number(formData.hairHue ?? 26);
+  const toneIndex = skinToneToSpectrumIndex(skinTone);
+  const referenceHair = REFERENCE_HAIR_SWATCHES[toneIndex] || REFERENCE_HAIR_SWATCHES[5];
+  const userHair = hairHueToColor(hairHue);
   return {
     skin: skinToneToColor(skinTone),
-    hair: hairHueToColor(hairHue),
+    hair: mixHex(referenceHair, userHair, 0.2),
     shirt: '#f8f2e8',
     shirtShade: '#ede2d1',
     pants: '#55516a',
@@ -121,7 +157,7 @@ function AvatarBuildPreview({ formData }) {
           </filter>
         </defs>
 
-        <ellipse cx="48" cy="96" rx="26" ry="4" fill="rgba(0,0,0,0.14)" />
+          <ellipse cx="48" cy="96" rx="26" ry="4" fill="rgba(0,0,0,0.13)" />
 
         <g filter="url(#soft-shadow)">
           <circle cx="48" cy="32" r="22" fill={avatar.skin} />
@@ -131,11 +167,12 @@ function AvatarBuildPreview({ formData }) {
           <ellipse cx="48" cy="20" rx="24" ry="12" fill={avatar.hair} />
           <rect x="24" y="18" width="48" height="14" rx="6" fill={avatar.hair} />
           <path d="M24 28 L30 34 L36 30 L47 35 L58 30 L64 34 L72 28 L72 18 L24 18 Z" fill={avatar.hair} />
-          <rect x="38" y="12" width="20" height="5" rx="3" fill="rgba(255,255,255,0.15)" />
+          <ellipse cx="48" cy="16" rx="13" ry="3.5" fill="rgba(255,255,255,0.16)" />
 
           <rect x="44" y="50" width="8" height="8" rx="3" fill="rgba(0,0,0,0.1)" />
 
           <rect x="29" y="54" width="38" height="23" rx="10" fill={avatar.shirt} />
+          <rect x="35" y="57" width="19" height="5" rx="3" fill="rgba(255,255,255,0.3)" />
           <rect x="34" y="67" width="28" height="9" rx="6" fill={avatar.shirtShade} />
           <path d="M40 54 Q48 60 56 54" stroke="#d8c9b4" strokeWidth="2" fill="none" strokeLinecap="round" />
 
