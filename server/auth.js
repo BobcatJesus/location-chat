@@ -1,4 +1,5 @@
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'crypto';
+import bcrypt from 'bcryptjs';
 
 export function createAuthService({ pool } = {}) {
   const authUsersMemory = {};
@@ -27,6 +28,14 @@ export function createAuthService({ pool } = {}) {
   const verifyLegacyPassword = (password, expectedHash) => {
     const normalizedHash = toComparableHex(expectedHash);
     if (!normalizedHash) return false;
+
+    if (/^\$2[aby]\$\d{2}\$/.test(String(expectedHash || ''))) {
+      try {
+        return bcrypt.compareSync(String(password), String(expectedHash));
+      } catch {
+        return false;
+      }
+    }
 
     // Legacy records may have stored plaintext passwords directly.
     if (String(expectedHash) === String(password)) return true;

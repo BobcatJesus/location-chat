@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import express from 'express';
 import { createServer } from 'http';
+import bcrypt from 'bcryptjs';
 import { createAuthService, registerAuthRoutes } from '../server/auth.js';
 
 describe('auth endpoints', () => {
@@ -206,6 +207,25 @@ describe('auth endpoints', () => {
     const migrated = await authService.getAuthUser('legacy-sha@side.quest');
     expect(migrated.password_salt).toBeTruthy();
     expect(migrated.password_hash).not.toBe('8ed3f6ad685b959ead7022518e1af76cd816f8e8ec7ccdda1ed4018e8f2223f8');
+  });
+
+  it('accepts legacy bcrypt password records and rehashes them', async () => {
+    await authService.upsertAuthUser('legacy-bcrypt@side.quest', 'seed-pass');
+    const legacyUser = await authService.getAuthUser('legacy-bcrypt@side.quest');
+    legacyUser.password_hash = bcrypt.hashSync('legacy-bcrypt-pass', 10);
+    legacyUser.password_salt = '';
+
+    const login = await postJson('/api/auth/login', {
+      email: 'legacy-bcrypt@side.quest',
+      password: 'legacy-bcrypt-pass',
+    });
+
+    expect(login.response.status).toBe(200);
+    expect(login.data.ok).toBe(true);
+
+    const migrated = await authService.getAuthUser('legacy-bcrypt@side.quest');
+    expect(migrated.password_salt).toBeTruthy();
+    expect(migrated.password_hash.startsWith('$2')).toBe(false);
   });
 
   it('saves profile updates and returns photo on login', async () => {
