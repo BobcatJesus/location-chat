@@ -99,9 +99,9 @@ function drawTop(g, cfg) {
   } = cfg;
 
   g.fillStyle(hoodie, 1);
-  g.fillRoundedRect(32, 49, 32, 23, 8);
+  g.fillRoundedRect(31, 49, 34, 23, 9);
   g.fillStyle(hoodieShade, 0.42);
-  g.fillRoundedRect(36, 61, 24, 8, 5);
+  g.fillRoundedRect(35, 61, 26, 8, 5);
 
   if (topVariant === 'knit') {
     g.fillStyle(tintInt(hoodie, 12), 1);
@@ -114,11 +114,11 @@ function drawTop(g, cfg) {
   } else {
     g.fillStyle(hoodieShade, 1);
     if (facingBack) {
-      g.fillRoundedRect(39, 43, 18, 10, 5);
+      g.fillRoundedRect(38, 43, 20, 11, 6);
     } else if (facingSide) {
-      g.fillRoundedRect(41, 44, 18, 9, 5);
+      g.fillRoundedRect(40, 44, 20, 10, 5);
     } else {
-      g.fillRoundedRect(40, 45, 16, 8, 4);
+      g.fillRoundedRect(39, 45, 18, 8, 4);
       g.lineStyle(1.4, tintInt(hoodieShade, -24), 0.85);
       g.lineBetween(45, 52, 45, 61);
       g.lineBetween(51, 52, 51, 61);
@@ -143,9 +143,10 @@ function ensureChibiFrame(scene, key, palette, direction = 'front', step = 0) {
   const belt = 0xc9b54e;
   const outline = 0x3b2f30;
 
-  const stepX = step === 0 ? 0 : 1;
-  const legOffset = step === 0 ? 0 : 3;
-  const armSwing = step === 0 ? 0 : 2;
+  const isWalkingFrame = step === 1;
+  const stepX = isWalkingFrame ? 1 : 0;
+  const legOffset = isWalkingFrame ? 5 : 0;
+  const armSwing = isWalkingFrame ? 2 : 0;
 
   const facingSide = direction === 'side';
   const facingBack = direction === 'back';
@@ -155,7 +156,7 @@ function ensureChibiFrame(scene, key, palette, direction = 'front', step = 0) {
 
   // Soft floor shadow.
   g.fillStyle(0x000000, 0.18);
-  g.fillRoundedRect(24, 86, 48, 4, 2);
+  g.fillRoundedRect(22, 90, 52, 4, 2);
 
   // Head + ears.
   g.fillStyle(skin, 1);
@@ -183,8 +184,8 @@ function ensureChibiFrame(scene, key, palette, direction = 'front', step = 0) {
 
   // Arms.
   g.fillStyle(hoodie, 1);
-  g.fillRoundedRect(26 + armSwing, 51, 8, 20, 4);
-  g.fillRoundedRect(62 - armSwing, 51, 8, 20, 4);
+  g.fillRoundedRect(26 + armSwing, 52, 8, 19, 4);
+  g.fillRoundedRect(62 - armSwing, 52, 8, 19, 4);
   g.fillStyle(skinShade, 1);
   g.fillCircle(30 + armSwing, 72, 4);
   g.fillCircle(66 - armSwing, 72, 4);
@@ -193,20 +194,33 @@ function ensureChibiFrame(scene, key, palette, direction = 'front', step = 0) {
   g.fillStyle(belt, 1);
   g.fillRoundedRect(34, 69, 28, 5, 2);
 
-  // Shorts.
+  // Pants.
   g.fillStyle(shorts, 1);
-  g.fillRoundedRect(36, 74, 14, 9, 3);
-  g.fillRoundedRect(46, 74, 14, 9, 3);
+  if (facingSide && isWalkingFrame) {
+    g.fillRoundedRect(38, 74, 13, 12, 3);
+    g.fillRoundedRect(50, 74, 11, 12, 3);
+  } else {
+    g.fillRoundedRect(37, 74, 12, 13, 3);
+    g.fillRoundedRect(49, 74, 12, 13, 3);
+  }
   g.fillStyle(shortsShade, 1);
-  g.fillRoundedRect(36, 79, 24, 4, 2);
+  g.fillRoundedRect(37, 80, 24, 5, 2);
 
-  // Legs + shoes.
+  // Legs + shoes (longer stride on side walking frames).
   g.fillStyle(skin, 1);
-  g.fillRoundedRect(39 - legOffset, 82, 8, 7, 3);
-  g.fillRoundedRect(49 + legOffset, 82, 8, 7, 3);
-  g.fillStyle(0x1b1b1b, 1);
-  g.fillRoundedRect(36 - legOffset, 87, 12, 7, 4);
-  g.fillRoundedRect(48 + legOffset, 87, 12, 7, 4);
+  if (facingSide && isWalkingFrame) {
+    g.fillRoundedRect(37 - legOffset, 85, 10, 7, 3);
+    g.fillRoundedRect(52 + legOffset, 84, 9, 7, 3);
+    g.fillStyle(0x111111, 1);
+    g.fillRoundedRect(34 - legOffset, 91, 16, 7, 4);
+    g.fillRoundedRect(50 + legOffset, 90, 13, 7, 4);
+  } else {
+    g.fillRoundedRect(39 - legOffset, 85, 8, 7, 3);
+    g.fillRoundedRect(49 + legOffset, 85, 8, 7, 3);
+    g.fillStyle(0x111111, 1);
+    g.fillRoundedRect(36 - legOffset, 91, 12, 7, 4);
+    g.fillRoundedRect(48 + legOffset, 91, 12, 7, 4);
+  }
 
   // Face details.
   if (!facingBack) {
@@ -234,9 +248,13 @@ function ensureChibiFrame(scene, key, palette, direction = 'front', step = 0) {
   // Soft outline pass for chibi readability.
   g.lineStyle(2, outline, 0.82);
   g.strokeCircle(48, 30, 21);
-  g.strokeRoundedRect(32, 49, 32, 23, 8);
+  g.strokeRoundedRect(31, 49, 34, 23, 9);
   g.strokeRoundedRect(34, 69, 28, 5, 2);
-  g.strokeRoundedRect(36 - legOffset, 87, 24, 7, 4);
+  if (facingSide && isWalkingFrame) {
+    g.strokeRoundedRect(34 - legOffset, 90, 29, 8, 4);
+  } else {
+    g.strokeRoundedRect(36 - legOffset, 91, 24, 7, 4);
+  }
 
   g.generateTexture(key, w, h);
   g.destroy();
