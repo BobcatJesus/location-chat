@@ -12,13 +12,11 @@ const SIGN_STYLE = {
   padding: { x: 4, y: 3 },
 };
 const OUTSIDE_ROOM_COLOR = 0x0f172a;
-const OUTSIDE_ROOM_ALPHA = 0.72;
-const ROOM_EDGE_GLOW = 0x38bdf8;
-const ROOM_EDGE_CORE = 0xf8fafc;
-const ROOM_EDGE_TRIM = 0xe7d7b1;
-const ROOM_EDGE_SHADOW = 0x020617;
-const OUTSIDE_PATTERN_COLOR = 0x64748b;
-const ROOM_CORNER_POST = 0x8b7355;
+const OUTSIDE_ROOM_ALPHA = 0.86;
+const ROOM_EDGE_CORE = 0xf8f1dc;
+const ROOM_EDGE_TRIM = 0xc9a66b;
+const ROOM_EDGE_SHADOW = 0x000000;
+const ROOM_INNER_SHADOW = 0x1f2937;
 
 const SOLID_ZONE_TYPES = new Set([
   'shelf',
@@ -118,22 +116,12 @@ export class RoomLayout {
       if (x + w < worldW) g.fillRect(x + w, y, worldW - (x + w), h);
       if (y + h < worldH) g.fillRect(0, y + h, worldW, worldH - (y + h));
 
-      this._drawOutsidePattern([
-        { x: 0, y: 0, w: worldW, h: y },
-        { x: 0, y, w: x, h },
-        { x: x + w, y, w: worldW - (x + w), h },
-        { x: 0, y: y + h, w: worldW, h: worldH - (y + h) },
-      ]);
-
       this._drawRectBoundaryDressings(x, y, w, h, carpetColor);
 
-      // Layered stroke gives the room edge a soft glow and a crisp core line.
-      g.lineStyle(6, ROOM_EDGE_GLOW, 0.09);
-      g.strokeRect(x, y, w, h);
-      g.lineStyle(2, ROOM_EDGE_TRIM, 0.72);
-      g.strokeRect(x + 1, y + 1, w - 2, h - 2);
-      g.lineStyle(1, ROOM_EDGE_CORE, 0.72);
+      g.lineStyle(5, ROOM_EDGE_TRIM, 0.9);
       g.strokeRect(x + 2, y + 2, w - 4, h - 4);
+      g.lineStyle(2, ROOM_EDGE_CORE, 0.95);
+      g.strokeRect(x + 5, y + 5, w - 10, h - 10);
       return;
     }
 
@@ -143,8 +131,6 @@ export class RoomLayout {
     // Dim whole canvas first, then repaint room interior polygon with the carpet color.
     g.fillStyle(OUTSIDE_ROOM_COLOR, OUTSIDE_ROOM_ALPHA);
     g.fillRect(0, 0, worldW, worldH);
-    this._drawOutsidePattern([{ x: 0, y: 0, w: worldW, h: worldH }]);
-
     g.fillStyle(carpetColor, 1);
     g.beginPath();
     g.moveTo(points[0].x, points[0].y);
@@ -154,109 +140,72 @@ export class RoomLayout {
 
     this._drawPolygonBoundaryDressings(points);
 
-    g.lineStyle(6, ROOM_EDGE_GLOW, 0.09);
+    g.lineStyle(5, ROOM_EDGE_TRIM, 0.9);
     g.beginPath();
     g.moveTo(points[0].x, points[0].y);
     for (let i = 1; i < points.length; i++) g.lineTo(points[i].x, points[i].y);
     g.closePath();
     g.strokePath();
 
-    g.lineStyle(2, ROOM_EDGE_TRIM, 0.72);
+    g.lineStyle(2, ROOM_EDGE_CORE, 0.95);
     g.beginPath();
     g.moveTo(points[0].x, points[0].y);
     for (let i = 1; i < points.length; i++) g.lineTo(points[i].x, points[i].y);
     g.closePath();
     g.strokePath();
-
-    g.lineStyle(1, ROOM_EDGE_CORE, 0.72);
-    g.beginPath();
-    g.moveTo(points[0].x, points[0].y);
-    for (let i = 1; i < points.length; i++) g.lineTo(points[i].x, points[i].y);
-    g.closePath();
-    g.strokePath();
-  }
-
-  _drawOutsidePattern(regions = []) {
-    const g = this.gfx;
-    regions.forEach((region) => {
-      const x = Number(region?.x || 0);
-      const y = Number(region?.y || 0);
-      const w = Number(region?.w || 0);
-      const h = Number(region?.h || 0);
-      if (w <= 0 || h <= 0) return;
-      for (let py = y + 18; py < y + h; py += 86) {
-        for (let px = x + 18; px < x + w; px += 86) {
-          g.fillStyle(OUTSIDE_PATTERN_COLOR, 0.035);
-          g.fillRect(px, py, 24, 24);
-          g.fillStyle(0x000000, 0.03);
-          g.fillRect(px + 5, py + 5, 14, 14);
-        }
-      }
-    });
   }
 
   _drawRectBoundaryDressings(x, y, w, h, carpetColor) {
     const g = this.gfx;
-    const shadowDepth = 24;
-    const trimDepth = 10;
-    const postSize = 12;
+    const shadowDepth = 34;
+    const trimDepth = 18;
 
-    g.fillStyle(ROOM_EDGE_SHADOW, 0.08);
+    g.fillStyle(ROOM_EDGE_SHADOW, 0.18);
     g.fillRect(x, y, w, shadowDepth);
     g.fillRect(x, y + h - shadowDepth, w, shadowDepth);
     g.fillRect(x, y, shadowDepth, h);
     g.fillRect(x + w - shadowDepth, y, shadowDepth, h);
 
-    g.fillStyle(ROOM_EDGE_TRIM, 0.1);
-    g.fillRect(x + 4, y + 4, w - 8, trimDepth);
-    g.fillRect(x + 4, y + h - trimDepth - 4, w - 8, trimDepth);
-    g.fillRect(x + 4, y + 4, trimDepth, h - 8);
-    g.fillRect(x + w - trimDepth - 4, y + 4, trimDepth, h - 8);
+    g.fillStyle(ROOM_EDGE_TRIM, 0.22);
+    g.fillRect(x + 6, y + 6, w - 12, trimDepth);
+    g.fillRect(x + 6, y + h - trimDepth - 6, w - 12, trimDepth);
+    g.fillRect(x + 6, y + 6, trimDepth, h - 12);
+    g.fillRect(x + w - trimDepth - 6, y + 6, trimDepth, h - 12);
 
-    g.fillStyle(carpetColor, 0.045);
-    g.fillRect(x + trimDepth + 8, y + trimDepth + 8, Math.max(0, w - ((trimDepth + 8) * 2)), Math.max(0, h - ((trimDepth + 8) * 2)));
+    g.fillStyle(ROOM_INNER_SHADOW, 0.12);
+    g.fillRect(x + trimDepth + 6, y + trimDepth + 6, Math.max(0, w - ((trimDepth + 6) * 2)), 18);
+    g.fillRect(x + trimDepth + 6, y + h - trimDepth - 24, Math.max(0, w - ((trimDepth + 6) * 2)), 18);
+    g.fillRect(x + trimDepth + 6, y + trimDepth + 6, 18, Math.max(0, h - ((trimDepth + 6) * 2)));
+    g.fillRect(x + w - trimDepth - 24, y + trimDepth + 6, 18, Math.max(0, h - ((trimDepth + 6) * 2)));
 
-    [
-      [x + 10, y + 10],
-      [x + w - 10 - postSize, y + 10],
-      [x + 10, y + h - 10 - postSize],
-      [x + w - 10 - postSize, y + h - 10 - postSize],
-    ].forEach(([px, py]) => {
-      g.fillStyle(ROOM_CORNER_POST, 0.62);
-      g.fillRect(px, py, postSize, postSize);
-      g.lineStyle(1, ROOM_EDGE_CORE, 0.24);
-      g.strokeRect(px, py, postSize, postSize);
-      g.fillStyle(0x365314, 0.45);
-      g.fillCircle(px + postSize / 2, py + postSize / 2, 3);
-    });
+    g.fillStyle(carpetColor, 0.06);
+    g.fillRect(x + trimDepth + 12, y + trimDepth + 12, Math.max(0, w - ((trimDepth + 12) * 2)), Math.max(0, h - ((trimDepth + 12) * 2)));
   }
 
   _drawPolygonBoundaryDressings(points = []) {
     const g = this.gfx;
     if (points.length < 3) return;
 
-    g.lineStyle(16, ROOM_EDGE_SHADOW, 0.08);
+    g.lineStyle(24, ROOM_EDGE_SHADOW, 0.16);
     g.beginPath();
     g.moveTo(points[0].x, points[0].y);
     for (let i = 1; i < points.length; i++) g.lineTo(points[i].x, points[i].y);
     g.closePath();
     g.strokePath();
 
-    g.lineStyle(8, ROOM_EDGE_TRIM, 0.09);
+    g.lineStyle(12, ROOM_EDGE_TRIM, 0.18);
     g.beginPath();
     g.moveTo(points[0].x, points[0].y);
     for (let i = 1; i < points.length; i++) g.lineTo(points[i].x, points[i].y);
     g.closePath();
     g.strokePath();
 
-    points.forEach((p) => {
-      g.fillStyle(ROOM_CORNER_POST, 0.55);
-      g.fillCircle(p.x, p.y, 5);
-      g.fillStyle(0x365314, 0.36);
-      g.fillCircle(p.x, p.y, 2.5);
-      g.lineStyle(1, ROOM_EDGE_CORE, 0.2);
-      g.strokeCircle(p.x, p.y, 5);
-    });
+    g.lineStyle(8, ROOM_INNER_SHADOW, 0.1);
+    g.beginPath();
+    g.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) g.lineTo(points[i].x, points[i].y);
+    g.closePath();
+    g.strokePath();
   }
 
 
