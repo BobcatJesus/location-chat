@@ -6,12 +6,13 @@ import { createAuthService, registerAuthRoutes } from '../server/auth.js';
 describe('auth endpoints', () => {
   let httpServer;
   let baseUrl;
+  let authService;
 
   beforeAll(async () => {
     const app = express();
     app.use(express.json());
 
-    const authService = createAuthService();
+    authService = createAuthService();
     await authService.init();
     registerAuthRoutes(app, authService);
 
@@ -167,6 +168,44 @@ describe('auth endpoints', () => {
 
     expect(lastResponse.response.status).toBe(429);
     expect(lastResponse.data.code).toBe('RATE_LIMITED');
+  });
+
+  it('accepts legacy plaintext password records and rehashes them', async () => {
+    await authService.upsertAuthUser('legacy-plain@side.quest', 'seed-pass');
+    const legacyUser = await authService.getAuthUser('legacy-plain@side.quest');
+    legacyUser.password_hash = 'old-pass-plain';
+    legacyUser.password_salt = '';
+
+    const login = await postJson('/api/auth/login', {
+      email: 'legacy-plain@side.quest',
+      password: 'old-pass-plain',
+    });
+
+    expect(login.response.status).toBe(200);
+    expect(login.data.ok).toBe(true);
+
+    const migrated = await authService.getAuthUser('legacy-plain@side.quest');
+    expect(migrated.password_salt).toBeTruthy();
+    expect(migrated.password_hash).not.toBe('old-pass-plain');
+  });
+
+  it('accepts legacy sha256 password records and rehashes them', async () => {
+    await authService.upsertAuthUser('legacy-sha@side.quest', 'seed-pass');
+    const legacyUser = await authService.getAuthUser('legacy-sha@side.quest');
+    legacyUser.password_hash = '8ed3f6ad685b959ead7022518e1af76cd816f8e8ec7ccdda1ed4018e8f2223f8';
+    legacyUser.password_salt = '';
+
+    const login = await postJson('/api/auth/login', {
+      email: 'legacy-sha@side.quest',
+      password: 'alpha',
+    });
+
+    expect(login.response.status).toBe(200);
+    expect(login.data.ok).toBe(true);
+
+    const migrated = await authService.getAuthUser('legacy-sha@side.quest');
+    expect(migrated.password_salt).toBeTruthy();
+    expect(migrated.password_hash).not.toBe('8ed3f6ad685b959ead7022518e1af76cd816f8e8ec7ccdda1ed4018e8f2223f8');
   });
 
   it('saves profile updates and returns photo on login', async () => {

@@ -1,4 +1,4 @@
-import { randomBytes, scryptSync, timingSafeEqual } from 'crypto';
+import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'crypto';
 
 export function createAuthService({ pool } = {}) {
   const authUsersMemory = {};
@@ -20,6 +20,39 @@ export function createAuthService({ pool } = {}) {
     } catch {
       return false;
     }
+  };
+
+  const toComparableHex = (value) => String(value || '').trim().toLowerCase();
+
+  const verifyLegacyPassword = (password, expectedHash) => {
+    const normalizedHash = toComparableHex(expectedHash);
+    if (!normalizedHash) return false;
+
+    // Legacy records may have stored plaintext passwords directly.
+    if (String(expectedHash) === String(password)) return true;
+
+    const sha256 = createHash('sha256').update(String(password)).digest('hex');
+    if (normalizedHash === sha256) return true;
+
+    const sha512 = createHash('sha512').update(String(password)).digest('hex');
+    return normalizedHash === sha512;
+  };
+
+  const verifyPasswordRecord = (password, user) => {
+    const passwordHash = String(user?.password_hash || '');
+    const passwordSalt = String(user?.password_salt || '');
+
+    const scryptOk = passwordSalt && verifyPassword(password, passwordSalt, passwordHash);
+    if (scryptOk) {
+      return { ok: true, needsRehash: false };
+    }
+
+    const legacyOk = verifyLegacyPassword(password, passwordHash);
+    if (legacyOk) {
+      return { ok: true, needsRehash: true };
+    }
+
+    return { ok: false, needsRehash: false };
   };
 
   const init = async () => {
@@ -209,6 +242,7 @@ export function createAuthService({ pool } = {}) {
     init,
     normalizeAuthEmail,
     verifyPassword,
+    verifyPasswordRecord,
     upsertAuthUser,
     getAuthUser,
     setAuthPassword,
@@ -291,9 +325,17 @@ export function registerAuthRoutes(app, authService) {
         return res.status(404).json({ error: 'Account not found.', code: 'ACCOUNT_NOT_FOUND' });
       }
 
-      const ok = authService.verifyPassword(password, user.password_salt, user.password_hash);
-      if (!ok) {
+      const verified = authService.verifyPasswordRecord(password, user);
+      if (!verified.ok) {
         return res.status(401).json({ error: 'Invalid email or password.', code: 'INVALID_CREDENTIALS' });
+      }
+
+      if (verified.needsRehash) {
+        try {
+          await authService.setAuthPassword(email, password);
+        } catch {
+          // Login should still succeed if migration rehash fails transiently.
+        }
       }
 
       return res.json({ ok: true, email, profile: user.profile_json || null });
