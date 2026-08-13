@@ -11,47 +11,28 @@ const SIGN_STYLE = {
   color: '#faf0d7', backgroundColor: '#2b2b33',
   padding: { x: 4, y: 3 },
 };
-const OUTSIDE_ROOM_COLOR = 0x0f172a;
-const OUTSIDE_ROOM_ALPHA = 0.86;
+const OUTSIDE_ROOM_COLOR = 0x7d6a55;
+const OUTSIDE_ROOM_ALPHA = 0.34;
 const ROOM_EDGE_CORE = 0xf8f1dc;
 const ROOM_EDGE_TRIM = 0xc9a66b;
 const ROOM_EDGE_SHADOW = 0x000000;
 const ROOM_INNER_SHADOW = 0x1f2937;
 
 function getBoundaryVisualTuning(scene) {
-  const viewportW = Number(scene?.scale?.width || 0);
-  const compact = viewportW > 0 && viewportW <= 820;
-  if (!compact) {
-    return {
-      outsideAlpha: OUTSIDE_ROOM_ALPHA,
-      trimLine: 5,
-      trimAlpha: 0.9,
-      coreLine: 2,
-      coreAlpha: 0.95,
-      polygonShadowLine: 24,
-      polygonShadowAlpha: 0.16,
-      polygonTrimLine: 14,
-      polygonTrimAlpha: 0.24,
-      polygonInnerLine: 9,
-      polygonInnerAlpha: 0.14,
-      polygonCoreLine: 3,
-      polygonCoreAlpha: 0.98,
-    };
-  }
   return {
-    outsideAlpha: 0.92,
-    trimLine: 7,
-    trimAlpha: 0.98,
-    coreLine: 3,
-    coreAlpha: 1,
-    polygonShadowLine: 28,
-    polygonShadowAlpha: 0.2,
-    polygonTrimLine: 17,
-    polygonTrimAlpha: 0.32,
-    polygonInnerLine: 12,
-    polygonInnerAlpha: 0.2,
-    polygonCoreLine: 4,
-    polygonCoreAlpha: 1,
+    outsideAlpha: OUTSIDE_ROOM_ALPHA,
+    trimLine: 5,
+    trimAlpha: 0.78,
+    coreLine: 2,
+    coreAlpha: 0.9,
+    polygonShadowLine: 24,
+    polygonShadowAlpha: 0.08,
+    polygonTrimLine: 14,
+    polygonTrimAlpha: 0.14,
+    polygonInnerLine: 9,
+    polygonInnerAlpha: 0.06,
+    polygonCoreLine: 3,
+    polygonCoreAlpha: 0.92,
   };
 }
 
@@ -198,25 +179,25 @@ export class RoomLayout {
     const shadowDepth = 34;
     const trimDepth = 18;
 
-    g.fillStyle(ROOM_EDGE_SHADOW, 0.18);
+    g.fillStyle(ROOM_EDGE_SHADOW, 0.08);
     g.fillRect(x, y, w, shadowDepth);
     g.fillRect(x, y + h - shadowDepth, w, shadowDepth);
     g.fillRect(x, y, shadowDepth, h);
     g.fillRect(x + w - shadowDepth, y, shadowDepth, h);
 
-    g.fillStyle(ROOM_EDGE_TRIM, 0.22);
+    g.fillStyle(ROOM_EDGE_TRIM, 0.12);
     g.fillRect(x + 6, y + 6, w - 12, trimDepth);
     g.fillRect(x + 6, y + h - trimDepth - 6, w - 12, trimDepth);
     g.fillRect(x + 6, y + 6, trimDepth, h - 12);
     g.fillRect(x + w - trimDepth - 6, y + 6, trimDepth, h - 12);
 
-    g.fillStyle(ROOM_INNER_SHADOW, 0.12);
+    g.fillStyle(ROOM_INNER_SHADOW, 0.05);
     g.fillRect(x + trimDepth + 6, y + trimDepth + 6, Math.max(0, w - ((trimDepth + 6) * 2)), 18);
     g.fillRect(x + trimDepth + 6, y + h - trimDepth - 24, Math.max(0, w - ((trimDepth + 6) * 2)), 18);
     g.fillRect(x + trimDepth + 6, y + trimDepth + 6, 18, Math.max(0, h - ((trimDepth + 6) * 2)));
     g.fillRect(x + w - trimDepth - 24, y + trimDepth + 6, 18, Math.max(0, h - ((trimDepth + 6) * 2)));
 
-    g.fillStyle(carpetColor, 0.06);
+    g.fillStyle(carpetColor, 0.12);
     g.fillRect(x + trimDepth + 12, y + trimDepth + 12, Math.max(0, w - ((trimDepth + 12) * 2)), Math.max(0, h - ((trimDepth + 12) * 2)));
   }
 
@@ -280,41 +261,32 @@ export class RoomLayout {
 
     // If the room has no explicit footprint/polygon, create a practical inset
     // beveled polygon so users still get a visible, intentional realm edge.
-    const hasExplicitRoomShape = Boolean(this.scene?.roomShape);
-    const compactViewport = Number(this.scene?.scale?.width || 0) <= 820;
-    const looksLikeFullCanvasDefault = Number.isFinite(w) && Number.isFinite(h) && w >= 1400 && h >= 800;
-    if (!hasExplicitRoomShape && looksLikeFullCanvasDefault) {
-      const insetX = Math.max(72, Math.min(compactViewport ? 180 : 130, Math.floor(w * 0.24)));
-      const insetY = Math.max(54, Math.min(compactViewport ? 140 : 100, Math.floor(h * 0.24)));
-      const innerW = Math.max(320, w - insetX * 2);
-      const innerH = Math.max(220, h - insetY * 2);
-      const chamfer = Math.max(52, Math.min(compactViewport ? 148 : 108, Math.floor(Math.min(innerW, innerH) * 0.22)));
-      const shoulder = Math.max(32, Math.min(compactViewport ? 92 : 72, Math.floor(Math.min(innerW, innerH) * 0.12)));
-      const x = insetX;
-      const y = insetY;
-      const right = insetX + innerW;
-      const bottom = insetY + innerH;
-      const points = [
-        { x: x + chamfer, y },
-        { x: x + chamfer + shoulder, y: y + Math.floor(shoulder * 0.18) },
-        { x: right - chamfer - shoulder, y: y + Math.floor(shoulder * 0.18) },
-        { x: right - chamfer, y },
-        { x: right - Math.floor(shoulder * 0.18), y: y + chamfer + shoulder },
-        { x: right - Math.floor(shoulder * 0.18), y: bottom - chamfer - shoulder },
-        { x: right - chamfer, y: bottom },
-        { x: right - chamfer - shoulder, y: bottom - Math.floor(shoulder * 0.18) },
-        { x: x + chamfer + shoulder, y: bottom - Math.floor(shoulder * 0.18) },
-        { x: x + chamfer, y: bottom },
-        { x: x + Math.floor(shoulder * 0.18), y: bottom - chamfer - shoulder },
-        { x: x + Math.floor(shoulder * 0.18), y: y + chamfer + shoulder },
-      ];
-      this.roomBoundary = { type: 'polygon', points };
-      this._boundaryCentroid = { x: x + innerW / 2, y: y + innerH / 2 };
-      return;
-    }
-
-    this.roomBoundary = { type: 'rect', x: 0, y: 0, w, h };
-    this._boundaryCentroid = { x: w / 2, y: h / 2 };
+    const insetX = Math.max(72, Math.min(130, Math.floor(w * 0.24)));
+    const insetY = Math.max(54, Math.min(100, Math.floor(h * 0.24)));
+    const innerW = Math.max(320, w - insetX * 2);
+    const innerH = Math.max(220, h - insetY * 2);
+    const chamfer = Math.max(52, Math.min(108, Math.floor(Math.min(innerW, innerH) * 0.22)));
+    const shoulder = Math.max(32, Math.min(72, Math.floor(Math.min(innerW, innerH) * 0.12)));
+    const x = insetX;
+    const y = insetY;
+    const right = insetX + innerW;
+    const bottom = insetY + innerH;
+    const points = [
+      { x: x + chamfer, y },
+      { x: x + chamfer + shoulder, y: y + Math.floor(shoulder * 0.18) },
+      { x: right - chamfer - shoulder, y: y + Math.floor(shoulder * 0.18) },
+      { x: right - chamfer, y },
+      { x: right - Math.floor(shoulder * 0.18), y: y + chamfer + shoulder },
+      { x: right - Math.floor(shoulder * 0.18), y: bottom - chamfer - shoulder },
+      { x: right - chamfer, y: bottom },
+      { x: right - chamfer - shoulder, y: bottom - Math.floor(shoulder * 0.18) },
+      { x: x + chamfer + shoulder, y: bottom - Math.floor(shoulder * 0.18) },
+      { x: x + chamfer, y: bottom },
+      { x: x + Math.floor(shoulder * 0.18), y: bottom - chamfer - shoulder },
+      { x: x + Math.floor(shoulder * 0.18), y: y + chamfer + shoulder },
+    ];
+    this.roomBoundary = { type: 'polygon', points };
+    this._boundaryCentroid = { x: x + innerW / 2, y: y + innerH / 2 };
   }
 
   _distancePointToSegment(px, py, ax, ay, bx, by) {
