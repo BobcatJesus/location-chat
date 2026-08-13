@@ -93,22 +93,18 @@ function resolveHairVariant(hairStyle = 'bun', hairHue = 26) {
   return 'bun';
 }
 
-function resolveTopVariant(topStyle = 'hoodie', outfitHue = 220) {
-  if (topStyle === 'turtleneck') return 'knit';
-  if (topStyle === 'hoodie') return 'hoodie';
-  return (Math.round(Number(outfitHue) || 220) % 3 === 0) ? 'knit' : 'hoodie';
-}
-
 function buildAvatarPreviewData(formData = {}) {
   const skinTone = Number(formData.skinTone ?? 45);
   const hairHue = Number(formData.hairHue ?? 26);
-  const outfitHue = Number(formData.outfitHue ?? 220);
   return {
     skin: skinToneToColor(skinTone),
     hair: hairHueToColor(hairHue),
-    outfit: accessoryHueToColor(outfitHue),
+    shirt: '#f8f2e8',
+    shirtShade: '#ede2d1',
+    pants: '#55516a',
+    pantsShade: '#444156',
+    shoe: '#141313',
     hairVariant: resolveHairVariant(formData.hairStyle, hairHue),
-    topVariant: resolveTopVariant(formData.topStyle, outfitHue),
   };
 }
 
@@ -122,81 +118,89 @@ function AvatarBuildPreview({ formData }) {
         minWidth: 122,
         border: '2px solid #334155',
         borderRadius: 10,
-        background: 'linear-gradient(180deg, #111827 0%, #0b1220 100%)',
-        boxShadow: 'inset 0 0 0 1px rgba(148,163,184,0.14)',
+        background: 'linear-gradient(180deg, #fafaf9 0%, #f4f4f5 100%)',
+        boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.08)',
         padding: 8,
       }}
     >
       <svg viewBox="0 0 96 106" width="100%" height="102" role="img" aria-label="Avatar preview">
-        <rect x="16" y="96" width="64" height="4" rx="2" fill="rgba(0,0,0,0.55)" />
+        <defs>
+          <filter id="soft-shadow" x="-40%" y="-40%" width="180%" height="180%">
+            <feDropShadow dx="0" dy="1.2" stdDeviation="1" floodOpacity="0.2" />
+          </filter>
+        </defs>
 
-        <circle cx="48" cy="31" r="21" fill={avatar.skin} />
-        <circle cx="30" cy="37" r="6" fill={avatar.skin} />
-        <circle cx="66" cy="37" r="6" fill={avatar.skin} />
+        <ellipse cx="48" cy="96" rx="26" ry="4" fill="rgba(0,0,0,0.16)" />
 
-        {avatar.hairVariant === 'curly' ? (
-          <>
-            <circle cx="36" cy="18" r="8" fill={avatar.hair} />
-            <circle cx="46" cy="16" r="8" fill={avatar.hair} />
-            <circle cx="56" cy="18" r="8" fill={avatar.hair} />
-            <circle cx="31" cy="24" r="7" fill={avatar.hair} />
-            <circle cx="41" cy="24" r="7" fill={avatar.hair} />
-            <circle cx="51" cy="24" r="7" fill={avatar.hair} />
-            <circle cx="61" cy="24" r="7" fill={avatar.hair} />
-          </>
-        ) : (
-          <ellipse cx="48" cy="23" rx="22" ry="13" fill={avatar.hair} />
-        )}
+        <g filter="url(#soft-shadow)">
+          <circle cx="48" cy="32" r="23" fill={avatar.skin} />
+          <circle cx="23" cy="38" r="8" fill={avatar.skin} />
+          <circle cx="73" cy="38" r="8" fill={avatar.skin} />
 
-        {(avatar.hairVariant === 'bun') && <circle cx="52" cy="10" r="6" fill={avatar.hair} />}
-        {(avatar.hairVariant === 'bob' || avatar.hairVariant === 'lob') && (
-          <rect x="30" y="24" width="36" height="16" rx="6" fill={avatar.hair} />
-        )}
-        {(avatar.hairVariant === 'lob') && (
-          <>
-            <rect x="29" y="34" width="10" height="14" rx="5" fill={avatar.hair} />
-            <rect x="57" y="34" width="10" height="14" rx="5" fill={avatar.hair} />
-          </>
-        )}
+          {avatar.hairVariant === 'curly' ? (
+            <>
+              <circle cx="34" cy="20" r="8" fill={avatar.hair} />
+              <circle cx="44" cy="16" r="8" fill={avatar.hair} />
+              <circle cx="54" cy="16" r="8" fill={avatar.hair} />
+              <circle cx="63" cy="20" r="8" fill={avatar.hair} />
+              <circle cx="30" cy="27" r="7" fill={avatar.hair} />
+              <circle cx="40" cy="25" r="7" fill={avatar.hair} />
+              <circle cx="50" cy="25" r="7" fill={avatar.hair} />
+              <circle cx="60" cy="25" r="7" fill={avatar.hair} />
+            </>
+          ) : (
+            <>
+              <ellipse cx="48" cy="20" rx="24" ry="12" fill={avatar.hair} />
+              <rect x="24" y="18" width="48" height="14" rx="6" fill={avatar.hair} />
+              <path d="M24 28 L30 34 L36 30 L47 35 L58 30 L64 34 L72 28 L72 18 L24 18 Z" fill={avatar.hair} />
+              <rect x="38" y="12" width="20" height="5" rx="3" fill="rgba(255,255,255,0.15)" />
+            </>
+          )}
 
-        <rect x="31" y="50" width="34" height="23" rx="9" fill={avatar.outfit} />
-        <rect x="35" y="61" width="26" height="8" rx="5" fill="rgba(0,0,0,0.2)" />
+          {avatar.hairVariant === 'bun' && <circle cx="56" cy="8" r="6" fill={avatar.hair} />}
+          {avatar.hairVariant === 'bob' && <rect x="26" y="29" width="44" height="9" rx="5" fill={avatar.hair} />}
+          {avatar.hairVariant === 'lob' && (
+            <>
+              <rect x="24" y="30" width="10" height="15" rx="5" fill={avatar.hair} />
+              <rect x="62" y="30" width="10" height="15" rx="5" fill={avatar.hair} />
+            </>
+          )}
 
-        {avatar.topVariant === 'knit' ? (
-          <>
-            <rect x="34" y="46" width="28" height="8" rx="5" fill="rgba(255,255,255,0.22)" />
-            <path d="M38 53 L40 68 M43 53 L45 68 M48 53 L50 68 M53 53 L55 68" stroke="rgba(0,0,0,0.14)" strokeWidth="1" />
-          </>
-        ) : (
-          <>
-            <rect x="39" y="44" width="20" height="10" rx="6" fill="rgba(0,0,0,0.2)" />
-            <line x1="45" y1="52" x2="45" y2="61" stroke="rgba(0,0,0,0.36)" strokeWidth="1.2" />
-            <line x1="51" y1="52" x2="51" y2="61" stroke="rgba(0,0,0,0.36)" strokeWidth="1.2" />
-          </>
-        )}
+          <rect x="43" y="50" width="10" height="8" rx="3" fill="rgba(0,0,0,0.1)" />
 
-        <rect x="26" y="52" width="8" height="19" rx="4" fill={avatar.outfit} />
-        <rect x="62" y="52" width="8" height="19" rx="4" fill={avatar.outfit} />
-        <circle cx="30" cy="72" r="4" fill={avatar.skin} />
-        <circle cx="66" cy="72" r="4" fill={avatar.skin} />
+          <rect x="29" y="54" width="38" height="24" rx="10" fill={avatar.shirt} />
+          <rect x="34" y="67" width="28" height="9" rx="6" fill={avatar.shirtShade} />
+          <path d="M40 54 Q48 61 56 54" stroke="#d8c9b4" strokeWidth="2" fill="none" strokeLinecap="round" />
 
-        <rect x="34" y="70" width="28" height="5" rx="2" fill="#c9b54e" />
-        <rect x="37" y="75" width="12" height="12" rx="3" fill="rgba(0,0,0,0.48)" />
-        <rect x="49" y="75" width="12" height="12" rx="3" fill="rgba(0,0,0,0.48)" />
-        <rect x="39" y="85" width="8" height="7" rx="3" fill={avatar.skin} />
-        <rect x="49" y="85" width="8" height="7" rx="3" fill={avatar.skin} />
-        <rect x="36" y="91" width="12" height="7" rx="4" fill="#111111" />
-        <rect x="48" y="91" width="12" height="7" rx="4" fill="#111111" />
+          <rect x="25" y="58" width="9" height="15" rx="4" fill={avatar.shirt} />
+          <rect x="62" y="58" width="9" height="15" rx="4" fill={avatar.shirt} />
+          <circle cx="29" cy="74" r="5" fill={avatar.skin} />
+          <circle cx="66" cy="74" r="5" fill={avatar.skin} />
 
-        <ellipse cx="42" cy="34" rx="4" ry="6" fill="#3a2b2a" />
-        <ellipse cx="54" cy="34" rx="4" ry="6" fill="#3a2b2a" />
-        <circle cx="38" cy="39" r="3.5" fill="rgba(248,194,159,0.6)" />
-        <circle cx="58" cy="39" r="3.5" fill="rgba(248,194,159,0.6)" />
-        <path d="M45 40 Q48 44 51 40" stroke="#d68062" strokeWidth="2" fill="none" strokeLinecap="round" />
+          <rect x="35" y="77" width="12" height="15" rx="5" fill={avatar.pants} />
+          <rect x="49" y="77" width="12" height="15" rx="5" fill={avatar.pants} />
+          <rect x="35" y="84" width="26" height="6" rx="3" fill={avatar.pantsShade} />
 
-        <circle cx="48" cy="31" r="21" fill="none" stroke="rgba(59,47,48,0.82)" strokeWidth="2" />
+          <rect x="37" y="89" width="7" height="5" rx="2" fill={avatar.skin} />
+          <rect x="52" y="89" width="7" height="5" rx="2" fill={avatar.skin} />
+          <rect x="32" y="92" width="15" height="8" rx="4" fill={avatar.shoe} />
+          <rect x="49" y="92" width="15" height="8" rx="4" fill={avatar.shoe} />
+
+          <ellipse cx="41" cy="40" rx="4.5" ry="7" fill="#4b3a36" />
+          <ellipse cx="55" cy="40" rx="4.5" ry="7" fill="#4b3a36" />
+          <circle cx="34" cy="46" r="4.2" fill="rgba(248,197,169,0.58)" />
+          <circle cx="62" cy="46" r="4.2" fill="rgba(248,197,169,0.58)" />
+          <path d="M45 46 Q48 50 51 46" stroke="#db886a" strokeWidth="1.8" fill="none" strokeLinecap="round" />
+
+          <circle cx="48" cy="32" r="23" fill="none" stroke="rgba(58,47,49,0.86)" strokeWidth="2" />
+          <circle cx="23" cy="38" r="8" fill="none" stroke="rgba(58,47,49,0.86)" strokeWidth="2" />
+          <circle cx="73" cy="38" r="8" fill="none" stroke="rgba(58,47,49,0.86)" strokeWidth="2" />
+          <rect x="29" y="54" width="38" height="24" rx="10" fill="none" stroke="rgba(58,47,49,0.86)" strokeWidth="2" />
+          <rect x="35" y="77" width="26" height="15" rx="5" fill="none" stroke="rgba(58,47,49,0.86)" strokeWidth="2" />
+          <rect x="32" y="92" width="32" height="8" rx="4" fill="none" stroke="rgba(58,47,49,0.86)" strokeWidth="2" />
+        </g>
       </svg>
-      <div style={{ color: '#94a3b8', fontSize: 10, textAlign: 'center', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+      <div style={{ color: '#475569', fontSize: 10, textAlign: 'center', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
         Live Build Preview
       </div>
     </div>
