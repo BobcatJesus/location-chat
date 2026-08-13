@@ -13,6 +13,8 @@ const SIGN_STYLE = {
 };
 const OUTSIDE_ROOM_COLOR = 0x0f172a;
 const OUTSIDE_ROOM_ALPHA = 0.62;
+const ROOM_INTERIOR_BUTTER = 0xfef3c7;
+const ROOM_INTERIOR_BUTTER_ALPHA = 0.92;
 const ROOM_EDGE_CORE = 0xf8f1dc;
 const ROOM_EDGE_TRIM = 0xc9a66b;
 const ROOM_EDGE_SHADOW = 0x000000;
@@ -89,7 +91,7 @@ export class RoomLayout {
     this.gfx.fillStyle(floor.carpet, 1);
     this.gfx.fillRect(0, 0, W, H);
     this._drawOutsideRoomMask(W, H, floor.carpet);
-    this._applyInteriorWarmth(W, H);
+    this._applyInteriorWarmth();
 
     // Draw all zones
     floor.zones.forEach(z => {
@@ -175,11 +177,12 @@ export class RoomLayout {
     g.strokePath();
   }
 
-  _applyInteriorWarmth(worldW, worldH) {
+  _applyInteriorWarmth() {
     const g = this.gfx;
     const boundary = this.roomBoundary;
 
-    g.fillStyle(0xfff7dd, 0.14);
+    // Keep all room interiors on the same warm "soft butter" base.
+    g.fillStyle(ROOM_INTERIOR_BUTTER, ROOM_INTERIOR_BUTTER_ALPHA);
     if (boundary.type === 'rect') {
       g.fillRect(boundary.x, boundary.y, boundary.w, boundary.h);
       return;
