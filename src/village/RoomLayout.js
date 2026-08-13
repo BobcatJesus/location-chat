@@ -18,6 +18,39 @@ const ROOM_EDGE_TRIM = 0xc9a66b;
 const ROOM_EDGE_SHADOW = 0x000000;
 const ROOM_INNER_SHADOW = 0x1f2937;
 
+function getBoundaryVisualTuning(scene) {
+  const viewportW = Number(scene?.scale?.width || 0);
+  const compact = viewportW > 0 && viewportW <= 820;
+  if (!compact) {
+    return {
+      outsideAlpha: OUTSIDE_ROOM_ALPHA,
+      trimLine: 5,
+      trimAlpha: 0.9,
+      coreLine: 2,
+      coreAlpha: 0.95,
+      polygonShadowLine: 24,
+      polygonShadowAlpha: 0.16,
+      polygonTrimLine: 12,
+      polygonTrimAlpha: 0.18,
+      polygonInnerLine: 8,
+      polygonInnerAlpha: 0.1,
+    };
+  }
+  return {
+    outsideAlpha: 0.92,
+    trimLine: 7,
+    trimAlpha: 0.98,
+    coreLine: 3,
+    coreAlpha: 1,
+    polygonShadowLine: 28,
+    polygonShadowAlpha: 0.2,
+    polygonTrimLine: 15,
+    polygonTrimAlpha: 0.24,
+    polygonInnerLine: 10,
+    polygonInnerAlpha: 0.14,
+  };
+}
+
 const SOLID_ZONE_TYPES = new Set([
   'shelf',
   'wall_shelf',
@@ -103,6 +136,7 @@ export class RoomLayout {
   _drawOutsideRoomMask(worldW, worldH, carpetColor) {
     const g = this.gfx;
     const boundary = this.roomBoundary;
+    const tuning = getBoundaryVisualTuning(this.scene);
 
     if (boundary.type === 'rect') {
       const x = boundary.x;
@@ -110,7 +144,7 @@ export class RoomLayout {
       const w = boundary.w;
       const h = boundary.h;
 
-      g.fillStyle(OUTSIDE_ROOM_COLOR, OUTSIDE_ROOM_ALPHA);
+      g.fillStyle(OUTSIDE_ROOM_COLOR, tuning.outsideAlpha);
       if (y > 0) g.fillRect(0, 0, worldW, y);
       if (x > 0) g.fillRect(0, y, x, h);
       if (x + w < worldW) g.fillRect(x + w, y, worldW - (x + w), h);
@@ -118,9 +152,9 @@ export class RoomLayout {
 
       this._drawRectBoundaryDressings(x, y, w, h, carpetColor);
 
-      g.lineStyle(5, ROOM_EDGE_TRIM, 0.9);
+      g.lineStyle(tuning.trimLine, ROOM_EDGE_TRIM, tuning.trimAlpha);
       g.strokeRect(x + 2, y + 2, w - 4, h - 4);
-      g.lineStyle(2, ROOM_EDGE_CORE, 0.95);
+      g.lineStyle(tuning.coreLine, ROOM_EDGE_CORE, tuning.coreAlpha);
       g.strokeRect(x + 5, y + 5, w - 10, h - 10);
       return;
     }
@@ -129,7 +163,7 @@ export class RoomLayout {
     if (points.length < 3) return;
 
     // Dim whole canvas first, then repaint room interior polygon with the carpet color.
-    g.fillStyle(OUTSIDE_ROOM_COLOR, OUTSIDE_ROOM_ALPHA);
+    g.fillStyle(OUTSIDE_ROOM_COLOR, tuning.outsideAlpha);
     g.fillRect(0, 0, worldW, worldH);
     g.fillStyle(carpetColor, 1);
     g.beginPath();
@@ -140,14 +174,14 @@ export class RoomLayout {
 
     this._drawPolygonBoundaryDressings(points);
 
-    g.lineStyle(5, ROOM_EDGE_TRIM, 0.9);
+    g.lineStyle(tuning.trimLine, ROOM_EDGE_TRIM, tuning.trimAlpha);
     g.beginPath();
     g.moveTo(points[0].x, points[0].y);
     for (let i = 1; i < points.length; i++) g.lineTo(points[i].x, points[i].y);
     g.closePath();
     g.strokePath();
 
-    g.lineStyle(2, ROOM_EDGE_CORE, 0.95);
+    g.lineStyle(tuning.coreLine, ROOM_EDGE_CORE, tuning.coreAlpha);
     g.beginPath();
     g.moveTo(points[0].x, points[0].y);
     for (let i = 1; i < points.length; i++) g.lineTo(points[i].x, points[i].y);
@@ -185,22 +219,23 @@ export class RoomLayout {
   _drawPolygonBoundaryDressings(points = []) {
     const g = this.gfx;
     if (points.length < 3) return;
+    const tuning = getBoundaryVisualTuning(this.scene);
 
-    g.lineStyle(24, ROOM_EDGE_SHADOW, 0.16);
+    g.lineStyle(tuning.polygonShadowLine, ROOM_EDGE_SHADOW, tuning.polygonShadowAlpha);
     g.beginPath();
     g.moveTo(points[0].x, points[0].y);
     for (let i = 1; i < points.length; i++) g.lineTo(points[i].x, points[i].y);
     g.closePath();
     g.strokePath();
 
-    g.lineStyle(12, ROOM_EDGE_TRIM, 0.18);
+    g.lineStyle(tuning.polygonTrimLine, ROOM_EDGE_TRIM, tuning.polygonTrimAlpha);
     g.beginPath();
     g.moveTo(points[0].x, points[0].y);
     for (let i = 1; i < points.length; i++) g.lineTo(points[i].x, points[i].y);
     g.closePath();
     g.strokePath();
 
-    g.lineStyle(8, ROOM_INNER_SHADOW, 0.1);
+    g.lineStyle(tuning.polygonInnerLine, ROOM_INNER_SHADOW, tuning.polygonInnerAlpha);
     g.beginPath();
     g.moveTo(points[0].x, points[0].y);
     for (let i = 1; i < points.length; i++) g.lineTo(points[i].x, points[i].y);

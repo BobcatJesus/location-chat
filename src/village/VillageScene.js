@@ -68,6 +68,9 @@ export class VillageScene extends Phaser.Scene {
     this.shopTag    = d.shopTag    ?? '';
     this.roomShape  = d.roomShape  ?? null;
     this.profile    = d.profile    ?? {};
+    this.preferredCameraMode = ['follow', 'wide-follow', 'overview'].includes(d.preferredCameraMode)
+      ? d.preferredCameraMode
+      : null;
     this.avatarState = normalizeAvatarState(d.profile?.profile || {});
     this.onEditorChange = d.onEditorChange ?? (() => {});
     this.onNearbyChange = d.onNearbyChange ?? (() => {});
@@ -91,7 +94,7 @@ export class VillageScene extends Phaser.Scene {
     this.currentFloor = 0;
     this.roomLayout.drawFloor(0);
     this.showCollisionDebug = false;
-    this.cameraMode = 'follow';
+    this.cameraMode = this.preferredCameraMode || 'follow';
 
     // Initialize room editor (press ~ or use the UI toggle)
     this.roomEditor = new RoomEditor(this);
@@ -131,7 +134,7 @@ export class VillageScene extends Phaser.Scene {
       if (!this.player || !localAvatar) return;
       this.player.avatar = localAvatar;
       if (this.avatarState.photo) localAvatar.attachPhoto(this, this.avatarState.photo);
-      if (this.cameraMode === 'follow') {
+      if (this.cameraMode !== 'overview') {
         this.cameras.main.startFollow(localAvatar, true, 0.1, 0.1);
       }
       this.player.sync();

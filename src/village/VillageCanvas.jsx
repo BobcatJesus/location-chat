@@ -42,7 +42,7 @@ export default function VillageCanvas({ room, profile, onLeave }) {
     if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
     return window.matchMedia('(pointer: coarse)').matches || (navigator.maxTouchPoints || 0) > 0;
   });
-  const [cameraMode, setCameraMode] = useState('follow');
+  const [cameraMode, setCameraMode] = useState(() => (window.innerWidth <= 768 ? 'wide-follow' : 'follow'));
   const [roomPopulation, setRoomPopulation] = useState(1);
   const roomId = canonicalRoomId(room);
   const cameraModeLabel = cameraMode === 'overview'
@@ -94,6 +94,7 @@ export default function VillageCanvas({ room, profile, onLeave }) {
       shopTag:    room?.shop    || '',
       roomShape:  room?.footprint || null,
       profile,
+      preferredCameraMode: isMobile || isTouchDevice ? 'wide-follow' : 'follow',
       onEditorChange: setEditorActive,
       onNearbyChange: setNearbyCount,
       onRoomPopulationChange: (count) => {
@@ -139,10 +140,10 @@ export default function VillageCanvas({ room, profile, onLeave }) {
       setDraft('');
       setSystemNotice('');
       setMobileChatOpen(false);
-      setCameraMode('follow');
+      setCameraMode(isMobile || isTouchDevice ? 'wide-follow' : 'follow');
       setRoomPopulation(1);
     };
-  }, [roomId, room?.name, room?.amenity, room?.shop, profile]);
+  }, [roomId, room?.name, room?.amenity, room?.shop, profile, isMobile, isTouchDevice]);
 
   const toggleEditor = () => {
     const scene = gameRef.current?.scene?.getScene('VillageScene');
@@ -343,7 +344,9 @@ export default function VillageCanvas({ room, profile, onLeave }) {
         display: isMobile && !mobileChatOpen ? 'none' : 'flex',
         flexDirection: 'column',
         gap: 6,
-        maxHeight: isMobile ? '40vh' : '45vh',
+        maxHeight: isMobile ? 'min(50vh, calc(100vh - 132px - env(safe-area-inset-top, 0px)))' : '45vh',
+        overflowY: isMobile ? 'auto' : 'visible',
+        paddingBottom: isMobile ? 'calc(env(safe-area-inset-bottom, 0px) + 6px)' : 0,
       }}>
         <div style={{
           background: '#0f172acc',
@@ -359,7 +362,7 @@ export default function VillageCanvas({ room, profile, onLeave }) {
 
         {messages.length > 0 && (
           <div style={{
-            maxHeight: '22vh',
+            maxHeight: isMobile ? '16vh' : '22vh',
             overflowY: 'auto',
             background: '#0f172acc',
             border: '1px solid #334155',
@@ -378,7 +381,7 @@ export default function VillageCanvas({ room, profile, onLeave }) {
           </div>
         )}
 
-        <form onSubmit={sendChat} style={{ display: 'flex', gap: 6 }}>
+        <form onSubmit={sendChat} style={{ display: 'flex', gap: 6, position: 'sticky', bottom: 0, background: 'linear-gradient(180deg, rgba(15,23,42,0.25) 0%, rgba(15,23,42,0.92) 60%)', paddingTop: 4 }}>
           <input
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
