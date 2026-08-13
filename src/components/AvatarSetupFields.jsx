@@ -5,8 +5,8 @@ const AVATAR_VARIANTS = {
     id: 'male',
     label: 'Male Avatar',
     skin: '#ffd4b0',
-    hair: '#e6b16b',
-    hoodie: '#a9dfc4',
+    hair: '#e5b06b',
+    hoodie: '#abdfc4',
     hoodieShade: '#8ac8aa',
     eye: '#4a3f58',
     legacy: {
@@ -59,6 +59,42 @@ function AvatarBuildPreview({ formData }) {
   const avatar = getAvatarVariant(formData);
   const isFemale = avatar.id === 'female';
 
+  if (!isFemale) {
+    return (
+      <div
+        style={{
+          width: 122,
+          minWidth: 122,
+          border: '2px solid #334155',
+          borderRadius: 10,
+          background: 'linear-gradient(180deg, #fafaf9 0%, #f4f4f5 100%)',
+          boxShadow: 'inset 0 0 0 1px rgba(0,0,0,0.08)',
+          padding: 8,
+        }}
+      >
+        <div style={{ width: '100%', height: 102, overflow: 'hidden', borderRadius: 8, position: 'relative', background: '#fff' }}>
+          <img
+            src="/avatars/source/hoodie_turnaround_step1.png"
+            alt="Male avatar reference"
+            style={{
+              position: 'absolute',
+              left: -4,
+              top: -8,
+              width: 174,
+              height: 118,
+              objectFit: 'none',
+              objectPosition: '-1px -2px',
+              imageRendering: 'auto',
+            }}
+          />
+        </div>
+        <div style={{ color: '#475569', fontSize: 10, textAlign: 'center', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+          {avatar.label}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       style={{
@@ -80,7 +116,7 @@ function AvatarBuildPreview({ formData }) {
 
         <ellipse cx="48" cy="22" rx="23" ry="11.5" fill={avatar.hair} />
         <rect x="25" y="19" width="46" height="14" rx="6" fill={avatar.hair} />
-        <path d="M25 28 L30 35 L34 31 L40 35 L46 31 L52 35 L58 31 L64 33 L68 28 L71 21 L25 21 Z" fill={avatar.hair} />
+        <path d="M25 28 L30 35 L34 31 L40 34 L46 31 L52 34 L58 31 L64 32 L68 28 L71 21 L25 21 Z" fill={avatar.hair} />
         <circle cx="50" cy="12" r="2.4" fill={avatar.hair} />
         {isFemale && (
           <>
@@ -94,8 +130,12 @@ function AvatarBuildPreview({ formData }) {
         <rect x="28" y="54" width="40" height="24" rx="11" fill={avatar.hoodie} />
         <rect x="34" y="68" width="28" height="8" rx="5" fill="rgba(0,0,0,0.2)" />
         <rect x="38" y="50" width="20" height="10" rx="6" fill={avatar.hoodieShade} />
-        <line x1="42" y1="60" x2="42" y2="74" stroke="#2e2a30" strokeWidth="1.7" strokeLinecap="round" />
-        <line x1="54" y1="60" x2="54" y2="74" stroke="#2e2a30" strokeWidth="1.7" strokeLinecap="round" />
+        {isFemale && (
+          <>
+            <line x1="42" y1="60" x2="42" y2="74" stroke="#2e2a30" strokeWidth="1.7" strokeLinecap="round" />
+            <line x1="54" y1="60" x2="54" y2="74" stroke="#2e2a30" strokeWidth="1.7" strokeLinecap="round" />
+          </>
+        )}
 
         <rect x="24" y="58" width="8" height="15" rx="4" fill={avatar.hoodie} />
         <rect x="64" y="58" width="8" height="15" rx="4" fill={avatar.hoodie} />

@@ -6,8 +6,8 @@ import {
 const AVATAR_VARIANTS = {
   male: {
     skin: '#ffd4b0',
-    hair: '#e6b16b',
-    hoodie: '#a9dfc4',
+    hair: '#e5b06b',
+    hoodie: '#abdfc4',
   },
   female: {
     skin: '#ffd0b2',
@@ -15,6 +15,71 @@ const AVATAR_VARIANTS = {
     hoodie: '#aadfc8',
   },
 };
+
+const MALE_SHEET_KEYS = {
+  step1: 'hoodie-source-turnaround-step1',
+  step2: 'hoodie-source-walk-step2',
+};
+
+const MALE_FRAME_CROPS = {
+  front: {
+    step1: { x: 40, y: 130, w: 720, h: 1240 },
+    step2: { x: 620, y: 150, w: 640, h: 1220 },
+  },
+  back: {
+    step1: { x: 780, y: 130, w: 900, h: 1240 },
+    step2: { x: 1240, y: 150, w: 650, h: 1220 },
+  },
+  side: {
+    step1: { x: 1720, y: 130, w: 800, h: 1240 },
+    step2: { x: 1860, y: 150, w: 680, h: 1220 },
+  },
+};
+
+function generateMaleFrameFromSheet(scene, key, sourceKey, crop) {
+  if (scene.textures.exists(key)) return true;
+  if (!scene.textures.exists(sourceKey)) return false;
+
+  const sourceImage = scene.textures.get(sourceKey)?.getSourceImage?.();
+  if (!sourceImage) return false;
+
+  const canvas = scene.textures.createCanvas(key, 96, 96);
+  if (!canvas) return false;
+  const ctx = canvas.getContext();
+  if (!ctx) return false;
+
+  ctx.clearRect(0, 0, 96, 96);
+  ctx.drawImage(
+    sourceImage,
+    crop.x,
+    crop.y,
+    crop.w,
+    crop.h,
+    0,
+    0,
+    96,
+    96,
+  );
+  canvas.refresh();
+  return true;
+}
+
+function makeMaleFrameKeysFromSource(scene) {
+  const keys = {
+    front: ['male-front-step1', 'male-front-step2'],
+    back: ['male-back-step1', 'male-back-step2'],
+    side: ['male-side-step1', 'male-side-step2'],
+  };
+
+  const ok = generateMaleFrameFromSheet(scene, keys.front[0], MALE_SHEET_KEYS.step1, MALE_FRAME_CROPS.front.step1)
+    && generateMaleFrameFromSheet(scene, keys.front[1], MALE_SHEET_KEYS.step2, MALE_FRAME_CROPS.front.step2)
+    && generateMaleFrameFromSheet(scene, keys.back[0], MALE_SHEET_KEYS.step1, MALE_FRAME_CROPS.back.step1)
+    && generateMaleFrameFromSheet(scene, keys.back[1], MALE_SHEET_KEYS.step2, MALE_FRAME_CROPS.back.step2)
+    && generateMaleFrameFromSheet(scene, keys.side[0], MALE_SHEET_KEYS.step1, MALE_FRAME_CROPS.side.step1)
+    && generateMaleFrameFromSheet(scene, keys.side[1], MALE_SHEET_KEYS.step2, MALE_FRAME_CROPS.side.step2);
+
+  return ok ? keys : null;
+}
 
 function normalizeAvatarGender(value) {
   return String(value || '').toLowerCase() === 'female' ? 'female' : 'male';
@@ -38,7 +103,23 @@ function drawHair(g, { hair, facingBack, facingSide, isFemale }) {
   if (facingBack) {
     g.fillEllipse(48, 23, isFemale ? 43 : 44, 23);
     g.fillRoundedRect(30, 23, 36, 14, 7);
-    g.fillCircle(50, 12, 2.3);
+    g.fillCircle(50, 12, isFemale ? 2 : 2.4);
+    if (!isFemale) {
+      g.beginPath();
+      g.moveTo(34, 36);
+      g.lineTo(38, 34);
+      g.lineTo(42, 36);
+      g.lineTo(46, 34);
+      g.lineTo(50, 36);
+      g.lineTo(54, 34);
+      g.lineTo(58, 36);
+      g.lineTo(62, 34);
+      g.lineTo(66, 36);
+      g.lineTo(66, 28);
+      g.lineTo(34, 28);
+      g.closePath();
+      g.fillPath();
+    }
     g.fillStyle(shine, 0.16);
     g.fillEllipse(48, 18, 18, 5);
     return;
@@ -52,7 +133,7 @@ function drawHair(g, { hair, facingBack, facingSide, isFemale }) {
     g.lineTo(36, 25);
     g.lineTo(42, 30);
     g.lineTo(48, 28);
-    g.lineTo(56, 32);
+    g.lineTo(56, isFemale ? 32 : 31);
     g.lineTo(65, 28);
     g.lineTo(68, 20);
     g.lineTo(25, 20);
@@ -74,11 +155,11 @@ function drawHair(g, { hair, facingBack, facingSide, isFemale }) {
   g.moveTo(25, 28);
   g.lineTo(30, 35);
   g.lineTo(34, 31);
-  g.lineTo(40, 35);
+  g.lineTo(40, isFemale ? 35 : 34);
   g.lineTo(46, 31);
-  g.lineTo(52, 35);
+  g.lineTo(52, isFemale ? 35 : 34);
   g.lineTo(58, 31);
-  g.lineTo(64, 33);
+  g.lineTo(64, isFemale ? 33 : 32);
   g.lineTo(68, 28);
   g.lineTo(71, 21);
   g.lineTo(25, 21);
@@ -107,6 +188,7 @@ function drawBody(g, cfg) {
     facingBack,
     facingSide,
     isWalkingFrame,
+    isFemale,
   } = cfg;
 
   const armShift = isWalkingFrame ? 1 : 0;
@@ -124,12 +206,22 @@ function drawBody(g, cfg) {
   if (facingBack) {
     g.fillStyle(hoodieShade, 1);
     g.fillRoundedRect(35, 52, 26, 10, 7);
+    if (!isFemale) {
+      g.lineStyle(1.6, tintInt(hoodieShade, -16), 0.8);
+      g.beginPath();
+      g.moveTo(35, 60);
+      g.lineTo(48, 66);
+      g.lineTo(61, 60);
+      g.strokePath();
+    }
   } else {
     g.fillStyle(hoodieShade, 1);
     g.fillRoundedRect(38, 50, 20, 10, 6);
-    g.lineStyle(1.7, hoodieTrim, 1);
-    g.lineBetween(42, 60, 42, 74);
-    g.lineBetween(54, 60, 54, 74);
+    if (isFemale) {
+      g.lineStyle(1.7, hoodieTrim, 1);
+      g.lineBetween(42, 60, 42, 74);
+      g.lineBetween(54, 60, 54, 74);
+    }
 
     if (!facingSide) {
       g.lineStyle(1.5, tintInt(hoodieShade, -20), 0.9);
@@ -271,6 +363,7 @@ function ensureChibiFrame(scene, key, palette, direction = 'front', step = 0) {
     facingBack,
     facingSide,
     isWalkingFrame,
+    isFemale,
   });
 
   drawFace(g, { facingBack, facingSide, stepX, isFemale });
@@ -311,6 +404,20 @@ export default class HumanChibiAvatar extends SpriteAvatarBase {
   constructor(scene, x, y, options = {}) {
     const avatarGender = normalizeAvatarGender(options.avatarGender);
     const variant = AVATAR_VARIANTS[avatarGender];
+
+    if (avatarGender === 'male') {
+      const maleKeys = makeMaleFrameKeysFromSource(scene);
+      if (maleKeys) {
+        super(scene, x, y, {
+          ...options,
+          bodyType: 'standard',
+          frameKeys: maleKeys,
+          targetHeight: 76,
+          shadowColor: 0x000000,
+        });
+        return;
+      }
+    }
 
     const palette = {
       skin: colorHexToInt(variant.skin),

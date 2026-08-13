@@ -51,4 +51,12 @@ export function preloadAvatarTextures(scene) {
       }
     });
   });
+
+  // Source sheets for exact male hoodie slices.
+  if (!scene.textures.exists('hoodie-source-turnaround-step1')) {
+    scene.load.image('hoodie-source-turnaround-step1', '/avatars/source/hoodie_turnaround_step1.png');
+  }
+  if (!scene.textures.exists('hoodie-source-walk-step2')) {
+    scene.load.image('hoodie-source-walk-step2', '/avatars/source/hoodie_walk_step2.png');
+  }
 }
