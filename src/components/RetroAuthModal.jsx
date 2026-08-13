@@ -11,6 +11,8 @@ const normalizeHairStyle = (hairStyle) => {
   return 'bun';
 };
 
+const normalizeAvatarGender = (value) => (String(value || '').toLowerCase() === 'female' ? 'female' : 'male');
+
 const sanitizeCharacterName = (value = '') => value
   .toLowerCase()
   .trim()
@@ -90,6 +92,7 @@ export default function RetroAuthModal({ onLogin }) {
     characterName: '',
     firstName: '',
     skinId: 'slate',
+    avatarGender: 'male',
     hairStyle: 'combed',
     bodyType: 'standard',
     skinTone: 45,
@@ -456,6 +459,7 @@ export default function RetroAuthModal({ onLogin }) {
         firstName: formData.firstName.trim(),
         photo: photoDataUrl,
         skinId: formData.skinId || 'slate',
+        avatarGender: normalizeAvatarGender(formData.avatarGender),
         hairStyle: normalizeHairStyle(formData.hairStyle),
         avatarModel: normalizeAvatarModel(formData.avatarModel),
         bodyType: formData.bodyType || 'standard',
@@ -526,6 +530,7 @@ export default function RetroAuthModal({ onLogin }) {
             email: cachedProfile.email || normalizedEmail,
             photo: cachedProfile.photo || cachedProfile.photoDataUrl || cachedProfile.avatarPhoto || null,
             skinId: cachedProfile.skinId || 'slate',
+            avatarGender: normalizeAvatarGender(cachedProfile.avatarGender),
             hairStyle: normalizeHairStyle(cachedProfile.hairStyle),
             avatarModel: normalizeAvatarModel(cachedProfile.avatarModel),
             bodyType: cachedProfile.bodyType || 'standard',
@@ -580,6 +585,7 @@ export default function RetroAuthModal({ onLogin }) {
           firstName: loginProfileSource.firstName || formData.firstName.trim(),
           photo: loginProfileSource.photo || loginProfileSource.photoDataUrl || loginProfileSource.avatarPhoto || null,
           skinId: loginProfileSource.skinId || 'slate',
+          avatarGender: normalizeAvatarGender(loginProfileSource.avatarGender),
           hairStyle: normalizeHairStyle(loginProfileSource.hairStyle),
           avatarModel: normalizeAvatarModel(loginProfileSource.avatarModel),
           bodyType: loginProfileSource.bodyType || 'standard',
@@ -627,6 +633,7 @@ export default function RetroAuthModal({ onLogin }) {
       firstName: fallbackFirst,
       photo: photoDataUrl,
       skinId: formData.skinId || 'slate',
+      avatarGender: normalizeAvatarGender(formData.avatarGender),
       hairStyle: normalizeHairStyle(formData.hairStyle),
       avatarModel: normalizeAvatarModel(formData.avatarModel),
       bodyType: formData.bodyType || 'standard',

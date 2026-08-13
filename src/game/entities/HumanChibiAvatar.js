@@ -1,10 +1,24 @@
 import SpriteAvatarBase from './SpriteAvatarBase';
 import {
-  skinToneToColor,
-  hairHueToColor,
-  accessoryHueToColor,
   colorHexToInt,
 } from '../../utils/avatarColors';
+
+const AVATAR_VARIANTS = {
+  male: {
+    skin: '#ffd4b0',
+    hair: '#e6b16b',
+    hoodie: '#a9dfc4',
+  },
+  female: {
+    skin: '#ffd0b2',
+    hair: '#d39a66',
+    hoodie: '#aadfc8',
+  },
+};
+
+function normalizeAvatarGender(value) {
+  return String(value || '').toLowerCase() === 'female' ? 'female' : 'male';
+}
 
 function clamp255(value) {
   return Math.max(0, Math.min(255, Math.round(value)));
@@ -17,12 +31,12 @@ function tintInt(color, amount) {
   return (clamp255(r + amount) << 16) | (clamp255(g + amount) << 8) | clamp255(b + amount);
 }
 
-function drawHair(g, { hair, facingBack, facingSide }) {
+function drawHair(g, { hair, facingBack, facingSide, isFemale }) {
   const shine = tintInt(hair, 18);
   g.fillStyle(hair, 1);
 
   if (facingBack) {
-    g.fillEllipse(48, 23, 44, 23);
+    g.fillEllipse(48, 23, isFemale ? 43 : 44, 23);
     g.fillRoundedRect(30, 23, 36, 14, 7);
     g.fillCircle(50, 12, 2.3);
     g.fillStyle(shine, 0.16);
@@ -31,7 +45,7 @@ function drawHair(g, { hair, facingBack, facingSide }) {
   }
 
   if (facingSide) {
-    g.fillEllipse(49, 23, 44, 23);
+    g.fillEllipse(49, 23, isFemale ? 43 : 44, 23);
     g.fillRoundedRect(25, 20, 42, 13, 6);
     g.beginPath();
     g.moveTo(29, 27);
@@ -44,14 +58,17 @@ function drawHair(g, { hair, facingBack, facingSide }) {
     g.lineTo(25, 20);
     g.closePath();
     g.fillPath();
-    g.fillCircle(54, 12, 2);
+    g.fillCircle(54, 12, isFemale ? 1.8 : 2);
+    if (isFemale) {
+      g.fillRoundedRect(24, 31, 7, 9, 4);
+    }
     g.lineStyle(1.1, shine, 0.75);
     g.lineBetween(39, 15, 48, 18);
     g.lineBetween(44, 13, 51, 17);
     return;
   }
 
-  g.fillEllipse(48, 22, 46, 23);
+  g.fillEllipse(48, 22, isFemale ? 45 : 46, 23);
   g.fillRoundedRect(25, 19, 46, 14, 6);
   g.beginPath();
   g.moveTo(25, 28);
@@ -68,6 +85,10 @@ function drawHair(g, { hair, facingBack, facingSide }) {
   g.closePath();
   g.fillPath();
   g.fillCircle(50, 12, 2.4);
+  if (isFemale) {
+    g.fillRoundedRect(24, 31, 7, 9, 4);
+    g.fillRoundedRect(65, 31, 7, 9, 4);
+  }
   g.lineStyle(1.1, shine, 0.75);
   g.lineBetween(39, 16, 46, 18);
   g.lineBetween(47, 14, 55, 18);
@@ -148,7 +169,7 @@ function drawBody(g, cfg) {
   }
 }
 
-function drawFace(g, { facingBack, facingSide, stepX }) {
+function drawFace(g, { facingBack, facingSide, stepX, isFemale }) {
   if (facingBack) return;
 
   g.fillStyle(0x4a3f58, 1);
@@ -167,7 +188,7 @@ function drawFace(g, { facingBack, facingSide, stepX }) {
     g.fillCircle(33, 45, 3.2);
   }
 
-  g.lineStyle(1.7, 0xdf8168, 0.95);
+  g.lineStyle(isFemale ? 1.5 : 1.7, 0xdf8168, 0.95);
   g.beginPath();
   g.arc(facingSide ? 34 : 48 + stepX, 46, 2.4, 0.2, Math.PI - 0.2, false);
   g.strokePath();
@@ -220,6 +241,7 @@ function ensureChibiFrame(scene, key, palette, direction = 'front', step = 0) {
   const pants = 0x514c5b;
   const shoe = 0x0d0d0e;
   const outline = 0x342d33;
+  const isFemale = palette.variant === 'female';
 
   const isWalkingFrame = step === 1;
   const stepX = isWalkingFrame ? 1 : 0;
@@ -236,7 +258,7 @@ function ensureChibiFrame(scene, key, palette, direction = 'front', step = 0) {
     if (!facingSide) g.fillCircle(67, 37, 7);
   }
 
-  drawHair(g, { hair, facingBack, facingSide });
+  drawHair(g, { hair, facingBack, facingSide, isFemale });
 
   drawBody(g, {
     skin,
@@ -251,7 +273,7 @@ function ensureChibiFrame(scene, key, palette, direction = 'front', step = 0) {
     isWalkingFrame,
   });
 
-  drawFace(g, { facingBack, facingSide, stepX });
+  drawFace(g, { facingBack, facingSide, stepX, isFemale });
 
   drawOutline(g, { outline, facingBack, facingSide, isWalkingFrame });
 
@@ -287,17 +309,17 @@ function makeFrameKeys(scene, paletteKey, palette) {
 
 export default class HumanChibiAvatar extends SpriteAvatarBase {
   constructor(scene, x, y, options = {}) {
-    const skinTone = options.skinTone ?? options.pigment ?? 45;
-    const hairHue = options.hairHue ?? options.eyeHue ?? 36;
-    const outfitHue = options.outfitHue ?? options.scarfHue ?? 156;
+    const avatarGender = normalizeAvatarGender(options.avatarGender);
+    const variant = AVATAR_VARIANTS[avatarGender];
 
     const palette = {
-      skin: colorHexToInt(skinToneToColor(skinTone)),
-      hair: colorHexToInt(hairHueToColor(hairHue)),
-      hoodie: tintInt(colorHexToInt(accessoryHueToColor(outfitHue)), 26),
+      skin: colorHexToInt(variant.skin),
+      hair: colorHexToInt(variant.hair),
+      hoodie: colorHexToInt(variant.hoodie),
+      variant: avatarGender,
     };
 
-    const paletteKey = `${Math.round(Number(skinTone) || 45)}-${Math.round(Number(hairHue) || 36)}-${Math.round(Number(outfitHue) || 156)}`;
+    const paletteKey = avatarGender;
     const frameKeys = makeFrameKeys(scene, paletteKey, palette);
 
     super(scene, x, y, {

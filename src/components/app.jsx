@@ -18,6 +18,8 @@ const normalizeHairStyle = (hairStyle) => {
   return 'bun';
 };
 
+const normalizeAvatarGender = (value) => (String(value || '').toLowerCase() === 'female' ? 'female' : 'male');
+
 const normalizeEmailKey = (value = '') => String(value || '').trim().toLowerCase();
 
 const isAvatarOnboardingComplete = (savedProfile) => {
@@ -67,6 +69,7 @@ const migrateProfileForAvatar = (savedProfile) => {
     ...profile,
     characterName: hasText(profile.characterName) ? profile.characterName : emailStem,
     skinId: hasText(profile.skinId) ? profile.skinId : 'slate',
+    avatarGender: normalizeAvatarGender(profile.avatarGender),
     hairStyle: normalizeHairStyle(profile.hairStyle),
     bodyType: hasText(profile.bodyType) ? profile.bodyType : 'standard',
     skinTone: profile.skinTone ?? profile.pigment ?? 45,
@@ -83,6 +86,7 @@ const migrateProfileForAvatar = (savedProfile) => {
   const changed = (
     migrated.characterName !== profile.characterName
     || migrated.skinId !== profile.skinId
+    || migrated.avatarGender !== profile.avatarGender
     || migrated.hairStyle !== profile.hairStyle
     || migrated.bodyType !== profile.bodyType
     || migrated.skinTone !== profile.skinTone
@@ -138,8 +142,8 @@ function AvatarStudioPage({
           <div style={{ border: '2px solid #334155', background: '#0b1220', padding: 10, marginBottom: 10 }}>
             <div style={{ color: '#fbbf24', fontSize: 11, textTransform: 'uppercase', marginBottom: 6 }}>Checklist</div>
             <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 4 }}>- First name + display name</div>
-            <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 4 }}>- Hair style + hair color spectrum</div>
-            <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 4 }}>- Outfit + accessories</div>
+            <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 4 }}>- Pick one avatar: male or female</div>
+            <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 4 }}>- Fixed style (no color sliders)</div>
             <div style={{ color: '#94a3b8', fontSize: 12 }}>- Save to enter the world</div>
           </div>
 
@@ -453,6 +457,7 @@ function App() {
     firstName: '',
     photo: null,
     skinId: 'slate',
+    avatarGender: 'male',
     hairStyle: 'combed',
     bodyType: 'standard',
     skinTone: 45,
@@ -506,6 +511,7 @@ function App() {
       firstName: profile?.profile?.firstName || '',
       photo: profile?.profile?.photo || null,
       skinId: profile?.profile?.skinId || 'slate',
+      avatarGender: normalizeAvatarGender(profile?.profile?.avatarGender),
       hairStyle: normalizeHairStyle(profile?.profile?.hairStyle),
       bodyType: profile?.profile?.bodyType || 'standard',
       skinTone: profile?.profile?.skinTone ?? profile?.profile?.pigment ?? 45,
@@ -529,6 +535,7 @@ function App() {
       firstName: p.firstName || '',
       photo: p.photo || null,
       skinId: p.skinId || 'slate',
+      avatarGender: normalizeAvatarGender(p.avatarGender),
       hairStyle: normalizeHairStyle(p.hairStyle),
       bodyType: p.bodyType || 'standard',
       skinTone: p.skinTone ?? p.pigment ?? 45,
@@ -567,6 +574,7 @@ function App() {
       firstName: editForm.firstName.trim(),
       photo: editForm.photo,
       skinId: editForm.skinId || 'slate',
+      avatarGender: normalizeAvatarGender(editForm.avatarGender),
       hairStyle: normalizeHairStyle(editForm.hairStyle),
       bodyType: editForm.bodyType || 'standard',
       skinTone: editForm.skinTone ?? 45,
@@ -600,6 +608,7 @@ function App() {
       firstName: fallbackFirst,
       photo: editForm.photo,
       skinId: editForm.skinId || 'slate',
+      avatarGender: normalizeAvatarGender(editForm.avatarGender),
       hairStyle: normalizeHairStyle(editForm.hairStyle),
       bodyType: editForm.bodyType || 'standard',
       skinTone: editForm.skinTone ?? 45,
@@ -635,6 +644,7 @@ function App() {
           characterName: `guest_${stamp}`,
           firstName: `Guest${stamp}`,
           skinId: 'slate',
+          avatarGender: 'male',
           hairStyle: 'combed',
           bodyType: 'standard',
           skinTone: 45,
