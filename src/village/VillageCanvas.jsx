@@ -44,8 +44,6 @@ export default function VillageCanvas({ room, profile, onLeave }) {
   });
   const [cameraMode, setCameraMode] = useState('follow');
   const [roomPopulation, setRoomPopulation] = useState(1);
-  const isLikelyMobileUA = typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '');
-  const showFloatingZoomControl = isMobile || isTouchDevice || isLikelyMobileUA;
   const roomId = canonicalRoomId(room);
   const cameraModeLabel = cameraMode === 'overview'
     ? 'Overview'
@@ -273,33 +271,31 @@ export default function VillageCanvas({ room, profile, onLeave }) {
         )}
       </div>
 
-      {showFloatingZoomControl && (
-        <div style={{
-          position: 'absolute',
-          top: 'calc(8px + env(safe-area-inset-top, 0px))',
-          right: 'calc(8px + env(safe-area-inset-right, 0px))',
-          zIndex: 1001,
-          display: 'flex',
-        }}>
-          <button
-            onClick={toggleCameraMode}
-            style={{
-              background: cameraMode === 'overview' ? '#93c5fd' : cameraMode === 'wide-follow' ? '#86efac' : 'rgba(0,0,0,0.62)',
-              color: cameraMode === 'overview' || cameraMode === 'wide-follow' ? '#0f172a' : '#fff',
-              border: 'none',
-              borderRadius: 8,
-              padding: '9px 12px',
-              minHeight: 40,
-              cursor: 'pointer',
-              fontSize: 12,
-              fontWeight: 'bold',
-              boxShadow: '0 2px 10px rgba(0,0,0,0.28)',
-            }}
-          >
-            Zoom: {cameraModeLabel}
-          </button>
-        </div>
-      )}
+      <div style={{
+        position: 'absolute',
+        top: 'calc(8px + env(safe-area-inset-top, 0px))',
+        right: 'calc(8px + env(safe-area-inset-right, 0px))',
+        zIndex: 1001,
+        display: 'flex',
+      }}>
+        <button
+          onClick={toggleCameraMode}
+          style={{
+            background: cameraMode === 'overview' ? '#93c5fd' : cameraMode === 'wide-follow' ? '#86efac' : 'rgba(0,0,0,0.62)',
+            color: cameraMode === 'overview' || cameraMode === 'wide-follow' ? '#0f172a' : '#fff',
+            border: 'none',
+            borderRadius: 8,
+            padding: '9px 12px',
+            minHeight: 40,
+            cursor: 'pointer',
+            fontSize: 12,
+            fontWeight: 'bold',
+            boxShadow: '0 2px 10px rgba(0,0,0,0.28)',
+          }}
+        >
+          Zoom: {cameraModeLabel}
+        </button>
+      </div>
 
       {!isMobile && (
         <div style={{
