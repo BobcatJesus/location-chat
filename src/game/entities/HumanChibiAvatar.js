@@ -17,6 +17,115 @@ function tintInt(color, amount) {
   return (clamp255(r + amount) << 16) | (clamp255(g + amount) << 8) | clamp255(b + amount);
 }
 
+function selectHairVariant(options = {}, skinTone = 45, hairHue = 26, outfitHue = 220) {
+  const explicit = options.hairStyle;
+  if (explicit === 'bun' || explicit === 'bob' || explicit === 'curly' || explicit === 'lob') return explicit;
+  if (explicit === 'combed') return 'bob';
+  if (explicit === 'messy') {
+    return (Math.round(hairHue) % 2 === 0) ? 'bun' : 'curly';
+  }
+
+  const seed = Math.round(Number(skinTone) || 45)
+    + Math.round(Number(hairHue) || 26)
+    + Math.round(Number(outfitHue) || 220);
+  const variants = ['bun', 'bob', 'curly', 'lob'];
+  return variants[Math.abs(seed) % variants.length];
+}
+
+function selectTopVariant(options = {}, outfitHue = 220) {
+  if (options.topStyle === 'turtleneck') return 'knit';
+  if (options.topStyle === 'hoodie') return 'hoodie';
+  return (Math.round(outfitHue) % 3 === 0) ? 'knit' : 'hoodie';
+}
+
+function drawHair(g, cfg) {
+  const {
+    hair,
+    outline,
+    facingBack,
+    facingSide,
+    variant,
+  } = cfg;
+
+  g.fillStyle(hair, 1);
+
+  if (variant === 'curly') {
+    const puffs = [
+      [36, 18, 8], [46, 16, 8], [56, 18, 8],
+      [31, 24, 7], [41, 24, 7], [51, 24, 7], [61, 24, 7],
+    ];
+    puffs.forEach(([x, y, r]) => g.fillCircle(x, y, r));
+  } else {
+    g.fillEllipse(48, 23, 44, 26);
+    if (variant === 'bun') {
+      g.fillCircle(facingSide ? 58 : 52, 10, 6);
+    }
+  }
+
+  if (facingBack) {
+    g.fillRoundedRect(31, 21, 34, 12, 6);
+  } else if (facingSide) {
+    g.fillRoundedRect(35, 22, 30, 11, 5);
+  } else if (variant === 'bob' || variant === 'lob') {
+    g.fillRoundedRect(30, 24, 36, 16, 6);
+    if (variant === 'lob') {
+      g.fillRoundedRect(29, 34, 10, 14, 5);
+      g.fillRoundedRect(57, 34, 10, 14, 5);
+    }
+  } else {
+    g.fillRoundedRect(33, 24, 30, 8, 4);
+  }
+
+  g.lineStyle(1.5, tintInt(outline, 8), 0.28);
+  if (!facingBack) {
+    g.beginPath();
+    g.moveTo(41, 20);
+    g.lineTo(38, 24);
+    g.moveTo(48, 19);
+    g.lineTo(48, 24);
+    g.moveTo(56, 20);
+    g.lineTo(58, 24);
+    g.strokePath();
+  }
+}
+
+function drawTop(g, cfg) {
+  const {
+    topVariant,
+    hoodie,
+    hoodieShade,
+    facingBack,
+    facingSide,
+  } = cfg;
+
+  g.fillStyle(hoodie, 1);
+  g.fillRoundedRect(32, 49, 32, 23, 8);
+  g.fillStyle(hoodieShade, 0.42);
+  g.fillRoundedRect(36, 61, 24, 8, 5);
+
+  if (topVariant === 'knit') {
+    g.fillStyle(tintInt(hoodie, 12), 1);
+    g.fillRoundedRect(34, 45, 28, 8, 5);
+    g.lineStyle(1.2, tintInt(hoodieShade, -8), 0.35);
+    for (let x = 38; x <= 56; x += 5) {
+      g.lineBetween(x, 52, x + 2, 67);
+      g.lineBetween(x + 2, 52, x, 67);
+    }
+  } else {
+    g.fillStyle(hoodieShade, 1);
+    if (facingBack) {
+      g.fillRoundedRect(39, 43, 18, 10, 5);
+    } else if (facingSide) {
+      g.fillRoundedRect(41, 44, 18, 9, 5);
+    } else {
+      g.fillRoundedRect(40, 45, 16, 8, 4);
+      g.lineStyle(1.4, tintInt(hoodieShade, -24), 0.85);
+      g.lineBetween(45, 52, 45, 61);
+      g.lineBetween(51, 52, 51, 61);
+    }
+  }
+}
+
 function ensureChibiFrame(scene, key, palette, direction = 'front', step = 0) {
   if (scene.textures.exists(key)) return;
 
@@ -41,6 +150,9 @@ function ensureChibiFrame(scene, key, palette, direction = 'front', step = 0) {
   const facingSide = direction === 'side';
   const facingBack = direction === 'back';
 
+  const hairVariant = palette.hairVariant || 'bun';
+  const topVariant = palette.topVariant || 'hoodie';
+
   // Soft floor shadow.
   g.fillStyle(0x000000, 0.18);
   g.fillRoundedRect(24, 86, 48, 4, 2);
@@ -53,35 +165,21 @@ function ensureChibiFrame(scene, key, palette, direction = 'front', step = 0) {
     if (!facingSide) g.fillCircle(66, 36, 6);
   }
 
-  // Hair cap + bun.
-  g.fillStyle(hair, 1);
-  g.fillEllipse(48, 23, 44, 26);
-  if (facingBack) {
-    g.fillRoundedRect(31, 21, 34, 12, 6);
-    g.fillCircle(52, 10, 6);
-  } else if (facingSide) {
-    g.fillRoundedRect(35, 22, 30, 11, 5);
-    g.fillCircle(58, 10, 6);
-  } else {
-    g.fillRoundedRect(33, 24, 30, 8, 4);
-    g.fillCircle(52, 10, 6);
-  }
+  drawHair(g, {
+    hair,
+    outline,
+    facingBack,
+    facingSide,
+    variant: hairVariant,
+  });
 
-  // Hoodie torso.
-  g.fillStyle(hoodie, 1);
-  g.fillRoundedRect(32, 49, 32, 23, 8);
-  g.fillStyle(hoodieShade, 0.42);
-  g.fillRoundedRect(36, 61, 24, 8, 5);
-
-  // Hood (front/back/side variants).
-  g.fillStyle(hoodieShade, 1);
-  if (facingBack) {
-    g.fillRoundedRect(39, 43, 18, 10, 5);
-  } else if (facingSide) {
-    g.fillRoundedRect(41, 44, 18, 9, 5);
-  } else {
-    g.fillRoundedRect(40, 45, 16, 8, 4);
-  }
+  drawTop(g, {
+    topVariant,
+    hoodie,
+    hoodieShade,
+    facingBack,
+    facingSide,
+  });
 
   // Arms.
   g.fillStyle(hoodie, 1);
@@ -175,11 +273,15 @@ export default class HumanChibiAvatar extends SpriteAvatarBase {
     const skinTone = options.skinTone ?? options.pigment ?? 45;
     const hairHue = options.hairHue ?? options.eyeHue ?? 26;
     const outfitHue = options.outfitHue ?? options.scarfHue ?? 220;
+    const hairVariant = selectHairVariant(options, skinTone, hairHue, outfitHue);
+    const topVariant = selectTopVariant(options, outfitHue);
 
     const palette = {
       skin: colorHexToInt(skinToneToColor(skinTone)),
       hair: colorHexToInt(hairHueToColor(hairHue)),
       outfit: colorHexToInt(accessoryHueToColor(outfitHue)),
+      hairVariant,
+      topVariant,
     };
 
     const paletteKey = `${Math.round(Number(skinTone) || 45)}-${Math.round(Number(hairHue) || 26)}-${Math.round(Number(outfitHue) || 220)}`;

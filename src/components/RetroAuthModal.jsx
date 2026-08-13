@@ -5,9 +5,10 @@ import { getAuthLayoutState } from './authLayout';
 import { normalizeAvatarModel } from '../game/entities/avatarModelInfo';
 
 const normalizeHairStyle = (hairStyle) => {
-  if (hairStyle === 'messy' || hairStyle === 'combed') return hairStyle;
+  const allowed = new Set(['bun', 'bob', 'curly', 'lob', 'messy', 'combed']);
+  if (allowed.has(hairStyle)) return hairStyle;
   if (hairStyle === 'side' || hairStyle === 'mohawk') return 'messy';
-  return 'combed';
+  return 'bun';
 };
 
 const sanitizeCharacterName = (value = '') => value

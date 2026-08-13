@@ -12,9 +12,10 @@ const WorldMapCanvas = lazy(() => import('../village/WorldMapCanvas.jsx'));
 
 const hasText = (value) => typeof value === 'string' && value.trim().length > 0;
 const normalizeHairStyle = (hairStyle) => {
-  if (hairStyle === 'messy' || hairStyle === 'combed') return hairStyle;
+  const allowed = new Set(['bun', 'bob', 'curly', 'lob', 'messy', 'combed']);
+  if (allowed.has(hairStyle)) return hairStyle;
   if (hairStyle === 'side' || hairStyle === 'mohawk') return 'messy';
-  return 'combed';
+  return 'bun';
 };
 
 const normalizeEmailKey = (value = '') => String(value || '').trim().toLowerCase();

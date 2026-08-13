@@ -14,6 +14,10 @@ export const AVATAR_SKINS = [
 ];
 
 export const AVATAR_HAIR_STYLES = [
+  { id: 'bun', label: 'Top Bun' },
+  { id: 'bob', label: 'Bob Cut' },
+  { id: 'curly', label: 'Curly' },
+  { id: 'lob', label: 'Long Bob' },
   { id: 'combed', label: 'Combed' },
   { id: 'messy', label: 'Messy' },
 ];
