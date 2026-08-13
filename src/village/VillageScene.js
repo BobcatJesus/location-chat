@@ -20,8 +20,8 @@ const DECOR_SYNC_HEALTHY_MS = 30000;
 const PRESENCE_SYNC_HEALTHY_MS = 20000;
 const EDIT_TOGGLE_KEY_CODE = 'Backquote';
 const COLLISION_DEBUG_KEY_CODE = 'F2';
-const FOLLOW_ZOOM = 1.2;
-const WIDE_FOLLOW_ZOOM = 0.78;
+const FOLLOW_ZOOM = 1.9;
+const WIDE_FOLLOW_ZOOM = 1.45;
 const FOLLOW_AVATAR_SCALE = 1;
 const WIDE_AVATAR_SCALE = 1.3;
 const OVERVIEW_AVATAR_SCALE = 1.42;
@@ -271,7 +271,7 @@ export class VillageScene extends Phaser.Scene {
 
     if (this.cameraMode === 'overview') {
       const b = this.roomLayout.getBoundaryBounds();
-      const fitZoom = Math.max(0.45, Math.min(2, Math.min(this.scale.width / Math.max(1, b.w), this.scale.height / Math.max(1, b.h)) * 0.94));
+      const fitZoom = Math.max(0.95, Math.min(2.4, Math.min(this.scale.width / Math.max(1, b.w), this.scale.height / Math.max(1, b.h)) * 1.2));
       cam.stopFollow();
       cam.setZoom(fitZoom);
       cam.centerOn(b.x + b.w / 2, b.y + b.h / 2);
