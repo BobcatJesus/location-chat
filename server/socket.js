@@ -149,6 +149,26 @@ function mergeRoomState(memoryState, dbState) {
   return merged;
 }
 
+function canonicalizeRoomStateByUser(state, preferredSocketIds = new Set()) {
+  const chosenByUser = new Map();
+
+  Object.entries(state || {}).forEach(([socketId, player]) => {
+    if (!socketId || !player) return;
+    const userKey = player.id ? `user:${String(player.id)}` : `socket:${socketId}`;
+    const score = preferredSocketIds.has(socketId) ? 2 : 1;
+    const existing = chosenByUser.get(userKey);
+    if (!existing || score > existing.score) {
+      chosenByUser.set(userKey, { socketId, player, score });
+    }
+  });
+
+  const canonical = {};
+  chosenByUser.forEach(({ socketId, player }) => {
+    canonical[socketId] = player;
+  });
+  return canonical;
+}
+
 const app = express();
 app.use(express.json());
 // Allow all origins for REST endpoints
@@ -290,7 +310,9 @@ io.on('connection', (socket) => {
     console.log(`👤 ${playerState.name} joined room: ${roomId}`);
 
     const dbRoomState = await getPresenceRoomState(roomId);
-    socket.emit('room_state', mergeRoomState(rooms[roomId], dbRoomState));
+    const mergedRoomState = mergeRoomState(rooms[roomId], dbRoomState);
+    const preferredSocketIds = new Set(Object.keys(rooms[roomId] || {}));
+    socket.emit('room_state', canonicalizeRoomStateByUser(mergedRoomState, preferredSocketIds));
     const roomDecorations = (await loadDecorationsForRoom(roomId)) || decorations[roomId] || [];
     decorations[roomId] = roomDecorations;
     socket.emit('room_decorations', roomDecorations);
@@ -308,7 +330,9 @@ io.on('connection', (socket) => {
   socket.on('get_room_state', async ({ roomId }) => {
     if (!roomId) return;
     const dbRoomState = await getPresenceRoomState(roomId);
-    socket.emit('room_state', mergeRoomState(rooms[roomId], dbRoomState));
+    const mergedRoomState = mergeRoomState(rooms[roomId], dbRoomState);
+    const preferredSocketIds = new Set(Object.keys(rooms[roomId] || {}));
+    socket.emit('room_state', canonicalizeRoomStateByUser(mergedRoomState, preferredSocketIds));
   });
 
   // PLAYER MOVEMENT
