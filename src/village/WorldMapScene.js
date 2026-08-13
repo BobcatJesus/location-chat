@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { latLngToWorld, tileUrl, TILE_SIZE } from './tileUtils.js';
+import { latLngToWorld, worldToLatLng, tileUrl, TILE_SIZE } from './tileUtils.js';
 import { getDistanceMeters } from '../geo.js';
 import { createAvatarEntity, preloadAvatarTextures } from '../game/entities/avatarFactory.js';
 import { normalizeAvatarModel } from '../game/entities/avatarModels.js';
@@ -58,11 +58,14 @@ export class WorldMapScene extends Phaser.Scene {
     this.avatarState = normalizeAvatarState(d.profile?.profile || {});
     this.rooms       = d.rooms || [];
     this.debugShowAllPOI = Boolean(d.debugShowAllPOI);
+    this.pickLocationMode = Boolean(d.pickLocationMode);
     this.onEnterRoom = d.onEnterRoom || (() => {});
+    this.onPickLocation = d.onPickLocation || (() => {});
     this.onReady     = d.onReady || (() => {});
     // Keep refs for scene.restart in updateGPS
     this._rooms       = this.rooms;
     this._onEnterRoom = this.onEnterRoom;
+    this._onPickLocation = this.onPickLocation;
     this._onReady     = this.onReady;
     this.currentLat  = d.lat;
     this.currentLng  = d.lng;
@@ -125,6 +128,18 @@ export class WorldMapScene extends Phaser.Scene {
 
     // ── POI pins ───────────────────────────────────────────────────────────────
     this.poiList = []; // { container, circle, label, lat, lng, roomId, isOSM }
+
+    // Pick mode: next background tap yields a lat/lng for creating a saved location.
+    this.input.on('pointerdown', (pointer, currentlyOver) => {
+      if (!this.pickLocationMode) return;
+      if (Array.isArray(currentlyOver) && currentlyOver.length > 0) return;
+
+      const absX = this.originWorld.x + pointer.worldX;
+      const absY = this.originWorld.y + pointer.worldY;
+      const { lat, lng } = worldToLatLng(absX, absY);
+      this._onPickLocation(lat, lng);
+      this.setPickLocationMode(false);
+    });
 
     // ── Status overlay (debug) ─────────────────────────────────────────────────
     this._statusText = this.add.text(8, this.scale.height - 8, 'Map loading…', {
@@ -474,6 +489,11 @@ export class WorldMapScene extends Phaser.Scene {
   setDebugShowAllPOI(enabled) {
     this.debugShowAllPOI = Boolean(enabled);
     this._updatePOIStates(this.currentLat, this.currentLng);
+  }
+
+  setPickLocationMode(enabled) {
+    this.pickLocationMode = Boolean(enabled);
+    if (this.pickLocationMode) this._setStatus('Tap a map spot to create a location');
   }
 
   _toScene(lat, lng) {
