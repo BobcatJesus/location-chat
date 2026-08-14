@@ -5,6 +5,7 @@
 
 const FLOOR_W = 1600;
 const FLOOR_H = 900;
+const SOFT_BUTTER = 0xfef3c7;
 
 // Seeded LCG random (deterministic from room ID string)
 function makeRng(seed) {
@@ -19,7 +20,7 @@ function makeRng(seed) {
 
 const THEMES = {
   cafe: {
-    carpet: 0x4a2c0a,
+    carpet: SOFT_BUTTER,
     wall: 0x2c1a06,
     name: 'Café',
     zones: (rng) => {
@@ -42,7 +43,7 @@ const THEMES = {
   },
 
   restaurant: {
-    carpet: 0x3b1a0a,
+    carpet: SOFT_BUTTER,
     wall: 0x2b100a,
     name: 'Restaurant',
     zones: (rng) => {
@@ -63,7 +64,7 @@ const THEMES = {
   },
 
   bar: {
-    carpet: 0x1a0f05,
+    carpet: SOFT_BUTTER,
     wall: 0x110a03,
     name: 'Bar',
     zones: (rng) => {
@@ -82,8 +83,48 @@ const THEMES = {
     },
   },
 
+  park: {
+    carpet: 0xcff4d2,
+    wall: 0x1f4d2f,
+    width: 2400,
+    height: 1600,
+    spawn: { x: 1200, y: 1420 },
+    name: 'Park',
+    zones: (rng) => {
+      const zs = [];
+      zs.push({ type: 'entry', x: 1200, y: 1540, w: 240, h: 70, label: '🌳 Park Entry', solid: false });
+      zs.push({ type: 'sign', x: 1200, y: 90, w: 300, h: 42, label: '🌿 Green Space' });
+
+      const treeSpots = [
+        [220,180],[390,250],[600,160],[820,240],[1080,180],[1280,260],[1450,160],[1700,220],[1940,180],[2180,260],
+        [300,1120],[560,1060],[820,1100],[1140,1040],[1380,1080],[1680,1140],[1960,1080],[2200,1160],
+      ];
+      treeSpots.forEach(([x, y]) => zs.push({ type: 'tree', x: x + rng() * 24 - 12, y: y + rng() * 18 - 9, w: 54, h: 96, solid: true }));
+
+      const shrubSpots = [
+        [150,350],[260,430],[430,360],[690,360],[940,360],[1160,380],[1440,340],[1680,360],[1920,420],[2140,350],
+        [180,760],[470,760],[740,720],[1020,760],[1320,720],[1680,800],[1960,760],[2180,820],
+      ];
+      shrubSpots.forEach(([x, y]) => zs.push({ type: 'shrub', x: x + rng() * 18 - 9, y: y + rng() * 14 - 7, w: 64, h: 42, solid: false }));
+
+      [[420,520],[760,470],[1120,500],[1450,460],[1780,520],[2060,480],[520,940],[920,920],[1380,960],[1820,940]].forEach(([x, y]) => {
+        zs.push({ type: 'bench', x: x + rng() * 14 - 7, y: y + rng() * 10 - 5, w: 90, h: 40, solid: true });
+      });
+
+      [[260,300],[520,220],[980,260],[1340,300],[1720,260],[2080,300],[340,980],[820,1040],[1260,980],[1700,1060],[2100,1020]].forEach(([x, y]) => {
+        zs.push({ type: 'lamppost', x: x + rng() * 12 - 6, y: y + rng() * 12 - 6, w: 30, h: 110, solid: true });
+      });
+
+      [[620,620],[940,620],[1540,620],[1940,640],[620,1240],[1040,1260],[1520,1240],[1960,1280]].forEach(([x, y]) => {
+        zs.push({ type: 'flowerbed', x: x + rng() * 20 - 10, y: y + rng() * 12 - 6, w: 88, h: 44, solid: false });
+      });
+
+      return zs;
+    },
+  },
+
   shop: {
-    carpet: 0x2a3040,
+    carpet: SOFT_BUTTER,
     wall: 0x1a2030,
     name: 'Shop',
     zones: (rng) => {
@@ -101,7 +142,7 @@ const THEMES = {
   },
 
   gym: {
-    carpet: 0x1a1a2a,
+    carpet: SOFT_BUTTER,
     wall: 0x111118,
     name: 'Gym',
     zones: (rng) => {
@@ -117,7 +158,7 @@ const THEMES = {
   },
 
   pharmacy: {
-    carpet: 0xeaf4fc,
+    carpet: SOFT_BUTTER,
     wall: 0xb0d4e8,
     name: 'Pharmacy',
     zones: (rng) => {
@@ -133,7 +174,7 @@ const THEMES = {
   },
 
   default: {
-    carpet: 0x2a3040,
+    carpet: SOFT_BUTTER,
     wall: 0x1a2030,
     name: 'Place',
     zones: (rng) => {
@@ -160,6 +201,7 @@ function pickTheme(amenityTag = '', shopTag = '', name = '') {
   if (a === 'bar' || a === 'pub' || a === 'nightclub') return 'bar';
   if (a === 'pharmacy' || s === 'pharmacy' || s === 'chemist') return 'pharmacy';
   if (a === 'fitness_centre' || a === 'gym' || n.includes('gym') || n.includes('fitness')) return 'gym';
+  if (a === 'park' || a === 'garden' || a === 'nature_reserve' || n.includes('park') || n.includes('garden') || n.includes('nature reserve') || n.includes('greenway') || n.includes('trail')) return 'park';
   if (s || a === 'shop' || a === 'supermarket' || a === 'convenience') return 'shop';
 
   return 'default';
@@ -201,14 +243,14 @@ export function buildAutoLayout(roomId, roomName, amenityTag, shopTag = '', room
 
   const wallZone = footprint
     ? { type: 'wall_polygon', points: footprint }
-    : { type: 'wall', x: 0, y: 0, w: FLOOR_W, h: FLOOR_H };
+    : { type: 'wall', x: 0, y: 0, w: theme.width || FLOOR_W, h: theme.height || FLOOR_H };
 
   const zones = [wallZone, ...theme.zones(rng)];
 
   return {
     id: `auto-${themeKey}${footprint ? '-poly' : ''}`,
     name: roomName || theme.name,
-    spawnF1: { x: FLOOR_W / 2, y: 750 },
+    spawnF1: theme.spawn || { x: (theme.width || FLOOR_W) / 2, y: (theme.height || FLOOR_H) - 180 },
     floors: [{ carpet: theme.carpet, zones }],
   };
 }

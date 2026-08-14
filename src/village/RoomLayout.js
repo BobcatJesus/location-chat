@@ -85,7 +85,9 @@ export class RoomLayout {
     this._computeBoundary(floor);
 
     const wall = floor.zones.find(z => z.type === 'wall');
-    const W = wall?.w || 1600, H = wall?.h || 900;
+    const boundaryBounds = this.roomBoundary.type === 'polygon' ? this.getBoundaryBounds() : null;
+    const W = boundaryBounds ? Math.ceil(boundaryBounds.x + boundaryBounds.w) : (wall?.w || 1600);
+    const H = boundaryBounds ? Math.ceil(boundaryBounds.y + boundaryBounds.h) : (wall?.h || 900);
 
     // Carpet fill
     this.gfx.fillStyle(floor.carpet, 1);
@@ -845,6 +847,79 @@ export class RoomLayout {
     };
 
     const colors = colorMap[type] || { fill: 0x888888, stroke: 0x555555 };
+
+    if (type === 'tree') {
+      g.fillStyle(0x8b5a2b, 1);
+      g.fillRect(x - 5, y - h * 0.34, 10, h * 0.34);
+      g.fillStyle(colors.fill, 0.96);
+      g.fillCircle(x, y - h * 0.62, Math.max(16, w * 0.34));
+      g.fillCircle(x - w * 0.18, y - h * 0.48, Math.max(12, w * 0.22));
+      g.fillCircle(x + w * 0.18, y - h * 0.48, Math.max(12, w * 0.22));
+      g.lineStyle(2, colors.stroke, 1);
+      g.strokeCircle(x, y - h * 0.62, Math.max(16, w * 0.34));
+      this._lbl(x, y - h * 0.82, '🌳', { fontSize: '16px' }, 0.5, 0.5);
+      return;
+    }
+
+    if (type === 'shrub') {
+      g.fillStyle(colors.fill, 0.9);
+      g.fillRoundedRect(x - w / 2, y - h / 2, w, h, 16);
+      g.lineStyle(1.5, colors.stroke, 1);
+      g.strokeRoundedRect(x - w / 2, y - h / 2, w, h, 16);
+      g.fillStyle(0x86efac, 0.7);
+      g.fillCircle(x - w * 0.18, y - h * 0.06, Math.max(8, w * 0.14));
+      g.fillCircle(x, y - h * 0.12, Math.max(10, w * 0.16));
+      g.fillCircle(x + w * 0.18, y - h * 0.02, Math.max(8, w * 0.14));
+      this._lbl(x, y - h * 0.45, '🌿', { fontSize: '14px' }, 0.5, 0.5);
+      return;
+    }
+
+    if (type === 'bench') {
+      const seatY = y - h * 0.42;
+      g.fillStyle(0x8b5a2b, 1);
+      g.fillRoundedRect(x - w * 0.4, seatY, w * 0.8, h * 0.18, 4);
+      g.fillRoundedRect(x - w * 0.34, seatY - h * 0.32, w * 0.68, h * 0.16, 4);
+      g.fillRect(x - w * 0.28, seatY + h * 0.18, 4, h * 0.18);
+      g.fillRect(x + w * 0.24, seatY + h * 0.18, 4, h * 0.18);
+      g.fillRect(x - w * 0.28, seatY - h * 0.18, 4, h * 0.22);
+      g.fillRect(x + w * 0.24, seatY - h * 0.18, 4, h * 0.22);
+      g.lineStyle(1.5, colors.stroke, 1);
+      g.strokeRoundedRect(x - w * 0.4, seatY, w * 0.8, h * 0.18, 4);
+      this._lbl(x, y - h * 0.65, '🪑', { fontSize: '14px' }, 0.5, 0.5);
+      return;
+    }
+
+    if (type === 'lamppost') {
+      g.lineStyle(4, 0x444444, 1);
+      g.beginPath();
+      g.moveTo(x, y - h * 0.55);
+      g.lineTo(x, y + h * 0.1);
+      g.strokePath();
+      g.lineStyle(3, colors.stroke, 1);
+      g.beginPath();
+      g.moveTo(x, y - h * 0.55);
+      g.lineTo(x, y + h * 0.1);
+      g.strokePath();
+      g.fillStyle(colors.fill, 1);
+      g.fillCircle(x, y - h * 0.6, Math.max(8, w * 0.35));
+      g.fillStyle(0xfff6d5, 0.95);
+      g.fillCircle(x, y - h * 0.6, Math.max(4, w * 0.18));
+      this._lbl(x, y - h * 0.88, '💡', { fontSize: '15px' }, 0.5, 0.5);
+      return;
+    }
+
+    if (type === 'flowerbed') {
+      g.fillStyle(colors.fill, 0.8);
+      g.fillRoundedRect(x - w / 2, y - h / 2, w, h, 8);
+      g.lineStyle(1.5, colors.stroke, 1);
+      g.strokeRoundedRect(x - w / 2, y - h / 2, w, h, 8);
+      g.fillStyle(0xfef08a, 0.95);
+      for (let i = -2; i <= 2; i++) {
+        g.fillCircle(x + i * (w / 7), y - h * 0.05 + (i % 2 === 0 ? -2 : 2), 4);
+      }
+      this._lbl(x, y - h * 0.45, '🌸', { fontSize: '14px' }, 0.5, 0.5);
+      return;
+    }
 
     g.fillStyle(colors.fill, 0.85);
     g.fillRect(x - w / 2, y - h / 2, w, h);

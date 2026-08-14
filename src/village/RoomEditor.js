@@ -19,7 +19,13 @@ export class RoomEditor {
       { name: 'prop_candle',         css: '#f5c842', label: 'Candle' },
       { name: 'prop_rug_rolled',     css: '#c8a96e', label: 'Rug' },
       { name: 'prop_portrait_framed',css: '#7d6b4a', label: 'Portrait' },
+      { name: 'tree',                css: '#166534', label: 'Tree',       w: 52, h: 94, solid: true, frameKey: null },
+      { name: 'shrub',               css: '#4ade80', label: 'Shrub',      w: 62, h: 40, solid: false, frameKey: null },
+      { name: 'bench',               css: '#92400e', label: 'Bench',      w: 88, h: 38, solid: true, frameKey: null },
+      { name: 'lamppost',            css: '#facc15', label: 'Lamp Post',  w: 30, h: 108, solid: true, frameKey: null },
+      { name: 'flowerbed',           css: '#f472b6', label: 'Flowers',    w: 78, h: 42, solid: false, frameKey: null },
     ];
+    this._zoneTypeConfig = new Map(this.zoneTypes.map((zoneType) => [zoneType.name, zoneType]));
     this.editGraphics = scene.add.graphics().setDepth(DEPTH.UI - 1).setVisible(false);
     this.panel = null;
     this.hoveredZone = null;
@@ -185,6 +191,10 @@ export class RoomEditor {
     ].join(';');
   }
 
+  _getZoneTypeConfig(zoneTypeName) {
+    return this._zoneTypeConfig.get(zoneTypeName) || this._zoneTypeConfig.get(this.selectedZoneType) || this.zoneTypes[0];
+  }
+
   _refreshZoneTypeButtons() {
     const isMobile = this._isMobileLayout();
     this._zoneTypeButtons.forEach(({ btn, zt }, name) => {
@@ -221,11 +231,14 @@ export class RoomEditor {
       }
 
       if (isPrimary) {
+        const zoneTypeConfig = this._getZoneTypeConfig(this.selectedZoneType);
         const zone = {
           type: this.selectedZoneType,
-          frameKey: this.selectedZoneType,
+          frameKey: zoneTypeConfig.frameKey === undefined ? this.selectedZoneType : zoneTypeConfig.frameKey,
           x: ptr.worldX, y: ptr.worldY,
-          w: 60, h: 60,
+          w: zoneTypeConfig.w || 60,
+          h: zoneTypeConfig.h || 60,
+          solid: zoneTypeConfig.solid !== false,
         };
         console.log('[RoomEditor] placing', zone.type, 'at world', Math.round(zone.x), Math.round(zone.y));
         const placed = this.scene.placeDecoration?.(zone);
