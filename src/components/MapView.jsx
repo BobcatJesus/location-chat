@@ -246,9 +246,9 @@ export default function MapView({ location, rooms, onEnterRoom }) {
   // Build icon HTML based on current in-range state
   const makeIcon = (emoji, color, name, inRange, count) => L.divIcon({
     className: '',
-    html: `<div style="display:flex;flex-direction:column;align-items:center;cursor:${inRange ? 'pointer' : 'default'};filter:${inRange ? 'none' : 'grayscale(60%) opacity(0.5)'}">
+    html: `<div style="display:flex;flex-direction:column;align-items:center;cursor:${inRange ? 'pointer' : 'default'}">
       <div style="background:${color};font-size:16px;width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:3px solid #2b2b33;box-shadow:2px 2px 0 #2b2b33">${emoji}</div>
-      <div style="background:#faf0d7;color:#2b2b33;font-size:9px;padding:2px 6px;border-radius:3px;margin-top:2px;white-space:nowrap;font-family:'Courier New',monospace;max-width:90px;overflow:hidden;text-overflow:ellipsis;border:1.5px solid #2b2b33;box-shadow:1px 1px 0 #2b2b33">${name}${inRange ? ' ✦' : ''}${count ? ` · 👤${count}` : ''}</div>
+      <div style="background:rgba(250,240,215,0.98);color:#1f2937;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;margin-top:2px;white-space:nowrap;font-family:'Courier New',monospace;max-width:96px;overflow:hidden;text-overflow:ellipsis;border:1.5px solid #111827;box-shadow:2px 2px 0 rgba(17,24,39,0.85);text-shadow:0 1px 0 rgba(255,255,255,0.75)">${name}${inRange ? ' ✦' : ''}${count ? ` · 👤${count}` : ''}</div>
       <div style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:6px solid #2b2b33"></div>
     </div>`,
     iconSize: [80, 58], iconAnchor: [40, 58],
@@ -262,12 +262,18 @@ export default function MapView({ location, rooms, onEnterRoom }) {
       const count = roomCountsRef.current[pin.roomId] || 0;
       const el = pin.marker.getElement();
       if (el) {
-        el.style.filter = inRange ? 'none' : 'grayscale(80%) opacity(0.4)';
+        el.style.filter = inRange ? 'none' : 'none';
         el.style.cursor = inRange ? 'pointer' : 'default';
         const dot = el.querySelector('div > div:first-child');
-        if (dot) dot.style.boxShadow = inRange ? `0 0 10px ${pin.color}cc` : `0 0 3px ${pin.color}33`;
+        if (dot) dot.style.boxShadow = inRange ? `0 0 10px ${pin.color}cc` : `0 0 5px ${pin.color}88`;
         const label = el.querySelector('div > div:nth-child(2)');
-        if (label) label.textContent = pin.name + (inRange ? ' ✦' : '') + (count ? ` · 👤${count}` : '');
+        if (label) {
+          label.textContent = pin.name + (inRange ? ' ✦' : '') + (count ? ` · 👤${count}` : '');
+          label.style.background = inRange ? 'rgba(250,240,215,0.98)' : 'rgba(250,240,215,1)';
+          label.style.color = '#111827';
+          label.style.opacity = '1';
+          label.style.textShadow = '0 1px 0 rgba(255,255,255,0.8)';
+        }
       }
       pin.circle.setStyle({
         fillOpacity: inRange ? 0.15 : 0.05,
