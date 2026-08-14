@@ -23,5 +23,8 @@ export function createAvatarEntity(scene, x, y, options = {}) {
   if (avatarModel === 'bunny') {
     return buildAvatar(scene, x, y, options, () => import('./ModularAvatar.js'));
   }
-  return buildAvatar(scene, x, y, options, () => import('./HumanChibiAvatar.js'));
+  if (avatarModel === 'turtle') {
+    return buildAvatar(scene, x, y, options, () => import('./TurtleAvatar.js'));
+  }
+  return buildAvatar(scene, x, y, options, () => import('./ModularAvatar.js'));
 }

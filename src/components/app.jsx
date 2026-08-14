@@ -142,8 +142,8 @@ function AvatarStudioPage({
           <div style={{ border: '2px solid #334155', background: '#0b1220', padding: 10, marginBottom: 10 }}>
             <div style={{ color: '#fbbf24', fontSize: 11, textTransform: 'uppercase', marginBottom: 6 }}>Checklist</div>
             <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 4 }}>- First name + display name</div>
-            <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 4 }}>- Pick one avatar: male or female</div>
-            <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 4 }}>- Fixed style (no color sliders)</div>
+            <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 4 }}>- Pick one sprite avatar: OG Demon, Bunny, or Turtle</div>
+            <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 4 }}>- Sprite style set</div>
             <div style={{ color: '#94a3b8', fontSize: 12 }}>- Save to enter the world</div>
           </div>
 
@@ -468,7 +468,7 @@ function App() {
     footwear: 'sneakers',
     glasses: false,
     hasScythe: false,
-    avatarModel: 'hoodie',
+    avatarModel: 'bunny',
   });
   const [osmRoom, setOsmRoom] = useState(null);
   const [creatingRoom, setCreatingRoom] = useState(false);
@@ -655,7 +655,7 @@ function App() {
           footwear: 'sneakers',
           glasses: false,
           hasScythe: false,
-          avatarModel: 'hoodie',
+          avatarModel: 'bunny',
           avatarOnboardingComplete: true,
           guestMode: true,
         };

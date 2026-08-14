@@ -103,7 +103,7 @@ export default function RetroAuthModal({ onLogin }) {
     footwear: 'sneakers',
     glasses: false,
     hasScythe: false,
-    avatarModel: 'hoodie',
+    avatarModel: 'bunny',
     playstyle: 'explorer',
     agreeConduct: false,
     agreeLocationRules: false,
