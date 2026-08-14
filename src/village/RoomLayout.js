@@ -15,8 +15,8 @@ const OUTSIDE_ROOM_COLOR = 0x0f172a;
 const OUTSIDE_ROOM_ALPHA = 0.62;
 const ROOM_INTERIOR_BUTTER = 0xfef3c7;
 const ROOM_INTERIOR_BUTTER_ALPHA = 0.92;
-const PARK_INTERIOR_GRASS = 0xb7e4c7;
-const PARK_INTERIOR_GRASS_ALPHA = 0.9;
+const PARK_INTERIOR_GRASS = 0x8fd19e;
+const PARK_INTERIOR_GRASS_ALPHA = 0.98;
 const ROOM_EDGE_CORE = 0xf8f1dc;
 const ROOM_EDGE_TRIM = 0xc9a66b;
 const ROOM_EDGE_SHADOW = 0x000000;
@@ -35,8 +35,28 @@ function getInteriorWash(layout = {}) {
   return { fill: ROOM_INTERIOR_BUTTER, alpha: ROOM_INTERIOR_BUTTER_ALPHA };
 }
 
-function getBoundaryVisualTuning(scene) {
+function getParkBoundaryTone(layout = {}) {
+  if (!isParkLayout(layout)) return null;
   return {
+    outsideAlpha: 0.55,
+    trimLine: 5,
+    trimAlpha: 0.85,
+    coreLine: 2,
+    coreAlpha: 0.95,
+    polygonShadowLine: 24,
+    polygonShadowAlpha: 0.06,
+    polygonTrimLine: 14,
+    polygonTrimAlpha: 0.18,
+    polygonInnerLine: 9,
+    polygonInnerAlpha: 0.08,
+    polygonCoreLine: 3,
+    polygonCoreAlpha: 0.98,
+  };
+}
+
+function getBoundaryVisualTuning(scene) {
+  const parkTone = getParkBoundaryTone(scene?.layout);
+  return parkTone || {
     outsideAlpha: OUTSIDE_ROOM_ALPHA,
     trimLine: 5,
     trimAlpha: 0.78,
