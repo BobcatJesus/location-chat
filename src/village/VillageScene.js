@@ -4,6 +4,7 @@ import { io } from 'socket.io-client';
 import { RoomLayout } from './RoomLayout.js';
 import { pickLayout } from './layoutPicker.js';
 import { RoomEditor } from './RoomEditor.js';
+import { OutdoorEditor } from './OutdoorEditor.js';
 import { Prop, PROP_DEFS } from './Prop.js';
 import { createAvatarEntity, preloadAvatarTextures } from '../game/entities/avatarFactory';
 import { normalizeAvatarModel } from '../game/entities/avatarModels';
@@ -54,6 +55,20 @@ const LEGACY_TYPE_TO_FRAME_KEY = {
   art: 'prop_portrait_framed',
 };
 
+function isOutdoorLocation(roomId = '', roomName = '', amenityTag = '', shopTag = '') {
+  const a = String(amenityTag || '').toLowerCase();
+  const s = String(shopTag || '').toLowerCase();
+  const text = `${roomId} ${roomName}`.toLowerCase();
+  return a === 'park'
+    || a === 'garden'
+    || a === 'nature_reserve'
+    || text.includes('park')
+    || text.includes('garden')
+    || text.includes('trail')
+    || text.includes('greenway')
+    || s === 'park';
+}
+
 export class VillageScene extends Phaser.Scene {
   constructor() { super({ key: 'VillageScene' }); }
 
@@ -96,9 +111,10 @@ export class VillageScene extends Phaser.Scene {
     this.roomLayout.drawFloor(0);
     this.showCollisionDebug = false;
     this.cameraMode = this.preferredCameraMode || 'follow';
+    this.isOutdoorLocation = isOutdoorLocation(this.roomId, this.roomName, this.amenityTag, this.shopTag);
 
-    // Initialize room editor (press ~ or use the UI toggle)
-    this.roomEditor = new RoomEditor(this);
+    // Initialize editor (press ~ or use the UI toggle)
+    this.roomEditor = this.isOutdoorLocation ? new OutdoorEditor(this) : new RoomEditor(this);
     this.customZones = [];
     this.onEditorChange(false);
     this.roomLayout.setDynamicSolids(this.customZones);

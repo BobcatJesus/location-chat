@@ -47,6 +47,20 @@ export default function VillageCanvas({ room, profile, onLeave }) {
     : cameraMode === 'wide-follow'
       ? 'Wide'
       : 'Follow';
+  const isOutdoorRoom = (room = {}) => {
+    const amenity = String(room.amenity || '').toLowerCase();
+    const shop = String(room.shop || '').toLowerCase();
+    const text = `${room.id || ''} ${room.name || ''}`.toLowerCase();
+    return amenity === 'park'
+      || amenity === 'garden'
+      || amenity === 'nature_reserve'
+      || shop === 'park'
+      || text.includes('park')
+      || text.includes('garden')
+      || text.includes('trail')
+      || text.includes('greenway');
+  };
+  const outdoorMode = isOutdoorRoom(room);
 
   useEffect(() => {
     window.__chatInputFocused = false;
@@ -171,7 +185,7 @@ export default function VillageCanvas({ room, profile, onLeave }) {
           fontSize: 12,
           boxShadow: '0 4px 14px rgba(0,0,0,0.35)',
         }}>
-          Edit Mode: press <strong>~</strong> to toggle
+          {outdoorMode ? 'Outdoor Edit Mode' : 'Edit Mode'}: press <strong>~</strong> to toggle
         </div>
       )}
       {systemNotice && (
@@ -229,7 +243,7 @@ export default function VillageCanvas({ room, profile, onLeave }) {
             fontWeight: 'bold',
           }}
         >
-          {editorActive ? 'Done' : 'Edit'}
+          {editorActive ? 'Done' : (outdoorMode ? 'Outdoor Edit' : 'Edit')}
         </button>
         <button
           onClick={toggleZoom}
@@ -262,7 +276,7 @@ export default function VillageCanvas({ room, profile, onLeave }) {
         fontFamily: 'Courier New, monospace',
         fontSize: 11,
       }}>
-        Press ~ to toggle Edit Mode
+        Press ~ to toggle {outdoorMode ? 'Outdoor Edit Mode' : 'Edit Mode'}
       </div>
 
       <div style={{

@@ -6,6 +6,12 @@ export class RoomEditor {
     this.isActive = false;
     this.selectedZoneType = 'prop_table_round';
     this.activeTool = 'place';
+    this.editorLabel = 'ROOM EDIT MODE';
+    this.placeButtonLabel = 'Place';
+    this.eraseButtonLabel = 'Erase';
+    this.clearButtonLabel = '🗑 Clear My Items';
+    this.placeHintText = 'Place mode: tap to add<br>Erase mode: tap your item<br><b style="color:#aaa">Edit button: exit</b>';
+    this.eraseHintText = 'Tap: place<br>Right-click: delete yours<br><b style="color:#aaa">Edit button or ~: exit</b>';
     this.zoneTypes = [
       { name: 'prop_table_round',    css: '#8b4513', label: 'Table' },
       { name: 'prop_chair_wooden',   css: '#a0522d', label: 'Chair' },
@@ -19,11 +25,6 @@ export class RoomEditor {
       { name: 'prop_candle',         css: '#f5c842', label: 'Candle' },
       { name: 'prop_rug_rolled',     css: '#c8a96e', label: 'Rug' },
       { name: 'prop_portrait_framed',css: '#7d6b4a', label: 'Portrait' },
-      { name: 'tree',                css: '#166534', label: 'Tree',       w: 52, h: 94, solid: true, frameKey: null },
-      { name: 'shrub',               css: '#4ade80', label: 'Shrub',      w: 62, h: 40, solid: false, frameKey: null },
-      { name: 'bench',               css: '#92400e', label: 'Bench',      w: 88, h: 38, solid: true, frameKey: null },
-      { name: 'lamppost',            css: '#facc15', label: 'Lamp Post',  w: 30, h: 108, solid: true, frameKey: null },
-      { name: 'flowerbed',           css: '#f472b6', label: 'Flowers',    w: 78, h: 42, solid: false, frameKey: null },
     ];
     this._zoneTypeConfig = new Map(this.zoneTypes.map((zoneType) => [zoneType.name, zoneType]));
     this.editGraphics = scene.add.graphics().setDepth(DEPTH.UI - 1).setVisible(false);
@@ -34,6 +35,16 @@ export class RoomEditor {
     this._pointerMove = null;
     this._pointerDown = null;
     this._onContextMenu = null;
+  }
+
+  setZoneTypes(zoneTypes, selectedZoneType = null) {
+    this.zoneTypes = Array.isArray(zoneTypes) ? zoneTypes : [];
+    this._zoneTypeConfig = new Map(this.zoneTypes.map((zoneType) => [zoneType.name, zoneType]));
+    if (selectedZoneType && this._zoneTypeConfig.has(selectedZoneType)) {
+      this.selectedZoneType = selectedZoneType;
+    } else if (!this._zoneTypeConfig.has(this.selectedZoneType) && this.zoneTypes[0]) {
+      this.selectedZoneType = this.zoneTypes[0].name;
+    }
   }
 
   _isMobileLayout() {
@@ -91,14 +102,14 @@ export class RoomEditor {
     ].join(';');
 
     const title = document.createElement('div');
-    title.textContent = isMobile ? '\u270f EDIT (Tap to Place)' : '\u270f  EDIT MODE';
+    title.textContent = isMobile ? `\u270f ${this.editorLabel} (Tap to Place)` : `\u270f  ${this.editorLabel}`;
     title.style.cssText = 'color:#ffff00;font-weight:bold;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;';
 
     const toolWrap = document.createElement('div');
     toolWrap.style.cssText = 'display:flex;gap:4px;';
 
     const placeBtn = document.createElement('button');
-    placeBtn.textContent = 'Place';
+    placeBtn.textContent = this.placeButtonLabel;
     placeBtn.style.cssText = [
       'border:none', 'cursor:pointer', 'border-radius:3px',
       'padding:4px 8px', 'font-family:Courier New,monospace',
@@ -112,7 +123,7 @@ export class RoomEditor {
     });
 
     const eraseBtn = document.createElement('button');
-    eraseBtn.textContent = 'Erase';
+    eraseBtn.textContent = this.eraseButtonLabel;
     eraseBtn.style.cssText = [
       'border:none', 'cursor:pointer', 'border-radius:3px',
       'padding:4px 8px', 'font-family:Courier New,monospace',
@@ -153,12 +164,12 @@ export class RoomEditor {
     const hint = document.createElement('div');
     hint.style.cssText = 'margin-top:8px;color:#888;font-size:9px;line-height:1.6;';
     hint.innerHTML = isMobile
-      ? 'Place mode: tap to add<br>Erase mode: tap your item<br><b style="color:#aaa">Edit button: exit</b>'
-      : 'Tap: place<br>Right-click: delete yours<br><b style="color:#aaa">Edit button or ~: exit</b>';
+      ? this.placeHintText
+      : this.eraseHintText;
     div.appendChild(hint);
 
     const clearBtn = document.createElement('button');
-    clearBtn.textContent = '🗑 Clear My Items';
+    clearBtn.textContent = this.clearButtonLabel;
     clearBtn.style.cssText = [
       'display:block', 'width:100%', 'margin-top:8px',
       isMobile ? 'padding:8px 10px' : 'padding:4px 8px', 'border:none', 'cursor:pointer',
