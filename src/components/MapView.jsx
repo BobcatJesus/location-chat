@@ -89,6 +89,23 @@ const POI_TYPES = [
 
 const POI_RADIUS = 40; // metres
 
+function deriveElementCoords(element) {
+  if (Number.isFinite(element?.lat) && Number.isFinite(element?.lon)) {
+    return { lat: element.lat, lng: element.lon };
+  }
+  if (Number.isFinite(element?.center?.lat) && Number.isFinite(element?.center?.lon)) {
+    return { lat: element.center.lat, lng: element.center.lon };
+  }
+  if (Array.isArray(element?.geometry) && element.geometry.length > 0) {
+    const points = element.geometry.filter((point) => Number.isFinite(point?.lat) && Number.isFinite(point?.lon));
+    if (!points.length) return { lat: null, lng: null };
+    const lat = points.reduce((sum, point) => sum + point.lat, 0) / points.length;
+    const lng = points.reduce((sum, point) => sum + point.lon, 0) / points.length;
+    return { lat, lng };
+  }
+  return { lat: null, lng: null };
+}
+
 // Fetch nearby POIs from OpenStreetMap Overpass API (free, no key)
 async function fetchNearbyPOIs(lat, lng, radiusMeters = 800) {
   try {
@@ -96,12 +113,13 @@ async function fetchNearbyPOIs(lat, lng, radiusMeters = 800) {
     if (!res.ok) return [];
     const elements = await res.json();
     return (Array.isArray(elements) ? elements : []).map((el) => {
+      const coords = deriveElementCoords(el);
       const typeInfo = POI_TYPES.find((t) => el.tags?.[t.tag] === t.value) || { emoji: '📍', color: '#94a3b8', label: 'Place', value: 'default' };
       return {
         id: `osm-${el.id}`,
         name: el.tags?.name || typeInfo.label,
-        lat: el.lat ?? el.center?.lat,
-        lng: el.lon ?? el.center?.lon,
+        lat: coords.lat,
+        lng: coords.lng,
         radiusMeters: POI_RADIUS,
         kind: 'osm',
         amenity: typeInfo.value,
