@@ -62,6 +62,11 @@ const mergeRoomsById = (...roomSets) => {
   return Array.from(byId.values());
 };
 
+const hasTemporaryAccess = (roomId = '', roomName = '') => {
+  const text = `${roomId} ${roomName}`.toLowerCase();
+  return text.includes('shepherd park');
+};
+
 const migrateProfileForAvatar = (savedProfile) => {
   const profile = savedProfile || {};
   const emailStem = (profile.email || 'traveler').split('@')[0] || 'traveler';
@@ -984,10 +989,12 @@ function App() {
   const presentDistance = roomMatch ? roomMatch.distance : null;
 
   const handleEnterRoom = (roomId, poiMeta = null) => {
+    const temporaryAccess = hasTemporaryAccess(roomId, poiMeta?.name || allRooms.find((room) => room.id === roomId)?.name || '');
+
     // GPS gating for named GPS rooms (no poiMeta)
     if (!poiMeta) {
       const target = allRooms.find(r => r.id === roomId);
-      if (target && target.kind === 'gps' && location) {
+      if (target && target.kind === 'gps' && location && !temporaryAccess) {
         const dist = getDistanceMeters(location.latitude, location.longitude, target.lat, target.lng);
         if (dist > target.radiusMeters) {
           setGpsToast(`You need to be within ${target.radiusMeters}m of ${target.name} to enter. You are ${Math.round(dist)}m away.`);
@@ -997,13 +1004,17 @@ function App() {
       }
     }
     // GPS gating for community/user rooms passed via poiMeta with a radius
-    if (poiMeta?.radius && poiMeta?.lat && location) {
+    if (poiMeta?.radius && poiMeta?.lat && location && !temporaryAccess) {
       const dist = getDistanceMeters(location.latitude, location.longitude, poiMeta.lat, poiMeta.lng);
       if (dist > poiMeta.radius) {
         setGpsToast(`You need to be within ${poiMeta.radius}m of ${poiMeta.name || 'this location'} to enter. You are ${Math.round(dist)}m away.`);
         setTimeout(() => setGpsToast(null), 3500);
         return;
       }
+    }
+    if (temporaryAccess) {
+      setGpsToast(`Temporary access enabled for ${poiMeta?.name || roomId}. GPS is not required right now.`);
+      setTimeout(() => setGpsToast(null), 3500);
     }
     if (poiMeta) setOsmRoom({ ...poiMeta, id: roomId });
     else setOsmRoom(null);
