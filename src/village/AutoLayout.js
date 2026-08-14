@@ -84,8 +84,8 @@ const THEMES = {
   },
 
   park: {
-    carpet: 0xcff4d2,
-    wall: 0x1f4d2f,
+    carpet: 0xb7e4c7,
+    wall: 0x14532d,
     width: 2400,
     height: 1600,
     spawn: { x: 1200, y: 1420 },

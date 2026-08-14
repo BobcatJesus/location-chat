@@ -15,10 +15,25 @@ const OUTSIDE_ROOM_COLOR = 0x0f172a;
 const OUTSIDE_ROOM_ALPHA = 0.62;
 const ROOM_INTERIOR_BUTTER = 0xfef3c7;
 const ROOM_INTERIOR_BUTTER_ALPHA = 0.92;
+const PARK_INTERIOR_GRASS = 0xb7e4c7;
+const PARK_INTERIOR_GRASS_ALPHA = 0.9;
 const ROOM_EDGE_CORE = 0xf8f1dc;
 const ROOM_EDGE_TRIM = 0xc9a66b;
 const ROOM_EDGE_SHADOW = 0x000000;
 const ROOM_INNER_SHADOW = 0x1f2937;
+
+function isParkLayout(layout = {}) {
+  const id = String(layout.id || '').toLowerCase();
+  const name = String(layout.name || '').toLowerCase();
+  return id.includes('park') || name.includes('park') || name.includes('garden') || name.includes('green');
+}
+
+function getInteriorWash(layout = {}) {
+  if (isParkLayout(layout)) {
+    return { fill: PARK_INTERIOR_GRASS, alpha: PARK_INTERIOR_GRASS_ALPHA };
+  }
+  return { fill: ROOM_INTERIOR_BUTTER, alpha: ROOM_INTERIOR_BUTTER_ALPHA };
+}
 
 function getBoundaryVisualTuning(scene) {
   return {
@@ -182,9 +197,10 @@ export class RoomLayout {
   _applyInteriorWarmth() {
     const g = this.gfx;
     const boundary = this.roomBoundary;
+    const wash = getInteriorWash(this.layout);
 
-    // Keep all room interiors on the same warm "soft butter" base.
-    g.fillStyle(ROOM_INTERIOR_BUTTER, ROOM_INTERIOR_BUTTER_ALPHA);
+    // Keep rooms warm, but let parks read as open green space.
+    g.fillStyle(wash.fill, wash.alpha);
     if (boundary.type === 'rect') {
       g.fillRect(boundary.x, boundary.y, boundary.w, boundary.h);
       return;
