@@ -543,26 +543,35 @@ export class VillageScene extends Phaser.Scene {
 
   placeDecoration(zone) {
     if (!this.socket?.connected) return false;
-    const inside = this.roomLayout?.isRectFullyInsideRoom(
-      zone.x,
-      zone.y,
-      zone.w || 60,
-      zone.h || 60,
-      6,
-    );
+    const outdoorPlacement = Boolean(this.isOutdoorLocation);
+    const inside = outdoorPlacement
+      ? this.roomLayout?.isPointInsideRoom(zone.x, zone.y, 4) ?? true
+      : this.roomLayout?.isRectFullyInsideRoom(
+          zone.x,
+          zone.y,
+          zone.w || 60,
+          zone.h || 60,
+          6,
+        );
     if (!inside) {
-      this.onSystemNotice('Placement is outside the room boundary.');
+      this.onSystemNotice(outdoorPlacement
+        ? 'Placement is outside the park boundary.'
+        : 'Placement is outside the room boundary.');
       return false;
     }
-    const clearOfSolids = this.roomLayout?.canPlaceRect(
-      zone.x,
-      zone.y,
-      zone.w || 60,
-      zone.h || 60,
-      8,
-    );
+    const clearOfSolids = outdoorPlacement
+      ? true
+      : this.roomLayout?.canPlaceRect(
+          zone.x,
+          zone.y,
+          zone.w || 60,
+          zone.h || 60,
+          8,
+        );
     if (!clearOfSolids) {
-      this.onSystemNotice('Placement overlaps furniture or another item.');
+      this.onSystemNotice(outdoorPlacement
+        ? 'Placement overlaps another outdoor item.'
+        : 'Placement overlaps furniture or another item.');
       return false;
     }
     this.socket.emit('place_decoration', {
@@ -604,14 +613,18 @@ export class VillageScene extends Phaser.Scene {
 
   _normalizeDecoration(item) {
     if (!item) return null;
-    const frameKey = item.frameKey || LEGACY_TYPE_TO_FRAME_KEY[item.type] || null;
-    if (!frameKey || !PROP_DEFS[frameKey]) return null;
     const width = Number(item.w || 60);
     const height = Number(item.h || 60);
     const boundaryMargin = Math.ceil(Math.max(width, height) / 2) + 6;
     const clamped = this.roomLayout?.clampPointToRoom(item.x, item.y, boundaryMargin) || { x: item.x, y: item.y };
     const isInside = this.roomLayout?.isRectFullyInsideRoom(clamped.x, clamped.y, width, height, 6) ?? true;
     if (!isInside) return null;
+
+    const frameKey = item.frameKey || LEGACY_TYPE_TO_FRAME_KEY[item.type] || null;
+    const outdoorTypes = new Set(['tree', 'shrub', 'bench', 'lamppost', 'flowerbed']);
+    if (frameKey && !PROP_DEFS[frameKey] && !outdoorTypes.has(item.type)) return null;
+    if (!frameKey && !outdoorTypes.has(item.type)) return null;
+
     return {
       id: item.id,
       frameKey,
