@@ -8,7 +8,7 @@ import { getDistanceMeters } from '../geo';
 import { normalizeAvatarModel } from '../game/entities/avatarModelInfo';
 
 const VillageCanvas = lazy(() => import('../village/VillageCanvas.jsx'));
-const WorldMapCanvas = lazy(() => import('../village/WorldMapCanvas.jsx'));
+const MapView = lazy(() => import('./MapView.jsx'));
 
 const hasText = (value) => typeof value === 'string' && value.trim().length > 0;
 const normalizeHairStyle = (hairStyle) => {
@@ -1161,10 +1161,8 @@ function App() {
               /* Map view fills the main area */
               <div style={{ flex: 1, borderRadius: 12, overflow: 'hidden', border: '2px solid #334155', position: 'relative' }}>
                 <Suspense fallback={<div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', color: '#94a3b8', background: '#0f172a' }}>Loading map…</div>}>
-                  <WorldMapCanvas
-                    key="world-map"
+                  <MapView
                     location={location}
-                    profile={profile}
                     rooms={allRooms.map((r) => ({ ...r, radiusMeters: r.radiusMeters || r.radius || 100 }))}
                     onEnterRoom={handleEnterRoom}
                   />
