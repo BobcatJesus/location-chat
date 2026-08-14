@@ -304,6 +304,7 @@ export class WorldMapScene extends Phaser.Scene {
     const endpoints = [
       'https://overpass.kumi.systems/api/interpreter',
       'https://overpass-api.de/api/interpreter',
+      'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
     ];
 
     this._setStatus('Fetching nearby places…');
@@ -319,6 +320,10 @@ export class WorldMapScene extends Phaser.Scene {
       `way["amenity"~"cafe|restaurant|fast_food|bar|pub|library|theatre|cinema|school|gym|marketplace"]${ar600};`,
       `way["shop"~"supermarket|convenience|bakery|deli|books|music|art|clothes|wine"]${ar600};`,
       `way["leisure"~"park|garden|playground|sports_centre"]${ar600};`,
+      `relation["amenity"~"cafe|restaurant|fast_food|bar|pub|library|theatre|cinema|school|gym|marketplace"]${ar600};`,
+      `relation["shop"~"supermarket|convenience|bakery|deli|books|music|art|clothes|wine"]${ar600};`,
+      `relation["leisure"~"park|garden|playground|sports_centre|marina|golf_course|nature_reserve"]${ar600};`,
+      `relation["tourism"~"museum|gallery|viewpoint|artwork"]${ar600};`,
       `);out center geom;`,
     ].join('');
 

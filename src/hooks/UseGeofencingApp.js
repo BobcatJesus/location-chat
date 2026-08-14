@@ -1,5 +1,15 @@
 import { useState, useEffect, useRef } from 'react';
 
+const BACKEND_BASE_URL = import.meta.env.VITE_BACKEND_URL ||
+  (import.meta.env.PROD ? 'https://location-chat-production.up.railway.app' : 'http://localhost:4000');
+
+function resolveApiEndpoint(apiEndpoint) {
+  if (!apiEndpoint) return `${BACKEND_BASE_URL}/api/geofence/check`;
+  if (/^https?:\/\//i.test(apiEndpoint)) return apiEndpoint;
+  if (!apiEndpoint.startsWith('/')) return `${BACKEND_BASE_URL}/${apiEndpoint}`;
+  return `${BACKEND_BASE_URL}${apiEndpoint}`;
+}
+
 /**
  * Custom hook to track real-time user GPS location and automatically fetch
  * retro tilemap JSON whenever the user enters a verified venue polygon.
@@ -20,6 +30,8 @@ export function useGeofencedMap(apiEndpoint = '/api/geofence/check', enabled = t
   const activeVenueIdRef = useRef(null);
 
   useEffect(() => {
+    const resolvedEndpoint = resolveApiEndpoint(apiEndpoint);
+
     if (!enabled) {
       activeVenueIdRef.current = null;
       setLocation(null);
@@ -52,7 +64,7 @@ export function useGeofencedMap(apiEndpoint = '/api/geofence/check', enabled = t
 
       try {
         // Ping backend geofence resolver endpoint
-        const response = await fetch(apiEndpoint, {
+        const response = await fetch(resolvedEndpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ latitude, longitude }),
