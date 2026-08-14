@@ -442,6 +442,91 @@ app.get('/health', (req, res) => {
 });
 registerAuthRoutes(app, authService);
 
+async function fetchOverpassJson(query) {
+  const endpoints = [
+    'https://overpass.kumi.systems/api/interpreter',
+    'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+    'https://overpass-api.de/api/interpreter',
+  ];
+
+  for (const endpoint of endpoints) {
+    try {
+      const response = await fetch(`${endpoint}?data=${encodeURIComponent(query)}`);
+      if (!response.ok) continue;
+      return await response.json();
+    } catch {
+      continue;
+    }
+  }
+
+  throw new Error('All Overpass endpoints failed');
+}
+
+app.get('/api/nearby-places', async (req, res) => {
+  const lat = Number(req.query.lat);
+  const lng = Number(req.query.lng);
+  const radius = Math.max(50, Math.min(3000, Number(req.query.radius || 1000)));
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return res.status(400).json({ error: 'Invalid lat/lng' });
+  }
+
+  const ar = `(around:${radius},${lat},${lng})`;
+  const query = [
+    `[out:json][timeout:25];(`,
+    `node["amenity"~"cafe|restaurant|fast_food|bar|pub|ice_cream|food_court|library|theatre|cinema|place_of_worship|gym|school|pharmacy|bank|fuel|marketplace|deli|juice_bar|hookah_lounge"]${ar};`,
+    `node["shop"~"supermarket|convenience|deli|bakery|butcher|seafood|wine|coffee|clothes|books|music|art"]${ar};`,
+    `node["leisure"~"park|garden|nature_reserve|dog_park|playground|swimming_pool|marina|fishing|sports_centre|stadium|golf_course|skate_park"]${ar};`,
+    `node["tourism"~"museum|gallery|artwork|information|viewpoint|picnic_site|camp_site|wilderness_hut"]${ar};`,
+    `node["natural"~"beach|peak|waterfall|water|spring"]${ar};`,
+    `node["historic"~"monument|ruins|memorial|castle"]${ar};`,
+    `way["amenity"~"cafe|restaurant|fast_food|bar|pub|library|theatre|cinema|school|gym|marketplace|place_of_worship"]${ar};`,
+    `way["shop"~"supermarket|convenience|bakery|deli|books|music|art|clothes|wine|coffee"]${ar};`,
+    `way["leisure"~"park|garden|nature_reserve|playground|sports_centre|stadium|golf_course|dog_park|marina"]${ar};`,
+    `way["tourism"~"museum|gallery|viewpoint|artwork|picnic_site|camp_site"]${ar};`,
+    `relation["amenity"~"cafe|restaurant|fast_food|bar|pub|library|theatre|cinema|school|gym|marketplace|place_of_worship"]${ar};`,
+    `relation["shop"~"supermarket|convenience|bakery|deli|books|music|art|clothes|wine|coffee"]${ar};`,
+    `relation["leisure"~"park|garden|nature_reserve|playground|sports_centre|stadium|golf_course|dog_park|marina"]${ar};`,
+    `relation["tourism"~"museum|gallery|viewpoint|artwork|picnic_site|camp_site"]${ar};`,
+    `);out center geom;`,
+  ].join('');
+
+  try {
+    const data = await fetchOverpassJson(query);
+    res.json(Array.isArray(data?.elements) ? data.elements : []);
+  } catch (error) {
+    res.status(502).json({ error: error.message || 'Nearby place lookup failed' });
+  }
+});
+
+app.get('/api/building-footprint', async (req, res) => {
+  const lat = Number(req.query.lat);
+  const lng = Number(req.query.lng);
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return res.status(400).json({ error: 'Invalid lat/lng' });
+  }
+
+  const query = `[out:json][timeout:8];way["building"](around:60,${lat},${lng});out geom;`;
+
+  try {
+    const data = await fetchOverpassJson(query);
+    const ways = (data?.elements || []).filter((element) => Array.isArray(element.geometry) && element.geometry.length > 3);
+    if (!ways.length) return res.json(null);
+
+    const closest = ways.reduce((best, way) => {
+      const centerLat = way.geometry.reduce((sum, point) => sum + point.lat, 0) / way.geometry.length;
+      const centerLng = way.geometry.reduce((sum, point) => sum + point.lon, 0) / way.geometry.length;
+      const distance = Math.abs(centerLat - lat) + Math.abs(centerLng - lng);
+      return !best || distance < best.distance ? { distance, way } : best;
+    }, null)?.way;
+
+    res.json(closest?.geometry?.map((point) => ({ lat: point.lat, lng: point.lon })) || null);
+  } catch (error) {
+    res.status(502).json({ error: error.message || 'Building footprint lookup failed' });
+  }
+});
+
 app.post('/api/community-locations', async (req, res) => {
   if (!pool) return res.status(503).json({ error: 'No database' });
   const { id, name, lat, lng, radius, category, emoji, color, creator, description } = req.body;
