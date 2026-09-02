@@ -267,8 +267,8 @@ export class VillageScene extends Phaser.Scene {
   static _boot = null;
 
   init(data) {
-    const d = VillageScene._boot || data;
-    VillageScene._boot = null;
+    const registryData = this.game?.registry?.get?.('bootData') || null;
+    const d = (data && Object.keys(data).length > 0) ? data : (registryData || VillageScene._boot || {});
     this.roomId     = d.roomId     ?? 'default-room';
     this.roomName   = d.roomName   ?? '';
     this.roomOwnerId = d.roomOwnerId ?? '';
@@ -1340,7 +1340,24 @@ export class VillageScene extends Phaser.Scene {
   _updateStaticNpcs(delta) {
     this.staticNpcs.forEach((npc) => {
       if (!npc.avatar || npc.avatar.active === false) return;
-      const isPaused = this.time.now < npc.pausedUntil;
+
+      const distToPlayer = (this.player && Number.isFinite(this.player.gx) && Number.isFinite(this.player.gy))
+        ? Math.hypot(this.player.gx - npc.gx, this.player.gy - npc.gy)
+        : Infinity;
+      const isNearPlayer = distToPlayer <= PROXIMITY_RADIUS;
+      const isPaused = isNearPlayer || (this.time.now < npc.pausedUntil);
+
+      if (isNearPlayer) {
+        const pdx = this.player.gx - npc.gx;
+        const pdy = this.player.gy - npc.gy;
+        if (Math.abs(pdy) >= Math.abs(pdx)) {
+          npc.direction = pdy > 0 ? 'front' : 'back';
+        } else {
+          npc.direction = 'side';
+          npc.facingLeft = pdx < 0;
+        }
+      }
+
       if (!isPaused && !npc.target && this.time.now >= npc.nextTargetAt) {
         const patrol = npc.patrol
           .filter(([x, y]) => Math.hypot(x - npc.gx, y - npc.gy) > 24)
