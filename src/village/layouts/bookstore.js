@@ -7,8 +7,8 @@ export const FLOOR_H = 900;
 
 // ── Colour palette ─────────────────────────────────────────────────────────────
 export const C = {
-  CARPET_F1:  0xc4a882, // warm beige carpet, floor 1
-  CARPET_F2:  0xb89060, // slightly darker carpet, floor 2
+  CARPET_F1:  0xfef3c7, // soft butter carpet, floor 1
+  CARPET_F2:  0xfef3c7, // soft butter carpet, floor 2
   WALL:       0x2b2b33,
   SHELF_WOOD: 0x5c3d2e,
   SHELF_TOP:  0x7a5240,
@@ -37,79 +37,48 @@ const F1_ZONES = [
   // ── Outer boundary wall ──────────────────────────────────────────────────────
   { type: 'wall', x: 0, y: 0, w: FLOOR_W, h: FLOOR_H, solid: true },
 
-  // ── Two entrances ────────────────────────────────────────────────────────────
-  { type: 'entry', x: 280, y: 840, w: 200, h: 60,  label: 'West Gray Entrance', solid: false },
-  { type: 'entry', x: 1540, y: 360, w: 60, h: 200, label: 'Parking Garage Entrance', solid: false },
+  // ── Main entrance and front desk ──────────────────────────────────────────────
+  { type: 'entry', x: 280, y: 840, w: 200, h: 60, label: 'Grand Entrance', solid: false },
+  { type: 'entry', x: 1540, y: 360, w: 60, h: 200, label: 'Research Wing', solid: false },
 
-  // ── Checkout (left of West Gray entrance) ────────────────────────────────────
-  { type: 'counter', x: 60,  y: 700, w: 180, h: 55, label: 'Register 1', interact: true, solid: true },
-  { type: 'counter', x: 60,  y: 620, w: 180, h: 55, label: 'Register 2', interact: true, solid: true },
-  { type: 'counter', x: 60,  y: 540, w: 180, h: 55, label: 'Register 3', interact: true, solid: true },
-  { type: 'employee', x: 100, y: 760, label: 'Cashier' },
-  { type: 'employee', x: 100, y: 680, label: 'Cashier' },
-  { type: 'sign',    x: 60,  y: 480, w: 180, h: 40, label: '→ Checkout' },
+  { type: 'counter', x: 60,  y: 700, w: 180, h: 55, label: 'Circulation Desk', interact: true, solid: true },
+  { type: 'counter', x: 60,  y: 620, w: 180, h: 55, label: 'Check Out', interact: true, solid: true },
+  { type: 'counter', x: 60,  y: 540, w: 180, h: 55, label: 'Study Help', interact: true, solid: true },
+  { type: 'employee', x: 100, y: 760, label: 'Librarian' },
+  { type: 'employee', x: 100, y: 680, label: 'Reference Desk' },
+  { type: 'sign',    x: 60,  y: 480, w: 180, h: 40, label: '→ Welcome' },
 
-  // ── Magazines (right of West Gray entrance) ───────────────────────────────────
-  { type: 'magazine_rack', x: 550, y: 720, w: 80,  h: 160, label: 'Magazines', interact: true, solid: true },
-  { type: 'magazine_rack', x: 640, y: 720, w: 80,  h: 160, label: 'Comics',    interact: true, solid: true },
-  { type: 'magazine_rack', x: 730, y: 720, w: 80,  h: 160, label: 'Newspapers',interact: true, solid: true },
+  // ── Reading tables and learning nooks ────────────────────────────────────────
+  { type: 'book_table', x: 180, y: 450, w: 160, h: 90, label: 'Study Tables', interact: true },
+  { type: 'book_table', x: 1180, y: 450, w: 180, h: 90, label: 'Group Work', interact: true },
+  { type: 'book_table', x: 180, y: 300, w: 160, h: 90, label: 'Quiet Carrels', interact: true },
+  { type: 'book_table', x: 1180, y: 300, w: 180, h: 90, label: 'Reference Tables', interact: true },
 
-  // ── Starbucks Café (far right) ────────────────────────────────────────────────
-  { type: 'cafe_zone', x: 1060, y: 560, w: 480, h: 320, label: 'Starbucks' },
-  { type: 'cafe_counter', x: 1060, y: 560, w: 480, h: 60, label: 'Order Here', interact: true, solid: true },
-  { type: 'cafe_table',  x: 1090, y: 650, label: '' },
-  { type: 'cafe_table',  x: 1210, y: 650, label: '' },
-  { type: 'cafe_table',  x: 1330, y: 650, label: '' },
-  { type: 'cafe_table',  x: 1450, y: 650, label: '' },
-  { type: 'cafe_table',  x: 1090, y: 770, label: '' },
-  { type: 'cafe_table',  x: 1210, y: 770, label: '' },
-  { type: 'cafe_table',  x: 1330, y: 770, label: '' },
-  { type: 'cafe_table',  x: 1450, y: 770, label: '' },
-  { type: 'employee', x: 1160, y: 580, label: 'Barista' },
+  // ── Stacks / shelves instead of retail aisles ────────────────────────────────
+  { type: 'shelf', x: 300,  y: 70, w: 55, h: 180, label: 'Fiction',     interact: true, solid: true },
+  { type: 'shelf', x: 380,  y: 70, w: 55, h: 180, label: 'Fiction',     interact: true, solid: true },
+  { type: 'shelf', x: 500,  y: 70, w: 55, h: 180, label: 'History',     interact: true, solid: true },
+  { type: 'shelf', x: 580,  y: 70, w: 55, h: 180, label: 'History',     interact: true, solid: true },
+  { type: 'shelf', x: 700,  y: 70, w: 55, h: 180, label: 'Science',     interact: true, solid: true },
+  { type: 'shelf', x: 780,  y: 70, w: 55, h: 180, label: 'Science',     interact: true, solid: true },
+  { type: 'shelf', x: 900,  y: 70, w: 55, h: 180, label: 'Arts',        interact: true, solid: true },
+  { type: 'shelf', x: 980,  y: 70, w: 55, h: 180, label: 'Arts',        interact: true, solid: true },
+  { type: 'shelf', x: 1100, y: 70, w: 55, h: 180, label: 'Reference',   interact: true, solid: true },
+  { type: 'shelf', x: 1180, y: 70, w: 55, h: 180, label: 'Reference',   interact: true, solid: true },
 
-  // ── Featured / New Arrivals tables (scattered) ───────────────────────────────
-  { type: 'book_table', x: 280, y: 440, w: 200, h: 100, label: 'Staff Picks',    interact: true },
-  { type: 'book_table', x: 520, y: 440, w: 200, h: 100, label: 'New Releases',   interact: true },
-  { type: 'book_table', x: 280, y: 300, w: 200, h: 100, label: "Kids' Tables",   interact: true },
-  { type: 'book_table', x: 520, y: 300, w: 200, h: 100, label: 'Bestsellers',    interact: true },
+  { type: 'wall_shelf', x: 140, y: 40, w: 900, h: 55, label: 'Featured Catalog', interact: true, solid: true },
+  { type: 'wall_shelf', x: 40, y: 160, w: 55, h: 280, label: 'Periodicals', interact: true, solid: true },
 
-  // ── Book shelf rows (running top-to-bottom, portrait orientation) ────────────
-  { type: 'shelf', x: 280,  y: 60,  w: 55, h: 220, label: 'Fiction',     interact: true, solid: true },
-  { type: 'shelf', x: 345,  y: 60,  w: 55, h: 220, label: 'Fiction',     interact: true, solid: true },
-  { type: 'shelf', x: 280,  y: 160, w: 55, h: 110, label: 'Fiction',     interact: true, solid: true },
+  // ── Children / youth section ──────────────────────────────────────────────────
+  { type: 'shelf', x: 270,  y: 560, w: 55, h: 140, label: 'Children\'s', interact: true, solid: true },
+  { type: 'shelf', x: 340,  y: 560, w: 55, h: 140, label: 'Children\'s', interact: true, solid: true },
+  { type: 'shelf', x: 410,  y: 560, w: 55, h: 140, label: 'Children\'s', interact: true, solid: true },
+  { type: 'book_table', x: 260, y: 790, w: 220, h: 80, label: 'Story Corner', interact: true },
 
-  { type: 'shelf', x: 430,  y: 60,  w: 55, h: 220, label: 'Mystery',     interact: true, solid: true },
-  { type: 'shelf', x: 495,  y: 60,  w: 55, h: 220, label: 'Mystery',     interact: true, solid: true },
-
-  { type: 'shelf', x: 580,  y: 60,  w: 55, h: 200, label: 'Sci-Fi',      interact: true, solid: true },
-  { type: 'shelf', x: 645,  y: 60,  w: 55, h: 200, label: 'Sci-Fi',      interact: true, solid: true },
-
-  { type: 'shelf', x: 730,  y: 60,  w: 55, h: 200, label: 'Romance',     interact: true, solid: true },
-  { type: 'shelf', x: 795,  y: 60,  w: 55, h: 200, label: 'Romance',     interact: true, solid: true },
-
-  { type: 'shelf', x: 880,  y: 60,  w: 55, h: 220, label: 'Non-Fiction', interact: true, solid: true },
-  { type: 'shelf', x: 945,  y: 60,  w: 55, h: 220, label: 'Non-Fiction', interact: true, solid: true },
-
-  { type: 'shelf', x: 1030, y: 60,  w: 55, h: 220, label: 'Biography',   interact: true, solid: true },
-  { type: 'shelf', x: 1095, y: 60,  w: 55, h: 220, label: 'Biography',   interact: true, solid: true },
-
-  // Wall shelves along the back wall
-  { type: 'wall_shelf', x: 60,  y: 40, w: 1000, h: 55, label: 'Wall Shelves', interact: true, solid: true },
-
-  // Left wall shelves (vertical along west wall)
-  { type: 'wall_shelf', x: 40, y: 60, w: 55, h: 440, label: 'Self-Help',  interact: true, solid: true },
-
-  // ── Children's section (back-left area) ──────────────────────────────────────
-  { type: 'shelf', x: 60,   y: 560, w: 55, h: 160, label: "Children's",  interact: true, solid: true },
-  { type: 'shelf', x: 130,  y: 560, w: 55, h: 160, label: "Children's",  interact: true, solid: true },
-  { type: 'shelf', x: 200,  y: 560, w: 55, h: 160, label: "Children's",  interact: true, solid: true },
-  { type: 'book_table', x: 60, y: 740, w: 180, h: 80, label: 'Picture Books', interact: true },
-
-  // ── Escalators (centre of store) ──────────────────────────────────────────────
+  // ── Stair / mezzanine access ─────────────────────────────────────────────────
   { type: 'escalator_up',   x: 780, y: 390, w: 100, h: 200, label: '▲ Up', toFloor: 1, interact: true },
   { type: 'escalator_down', x: 890, y: 390, w: 100, h: 200, label: '▼ Down (from upstairs)', interact: false },
 
-  // Decorative sign above escalators
   { type: 'sign', x: 760, y: 370, w: 240, h: 30, label: 'Second Floor ▲' },
 ];
 
@@ -118,60 +87,45 @@ const F1_ZONES = [
 const F2_ZONES = [
   { type: 'wall', x: 0, y: 0, w: FLOOR_W, h: FLOOR_H, solid: true },
 
-  // Windows facing West Gray (bottom wall)
-  { type: 'window', x: 300, y: 840, w: 800, h: 60, label: 'West Gray ↓' },
+  // Windows facing the courtyard
+  { type: 'window', x: 300, y: 840, w: 800, h: 60, label: 'Courtyard Views' },
 
-  // ── Escalators (same x/y as floor 1) ──────────────────────────────────────────
+  // ── Stair access ──────────────────────────────────────────────────────────────
   { type: 'escalator_down', x: 780, y: 390, w: 100, h: 200, label: '▼ Down', toFloor: 0, interact: true },
   { type: 'escalator_up',   x: 890, y: 390, w: 100, h: 200, label: '▲ Up (top floor)', interact: false },
 
-  // ── Toys section (right off the escalator) ───────────────────────────────────
-  { type: 'sign',        x: 1000, y: 360, w: 200, h: 40, label: '🧸 Toys & Games' },
-  { type: 'toy_display', x: 1000, y: 200, w: 120, h: 120, label: 'Plush Toys',   interact: true },
-  { type: 'toy_display', x: 1140, y: 200, w: 120, h: 120, label: 'Action Figures', interact: true },
-  { type: 'toy_display', x: 1280, y: 200, w: 120, h: 120, label: 'Board Games',  interact: true },
-  { type: 'toy_display', x: 1420, y: 200, w: 120, h: 120, label: 'Puzzles',      interact: true },
-  { type: 'toy_display', x: 1000, y: 340, w: 120, h: 120, label: 'LEGO',         interact: true },
-  { type: 'toy_display', x: 1140, y: 340, w: 120, h: 120, label: 'Card Games',   interact: true },
-  { type: 'toy_display', x: 1280, y: 340, w: 120, h: 120, label: 'Arts & Crafts',interact: true },
-  { type: 'toy_display', x: 1420, y: 340, w: 120, h: 120, label: 'Collectibles', interact: true },
-  { type: 'toy_display', x: 1000, y: 480, w: 540, h: 80,  label: 'Sale Bin',     interact: true },
+  // ── Archives and reference stacks ─────────────────────────────────────────────
+  { type: 'sign', x: 1220, y: 340, w: 240, h: 40, label: 'Archives & Special Collections' },
+  { type: 'shelf', x: 1120, y: 190, w: 55, h: 120, label: 'Local History', interact: true, solid: true },
+  { type: 'shelf', x: 1200, y: 190, w: 55, h: 120, label: 'Maps', interact: true, solid: true },
+  { type: 'shelf', x: 1280, y: 190, w: 55, h: 120, label: 'Rare Books', interact: true, solid: true },
+  { type: 'shelf', x: 1360, y: 190, w: 55, h: 120, label: 'Manuscripts', interact: true, solid: true },
+  { type: 'shelf', x: 1440, y: 190, w: 55, h: 120, label: 'Archives', interact: true, solid: true },
 
-  // ── Music CDs & Movies (middle, near West Gray windows) ──────────────────────
-  { type: 'sign',    x: 300, y: 600, w: 260, h: 40, label: '🎵 Music & 🎬 Movies' },
-  { type: 'cd_rack', x: 300, y: 640, w: 60, h: 180, label: 'Pop / Rock',  interact: true, solid: true },
-  { type: 'cd_rack', x: 370, y: 640, w: 60, h: 180, label: 'Hip-Hop',     interact: true, solid: true },
-  { type: 'cd_rack', x: 440, y: 640, w: 60, h: 180, label: 'Classical',   interact: true, solid: true },
-  { type: 'cd_rack', x: 510, y: 640, w: 60, h: 180, label: 'Country',     interact: true, solid: true },
-  { type: 'cd_rack', x: 600, y: 640, w: 60, h: 180, label: 'New Releases',interact: true, solid: true },
-  { type: 'cd_rack', x: 670, y: 640, w: 60, h: 180, label: 'Vinyl',       interact: true, solid: true },
-  { type: 'cd_rack', x: 760, y: 640, w: 60, h: 180, label: 'DVD / Blu-ray',interact: true, solid: true },
-  { type: 'cd_rack', x: 830, y: 640, w: 60, h: 180, label: 'TV Series',   interact: true, solid: true },
+  // ── Reading lounge and study rooms ────────────────────────────────────────────
+  { type: 'sign',    x: 300, y: 600, w: 260, h: 40, label: 'Study Lounge' },
+  { type: 'book_table', x: 300, y: 640, w: 180, h: 90, label: 'Research Tables', interact: true },
+  { type: 'book_table', x: 520, y: 640, w: 180, h: 90, label: 'Study Tables', interact: true },
+  { type: 'book_table', x: 740, y: 640, w: 180, h: 90, label: 'Computer Lab', interact: true },
 
-  // ── Book shelves floor 2 ──────────────────────────────────────────────────────
-  { type: 'shelf', x: 60,  y: 60,  w: 55, h: 260, label: 'Academic',    interact: true, solid: true },
-  { type: 'shelf', x: 130, y: 60,  w: 55, h: 260, label: 'History',     interact: true, solid: true },
-  { type: 'shelf', x: 200, y: 60,  w: 55, h: 260, label: 'Science',     interact: true, solid: true },
-  { type: 'shelf', x: 270, y: 60,  w: 55, h: 260, label: 'Art & Design',interact: true, solid: true },
-  { type: 'shelf', x: 340, y: 60,  w: 55, h: 260, label: 'Philosophy',  interact: true, solid: true },
-  { type: 'shelf', x: 410, y: 60,  w: 55, h: 260, label: 'True Crime',  interact: true, solid: true },
-  { type: 'shelf', x: 480, y: 60,  w: 55, h: 260, label: 'Travel',      interact: true, solid: true },
-  { type: 'shelf', x: 550, y: 60,  w: 55, h: 260, label: 'Cooking',     interact: true, solid: true },
-
-  // Back wall shelves floor 2
-  { type: 'wall_shelf', x: 60, y: 40, w: 680, h: 55, label: 'Reference', interact: true, solid: true },
+  // ── Shelves floor 2 ────────────────────────────────────────────────────────────
+  { type: 'shelf', x: 80,  y: 70, w: 55, h: 220, label: 'Academic',     interact: true, solid: true },
+  { type: 'shelf', x: 180, y: 70, w: 55, h: 220, label: 'History',      interact: true, solid: true },
+  { type: 'shelf', x: 280, y: 70, w: 55, h: 220, label: 'Science',      interact: true, solid: true },
+  { type: 'shelf', x: 380, y: 70, w: 55, h: 220, label: 'Art & Design', interact: true, solid: true },
+  { type: 'shelf', x: 480, y: 70, w: 55, h: 220, label: 'Travel',       interact: true, solid: true },
+  { type: 'wall_shelf', x: 80, y: 40, w: 520, h: 55, label: 'Reference', interact: true, solid: true },
 
   // Reading area / lounge chairs near windows
   { type: 'seating',  x: 300, y: 440, w: 400, h: 140, label: 'Reading Lounge' },
   { type: 'couch',    x: 320, y: 460, label: '' },
   { type: 'couch',    x: 500, y: 460, label: '' },
 
-  // ── Bathrooms (back right) ────────────────────────────────────────────────────
-  { type: 'sign',    x: 1300, y: 50,  w: 280, h: 40, label: '🚻 Restrooms →' },
-  { type: 'bathroom', x: 1300, y: 100, w: 130, h: 180, label: "Women's 🚺", interact: true },
-  { type: 'bathroom', x: 1440, y: 100, w: 130, h: 180, label: "Men's 🚹",   interact: true },
+  // ── Restrooms and quiet room ─────────────────────────────────────────────────
+  { type: 'sign',    x: 1300, y: 50,  w: 280, h: 40, label: '🚻 Facilities →' },
+  { type: 'bathroom', x: 1300, y: 100, w: 130, h: 180, label: "Women\'s 🚺", interact: true },
+  { type: 'bathroom', x: 1440, y: 100, w: 130, h: 180, label: "Men\'s 🚹",   interact: true },
 
-  // Railing along the escalator opening / floor edge
   { type: 'railing', x: 680, y: 385, w: 20,  h: 210 },
   { type: 'railing', x: 995, y: 385, w: 20,  h: 210 },
   { type: 'railing', x: 680, y: 385, w: 335, h: 20  },
@@ -181,9 +135,9 @@ const F2_ZONES = [
 // ── Exported layout ────────────────────────────────────────────────────────────
 export const bookstore = {
   id: 'bookstore',
-  name: 'Barnes & Noble',
-  spawnF1: { x: 400,  y: 800 }, // near West Gray entrance
-  spawnF2: { x: 900,  y: 370 }, // off escalator on floor 2
+  name: 'University Library',
+  spawnF1: { x: 400,  y: 800 },
+  spawnF2: { x: 900,  y: 370 },
   floors: [
     { carpet: C.CARPET_F1, wallColor: C.WALL, zones: F1_ZONES },
     { carpet: C.CARPET_F2, wallColor: C.WALL, zones: F2_ZONES },

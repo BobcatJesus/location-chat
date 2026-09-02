@@ -6,6 +6,7 @@ import { createAvatarEntity, preloadAvatarTextures } from '../game/entities/avat
 import { normalizeAvatarModel } from '../game/entities/avatarModels';
 import { FURNITURE, drawFurniture } from '../game/furniture';
 import { AVATAR_SKINS, AVATAR_HAIR_STYLES, AVATAR_BODY_TYPES } from './avatarOptions';
+import { deriveLocationPalette } from '../utils/locationPalette';
 
 // Spawn a speech bubble above an avatar and auto-destroy it after 4s
 function spawnBubble(scene, avatarContainer, text) {
@@ -62,6 +63,8 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
   const playersRef = useRef({});
   const inputRef = useRef(null);
   const lastMoveAtRef = useRef(0);
+  const lastNearbyCheckAtRef = useRef(0);
+  const nearbyCountRef = useRef(0);
   const dpadRef = useRef({ x: 0, y: 0 });
   const decorationObjectsRef = useRef(new Map()); // id → Phaser container
   const [editMode, setEditModeState] = useState(false);
@@ -449,6 +452,15 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
           };
 
           // --- Environment themes per room ---
+          const generatedPalette = deriveLocationPalette(room || {}, { mood: room?.paletteMood });
+          const generatedTheme = {
+            floor1: generatedPalette.floor1Int,
+            floor2: generatedPalette.floor2Int,
+            accent: generatedPalette.accentInt,
+            wall: generatedPalette.wallInt,
+            decor: generatedPalette.decorInt,
+          };
+
           const themes = {
             'starbucks-spring': { floor1: 0x00160e, floor2: 0x001a10, accent: 0x00704a, wall: 0x00120a, decor: 0x00704a },
             'agora-houston':    { floor1: 0x1a001a, floor2: 0x1e0020, accent: 0x9333ea, wall: 0x110018, decor: 0xb060ff },
@@ -468,7 +480,8 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
             'campfire-circle': { floor1: 0x2a1a0a, floor2: 0x1e1208, accent: 0x6a3a1a, wall: 0x3a1a08, decor: 0x8a5a2a },
             'your-room':     { floor1: 0x0a1828, floor2: 0x0c1e30, accent: 0x1a3a5a, wall: 0x0a1020, decor: 0x2a4a6a },
           };
-          const th = themes[room?.id] || themes[room?.amenity] || themes[room?.type] || themes['your-room'];
+          const themeOverride = themes[room?.id] || themes[room?.amenity] || themes[room?.type] || themes['your-room'];
+          const th = { ...generatedTheme, ...themeOverride };
 
           // Base floor tiles
           for (let row = 0; row < Math.ceil(H / T); row++) {
@@ -620,6 +633,27 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
               this.add.rectangle(x, y, 30, 12, 0x5c3d1e);
               this.add.rectangle(x, y - 5, 30, 6, 0x8B6914);
             });
+
+          } else if (roomId === 'mcdonalds-practice' || String(room?.name || '').toLowerCase().includes('mcdonald')) {
+            // McDonald's-branded fast food layout: arches, red booths, and yellow counter accents.
+            this.add.rectangle(W / 2, 34, W - 50, 28, 0xd62828);
+            this.add.rectangle(W / 2, 34, W - 56, 22, 0xffbc0d);
+            addSolidRect(W / 2, 34, W - 56, 22, 4);
+            this.add.text(W / 2, 24, 'McDonald\'s', { fontFamily: 'Courier New', fontSize: '14px', color: '#ffbc0d' }).setOrigin(0.5);
+            this.add.text(W / 2 + 92, 24, 'M', { fontFamily: 'Courier New', fontSize: '18px', color: '#ffbc0d' }).setOrigin(0.5);
+            this.add.text(W / 2 + 104, 14, 'M', { fontFamily: 'Courier New', fontSize: '18px', color: '#ffbc0d' }).setOrigin(0.5);
+            [[W / 2 - 118, H / 2 - 50], [W / 2 + 22, H / 2 - 50], [W / 2 - 118, H / 2 + 70], [W / 2 + 22, H / 2 + 70]].forEach(([x, y]) => {
+              this.add.rectangle(x, y, 50, 34, 0xd62828);
+              this.add.rectangle(x, y, 44, 28, 0xffbc0d);
+              this.add.circle(x, y - 7, 4, 0xd62828).setAlpha(0.95);
+            });
+            this.add.rectangle(W - 78, H / 2, 28, H * 0.58, 0xd62828);
+            this.add.rectangle(W - 78, H / 2, 22, H * 0.58 - 4, 0xffbc0d).setAlpha(0.95);
+            this.add.circle(W / 2, H / 2, 72, 0xffbc0d).setAlpha(0.08);
+            this.add.rectangle(72, 84, 16, 60, 0xd62828);
+            this.add.rectangle(92, 84, 16, 60, 0xd62828);
+            this.add.rectangle(80, 54, 26, 12, 0xffbc0d);
+            this.add.rectangle(90, 54, 26, 12, 0xffbc0d);
 
           } else if (roomType === 'restaurant') {
             [[W/2-100,H/2-60],[W/2+80,H/2-60],[W/2-100,H/2+60],[W/2+80,H/2+60],[W/2,H/2+10]].forEach(([x,y]) => {
@@ -784,8 +818,8 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
             applyCameraMode(cameraModeRef.current, this);
           });
         },
-        update() {
-          const speed = 160 / 60;
+        update(_time, delta) {
+          const speed = 160 * Math.min(delta, 100) / 1000;
           if (!localPlayerRef.current) return;
           // Don't move while the chat input is focused
           const active = document.activeElement;
@@ -811,7 +845,10 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
           if (dpadRef.current.x !== 0) moveX = dpadRef.current.x * speed;
           if (dpadRef.current.y !== 0) moveY = dpadRef.current.y * speed;
 
+          let playerMoved = false;
           if (moveX !== 0 || moveY !== 0) {
+            const previousX = localPlayerRef.current.x;
+            const previousY = localPlayerRef.current.y;
             const nextX = localPlayerRef.current.x + moveX;
             const nextY = localPlayerRef.current.y + moveY;
             
@@ -856,17 +893,24 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
               // Keep photo above label
               localPlayerPosRef.current = { x: localPlayerRef.current.x, y: localPlayerRef.current.y };
               localPlayerRef.current.syncLabel();
+              playerMoved = localPlayerRef.current.x !== previousX || localPlayerRef.current.y !== previousY;
             }
           }
 
-          // Recount nearby players each frame so chat UI reacts to proximity
-          let nearby = 0;
-          for (const rp of remotePlayersRef.current.values()) {
-            const dx = localPlayerRef.current.x - rp.x;
-            const dy = localPlayerRef.current.y - rp.y;
-            if (Math.sqrt(dx * dx + dy * dy) <= 150) nearby++;
+          // Proximity affects React UI, so sample it instead of forcing a render every frame.
+          if (_time - lastNearbyCheckAtRef.current >= 150) {
+            lastNearbyCheckAtRef.current = _time;
+            let nearby = 0;
+            for (const rp of remotePlayersRef.current.values()) {
+              const dx = localPlayerRef.current.x - rp.x;
+              const dy = localPlayerRef.current.y - rp.y;
+              if ((dx * dx + dy * dy) <= PROXIMITY_RADIUS * PROXIMITY_RADIUS) nearby++;
+            }
+            if (nearby !== nearbyCountRef.current) {
+              nearbyCountRef.current = nearby;
+              setNearbyCount(nearby);
+            }
           }
-          setNearbyCount(nearby);
 
           // Separate all remote players from each other
           const remotePlayers = Array.from(remotePlayersRef.current.values());
@@ -892,7 +936,7 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
             }
           }
 
-          if (Date.now() - lastMoveAtRef.current > 80) {
+          if (playerMoved && Date.now() - lastMoveAtRef.current > 80) {
             const socket = socketRef.current;
             if (socket && socket.connected) {
               socket.emit('send_move', {

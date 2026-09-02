@@ -207,6 +207,15 @@ export default class SpriteAvatarBase extends Phaser.GameObjects.Container {
   attachPhoto(scene, photoDataUrl) {
     if (typeof photoDataUrl !== 'string' || !photoDataUrl.trim()) return;
     const texKey = `photo_${Math.random().toString(36).slice(2)}`;
+    const tryCreatePhoto = (resolvedKey = texKey, attemptsLeft = 18) => {
+      if (this._photo) return;
+      if (scene.textures.exists(resolvedKey)) {
+        createPhoto(resolvedKey);
+        return;
+      }
+      if (attemptsLeft <= 0 || !scene.time?.delayedCall) return;
+      scene.time.delayedCall(70, () => tryCreatePhoto(resolvedKey, attemptsLeft - 1));
+    };
     const createPhoto = (resolvedKey = texKey) => {
       if (this._photo || !scene.textures.exists(resolvedKey)) return;
       const photoY = this.y - this._getPhotoYOffset();
@@ -229,18 +238,13 @@ export default class SpriteAvatarBase extends Phaser.GameObjects.Container {
     const isDataImage = value.startsWith('data:image/');
 
     if (isDataImage) {
-      scene.textures.once(`addtexture-${texKey}`, createPhoto);
       try {
         scene.textures.addBase64(texKey, value);
       } catch {
         return;
       }
 
-      if (scene.textures.exists(texKey)) {
-        createPhoto();
-      } else if (scene.time?.delayedCall) {
-        scene.time.delayedCall(0, createPhoto);
-      }
+      tryCreatePhoto(texKey);
       return;
     }
 
@@ -252,8 +256,14 @@ export default class SpriteAvatarBase extends Phaser.GameObjects.Container {
 
     if (!scene.load) return;
     scene.load.image(texKey, value);
-    scene.load.once(Phaser.Loader.Events.COMPLETE, createPhoto);
+    if (scene.load.once) {
+      scene.load.once(`filecomplete-image-${texKey}`, () => createPhoto(texKey));
+      scene.load.once(Phaser.Loader.Events.LOAD_ERROR, () => {
+        // Keep silent on image load failures; avatar still renders without photo.
+      });
+    }
     if (!scene.load.isLoading()) scene.load.start();
+    tryCreatePhoto(texKey);
   }
 
   destroy(fromScene) {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { io } from 'socket.io-client';
 import RetroAuthModal from './RetroAuthModal';
 import AvatarSetupFields from './AvatarSetupFields';
@@ -6,6 +6,7 @@ import { useGeofencedMap } from '../hooks/UseGeofencingApp';
 import { createUserRoom, deleteUserRoom, loadUserRooms, acceptRoomInvite, getAllRooms } from '../../rooms/rooms.js';
 import { getDistanceMeters } from '../geo';
 import { normalizeAvatarModel } from '../game/entities/avatarModelInfo';
+import { deriveLocationPalette } from '../utils/locationPalette';
 
 const VillageCanvas = lazy(() => import('../village/VillageCanvas.jsx'));
 const MapView = lazy(() => import('./MapView.jsx'));
@@ -62,9 +63,26 @@ const mergeRoomsById = (...roomSets) => {
   return Array.from(byId.values());
 };
 
-const hasTemporaryAccess = (roomId = '', roomName = '') => {
-  const text = `${roomId} ${roomName}`.toLowerCase();
-  return text.includes('shepherd park');
+export const hasTemporaryAccess = (roomId = '', roomName = '') => {
+  const text = `${roomId} ${roomName}`
+    .toLowerCase()
+    .replace(/[_\-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const tokens = text.split(' ');
+  const parkLike = ['park', 'garden', 'lawn', 'green square', 'green space'];
+
+  if (String(roomId || '').toLowerCase() === 'shepherd-park') return true;
+  if (String(roomId || '').toLowerCase() === 'starbucks-spring') return true;
+  if (String(roomId || '').toLowerCase() === 'mcdonalds-practice') return true;
+  if (text.includes('shepherd park')) return true;
+  if (text.includes('starbucks')) return true;
+  if (text.includes('mcdonald')) return true;
+  if (tokens.includes('shepherd') && tokens.includes('park')) return true;
+  if (tokens.includes('forest') && tokens.includes('gate')) return true;
+  if (parkLike.some((keyword) => text.includes(keyword))) return true;
+  return false;
 };
 
 const migrateProfileForAvatar = (savedProfile) => {
@@ -134,31 +152,7 @@ function AvatarStudioPage({
           {emergencyLabel}
         </a>
       )}
-      <div style={{ maxWidth: 980, margin: '0 auto', padding: '22px 14px 34px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
-        <aside style={{ border: '2px solid #1e293b', background: 'linear-gradient(140deg, rgba(15,23,42,0.95), rgba(13,33,60,0.8))', padding: 16 }}>
-          <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.12em', color: '#93c5fd', marginBottom: 8 }}>Avatar Studio</div>
-          <h1 style={{ margin: '0 0 10px', color: '#fde68a', fontSize: 'clamp(1.8rem, 6vw, 2.7rem)', lineHeight: 0.95, textTransform: 'uppercase' }}>
-            Build Your Human Avatar
-          </h1>
-          <p style={{ margin: '0 0 12px', color: '#cbd5e1', fontSize: 13, lineHeight: 1.5 }}>
-            This is now a dedicated page. Finish your avatar here, then continue into map and location rooms.
-          </p>
-
-          <div style={{ border: '2px solid #334155', background: '#0b1220', padding: 10, marginBottom: 10 }}>
-            <div style={{ color: '#fbbf24', fontSize: 11, textTransform: 'uppercase', marginBottom: 6 }}>Checklist</div>
-            <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 4 }}>- First name + display name</div>
-            <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 4 }}>- Pick one sprite avatar: OG Demon, Bunny, or Turtle</div>
-            <div style={{ color: '#94a3b8', fontSize: 12, marginBottom: 4 }}>- Sprite style set</div>
-            <div style={{ color: '#94a3b8', fontSize: 12 }}>- Save to enter the world</div>
-          </div>
-
-          {onboardingRequired && (
-            <div style={{ border: '2px solid #f59e0b', background: 'rgba(120,53,15,0.35)', color: '#fde68a', padding: '8px 10px', fontSize: 12 }}>
-              Avatar onboarding is required before entering map locations.
-            </div>
-          )}
-        </aside>
-
+      <div style={{ maxWidth: 560, margin: '0 auto', padding: '22px 14px 34px' }}>
         <section style={{ border: '4px solid #fff', background: '#0f172a', padding: 4, boxShadow: '8px 8px 0 #000' }}>
           <div style={{ border: '2px solid #3b82f6', background: '#0f172a', padding: 16 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 14, borderBottom: '2px solid #1e293b', paddingBottom: 10 }}>
@@ -215,7 +209,7 @@ function AvatarStudioPage({
   );
 }
 
-function RetroLandingPage({ onEnter }) {
+function RetroLandingPage({ onEnter, onOpenShepherdPark, onOpenMdAndersonLibrary }) {
   const referenceArtCandidates = ['/assets/landing-original.png', '/assets/landing-reference.png'];
   const [useReferenceArt, setUseReferenceArt] = useState(true);
   const [referenceArtIndex, setReferenceArtIndex] = useState(0);
@@ -424,24 +418,62 @@ function RetroLandingPage({ onEnter }) {
           </>
         )}
 
-        <button
-          onClick={onEnter}
-          style={{
-            padding: '12px 24px',
-            background: '#111',
-            border: '3px solid #111',
-            color: '#f6d24a',
-            fontWeight: 900,
-            cursor: 'pointer',
-            borderRadius: 999,
-            fontSize: 12,
-            textTransform: 'uppercase',
-            letterSpacing: '0.14em',
-            boxShadow: '0 5px 0 rgba(0,0,0,0.32)',
-          }}
-        >
-          Enter Lounge
-        </button>
+        <div style={{ display: 'flex', justifyContent: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <button
+            onClick={onEnter}
+            style={{
+              padding: '12px 24px',
+              background: '#111',
+              border: '3px solid #111',
+              color: '#f6d24a',
+              fontWeight: 900,
+              cursor: 'pointer',
+              borderRadius: 999,
+              fontSize: 12,
+              textTransform: 'uppercase',
+              letterSpacing: '0.14em',
+              boxShadow: '0 5px 0 rgba(0,0,0,0.32)',
+            }}
+          >
+            Enter Map
+          </button>
+          <button
+            onClick={onOpenShepherdPark}
+            style={{
+              padding: '12px 20px',
+              background: '#0f172a',
+              border: '3px solid #0f172a',
+              color: '#bae6fd',
+              fontWeight: 900,
+              cursor: 'pointer',
+              borderRadius: 999,
+              fontSize: 11,
+              textTransform: 'uppercase',
+              letterSpacing: '0.1em',
+              boxShadow: '0 5px 0 rgba(0,0,0,0.32)',
+            }}
+          >
+            Open Shepherd Park
+          </button>
+          <button
+            onClick={onOpenMdAndersonLibrary}
+            style={{
+              padding: '12px 20px',
+              background: '#1f2937',
+              border: '3px solid #1f2937',
+              color: '#fde68a',
+              fontWeight: 900,
+              cursor: 'pointer',
+              borderRadius: 999,
+              fontSize: 11,
+              textTransform: 'uppercase',
+              letterSpacing: '0.1em',
+              boxShadow: '0 5px 0 rgba(0,0,0,0.32)',
+            }}
+          >
+            Open MD Anderson Library
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -451,7 +483,7 @@ function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [profile, setProfile] = useState(null);
   const [showLanding, setShowLanding] = useState(true);
-  const [selectedRoom, setSelectedRoom] = useState('downtown-hub');
+  const [selectedRoom, setSelectedRoom] = useState('shepherd-park');
   const [activeScene, setActiveScene] = useState('world');
   const [gpsToast, setGpsToast] = useState(null);
   const [editingProfile, setEditingProfile] = useState(false);
@@ -482,6 +514,8 @@ function App() {
   const [newRoomPublic, setNewRoomPublic] = useState(false);
   const [inviteToast, setInviteToast] = useState(null);
   const [communityRooms, setCommunityRooms] = useState([]);
+  const osmHydrationTokenRef = useRef(0);
+  const OSM_STRICT_READY_MODE = import.meta.env.DEV && String(import.meta.env.VITE_OSM_STRICT_READY || 'true').toLowerCase() !== 'false';
 
   const SOCKET_SERVER_URL = import.meta.env.VITE_BACKEND_URL ||
     (import.meta.env.PROD ? 'https://location-chat-production.up.railway.app' : 'http://localhost:4000');
@@ -572,6 +606,10 @@ function App() {
       setProfileError('Avatar name can only contain letters, numbers, and underscores.');
       return;
     }
+    if (onboardingRequired && !editForm.photo) {
+      setProfileError('Choose a profile photo before entering the world.');
+      return;
+    }
 
     const updated = {
       ...profile.profile,
@@ -647,7 +685,8 @@ function App() {
         const guestProfile = {
           email: `guest_${stamp}@side.quest`,
           characterName: `guest_${stamp}`,
-          firstName: `Guest${stamp}`,
+          firstName: '',
+          photo: null,
           skinId: 'slate',
           avatarGender: 'male',
           hairStyle: 'combed',
@@ -661,16 +700,16 @@ function App() {
           glasses: false,
           hasScythe: false,
           avatarModel: 'bunny',
-          avatarOnboardingComplete: true,
+          avatarOnboardingComplete: false,
           guestMode: true,
         };
         localStorage.setItem('sidequest_profile', JSON.stringify(guestProfile));
-        setProfile({ mode: 'guest', profile: guestProfile });
+        const guestAuthProfile = { mode: 'guest', profile: guestProfile };
+        setProfile(guestAuthProfile);
         setIsLoggedIn(true);
-        setOnboardingRequired(false);
-        setEditingProfile(false);
         loadUserRooms(guestProfile.email);
         clearQuickStartParam();
+        startAvatarOnboarding(guestAuthProfile);
         return;
       }
 
@@ -691,7 +730,7 @@ function App() {
       clearQuickStartParam();
     }
   }, [isLoggedIn, profile]);
-  const { location, currentVenue, isInsideVenue, error, isLocating } = useGeofencedMap('/api/geofence/check', isLoggedIn);
+  const { location, currentVenue, isInsideVenue, error, isLocating, retryLocation } = useGeofencedMap('/api/geofence/check', isLoggedIn);
 
   const handleLogin = (authProfile) => {
     let cachedProfile = null;
@@ -812,7 +851,6 @@ function App() {
     })()
     : null;
   const roomMatch = staticRoomMatch;
-  const worldTitle = roomMatch ? `The ${roomMatch.room.name} Overworld` : 'The Lost Overworld';
 
   const handleCreateRoom = () => {
     if (!location) return;
@@ -937,28 +975,40 @@ function App() {
   };
 
   const roomCards = [
-    ...allRooms.map((room) => ({
+    ...allRooms.map((room) => {
+      const palette = deriveLocationPalette(room);
+      return ({
       id: room.id,
       name: room.name,
       kind: room.kind,
+      amenity: room.amenity,
+      shop: room.shop,
+      buildingLevels: room.buildingLevels,
+      tags: room.tags,
+      roomShape: room.roomShape,
+      footprint: room.footprint,
       lat: room.lat,
       lng: room.lng,
       radiusMeters: room.radiusMeters,
       ownerId: room.ownerId,
       contributors: room.contributors,
-      icon: (room.kind === 'user-created' || room.kind === 'community') ? (room.emoji || '🔥') : { 'starbucks-spring': '☕', 'agora-houston': '🍷', 'downtown-hub': '🏙️', 'forest-gate': '🌲', 'sunset-temple': '⛩️' }[room.id] || '🏛️',
+      icon: (room.kind === 'user-created' || room.kind === 'community') ? (room.emoji || '🔥') : { 'starbucks-spring': '☕', 'mcdonalds-practice': '🍟', 'agora-houston': '🍷', 'downtown-hub': '🏙️', 'forest-gate': '🌲', 'sunset-temple': '⛩️' }[room.id] || '🏛️',
       blurb: (room.kind === 'user-created' || room.kind === 'community')
         ? `Community space · ${room.contributors.join(', ')}`
         : `GPS-anchored · ${room.radiusMeters}m radius`,
       status: roomMatch?.room?.id === room.id ? '✦ You are here' : (room.kind === 'user-created' || room.kind === 'community') ? 'Community' : 'GPS room',
-      accent: (room.kind === 'user-created' || room.kind === 'community') ? (room.color || '#f97316') : { 'starbucks-spring': '#00704a', 'agora-houston': '#9333ea', 'downtown-hub': '#60a5fa', 'forest-gate': '#4ade80', 'sunset-temple': '#f472b6' }[room.id] || '#a78bfa',
+      accent: (room.kind === 'user-created' || room.kind === 'community') ? (room.color || palette.accent) : palette.accent,
       bg: (room.kind === 'user-created' || room.kind === 'community')
-        ? 'linear-gradient(135deg, #1a0e00 0%, #0f172a 100%)'
-        : { 'starbucks-spring': 'linear-gradient(135deg, #00160e 0%, #0f172a 100%)', 'agora-houston': 'linear-gradient(135deg, #1a0028 0%, #0f172a 100%)', 'downtown-hub': 'linear-gradient(135deg, #0a1628 0%, #0f172a 100%)', 'forest-gate': 'linear-gradient(135deg, #0a1a0e 0%, #0f172a 100%)', 'sunset-temple': 'linear-gradient(135deg, #1a0a14 0%, #0f172a 100%)' }[room.id] || 'linear-gradient(135deg, #120a1a 0%, #0f172a 100%)',
-    }))
+        ? `linear-gradient(135deg, ${palette.floor1} 0%, ${palette.wall} 100%)`
+        : palette.cardBg,
+      paletteProfile: palette.profile,
+    });
+    })
   ];
 
   const activeRoom = roomCards.find((room) => room.id === selectedRoom) || roomMatch?.room || roomCards[0];
+  const visibleRoomName = osmRoom?.name || activeRoom?.name || '';
+  const worldTitle = visibleRoomName ? `${visibleRoomName} overworld` : 'The Lost overworld';
   const activeRoomSummary = selectedRoom === 'your-room'
     ? 'You are now standing inside your own room.'
     : roomMatch?.room?.id === selectedRoom
@@ -977,7 +1027,7 @@ function App() {
           mood: activeRoom.name === "Campfire Circle" || activeRoom.name === "Guest's Spot"
             ? 'A community hearth glows warmly in a tiny top-down map of the gathering place.'
             : 'A retro map of the real location, rendered as a simple blocky landscape.',
-          accent: '#fbbf24',
+          accent: activeRoom?.accent || '#fbbf24',
           tile: '◼◻◼\n◻◼◻\n◼◻◼'
         }
       : {
@@ -988,8 +1038,175 @@ function App() {
         };
   const presentDistance = roomMatch ? roomMatch.distance : null;
 
+  const buildDebugSnapshot = () => JSON.stringify({
+    scene: activeScene,
+    selectedRoom,
+    activeRoom: activeRoom?.id || null,
+    osmRoom: osmRoom?.id || null,
+    roomName: osmRoom?.name || activeRoom?.name || null,
+    location: location
+      ? { latitude: location.latitude, longitude: location.longitude }
+      : null,
+    gps: isLocating ? 'scanning' : 'ready',
+    nearby: isInsideVenue ? 'inside' : 'outside',
+    timestamp: new Date().toISOString(),
+  }, null, 2);
+
+  const copyDebugSnapshot = async () => {
+    try {
+      await navigator.clipboard.writeText(buildDebugSnapshot());
+      setGpsToast('Debug snapshot copied');
+    } catch {
+      setGpsToast('Copy failed');
+    }
+  };
+
+  const fetchJsonWithTimeout = async (url, timeoutMs = 4500) => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(url, { signal: controller.signal });
+      if (!response.ok) return null;
+      try {
+        return await response.json();
+      } catch {
+        return null;
+      }
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timeout);
+    }
+  };
+
+  const hydrateRoomWithOsm = async (roomSeed = null) => {
+    const strictBypass = hasTemporaryAccess(roomSeed?.id, roomSeed?.name || '');
+    const lat = Number(roomSeed?.lat);
+    const lng = Number(roomSeed?.lng);
+    const seedTags = roomSeed && typeof roomSeed.tags === 'object' ? roomSeed.tags : {};
+    const radiusMeters = Math.max(40, Math.min(260, Number(roomSeed?.radiusMeters ?? roomSeed?.radius ?? 90) || 90));
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      const status = 'skipped';
+      return {
+        osmContextStatus: status,
+        osmContextSource: 'missing-coordinates',
+        osmReady: status === 'ready',
+          osmStrictBlocked: OSM_STRICT_READY_MODE && status !== 'ready' && !strictBypass,
+      };
+    }
+
+    const nearbyUrl = `${SOCKET_SERVER_URL}/api/nearby-places?lat=${encodeURIComponent(lat)}&lng=${encodeURIComponent(lng)}&radius=${encodeURIComponent(radiusMeters)}`;
+    const footprintUrl = `${SOCKET_SERVER_URL}/api/building-footprint?lat=${encodeURIComponent(lat)}&lng=${encodeURIComponent(lng)}&radius=${encodeURIComponent(radiusMeters)}`;
+    const indoorRadius = Math.max(80, Math.min(280, Math.round(radiusMeters * 2)));
+    const indoorUrl = `${SOCKET_SERVER_URL}/api/indoor-layout?lat=${encodeURIComponent(lat)}&lng=${encodeURIComponent(lng)}&radius=${encodeURIComponent(indoorRadius)}`;
+
+    const [nearby, footprint, indoor] = await Promise.all([
+      fetchJsonWithTimeout(nearbyUrl),
+      fetchJsonWithTimeout(footprintUrl),
+      fetchJsonWithTimeout(indoorUrl, 6500),
+    ]);
+    const requestError = nearby == null || footprint == null;
+
+    const nearbyElements = Array.isArray(nearby?.elements) ? nearby.elements : [];
+    const nearestElement = nearbyElements
+      .filter((el) => Number.isFinite(Number(el?.lat)) && Number.isFinite(Number(el?.lng)))
+      .sort((a, b) => {
+        const dA = getDistanceMeters(lat, lng, Number(a.lat), Number(a.lng));
+        const dB = getDistanceMeters(lat, lng, Number(b.lat), Number(b.lng));
+        return dA - dB;
+      })[0] || null;
+
+    const nearestTags = nearestElement?.tags && typeof nearestElement.tags === 'object'
+      ? nearestElement.tags
+      : null;
+    const footprintTags = footprint?.tags && typeof footprint.tags === 'object'
+      ? footprint.tags
+      : null;
+    const mergedTags = {
+      ...(seedTags || {}),
+      ...(nearestTags || {}),
+      ...(footprintTags || {}),
+    };
+
+    const normalizedFootprint = Array.isArray(footprint?.geometry)
+      ? footprint.geometry
+          .map((point) => ({ lat: Number(point?.lat), lon: Number(point?.lng ?? point?.lon) }))
+          .filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lon))
+      : null;
+    const hasFootprint = Array.isArray(normalizedFootprint) && normalizedFootprint.length >= 3;
+    const indoorElements = Array.isArray(indoor?.elements) ? indoor.elements : [];
+    const indoorSource = typeof indoor?.source === 'string' ? indoor.source : '';
+    const indoorQueryPlan = Array.isArray(indoor?.queryPlan) ? indoor.queryPlan : undefined;
+    const indoorHitCounts = Array.isArray(indoor?.hitCounts) ? indoor.hitCounts : undefined;
+    const indoorIsLive = indoorSource.startsWith('live-overpass');
+    const indoorLayout = indoorElements.length
+      ? {
+          id: `osm-indoor-${String(roomSeed?.id || 'room')}`,
+          width: 1600,
+          height: 900,
+          elements: indoorElements,
+        }
+      : undefined;
+
+    const hasLiveContext = Object.keys(mergedTags).length > 0 || hasFootprint || indoorElements.length > 0;
+    const status = hasLiveContext ? 'ready' : 'partial';
+    const contextSource = requestError
+      ? (indoorIsLive ? indoorSource : 'seed-fallback')
+      : (indoorSource || 'live-overpass');
+    return {
+      tags: Object.keys(mergedTags).length ? mergedTags : undefined,
+      footprint: hasFootprint ? normalizedFootprint : undefined,
+      footprintSource: hasFootprint ? 'provider-footprint' : (indoorIsLive ? 'indoor-derived' : 'radius-fallback'),
+      indoorLayout,
+      elements: indoorElements.length ? indoorElements : undefined,
+      osmIndoorSource: indoorSource || undefined,
+      osmIndoorQueryPlan: indoorQueryPlan,
+      osmIndoorHitCounts: indoorHitCounts,
+      osmWayId: footprint?.id ? String(footprint.id) : (nearestElement?.id ? String(nearestElement.id) : undefined),
+      osmContextStatus: status,
+      osmContextSource: contextSource,
+      osmContextUpdatedAt: new Date().toISOString(),
+      osmReady: status === 'ready',
+      osmStrictBlocked: OSM_STRICT_READY_MODE && status !== 'ready' && !strictBypass,
+    };
+  };
+
   const handleEnterRoom = (roomId, poiMeta = null) => {
-    const temporaryAccess = hasTemporaryAccess(roomId, poiMeta?.name || allRooms.find((room) => room.id === roomId)?.name || '');
+    const canonicalRoom = allRooms.find((room) => room.id === roomId) || null;
+    const mergedPoiMeta = poiMeta
+      ? {
+          ...(canonicalRoom || {}),
+          ...poiMeta,
+          id: roomId,
+          tags: {
+            ...(canonicalRoom?.tags || {}),
+            ...(poiMeta?.tags || {}),
+          },
+        }
+      : null;
+    const temporaryAccess = hasTemporaryAccess(roomId, mergedPoiMeta?.name || canonicalRoom?.name || '');
+    const strictModeEnabled = OSM_STRICT_READY_MODE && !temporaryAccess;
+    const baseRoomData = {
+      ...(mergedPoiMeta || canonicalRoom || {}),
+      id: roomId,
+      osmContextStatus: 'loading',
+      osmContextSource: 'entry-hydration',
+      osmReady: false,
+      osmStrictMode: strictModeEnabled,
+      osmStrictBlocked: false,
+    };
+
+    const beforePalette = deriveLocationPalette(baseRoomData, { includeDiagnostics: true });
+    baseRoomData.paletteProfile = beforePalette.profile;
+    baseRoomData.paletteDiagnostics = beforePalette.diagnostics;
+    baseRoomData.osmPaletteTransition = [
+      {
+        stage: 'before-osm',
+        at: Date.now(),
+        profile: beforePalette.profile,
+        status: 'loading',
+      },
+    ];
 
     // GPS gating for named GPS rooms (no poiMeta)
     if (!poiMeta) {
@@ -1004,22 +1221,130 @@ function App() {
       }
     }
     // GPS gating for community/user rooms passed via poiMeta with a radius
-    if (poiMeta?.radius && poiMeta?.lat && location && !temporaryAccess) {
-      const dist = getDistanceMeters(location.latitude, location.longitude, poiMeta.lat, poiMeta.lng);
-      if (dist > poiMeta.radius) {
-        setGpsToast(`You need to be within ${poiMeta.radius}m of ${poiMeta.name || 'this location'} to enter. You are ${Math.round(dist)}m away.`);
+    if (mergedPoiMeta?.radius && mergedPoiMeta?.lat && location && !temporaryAccess) {
+      const dist = getDistanceMeters(location.latitude, location.longitude, mergedPoiMeta.lat, mergedPoiMeta.lng);
+      if (dist > mergedPoiMeta.radius) {
+        setGpsToast(`You need to be within ${mergedPoiMeta.radius}m of ${mergedPoiMeta.name || 'this location'} to enter. You are ${Math.round(dist)}m away.`);
         setTimeout(() => setGpsToast(null), 3500);
         return;
       }
     }
     if (temporaryAccess) {
-      setGpsToast(`Temporary access enabled for ${poiMeta?.name || roomId}. GPS is not required right now.`);
+      setGpsToast(`Temporary access enabled for ${mergedPoiMeta?.name || roomId}. GPS is not required right now.`);
       setTimeout(() => setGpsToast(null), 3500);
     }
-    if (poiMeta) setOsmRoom({ ...poiMeta, id: roomId });
-    else setOsmRoom(null);
+    setOsmRoom(baseRoomData);
     setSelectedRoom(roomId);
     setActiveScene('room');
+
+    const hydrationToken = ++osmHydrationTokenRef.current;
+    hydrateRoomWithOsm(baseRoomData)
+      .then((osmPatch) => {
+        if (hydrationToken !== osmHydrationTokenRef.current) return;
+        setOsmRoom((prev) => {
+          if (!prev || prev.id !== roomId) return prev;
+          const mergedRoom = {
+            ...prev,
+            ...osmPatch,
+            osmStrictMode: strictModeEnabled,
+            tags: {
+              ...(prev.tags || {}),
+              ...(osmPatch?.tags || {}),
+            },
+          };
+          const afterPalette = deriveLocationPalette(mergedRoom, { includeDiagnostics: true });
+          const prevFeed = Array.isArray(prev?.osmPaletteTransition) ? prev.osmPaletteTransition : [];
+          const lastStage = prevFeed[prevFeed.length - 1]?.stage || '';
+          const nextFeed = lastStage === 'after-osm'
+            ? prevFeed
+            : [
+                ...prevFeed,
+                {
+                  stage: 'after-osm',
+                  at: Date.now(),
+                  profile: afterPalette.profile,
+                  status: String(mergedRoom.osmContextStatus || 'unknown'),
+                },
+              ];
+          return {
+            ...mergedRoom,
+            paletteProfile: afterPalette.profile,
+            paletteDiagnostics: afterPalette.diagnostics,
+            osmPaletteTransition: nextFeed,
+          };
+        });
+      })
+      .catch(() => {
+        if (hydrationToken !== osmHydrationTokenRef.current) return;
+        setOsmRoom((prev) => {
+          if (!prev || prev.id !== roomId) return prev;
+          const failedRoom = {
+            ...prev,
+            osmContextStatus: 'error',
+            osmContextSource: 'live-overpass',
+            osmReady: false,
+            osmStrictMode: strictModeEnabled,
+            osmStrictBlocked: strictModeEnabled,
+          };
+          const failedPalette = deriveLocationPalette(failedRoom, { includeDiagnostics: true });
+          const prevFeed = Array.isArray(prev?.osmPaletteTransition) ? prev.osmPaletteTransition : [];
+          const lastStage = prevFeed[prevFeed.length - 1]?.stage || '';
+          const nextFeed = lastStage === 'after-osm-error'
+            ? prevFeed
+            : [
+                ...prevFeed,
+                {
+                  stage: 'after-osm-error',
+                  at: Date.now(),
+                  profile: failedPalette.profile,
+                  status: 'error',
+                },
+              ];
+          return {
+            ...failedRoom,
+            paletteProfile: failedPalette.profile,
+            paletteDiagnostics: failedPalette.diagnostics,
+            osmPaletteTransition: nextFeed,
+          };
+        });
+      });
+  };
+
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const openRoom = String(params.get('openRoom') || '').trim().toLowerCase();
+      if (!openRoom) return;
+
+      const target = allRooms.find((room) => String(room.id || '').toLowerCase() === openRoom);
+      if (!target) return;
+
+      handleEnterRoom(target.id, target);
+      params.delete('openRoom');
+      const next = `${window.location.pathname}${params.toString() ? `?${params.toString()}` : ''}`;
+      window.history.replaceState({}, '', next);
+    } catch {}
+  }, [isLoggedIn, allRooms, location?.latitude, location?.longitude]);
+
+  const openShepherdParkDirect = () => {
+    const shepherd = allRooms.find((room) => room.id === 'shepherd-park');
+    if (!shepherd) {
+      setGpsToast('Shepherd Park is not available yet.');
+      setTimeout(() => setGpsToast(null), 3000);
+      return;
+    }
+    handleEnterRoom('shepherd-park', shepherd);
+  };
+
+  const openMdAndersonLibraryDirect = () => {
+    const library = allRooms.find((room) => room.id === 'md-anderson-library');
+    if (!library) {
+      setGpsToast('MD Anderson Library is not available yet.');
+      setTimeout(() => setGpsToast(null), 3000);
+      return;
+    }
+    handleEnterRoom('md-anderson-library', library);
   };
 
   const _THREE_DAYS = 3 * 24 * 60 * 60 * 1000;
@@ -1051,6 +1376,13 @@ function App() {
           📍 {gpsToast}
         </div>
       )}
+
+      <button
+        onClick={copyDebugSnapshot}
+        style={{ position: 'fixed', bottom: 12, left: 12, zIndex: 30000, background: '#111827', color: '#fde68a', border: '2px solid #fbbf24', borderRadius: 8, padding: '6px 12px', cursor: 'pointer', fontSize: 11, fontWeight: 'bold', fontFamily: 'Courier New, monospace', boxShadow: '2px 2px 0 #000' }}
+      >
+        Copy Debug Snapshot
+      </button>
 
       {/* Create room name prompt */}
       {!avatarStudioOpen && creatingRoom && (
@@ -1111,7 +1443,15 @@ function App() {
       )}
 
       {!isLoggedIn && showLanding && (
-        <RetroLandingPage onEnter={() => setShowLanding(false)} />
+        <RetroLandingPage
+          onEnter={() => setShowLanding(false)}
+          onOpenShepherdPark={() => {
+            window.location.href = `${window.location.pathname}?quickStart=guest&openRoom=shepherd-park`;
+          }}
+          onOpenMdAndersonLibrary={() => {
+            window.location.href = `${window.location.pathname}?quickStart=guest&openRoom=md-anderson-library`;
+          }}
+        />
       )}
 
       {!isLoggedIn && !showLanding && <RetroAuthModal onLogin={handleLogin} />}
@@ -1161,6 +1501,24 @@ function App() {
                 </div>
               )}
               <div>{isLocating ? 'Scanning the land…' : isInsideVenue ? 'Within the sacred bounds' : 'Outside the marked realm'}</div>
+              {error && (
+                <div style={{ marginTop: 4, color: '#fca5a5', maxWidth: 260 }}>
+                  {error}
+                  <button
+                    type="button"
+                    onClick={retryLocation}
+                    style={{ display: 'block', marginTop: 6, background: '#7f1d1d', border: '1px solid #ef4444', color: '#fee2e2', fontSize: 10, cursor: 'pointer', padding: '4px 8px', fontFamily: 'monospace', textTransform: 'uppercase' }}
+                  >
+                    Enable Location
+                  </button>
+                </div>
+              )}
+              <button
+                onClick={openShepherdParkDirect}
+                style={{ marginTop: 4, background: '#0f172a', border: '1px solid #38bdf8', color: '#bae6fd', fontSize: 10, cursor: 'pointer', padding: '2px 6px', fontFamily: 'monospace', textTransform: 'uppercase' }}
+              >
+                Open Shepherd Park
+              </button>
               <button onClick={handleLogout} style={{ marginTop: 4, background: 'none', border: '1px solid #334155', color: '#475569', fontSize: 10, cursor: 'pointer', padding: '2px 6px', fontFamily: 'monospace', textTransform: 'uppercase' }}>
                 Log out
               </button>

@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<!-- saved from url=(0103)file:///C:/Users/Thomas%20Kelleher/Downloads/location-chat-backend/md-anderson-library-study-night.html -->
+<html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Side Quest Study Night (Timed)</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f4efe7;
+        --paper: #fffaf2;
+        --ink: #152033;
+        --muted: #5f6b7a;
+        --accent: #7c3aed;
+        --accent-2: #d62828;
+        --line: #e7dfd2;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; min-height: 100%; }
+      body {
+        background:
+          radial-gradient(circle at top left, rgba(124, 58, 237, 0.12), transparent 28%),
+          radial-gradient(circle at bottom right, rgba(214, 40, 40, 0.10), transparent 28%),
+          linear-gradient(180deg, #faf7f2 0%, var(--bg) 100%);
+        font-family: Arial, Helvetica, sans-serif;
+        color: var(--ink);
+        display: grid;
+        place-items: center;
+        padding: 24px;
+      }
+      .flyer {
+        width: min(100%, 920px);
+        min-height: min(100vh - 48px, 1240px);
+        background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(255,250,242,0.98));
+        border: 1px solid var(--line);
+        border-radius: 30px;
+        overflow: hidden;
+        box-shadow: 0 24px 60px rgba(21, 32, 51, 0.12);
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+      }
+      .topbar {
+        padding: 30px 32px 18px;
+        background:
+          linear-gradient(90deg, rgba(124, 58, 237, 0.12), rgba(214, 40, 40, 0.08)),
+          #fff;
+        border-bottom: 1px solid var(--line);
+      }
+      .eyebrow {
+        margin: 0 0 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.18em;
+        font-size: 12px;
+        font-weight: 800;
+        color: var(--accent);
+      }
+      h1 {
+        margin: 0;
+        font-size: clamp(42px, 6.5vw, 86px);
+        line-height: 0.95;
+        letter-spacing: -0.05em;
+      }
+      .subhead {
+        margin: 14px 0 0;
+        font-size: clamp(16px, 2.1vw, 22px);
+        line-height: 1.45;
+        color: var(--muted);
+        max-width: 46rem;
+      }
+      .main {
+        display: grid;
+        grid-template-columns: 1.1fr 0.9fr;
+        gap: 28px;
+        padding: 30px 32px 24px;
+      }
+      .panel {
+        background: rgba(255,255,255,0.68);
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        padding: 24px;
+      }
+      .meta {
+        display: grid;
+        gap: 14px;
+        margin-bottom: 18px;
+      }
+      .meta-row {
+        display: grid;
+        grid-template-columns: 92px 1fr;
+        gap: 10px;
+        align-items: start;
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        padding: 14px 16px;
+      }
+      .meta-row .kicker {
+        text-transform: uppercase;
+        letter-spacing: 0.14em;
+        font-size: 11px;
+        color: var(--muted);
+        font-weight: 800;
+        padding-top: 2px;
+      }
+      .meta-row .value {
+        font-size: 18px;
+        font-weight: 700;
+        line-height: 1.35;
+      }
+      .copy-list {
+        margin: 0;
+        padding-left: 20px;
+        display: grid;
+        gap: 12px;
+        font-size: 18px;
+        line-height: 1.45;
+      }
+      .copy-list strong { color: var(--ink); }
+      .banner {
+        margin-top: 20px;
+        padding: 16px 18px;
+        border-radius: 18px;
+        background: linear-gradient(90deg, rgba(124, 58, 237, 0.12), rgba(255, 188, 13, 0.10));
+        border: 1px solid rgba(124, 58, 237, 0.16);
+        font-weight: 800;
+      }
+      .qr-panel {
+        display: grid;
+        place-items: center;
+        gap: 16px;
+        text-align: center;
+      }
+      .qr-wrap {
+        width: min(100%, 380px);
+        aspect-ratio: 1;
+        padding: 16px;
+        border-radius: 24px;
+        background: #fff;
+        border: 1px solid var(--line);
+        display: grid;
+        place-items: center;
+      }
+      .qr-wrap img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        image-rendering: pixelated;
+      }
+      .scan-title {
+        margin: 0;
+        font-size: 28px;
+      }
+      .url {
+        color: var(--muted);
+        word-break: break-all;
+        font-size: 15px;
+      }
+      .cta {
+        display: inline-block;
+        padding: 12px 18px;
+        border-radius: 999px;
+        background: var(--ink);
+        color: #fff;
+        text-decoration: none;
+        font-weight: 800;
+      }
+      .footer {
+        padding: 18px 32px 28px;
+        border-top: 1px solid var(--line);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px 18px;
+        align-items: center;
+        justify-content: space-between;
+        color: var(--muted);
+        font-size: 14px;
+      }
+      @media print { body { background: #fff; padding: 0; } .flyer { width: 100%; min-height: auto; border: none; border-radius: 0; box-shadow: none; } }
+      @media (max-width: 760px) { .main { grid-template-columns: 1fr; } .meta-row { grid-template-columns: 1fr; } }
+    </style>
+  </head>
+  <body>
+    <main class="flyer">
+      <section class="topbar">
+        <p class="eyebrow">University of Houston Study Night</p>
+        <h1>Need a study group?</h1>
+        <p class="subhead">Check out the people around you at MD Anderson Library during the Side Quest window. This is a short, time-limited event for students who want to meet nearby study partners.</p>
+      </section>
+
+      <section class="main">
+        <article class="panel">
+          <div class="meta">
+            <div class="meta-row">
+              <div class="kicker">When</div>
+              <div class="value">Saturday noon to Sunday noon</div>
+            </div>
+            <div class="meta-row">
+              <div class="kicker">Where</div>
+              <div class="value">MD Anderson Library, University of Houston</div>
+            </div>
+            <div class="meta-row">
+              <div class="kicker">Access</div>
+              <div class="value">GPS limits suspended during the event window</div>
+            </div>
+          </div>
+
+          <ul class="copy-list">
+            <li><strong>Need a study group?</strong> Check out the people around you.</li>
+            <li><strong>Join nearby rooms</strong> and see who’s already there.</li>
+            <li><strong>Open the app fast</strong> with the QR code on this flyer.</li>
+            <li><strong>Use it while it’s live</strong> - this access only lasts for the event window.</li>
+          </ul>
+
+          <div class="banner">Tap in, study together, and meet your next group at the library.</div>
+        </article>
+
+        <aside class="panel qr-panel">
+          <h2 class="scan-title">Scan to join</h2>
+          <div class="qr-wrap">
+            <img src="./Side Quest Study Night (Timed)_files/sidequestbobcatjesus-qr.png" alt="QR code for sidequestbobcatjesus.netlify.app">
+          </div>
+          <div class="url">https://sidequestbobcatjesus.netlify.app</div>
+          <a class="cta" href="https://sidequestbobcatjesus.netlify.app/" target="_blank" rel="noreferrer">Open site</a>
+        </aside>
+      </section>
+
+      <section class="footer">
+        <div class="pill">Timed study-night flyer</div>
+        <div>Save as PDF, print, or share digitally.</div>
+      </section>
+    </main>
+  
+</body></html>

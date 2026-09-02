@@ -14,18 +14,26 @@ const SIGN_STYLE = {
 const OUTSIDE_ROOM_COLOR = 0x0f172a;
 const OUTSIDE_ROOM_ALPHA = 0.62;
 const ROOM_INTERIOR_BUTTER = 0xfef3c7;
-const ROOM_INTERIOR_BUTTER_ALPHA = 0.92;
-const PARK_INTERIOR_GRASS = 0x8fd19e;
-const PARK_INTERIOR_GRASS_ALPHA = 0.98;
+const ROOM_INTERIOR_BUTTER_ALPHA = 1;
+const PARK_INTERIOR_GRASS = 0x8bd77a;
+const PARK_INTERIOR_GRASS_ALPHA = 1;
 const ROOM_EDGE_CORE = 0xf8f1dc;
-const ROOM_EDGE_TRIM = 0xc9a66b;
+const ROOM_EDGE_TRIM = 0x6a8f5d;
 const ROOM_EDGE_SHADOW = 0x000000;
 const ROOM_INNER_SHADOW = 0x1f2937;
 
 function isParkLayout(layout = {}) {
   const id = String(layout.id || '').toLowerCase();
   const name = String(layout.name || '').toLowerCase();
-  return id.includes('park') || name.includes('park') || name.includes('garden') || name.includes('green');
+  const carpet = Number(layout?.floors?.[0]?.carpet ?? layout?.carpet ?? 0);
+  const isParkPalette = [PARK_INTERIOR_GRASS, 0x8bd77a, 0x9ed9a4, 0xa9d98b].includes(carpet);
+  const parkKeywords = ['park', 'garden', 'forest', 'nature', 'green', 'meadow', 'lawn', 'grove', 'trail', 'reserve', 'arboretum', 'promenade', 'playground'];
+
+  return id.includes('auto-park')
+    || id.includes('park')
+    || name.includes('park')
+    || parkKeywords.some((keyword) => name.includes(keyword) || id.includes(keyword))
+    || isParkPalette;
 }
 
 function getInteriorWash(layout = {}) {
@@ -33,6 +41,16 @@ function getInteriorWash(layout = {}) {
     return { fill: PARK_INTERIOR_GRASS, alpha: PARK_INTERIOR_GRASS_ALPHA };
   }
   return { fill: ROOM_INTERIOR_BUTTER, alpha: ROOM_INTERIOR_BUTTER_ALPHA };
+}
+
+function isMcDonaldsLayout(layout = {}) {
+  const id = String(layout.id || '').toLowerCase();
+  const name = String(layout.name || '').toLowerCase();
+  return id.includes('mcdonald') || name.includes('mcdonald');
+}
+
+function isFinitePoint(point) {
+  return Number.isFinite(Number(point?.x)) && Number.isFinite(Number(point?.y));
 }
 
 function getParkBoundaryTone(layout = {}) {
@@ -100,10 +118,32 @@ export class RoomLayout {
     this.staticSolidZones = []; // fixed furniture/fixtures from floor layout
     this.dynamicSolidZones = []; // player-placed props
     this.showCollisionDebug = false;
-    this.debugGfx = scene.add.graphics().setDepth(DEPTH.UI - 2).setVisible(true);
+    this.showFootprintDebug = false;
+    this.debugGfx = scene.add.graphics().setDepth(DEPTH.UI - 2).setVisible(false);
+    this.debugLabels = [];
+    this.destroyed = false;
+  }
+
+  _canDraw() {
+    // During scene boot, sys.isActive() may still be false while create() runs.
+    // Requiring isActive here can skip the initial floor draw and leave a blank canvas.
+    return !this.destroyed && Boolean(this.scene?.add && this.scene?.sys);
   }
 
   drawFloor(floorIndex) {
+    if (!this._canDraw()) {
+      if (typeof window !== 'undefined') {
+        window.__sqRoomLayoutProbe = {
+          stage: 'blocked-can-draw',
+          at: Date.now(),
+          floorIndex,
+          hasScene: Boolean(this.scene),
+          hasAdd: Boolean(this.scene?.add),
+          hasSys: Boolean(this.scene?.sys),
+        };
+      }
+      return;
+    }
     this.currentFloor = floorIndex;
     const floor = this.layout.floors[floorIndex];
     if (!floor) return;
@@ -121,14 +161,33 @@ export class RoomLayout {
 
     const wall = floor.zones.find(z => z.type === 'wall');
     const boundaryBounds = this.roomBoundary.type === 'polygon' ? this.getBoundaryBounds() : null;
-    const W = boundaryBounds ? Math.ceil(boundaryBounds.x + boundaryBounds.w) : (wall?.w || 1600);
-    const H = boundaryBounds ? Math.ceil(boundaryBounds.y + boundaryBounds.h) : (wall?.h || 900);
+    // Always render against the full layout/world dimensions when available.
+    // Using polygon bounds here clips the draw area into a visible rectangle.
+    const W = this.layout?.width
+      || wall?.w
+      || (boundaryBounds ? Math.ceil(boundaryBounds.x + boundaryBounds.w) : 1600);
+    const H = this.layout?.height
+      || wall?.h
+      || (boundaryBounds ? Math.ceil(boundaryBounds.y + boundaryBounds.h) : 900);
 
-    // Carpet fill
-    this.gfx.fillStyle(floor.carpet, 1);
+    // Single source of truth for the floor color: keep the room carpet consistent and do not repaint it again.
+    const carpetColor = Number.isFinite(floor.carpet) ? floor.carpet : getInteriorWash(this.layout).fill;
+    if (typeof window !== 'undefined') {
+      window.__sqRoomLayoutProbe = {
+        stage: 'drawing',
+        at: Date.now(),
+        floorIndex,
+        layoutId: this.layout?.id || null,
+        carpetColor,
+        roomBoundaryType: this.roomBoundary?.type || null,
+      };
+    }
+    this.gfx.fillStyle(carpetColor, 1);
     this.gfx.fillRect(0, 0, W, H);
-    this._drawOutsideRoomMask(W, H, floor.carpet);
-    this._applyInteriorWarmth();
+    if (isMcDonaldsLayout(this.layout)) {
+      this._drawMcDonaldsAmbient(W, H);
+    }
+    this._drawOutsideRoomMask(W, H, carpetColor);
 
     // Draw all zones
     floor.zones.forEach(z => {
@@ -136,6 +195,10 @@ export class RoomLayout {
       this.currentZones.push(z);
       if (this._isZoneSolid(z)) this._registerStaticSolid(z);
     });
+
+    if (isMcDonaldsLayout(this.layout)) {
+      this._drawMcDonaldsBranding(W, H);
+    }
 
     // Draw custom zones from editor (if any)
     const customZones = this.scene.roomEditor?.customZones || [];
@@ -217,10 +280,12 @@ export class RoomLayout {
   _applyInteriorWarmth() {
     const g = this.gfx;
     const boundary = this.roomBoundary;
-    const wash = getInteriorWash(this.layout);
+    const floor = this.layout?.floors?.[this.currentFloor] || this.layout;
+    const baseColor = Number.isFinite(floor?.carpet) ? floor.carpet : getInteriorWash(this.layout).fill;
 
-    // Keep rooms warm, but let parks read as open green space.
-    g.fillStyle(wash.fill, wash.alpha);
+    // Keep the room color consistent from a single source of truth:
+    // the floor carpet color already sets the base room tone.
+    g.fillStyle(baseColor, 1);
     if (boundary.type === 'rect') {
       g.fillRect(boundary.x, boundary.y, boundary.w, boundary.h);
       return;
@@ -267,7 +332,6 @@ export class RoomLayout {
     const g = this.gfx;
     if (points.length < 3) return;
     const tuning = getBoundaryVisualTuning(this.scene);
-
     g.lineStyle(tuning.polygonShadowLine, ROOM_EDGE_SHADOW, tuning.polygonShadowAlpha);
     g.beginPath();
     g.moveTo(points[0].x, points[0].y);
@@ -297,6 +361,68 @@ export class RoomLayout {
     g.strokePath();
   }
 
+  _drawMcDonaldsBranding(worldW, worldH) {
+    const g = this.scene.add.graphics().setDepth(DEPTH.UI);
+    const centerX = worldW - 180;
+    const archBaseY = 120;
+    const archRadius = 52;
+
+    // Golden arches mark rendered as strokes so it reads as branding without heavy blocks.
+    g.lineStyle(12, 0xffbc0d, 0.95);
+    g.beginPath();
+    g.arc(centerX - 34, archBaseY, archRadius, Math.PI, Math.PI * 2, false);
+    g.strokePath();
+    g.beginPath();
+    g.arc(centerX + 34, archBaseY, archRadius, Math.PI, Math.PI * 2, false);
+    g.strokePath();
+    g.lineStyle(8, 0xd62828, 0.95);
+    g.lineBetween(centerX - 78, archBaseY + 2, centerX + 78, archBaseY + 2);
+
+    const titleY = Math.max(120, Math.min(worldH - 80, Math.round(worldH * 0.2) + 54));
+    const banner = this.scene.add.text(centerX, titleY, "McDonald's", {
+      fontSize: '16px',
+      fontFamily: 'Courier New, monospace',
+      fontStyle: 'bold',
+      color: '#ffbc0d',
+      stroke: '#7f1d1d',
+      strokeThickness: 5,
+      shadow: { offsetX: 1, offsetY: 1, color: '#3f0d0d', blur: 0, stroke: false, fill: true },
+    }).setOrigin(0.5).setDepth(DEPTH.UI + 1);
+    const subtitle = this.scene.add.text(centerX, titleY + 22, 'Golden Arches', {
+      fontSize: '10px',
+      fontFamily: 'Courier New, monospace',
+      color: '#7f1d1d',
+      stroke: '#ffefbf',
+      strokeThickness: 2,
+    }).setOrigin(0.5).setDepth(DEPTH.UI + 1);
+
+    this.labels.push(g, banner, subtitle);
+  }
+
+  _drawMcDonaldsAmbient(worldW, worldH) {
+    const g = this.gfx;
+
+    // Front wall band and lower trim in brand red.
+    g.fillStyle(0xd62828, 0.95);
+    g.fillRect(0, 0, worldW, 116);
+    g.fillStyle(0x7f1d1d, 0.8);
+    g.fillRect(0, 112, worldW, 8);
+
+    // Subtle aisle strip to separate booth banks.
+    g.fillStyle(0xf6e7ba, 0.95);
+    g.fillRect(Math.round(worldW * 0.5) - 36, 170, 72, worldH - 230);
+
+    // Light checker texture so the floor does not feel flat.
+    for (let y = 140; y < worldH; y += 48) {
+      for (let x = 0; x < worldW; x += 48) {
+        if (((x / 48) + (y / 48)) % 2 === 0) {
+          g.fillStyle(0xfff4d6, 0.16);
+          g.fillRect(x, y, 48, 48);
+        }
+      }
+    }
+  }
+
 
   _isZoneSolid(z) {
     if (!z || z.type === 'wall' || z.type === 'wall_polygon') return false;
@@ -318,8 +444,19 @@ export class RoomLayout {
     }
 
     const wall = floor?.zones?.find((z) => z.type === 'wall');
-    const w = wall?.w || 1600;
-    const h = wall?.h || 900;
+    const w = wall?.w || this.layout?.width || 1600;
+    const h = wall?.h || this.layout?.height || 900;
+
+    const projectedShape = this._projectSceneRoomShape(this.scene?.roomShape, w, h);
+    if (Array.isArray(projectedShape) && projectedShape.length >= 3 && projectedShape.every(isFinitePoint)) {
+      this.roomBoundary = { type: 'polygon', points: projectedShape };
+      const centroid = projectedShape.reduce((acc, p) => ({ x: acc.x + p.x, y: acc.y + p.y }), { x: 0, y: 0 });
+      this._boundaryCentroid = {
+        x: centroid.x / projectedShape.length,
+        y: centroid.y / projectedShape.length,
+      };
+      return;
+    }
 
     // If the room has no explicit footprint/polygon, create a practical inset
     // beveled polygon so users still get a visible, intentional realm edge.
@@ -349,6 +486,60 @@ export class RoomLayout {
     ];
     this.roomBoundary = { type: 'polygon', points };
     this._boundaryCentroid = { x: x + innerW / 2, y: y + innerH / 2 };
+  }
+
+  _projectSceneRoomShape(roomShape, targetW, targetH) {
+    if (!Array.isArray(roomShape) || roomShape.length < 3) return null;
+
+    const pts = roomShape
+      .map((p) => ({
+        lat: Number(p?.lat ?? p?.y),
+        lon: Number(p?.lon ?? p?.lng ?? p?.x),
+      }))
+      .filter((p) => Number.isFinite(p.lat) && Number.isFinite(p.lon));
+    if (pts.length < 3) return null;
+
+    const deduped = [];
+    const epsilon = 1e-9;
+    pts.forEach((point) => {
+      const prev = deduped[deduped.length - 1];
+      if (!prev || Math.abs(prev.lat - point.lat) > epsilon || Math.abs(prev.lon - point.lon) > epsilon) {
+        deduped.push(point);
+      }
+    });
+    if (deduped.length < 3) return null;
+
+    const first = deduped[0];
+    const last = deduped[deduped.length - 1];
+    if (Math.abs(first.lat - last.lat) <= epsilon && Math.abs(first.lon - last.lon) <= epsilon) {
+      deduped.pop();
+    }
+    if (deduped.length < 3) return null;
+
+    const meanLat = deduped.reduce((sum, p) => sum + p.lat, 0) / deduped.length;
+    const lonScale = Math.max(0.000001, Math.cos((meanLat * Math.PI) / 180));
+
+    const minLon = Math.min(...deduped.map((p) => p.lon));
+    const maxLon = Math.max(...deduped.map((p) => p.lon));
+    const minLat = Math.min(...deduped.map((p) => p.lat));
+    const maxLat = Math.max(...deduped.map((p) => p.lat));
+
+    const spanLon = (maxLon - minLon) * lonScale;
+    const spanLat = maxLat - minLat;
+    if (spanLon <= 0 || spanLat <= 0) return null;
+
+    const minSide = Math.max(320, Math.min(targetW, targetH));
+    const pad = Math.max(40, Math.min(180, Math.round(minSide * 0.08)));
+    const drawW = Math.max(120, targetW - pad * 2);
+    const drawH = Math.max(120, targetH - pad * 2);
+    const scale = Math.min(drawW / spanLon, drawH / spanLat);
+    const ox = (targetW - spanLon * scale) / 2;
+    const oy = (targetH - spanLat * scale) / 2;
+
+    return deduped.map((p) => ({
+      x: ox + ((p.lon - minLon) * lonScale) * scale,
+      y: oy + (maxLat - p.lat) * scale,
+    }));
   }
 
   _distancePointToSegment(px, py, ax, ay, bx, by) {
@@ -434,16 +625,53 @@ export class RoomLayout {
 
     if (!best) return { ...this._boundaryCentroid };
 
-    const cx = this._boundaryCentroid.x - best.x;
-    const cy = this._boundaryCentroid.y - best.y;
-    const clen = Math.hypot(cx, cy) || 1;
-    const nudged = {
-      x: best.x + (cx / clen) * (margin + 1),
-      y: best.y + (cy / clen) * (margin + 1),
+    const tryNudgedCandidate = (dx, dy) => {
+      const len = Math.hypot(dx, dy);
+      if (len < 1e-6) return null;
+      const nx = dx / len;
+      const ny = dy / len;
+      const start = Math.max(2, margin + 2);
+      for (let step = start; step >= 1; step -= 1) {
+        const candidate = {
+          x: best.x + nx * step,
+          y: best.y + ny * step,
+        };
+        if (this.isPointInsideRoom(candidate.x, candidate.y, margin)) return candidate;
+      }
+      return null;
     };
 
-    if (this.isPointInsideRoom(nudged.x, nudged.y, margin)) return nudged;
+    // If source point is outside, pushing beyond the nearest edge toward the
+    // source->edge direction usually lands inside concave polygons reliably.
+    const fromSource = tryNudgedCandidate(best.x - x, best.y - y);
+    if (fromSource) return fromSource;
+
+    const cx = this._boundaryCentroid.x - best.x;
+    const cy = this._boundaryCentroid.y - best.y;
+    const fromCentroid = tryNudgedCandidate(cx, cy);
+    if (fromCentroid) return fromCentroid;
+
     if (this.isPointInsideRoom(best.x, best.y, 0)) return best;
+    return { ...this._boundaryCentroid };
+  }
+
+  resolveSafeSpawnPoint(candidates = [], radius = 20) {
+    const list = Array.isArray(candidates) ? candidates : [];
+    const margins = [Math.max(10, radius + 4), Math.max(6, Math.floor(radius * 0.75)), 4, 0];
+
+    for (const base of list) {
+      if (!base || !Number.isFinite(base.x) || !Number.isFinite(base.y)) continue;
+      for (const margin of margins) {
+        const candidate = this.clampPointToRoom(base.x, base.y, margin);
+        if (!candidate) continue;
+        if (!this.isPointInsideRoom(candidate.x, candidate.y, 0)) continue;
+        if (this.collidesWithSolid(candidate.x, candidate.y, radius)) continue;
+        return candidate;
+      }
+    }
+
+    const fallback = this.clampPointToRoom(this._boundaryCentroid.x, this._boundaryCentroid.y, 0);
+    if (fallback && this.isPointInsideRoom(fallback.x, fallback.y, 0)) return fallback;
     return { ...this._boundaryCentroid };
   }
 
@@ -568,13 +796,23 @@ export class RoomLayout {
 
   setCollisionDebug(enabled) {
     this.showCollisionDebug = Boolean(enabled);
-    this.debugGfx.setVisible(true);
+    this.debugGfx.setVisible(this.showCollisionDebug || this.showFootprintDebug);
+    this._redrawDebugOverlay();
+  }
+
+  setFootprintDebug(enabled) {
+    this.showFootprintDebug = Boolean(enabled);
+    this.debugGfx.setVisible(this.showCollisionDebug || this.showFootprintDebug);
     this._redrawDebugOverlay();
   }
 
   _redrawDebugOverlay() {
     if (!this.debugGfx) return;
     this.debugGfx.clear();
+    this.debugLabels.forEach((label) => label?.destroy?.());
+    this.debugLabels = [];
+
+    if (!this.showCollisionDebug && !this.showFootprintDebug) return;
 
     const g = this.debugGfx;
     const b = this.roomBoundary;
@@ -587,9 +825,24 @@ export class RoomLayout {
       for (let i = 1; i < b.points.length; i++) g.lineTo(b.points[i].x, b.points[i].y);
       g.closePath();
       g.strokePath();
-    }
 
-    if (!this.showCollisionDebug) return;
+      if (this.showFootprintDebug) {
+        b.points.forEach((point, index) => {
+          g.fillStyle(0xf59e0b, 0.95);
+          g.fillCircle(point.x, point.y, 5);
+          g.lineStyle(1, 0x111827, 0.9);
+          g.strokeCircle(point.x, point.y, 5);
+          const tag = this.scene.add.text(point.x + 8, point.y - 8, String(index + 1), {
+            fontSize: '11px',
+            fontFamily: 'Courier New, monospace',
+            color: '#fbbf24',
+            backgroundColor: '#0f172a',
+            padding: { x: 2, y: 1 },
+          }).setDepth(DEPTH.UI - 1);
+          this.debugLabels.push(tag);
+        });
+      }
+    }
 
     const drawRects = (rects, fill, stroke) => {
       rects.forEach((r) => {
@@ -600,8 +853,10 @@ export class RoomLayout {
       });
     };
 
-    drawRects(this.staticSolidZones, 0xef4444, 0xfca5a5);
-    drawRects(this.dynamicSolidZones, 0xf59e0b, 0xfde68a);
+    if (this.showCollisionDebug) {
+      drawRects(this.staticSolidZones, 0xef4444, 0xfca5a5);
+      drawRects(this.dynamicSolidZones, 0xf59e0b, 0xfde68a);
+    }
   }
 
   // ── Per-zone renderer ──────────────────────────────────────────────────────────
@@ -614,6 +869,10 @@ export class RoomLayout {
     switch (z.type) {
 
       case 'wall':
+        // When a polygon boundary is active, the boundary mask already draws
+        // the correct perimeter. Skip the default rectangular wall stroke to
+        // avoid making irregular outdoor rooms appear rectangular.
+        if (this.roomBoundary?.type === 'polygon') break;
         g.lineStyle(5, C.WALL, 1);
         g.strokeRect(0, 0, w, h);
         break;
@@ -634,10 +893,14 @@ export class RoomLayout {
       }
 
       case 'entry':
-        g.fillStyle(C.ENTRY_MAT, 1);
-        g.fillRect(x, y, w, h);
-        g.lineStyle(2, C.WALL, 1);
-        g.strokeRect(x, y, w, h);
+        // In polygon outdoor rooms, avoid rectangular entry mats that read as
+        // box overlays against irregular footprint borders.
+        if (!(this.roomBoundary?.type === 'polygon' && isParkLayout(this.layout))) {
+          g.fillStyle(C.ENTRY_MAT, 1);
+          g.fillRect(x, y, w, h);
+          g.lineStyle(2, C.WALL, 1);
+          g.strokeRect(x, y, w, h);
+        }
         this._lbl(x + w / 2, y + h / 2, z.label, LABEL_STYLE, 0.5, 0.5);
         break;
 
@@ -648,6 +911,17 @@ export class RoomLayout {
         break;
 
       case 'counter':
+        if (isMcDonaldsLayout(this.layout)) {
+          g.fillStyle(0xd62828, 1);
+          g.fillRect(x, y, w, h);
+          g.fillStyle(0xffbc0d, 0.96);
+          g.fillRect(x + 8, y + 8, Math.max(0, w - 16), Math.max(0, h - 16));
+          g.lineStyle(2, 0x7f1d1d, 1);
+          g.strokeRect(x, y, w, h);
+          this._lbl(x + w / 2, y + h / 2, z.label, { ...LABEL_STYLE, color: '#7f1d1d', backgroundColor: undefined }, 0.5, 0.5);
+          if (z.interact) this.interactZones.push(z);
+          break;
+        }
         g.fillStyle(C.COUNTER, 1);
         g.fillRect(x, y, w, h);
         g.lineStyle(2, C.WALL, 1);
@@ -657,6 +931,20 @@ export class RoomLayout {
         break;
 
       case 'book_table':
+        if (isMcDonaldsLayout(this.layout)) {
+          g.fillStyle(0xd62828, 1);
+          g.fillRect(x, y, w, h);
+          g.fillStyle(0xffbc0d, 0.95);
+          g.fillRect(x + 7, y + 7, Math.max(0, w - 14), Math.max(0, h - 14));
+          g.lineStyle(2, 0x7f1d1d, 1);
+          g.strokeRect(x, y, w, h);
+          for (let stripe = x + 12; stripe < x + w - 8; stripe += 18) {
+            g.fillStyle(0xd62828, 0.45);
+            g.fillRect(stripe, y + 10, 8, Math.max(0, h - 20));
+          }
+          if (z.interact) this.interactZones.push(z);
+          break;
+        }
         g.fillStyle(C.TABLE_WOOD, 1);
         g.fillRect(x, y, w, h);
         g.lineStyle(2, C.WALL, 1);
@@ -748,6 +1036,18 @@ export class RoomLayout {
         if (z.interact) this.interactZones.push(z);
         break;
 
+      case 'planter_border':
+        g.fillStyle(0x14532d, 1);
+        g.fillRoundedRect(x, y, w, h, Math.min(14, Math.floor(Math.min(w, h) / 2)));
+        g.lineStyle(2, 0x052e16, 1);
+        g.strokeRoundedRect(x, y, w, h, Math.min(14, Math.floor(Math.min(w, h) / 2)));
+        for (let px = x + 18; px < x + w - 8; px += 28) {
+          g.fillStyle(0x22c55e, 0.95);
+          g.fillCircle(px, y + h / 2, Math.max(7, Math.min(15, h * 0.28)));
+        }
+        if (z.label) this._lbl(x + w / 2, y - 10, z.label, LABEL_STYLE, 0.5, 1);
+        break;
+
       case 'seating':
         g.fillStyle(C.SEATING, 0.35);
         g.fillRect(x, y, w, h);
@@ -756,7 +1056,61 @@ export class RoomLayout {
         this._lbl(x + w / 2, y + 8, z.label, LABEL_STYLE, 0.5, 0);
         break;
 
+      case 'table':
+        g.fillStyle(C.TABLE_WOOD, 1);
+        g.fillRect(x, y, w, h);
+        g.lineStyle(1.5, C.WALL, 1);
+        g.strokeRect(x, y, w, h);
+        this._lbl(x + w / 2, y - 10, z.label || 'Table', LABEL_STYLE, 0.5, 1);
+        if (z.interact) this.interactZones.push(z);
+        break;
+
+      case 'chair':
+        g.fillStyle(C.SEATING, 1);
+        g.fillRect(x, y, w, h);
+        g.lineStyle(1, C.WALL, 1);
+        g.strokeRect(x, y, w, h);
+        g.fillStyle(C.WALL, 0.45);
+        g.fillRect(x + Math.floor(w * 0.2), y + Math.floor(h * 0.15), Math.floor(w * 0.6), Math.floor(h * 0.22));
+        break;
+
+      case 'stairwell':
+      case 'stairs':
+        g.fillStyle(C.ESCALATOR, 1);
+        g.fillRect(x, y, w, h);
+        g.lineStyle(1.5, C.ESCALATOR_STRIPE, 1);
+        for (let step = 0; step <= 7; step++) {
+          const sy = y + (h / 7) * step;
+          g.lineBetween(x, sy, x + w, sy);
+        }
+        g.lineStyle(2, C.WALL, 1);
+        g.strokeRect(x, y, w, h);
+        this._lbl(x + w / 2, y + h / 2, z.label || 'Stairs', { ...SIGN_STYLE, backgroundColor: undefined, color: '#2b2b33' }, 0.5, 0.5);
+        if (z.toFloor !== undefined) this.escalatorZones.push({ x, y, w, h, toFloor: z.toFloor, type: z.type });
+        break;
+
+      case 'atrium':
+      case 'void':
+        g.fillStyle(OUTSIDE_ROOM_COLOR, 0.12);
+        g.fillRect(x, y, w, h);
+        g.lineStyle(1, ROOM_EDGE_TRIM, 0.35);
+        g.strokeRect(x, y, w, h);
+        if (z.label) this._lbl(x + w / 2, y + h / 2, z.label, LABEL_STYLE, 0.5, 0.5);
+        break;
+
       case 'couch': {
+        if (isMcDonaldsLayout(this.layout)) {
+          const cw = 140, ch = 50;
+          g.fillStyle(0xd62828, 1);
+          g.fillRect(x, y, cw, ch);
+          g.fillStyle(0xffbc0d, 0.2);
+          g.fillRect(x + 8, y + 8, cw - 16, ch - 16);
+          g.lineStyle(1.5, 0x7f1d1d, 1);
+          g.strokeRect(x, y, cw, ch);
+          g.lineStyle(1, 0x7f1d1d, 0.6);
+          g.lineBetween(x + cw / 2, y, x + cw / 2, y + ch);
+          break;
+        }
         const cw = 140, ch = 50;
         g.fillStyle(C.COUCH, 1);
         g.fillRect(x, y, cw, ch);
@@ -781,6 +1135,17 @@ export class RoomLayout {
         this._lbl(x + w / 2, y + h / 2, z.label, LABEL_STYLE, 0.5, 0.5);
         break;
 
+      case 'screen':
+        // Theater projection screen with subtle bezel and glow.
+        g.fillStyle(0x05070d, 1);
+        g.fillRect(x, y, w, h);
+        g.lineStyle(3, 0xcbd5e1, 0.95);
+        g.strokeRect(x, y, w, h);
+        g.fillStyle(0x93c5fd, 0.14);
+        g.fillRect(x + 8, y + 8, Math.max(0, w - 16), Math.max(0, h - 16));
+        if (z.label) this._lbl(x + w / 2, y + h / 2, z.label, { ...SIGN_STYLE, backgroundColor: undefined, color: '#e2e8f0' }, 0.5, 0.5);
+        break;
+
       case 'railing':
         g.fillStyle(C.RAILING, 1);
         g.fillRect(x, y, w, h);
@@ -794,7 +1159,23 @@ export class RoomLayout {
         break;
 
       case 'sign':
+        if (isMcDonaldsLayout(this.layout)) {
+          this._lbl(x + (w || 0) / 2, y + (h || 0) / 2, z.label, {
+            ...SIGN_STYLE,
+            color: '#ffbc0d',
+            backgroundColor: '#d62828',
+          }, 0.5, 0.5);
+          break;
+        }
         this._lbl(x + (w || 0) / 2, y + (h || 0) / 2, z.label, SIGN_STYLE, 0.5, 0.5);
+        break;
+
+      case 'tree':
+      case 'shrub':
+      case 'bench':
+      case 'lamppost':
+      case 'flowerbed':
+        this._drawCustomZone(z);
         break;
 
       case 'escalator_up':
@@ -850,7 +1231,7 @@ export class RoomLayout {
   }
 
   _lbl(x, y, text, style, ox = 0.5, oy = 0) {
-    if (!text) return;
+    if (!text || !this._canDraw()) return;
     const t = this.scene.add.text(x, y, text, style)
       .setOrigin(ox, oy)
       .setDepth(DEPTH.OVERHEAD);
@@ -872,6 +1253,19 @@ export class RoomLayout {
     const g = this.gfx;
     const { type, x, y, w = 60, h = 40 } = z;
 
+    const renderType = z.renderAsZone || null;
+    if (renderType) {
+      const zone = {
+        ...z,
+        type: renderType,
+        x: x - w / 2,
+        y: y - h / 2,
+        label: z.label || '',
+      };
+      this._draw(zone);
+      return;
+    }
+
     // Color map for custom zone types
     const colorMap = {
       table: { fill: 0x8b4513, stroke: 0x654321 },
@@ -884,83 +1278,10 @@ export class RoomLayout {
 
     const colors = colorMap[type] || { fill: 0x888888, stroke: 0x555555 };
 
-    if (type === 'tree') {
-      g.fillStyle(0x8b5a2b, 1);
-      g.fillRect(x - 5, y - h * 0.34, 10, h * 0.34);
-      g.fillStyle(colors.fill, 0.96);
-      g.fillCircle(x, y - h * 0.62, Math.max(16, w * 0.34));
-      g.fillCircle(x - w * 0.18, y - h * 0.48, Math.max(12, w * 0.22));
-      g.fillCircle(x + w * 0.18, y - h * 0.48, Math.max(12, w * 0.22));
-      g.lineStyle(2, colors.stroke, 1);
-      g.strokeCircle(x, y - h * 0.62, Math.max(16, w * 0.34));
-      this._lbl(x, y - h * 0.82, '🌳', { fontSize: '16px' }, 0.5, 0.5);
-      return;
-    }
+    if (['tree', 'shrub', 'bench', 'lamppost', 'flowerbed'].includes(type)) return;
 
-    if (type === 'shrub') {
-      g.fillStyle(colors.fill, 0.9);
-      g.fillRoundedRect(x - w / 2, y - h / 2, w, h, 16);
-      g.lineStyle(1.5, colors.stroke, 1);
-      g.strokeRoundedRect(x - w / 2, y - h / 2, w, h, 16);
-      g.fillStyle(0x86efac, 0.7);
-      g.fillCircle(x - w * 0.18, y - h * 0.06, Math.max(8, w * 0.14));
-      g.fillCircle(x, y - h * 0.12, Math.max(10, w * 0.16));
-      g.fillCircle(x + w * 0.18, y - h * 0.02, Math.max(8, w * 0.14));
-      this._lbl(x, y - h * 0.45, '🌿', { fontSize: '14px' }, 0.5, 0.5);
-      return;
-    }
-
-    if (type === 'bench') {
-      const seatY = y - h * 0.42;
-      g.fillStyle(0x8b5a2b, 1);
-      g.fillRoundedRect(x - w * 0.4, seatY, w * 0.8, h * 0.18, 4);
-      g.fillRoundedRect(x - w * 0.34, seatY - h * 0.32, w * 0.68, h * 0.16, 4);
-      g.fillRect(x - w * 0.28, seatY + h * 0.18, 4, h * 0.18);
-      g.fillRect(x + w * 0.24, seatY + h * 0.18, 4, h * 0.18);
-      g.fillRect(x - w * 0.28, seatY - h * 0.18, 4, h * 0.22);
-      g.fillRect(x + w * 0.24, seatY - h * 0.18, 4, h * 0.22);
-      g.lineStyle(1.5, colors.stroke, 1);
-      g.strokeRoundedRect(x - w * 0.4, seatY, w * 0.8, h * 0.18, 4);
-      this._lbl(x, y - h * 0.65, '🪑', { fontSize: '14px' }, 0.5, 0.5);
-      return;
-    }
-
-    if (type === 'lamppost') {
-      g.lineStyle(4, 0x444444, 1);
-      g.beginPath();
-      g.moveTo(x, y - h * 0.55);
-      g.lineTo(x, y + h * 0.1);
-      g.strokePath();
-      g.lineStyle(3, colors.stroke, 1);
-      g.beginPath();
-      g.moveTo(x, y - h * 0.55);
-      g.lineTo(x, y + h * 0.1);
-      g.strokePath();
-      g.fillStyle(colors.fill, 1);
-      g.fillCircle(x, y - h * 0.6, Math.max(8, w * 0.35));
-      g.fillStyle(0xfff6d5, 0.95);
-      g.fillCircle(x, y - h * 0.6, Math.max(4, w * 0.18));
-      this._lbl(x, y - h * 0.88, '💡', { fontSize: '15px' }, 0.5, 0.5);
-      return;
-    }
-
-    if (type === 'flowerbed') {
-      g.fillStyle(colors.fill, 0.8);
-      g.fillRoundedRect(x - w / 2, y - h / 2, w, h, 8);
-      g.lineStyle(1.5, colors.stroke, 1);
-      g.strokeRoundedRect(x - w / 2, y - h / 2, w, h, 8);
-      g.fillStyle(0xfef08a, 0.95);
-      for (let i = -2; i <= 2; i++) {
-        g.fillCircle(x + i * (w / 7), y - h * 0.05 + (i % 2 === 0 ? -2 : 2), 4);
-      }
-      this._lbl(x, y - h * 0.45, '🌸', { fontSize: '14px' }, 0.5, 0.5);
-      return;
-    }
-
-    g.fillStyle(colors.fill, 0.85);
-    g.fillRect(x - w / 2, y - h / 2, w, h);
-    g.lineStyle(1.5, colors.stroke, 1);
-    g.strokeRect(x - w / 2, y - h / 2, w, h);
+    // Ignore the generic rectangle fallback for custom props so outdoor editor items don't render as placeholder boxes.
+    return;
 
     // Icon/label for the zone type
     const labels = {
@@ -975,8 +1296,12 @@ export class RoomLayout {
   }
 
   destroy() {
-    this.debugGfx.destroy();
-    this.gfx.destroy();
+    this.destroyed = true;
+    this.debugLabels.forEach((label) => label?.destroy?.());
+    this.debugLabels = [];
+    this.debugGfx?.destroy();
+    this.gfx?.destroy();
     this.labels.forEach(l => l.destroy());
+    this.labels = [];
   }
 }

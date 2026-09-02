@@ -186,7 +186,7 @@ export default function AvatarSetupFields({
 
       <div>
         <label style={{ display: 'block', fontSize: 11, textTransform: 'uppercase', color: '#94a3b8', marginBottom: 4 }}>
-          Profile Photo <span style={{ color: '#475569' }}>(optional)</span>
+          Profile Photo <span style={{ color: '#fbbf24' }}>(recommended)</span>
         </label>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {photoDataUrl
@@ -198,7 +198,7 @@ export default function AvatarSetupFields({
             onClick={() => fileInputRef.current?.click()}
             style={{ flex: 1, padding: '7px 10px', background: 'transparent', border: '2px solid #475569', color: '#94a3b8', fontFamily: 'Courier New, monospace', fontSize: 12, cursor: 'pointer' }}
           >
-            {photoDataUrl ? 'Change photo' : 'Upload photo'}
+            {photoDataUrl ? 'Change photo' : 'Upload profile photo'}
           </button>
           {photoDataUrl && (
             <button

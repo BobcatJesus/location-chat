@@ -8,6 +8,7 @@ import { OutdoorEditor } from './OutdoorEditor.js';
 import { Prop, PROP_DEFS } from './Prop.js';
 import { createAvatarEntity, preloadAvatarTextures } from '../game/entities/avatarFactory';
 import { normalizeAvatarModel } from '../game/entities/avatarModels';
+import { isOutdoorLocation } from './outdoorRoomDetection.js';
 
 const SOCKET_SERVER_URL = import.meta.env.VITE_BACKEND_URL ||
   (import.meta.env.PROD ? 'https://location-chat-production.up.railway.app' : 'http://localhost:4000');
@@ -21,11 +22,17 @@ const DECOR_SYNC_HEALTHY_MS = 30000;
 const PRESENCE_SYNC_HEALTHY_MS = 20000;
 const EDIT_TOGGLE_KEY_CODE = 'Backquote';
 const COLLISION_DEBUG_KEY_CODE = 'F2';
+const FOOTPRINT_DEBUG_KEY_CODE = 'F3';
+const ULTRA_CLOSE_FOLLOW_ZOOM = 2.85;
+const CLOSE_FOLLOW_ZOOM = 2.35;
 const FOLLOW_ZOOM = 1.9;
 const WIDE_FOLLOW_ZOOM = 1.45;
+const ULTRA_CLOSE_AVATAR_SCALE = 1.3;
+const CLOSE_AVATAR_SCALE = 1.18;
 const FOLLOW_AVATAR_SCALE = 1;
 const WIDE_AVATAR_SCALE = 1.3;
 const OVERVIEW_AVATAR_SCALE = 1.42;
+const LOCAL_AVATAR_SPAWN_RETRIES = 3;
 
 function normalizeAvatarState(source = {}) {
   const resolvedPhoto = source.photo || source.photoDataUrl || source.avatarPhoto || null;
@@ -55,19 +62,204 @@ const LEGACY_TYPE_TO_FRAME_KEY = {
   art: 'prop_portrait_framed',
 };
 
-function isOutdoorLocation(roomId = '', roomName = '', amenityTag = '', shopTag = '') {
-  const a = String(amenityTag || '').toLowerCase();
-  const s = String(shopTag || '').toLowerCase();
-  const text = `${roomId} ${roomName}`.toLowerCase();
-  return a === 'park'
-    || a === 'garden'
-    || a === 'nature_reserve'
-    || text.includes('park')
-    || text.includes('garden')
-    || text.includes('trail')
-    || text.includes('greenway')
-    || s === 'park';
+const OUTDOOR_TYPES = new Set(['oak_tree', 'tree', 'shrub', 'hedge', 'bench', 'lamppost', 'flowerbed']);
+
+function inferOutdoorType(type, width, height) {
+  const normalized = String(type || '').toLowerCase().trim();
+  if (OUTDOOR_TYPES.has(normalized)) return normalized;
+
+  if (normalized.includes('lamp') || normalized.includes('post')) return 'lamppost';
+  if (normalized.includes('bench') || normalized.includes('seat')) return 'bench';
+  if (normalized.includes('flower') || normalized.includes('bed')) return 'flowerbed';
+  if (normalized.includes('hedge')) return 'hedge';
+  if (normalized.includes('shrub') || normalized.includes('bush')) return 'shrub';
+  if (normalized.includes('oak')) return 'oak_tree';
+  if (normalized.includes('tree')) return 'tree';
+
+  // Legacy outdoor entries without type hints can be inferred from dimensions.
+  if (height >= 92 && width <= 42) return 'lamppost';
+  if (height >= 116) return 'oak_tree';
+  if (height >= 82) return 'tree';
+  if (width >= 98 && height <= 52) return 'hedge';
+  if (width >= 82 && height <= 46) return 'bench';
+  if (width >= 72 && height <= 50) return 'flowerbed';
+  return 'shrub';
 }
+
+function getOutdoorSpriteMeta(type = '') {
+  const normalized = String(type || '').toLowerCase();
+  switch (normalized) {
+    case 'oak_tree':
+      return { textureKey: 'tree-oak', targetHeight: 126, rotation: 0 };
+    case 'tree':
+      return { textureKey: 'tree-oak', targetHeight: 92, rotation: 0 };
+    case 'shrub':
+      return { textureKey: 'tree-oak', targetHeight: 52, rotation: 0 };
+    case 'hedge':
+      return { textureKey: 'tree-oak', targetHeight: 44, rotation: 0 };
+    case 'bench':
+      return { textureKey: 'bench', targetHeight: 64, rotation: 0 };
+    case 'lamppost':
+      return { textureKey: 'lamppost', targetHeight: 106, rotation: 0 };
+    case 'flowerbed':
+      return { textureKey: 'tree-cherry', targetHeight: 38, rotation: 0 };
+    default:
+      return { textureKey: 'tree-oak', targetHeight: 72, rotation: 0 };
+  }
+}
+
+function getLibraryNpcResponse(npcName, message) {
+  const text = String(message || '').toLowerCase();
+  const asksForSuggestion = text.includes('suggest') || text.includes('recommend') || text.includes('what should i read');
+  const asksForFavoriteSection = text.includes('favorite section') || text.includes('favourite section') || text.includes('best section');
+  const asksForFavoriteBook = text.includes('favorite book') || text.includes('favourite book') || text.includes('best book');
+  const mentionsReading = text.includes('reading') || text.includes('read');
+  const mentionsAllNighter = text.includes('all nighter') || text.includes('all-nighter') || text.includes('study all night') || text.includes('staying up');
+  const mentionsStudyHelp = text.includes('study') || text.includes('exam') || text.includes('test') || text.includes('assignment') || text.includes('paper');
+  const lovesReading = text.includes('love reading') || text.includes('love books') || text.includes('reader');
+  const isGreeting = /^(hi|hello|hey|howdy|good morning|good afternoon|good evening)[!.?\s]*$/i.test(text.trim());
+  if (isGreeting) {
+    return 'Hello. What are you in the mood to read today: a favorite genre, a new recommendation, or something for a class?';
+  }
+  if (mentionsAllNighter) {
+    return 'An all-nighter is rough. Pick your three most important tasks, take a five-minute break each hour, drink water, and protect some sleep before anything high-stakes.';
+  }
+  if (asksForFavoriteBook) {
+    const favorites = {
+      'Archives Guide': 'My favorite book is A Pattern Language by Christopher Alexander. It makes you notice the stories hidden in ordinary places.',
+      'Research Mentor': 'I keep returning to The Demon-Haunted World by Carl Sagan. It is a warm guide to asking better questions.',
+      'Reference Desk': 'My favorite book is The Left Hand of Darkness by Ursula K. Le Guin. It is thoughtful, strange, and rewards a second read.',
+      Librarian: 'My favorite book is The City and the City by China Mieville. It is part mystery, part world-building puzzle, and very hard to forget.',
+    };
+    return favorites[npcName] || 'My favorite book changes with the season, but I always admire a story that sends someone back to the shelves for more.';
+  }
+  if (lovesReading) {
+    return 'That is excellent company to keep. What kind of book makes you forget to check the time?';
+  }
+  if (mentionsStudyHelp) {
+    return 'Try a 25-minute focused block, then summarize what you learned in your own words. A short retrieval quiz beats rereading every time.';
+  }
+  if (npcName === 'Archives Guide') {
+    if (text.includes('map') || text.includes('history')) return 'The local history maps are in the Archives & Special Collections stacks. Handle them gently.';
+    if (asksForFavoriteSection) return 'My favorite section is local history. A city map beside a first-person account can make the past feel wonderfully close.';
+    if (asksForSuggestion) return 'For a remarkable afternoon, try a local history collection, then follow its footnotes into the rare-book catalog.';
+    return 'Archives holds rare books, manuscripts, and Houston history. What would you like to explore?';
+  }
+  if (npcName === 'Research Mentor') {
+    if (text.includes('source') || text.includes('cite')) return 'Start with the library catalog, then check peer-reviewed databases. Save each citation as you go.';
+    if (asksForSuggestion) return 'Choose one book that gives the big picture, then one recent article that challenges it. That is a strong research pairing.';
+    if (mentionsReading) return 'For deep reading, begin with the introduction and conclusion, then follow the evidence that catches your attention.';
+    return 'I can help you shape a research question, find sources, or build a citation plan.';
+  }
+  if (npcName === 'Reference Desk') {
+    if (text.includes('book') || text.includes('find')) return 'Tell me the title, author, or subject and I will point you toward the right shelf or catalog search.';
+    if (asksForFavoriteSection) return 'I am partial to the science shelves, but a good library section is whichever one makes you lose track of time.';
+    if (asksForSuggestion) return 'Tell me a subject you enjoy and I can suggest a shelf. Fiction, history, science, and the arts are all nearby.';
+    return 'Welcome to reference. Need help finding a book, article, or database?';
+  }
+  if (asksForFavoriteSection) return 'My favorite section changes often, but today I would pick the arts shelves. They are full of unexpected detours.';
+  if (asksForSuggestion) return 'Try a book from a section you do not usually visit, then choose another from the shelf right beside it.';
+  if (mentionsReading) return 'A good reading session needs a comfortable chair, a little time, and permission to follow your curiosity.';
+  if (text.includes('book') || text.includes('borrow') || text.includes('checkout')) return 'You can check out books at the circulation desk. Keep your account details handy.';
+  return 'Tell me what you are looking for: a genre recommendation, a favorite book, help finding a title, or a study plan.';
+}
+
+function getParkNpcResponse(npcName, message) {
+  const text = String(message || '').toLowerCase();
+  const isGreeting = /^(hi|hello|hey|howdy|good morning|good afternoon|good evening)[!.?\s]*$/i.test(text.trim());
+  if (text.includes('how are you') || text.includes('how r you')) return 'I am doing well, thanks. It is nice to be out in the park.';
+  if (text.includes('feeding the ducks') || text.includes('feed the ducks')) return 'That sounds peaceful. Just be sure to use duck-friendly food instead of bread.';
+  if (text.includes('beautiful day') || text.includes('day is beautiful') || text.includes('nice day')) return 'It really is. The trees make the park feel especially calm today.';
+  if (text.includes('raining') || text.includes('rainy') || text.includes('rain today')) return 'Rain changes the whole park. The paths can get slick, but the trees and pond look lovely afterward.';
+  if (text.includes('jog') || text.includes('run') || text.includes('exercise')) return 'The outer path is great for a relaxed jog. Start easy, bring water, and leave some energy for the walk home.';
+  if (text.includes('sun') || text.includes('weather') || text.includes('outside')) return 'A little time in the sun can be lovely. A shady bench and sunscreen make it much easier to enjoy.';
+  if (text.includes('playground') || text.includes('play')) return 'The playground is busiest after school. It is a cheerful spot, and the nearby benches make it easy to keep an eye on the action.';
+  if (text.includes('duck') || text.includes('pond') || text.includes('bird')) return 'The pond is peaceful for birdwatching. Please skip bread for ducks; their natural food is much better for them.';
+  if (text.includes('picnic') || text.includes('eat') || text.includes('lunch')) return 'There are good picnic spots under the trees. Pack out what you bring in so the park stays welcoming.';
+  if (npcName === 'Morning Jogger') return isGreeting ? 'Hey there. I am just finishing a loop. Are you out for a walk or a jog?' : 'I like an early loop before the park gets busy. The tree-lined stretch is my favorite part.';
+  if (npcName === 'Pond Watcher') return isGreeting ? 'Hello. The pond is especially calm this morning. Have you spotted any birds yet?' : 'I come here to slow down and watch the water for a while. It is a fine place to reset.';
+  return isGreeting ? 'Hi. It is a great day to be outside. Are you exploring the paths, the playground, or the pond?' : 'This park has a little room for every kind of afternoon: a walk, a run, a picnic, or simply some quiet.';
+}
+
+function getVenueNpcResponse(layoutId, message) {
+  const text = String(message || '').toLowerCase();
+  const isGreeting = /^(hi|hello|hey|howdy|good morning|good afternoon|good evening)[!.?\s]*$/i.test(text.trim());
+  const theme = String(layoutId || '').replace(/^auto-/, '').replace(/-poly.*$/, '');
+  const responses = {
+    cafe: text.includes('study') ? 'This is a good study spot. Coffee first, then the to-do list.' : text.includes('drink') || text.includes('coffee') ? 'What are you drinking today? The pastry case is tempting too.' : 'The window seats fill up fast, but there is usually a quiet corner nearby.',
+    restaurant: text.includes('order') || text.includes('food') ? 'Have you decided what to order? I hear the special is good today.' : text.includes('dessert') ? 'Save room for dessert.' : 'The best conversations happen over a meal.',
+    shop: text.includes('find') || text.includes('looking') ? 'Looking for anything in particular? There are some good finds near the back.' : text.includes('opinion') ? 'Need a second opinion? I like browsing without a plan.' : 'Take your time. The best finds are often unexpected.',
+    gym: text.includes('leg') ? 'Leg day? Start light and focus on form.' : text.includes('workout') || text.includes('train') ? 'What are you training today? A warm-up makes the rest feel better.' : 'You have got this. Remember to cool down afterward.',
+    theater: text.includes('movie') || text.includes('see') ? 'What are you here to see? The trailers start soon.' : text.includes('popcorn') ? 'Popcorn is practically required.' : 'I love the quiet before a movie starts.',
+    bar: text.includes('music') ? 'Good music tonight.' : text.includes('friend') || text.includes('meeting') ? 'Are you meeting friends? There is a seat open nearby.' : 'How is your night going? Take your time getting home.',
+    pharmacy: text.includes('medicine') || text.includes('prescription') ? 'The pharmacist can help with medication questions. For anything urgent, please seek professional care.' : 'I hope you find what you need. Take care of yourself.',
+    default: text.includes('nearby') || text.includes('place') ? 'Have you checked out the nearby spots?' : 'It is nice seeing the neighborhood out and about.',
+  };
+  return isGreeting ? 'Hi. What brings you by today?' : (responses[theme] || responses.default);
+}
+
+function getNpcOpeningResponse(layoutId, isOutdoorLocation) {
+  if (isOutdoorLocation) return 'Hello! Enjoying the park?';
+  const layoutName = String(layoutId || '');
+  const theme = layoutName.includes('library') ? 'library' : layoutName.replace(/^auto-/, '').replace(/-poly.*$/, '');
+  if (theme === 'library') return 'Hello! Want a book suggestion?';
+  if (theme === 'cafe') return 'Hello! Getting coffee or finding a study spot?';
+  if (theme === 'restaurant') return 'Hello! Have you decided what to order?';
+  if (theme === 'shop') return 'Hello! Looking for anything in particular?';
+  if (theme === 'gym') return 'Hello! What are you training today?';
+  if (theme === 'theater') return 'Hello! What are you here to see?';
+  if (theme === 'bar') return 'Hello! How is your night going?';
+  if (theme === 'pharmacy') return 'Hello! I hope you find what you need.';
+  return 'Hello! What brings you by today?';
+}
+
+function getRequestedBookGenre(message) {
+  const text = String(message || '').toLowerCase();
+  if (text.includes('philosophy') || text.includes('philosophical')) return 'philosophy';
+  if (text.includes('nonfiction') || text.includes('non-fiction') || text.includes('non fiction')) return 'nonfiction';
+  if (text.includes('manga') || text.includes('anime')) return 'manga';
+  if (text.includes('humor') || text.includes('funny') || text.includes('comedy') || text.includes('comedic')) return 'humor';
+  if (text.includes('science fiction') || text.includes('sci-fi') || text.includes('scifi') || text.includes('space opera')) return 'science-fiction';
+  return null;
+}
+
+async function getLiveBookRecommendation(genre) {
+  const response = await fetch(`${SOCKET_SERVER_URL}/api/library/recommendation?genre=${encodeURIComponent(genre)}`);
+  if (!response.ok) throw new Error('Book lookup unavailable.');
+  return response.json();
+}
+
+function varyNpcResponse(response, replyNumber, isOutdoorLocation) {
+  const followUps = isOutdoorLocation ? [
+    'It is good to take a moment and enjoy it.',
+    'There is always something new to notice outside.',
+    'The park feels different every time you visit.',
+    'A slow walk is never a bad idea.',
+    'The fresh air helps put things in perspective.',
+    'I hope you get to enjoy the rest of your day here.',
+    'The trees make a fine place to pause.',
+    'Take your time and enjoy the path ahead.',
+    'It is a nice place to reset for a few minutes.',
+    'There is no rush in a good park afternoon.',
+    'I am glad you stopped to chat.',
+    'The next turn on the path might be the best one.',
+  ] : [
+    'Want another direction to explore?',
+    'I can offer a different shelf if that is not your style.',
+    'The catalog can help you find a copy that is available today.',
+    'A neighboring call number often leads to a good surprise.',
+    'Tell me what mood you are in and I will narrow it down.',
+    'There is always another excellent path through the stacks.',
+    'A different corner of this place may have exactly what you need.',
+    'It is worth taking a little time to look around.',
+    'The best option is often the one you did not expect.',
+    'Ask again with a detail and I can be more specific.',
+    'There is always room for one more good idea.',
+    'I am glad you asked.',
+  ];
+  return `${response} ${followUps[replyNumber % followUps.length]}`;
+}
+
 
 export class VillageScene extends Phaser.Scene {
   constructor() { super({ key: 'VillageScene' }); }
@@ -83,33 +275,63 @@ export class VillageScene extends Phaser.Scene {
     this.amenityTag = d.amenityTag ?? '';
     this.shopTag    = d.shopTag    ?? '';
     this.roomShape  = d.roomShape  ?? null;
+    this.roomData   = d.roomData   ?? null;
+    this.explicitLayout = d.explicitLayout ?? null;
     this.profile    = d.profile    ?? {};
-    this.preferredCameraMode = ['follow', 'wide-follow', 'overview'].includes(d.preferredCameraMode)
+    this.preferredCameraMode = ['ultra-close-follow', 'close-follow', 'follow', 'wide-follow', 'overview'].includes(d.preferredCameraMode)
       ? d.preferredCameraMode
       : null;
     this.avatarState = normalizeAvatarState(d.profile?.profile || {});
     this.onEditorChange = d.onEditorChange ?? (() => {});
     this.onNearbyChange = d.onNearbyChange ?? (() => {});
+    this.onNearbyNpcChange = d.onNearbyNpcChange ?? (() => {});
     this.onRoomPopulationChange = d.onRoomPopulationChange ?? (() => {});
     this.onChatMessage = d.onChatMessage ?? (() => {});
     this.onSystemNotice = d.onSystemNotice ?? (() => {});
+    this.onFloorStatusChange = d.onFloorStatusChange ?? (() => {});
+    this.npcReplyCounts = new Map();
+  }
+
+  _emitFloorStatus() {
+    const floors = Array.isArray(this.layout?.floors) ? this.layout.floors.length : 1;
+    const floorIndex = Number.isFinite(this.currentFloor) ? this.currentFloor : 0;
+    const layoutId = String(this.layout?.id || '');
+    const stairScaffoldActive = layoutId.includes('-2f');
+    this.onFloorStatusChange({
+      currentFloor: floorIndex,
+      totalFloors: Math.max(1, floors),
+      stairScaffoldActive,
+      layoutId,
+    });
   }
 
   preload() {
     preloadAvatarTextures(this);
     this.load.atlas('props', '/assets/props/props.png', '/assets/props/props.json');
+    this.load.image('bench', '/assets/props/bench.png');
+    this.load.image('lamppost', '/assets/props/lampost.png');
+    this.load.image('tree-oak', '/assets/props/tree-oak.png');
+    this.load.image('tree-cherry', '/assets/props/tree-cherry.png');
   }
 
   create() {
     const W = this.scale.width, H = this.scale.height;
 
+    // Ensure cleanup runs whenever Phaser stops or destroys this scene.
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.shutdown, this);
+    this.events.once(Phaser.Scenes.Events.DESTROY, this.shutdown, this);
+
     // Pick and draw layout
-    this.layout = pickLayout(this.roomId, this.roomName, this.amenityTag, this.shopTag, this.roomShape);
+    this.layout = this.explicitLayout || pickLayout(this.roomId, this.roomName, this.amenityTag, this.shopTag, this.roomShape, this.roomData);
     console.log('[VillageScene] room:', this.roomId, '| name:', this.roomName, '| layout:', this.layout.id);
     this.roomLayout = new RoomLayout(this, this.layout);
     this.currentFloor = 0;
     this.roomLayout.drawFloor(0);
+    this._emitFloorStatus();
     this.showCollisionDebug = false;
+    this.showFootprintDebug = false;
+    this.roomLayout.setCollisionDebug(false);
+    this.roomLayout.setFootprintDebug(false);
     this.cameraMode = this.preferredCameraMode || 'follow';
     this.isOutdoorLocation = isOutdoorLocation(this.roomId, this.roomName, this.amenityTag, this.shopTag);
 
@@ -121,8 +343,11 @@ export class VillageScene extends Phaser.Scene {
     // Render any custom zones already saved
     this._propSprites = [];
     this._renderSavedProps();
+    this.staticNpcs = [];
+    this._npcRenderVersion = 0;
+    this._renderStaticNpcs();
 
-    const spawn = this.layout.spawnF1 || { x: W / 2, y: H / 2 };
+    const spawn = this._resolveInitialSpawn();
 
     // Local player
     const displayName = this.profile?.profile?.characterName || this.profile?.mode || 'Traveler';
@@ -143,20 +368,10 @@ export class VillageScene extends Phaser.Scene {
       },
     };
     this.pendingRemoteSpawns = new Set();
-    createAvatarEntity(this, spawn.x, spawn.y, {
-      ...this.avatarState,
-      name: firstName,
-      isLocal: true,
-    }).then((localAvatar) => {
-      if (!this.player || !localAvatar) return;
-      this.player.avatar = localAvatar;
-      if (this.avatarState.photo) localAvatar.attachPhoto(this, this.avatarState.photo);
-      if (this.cameraMode !== 'overview') {
-        this.cameras.main.startFollow(localAvatar, true, 0.1, 0.1);
-      }
-      this.player.sync();
-      this._applyCameraMode();
-    });
+    this._localSpawnName = firstName;
+    this._localSpawnPoint = { x: spawn.x, y: spawn.y };
+    this._localRespawnPending = false;
+    this._spawnLocalAvatar(firstName, spawn, 0);
 
     // Coffee cup overhead (shown near café)
     this.coffeeCup = this.add.text(0, 0, '☕', { fontSize: '18px' })
@@ -168,6 +383,7 @@ export class VillageScene extends Phaser.Scene {
     // Remote players map: socketId → Actor
     this.remotePlayers = new Map();
     this._nearbyCount = -1;
+    this._nearbyNpcId = null;
 
     // Walk animation state
     this.dir = 'front';
@@ -178,8 +394,12 @@ export class VillageScene extends Phaser.Scene {
 
     // Camera
     this.cameras.main.setZoom(FOLLOW_ZOOM);
-    const { FLOOR_W, FLOOR_H } = { FLOOR_W: 1600, FLOOR_H: 900 };
-    this.cameras.main.setBounds(0, 0, FLOOR_W, FLOOR_H);
+    const layoutBounds = this.layout?.width && this.layout?.height
+      ? { x: 0, y: 0, w: this.layout.width, h: this.layout.height }
+      : (this.roomLayout?.getBoundaryBounds?.() || { x: 0, y: 0, w: 1600, h: 900 });
+    const cameraW = Math.max(1600, Math.ceil(layoutBounds.x + layoutBounds.w));
+    const cameraH = Math.max(900, Math.ceil(layoutBounds.y + layoutBounds.h));
+    this.cameras.main.setBounds(0, 0, cameraW, cameraH);
     this._emitRoomPopulation();
 
     // Input
@@ -211,6 +431,11 @@ export class VillageScene extends Phaser.Scene {
 
       if (e.code === COLLISION_DEBUG_KEY_CODE) {
         this.toggleCollisionDebug();
+        return;
+      }
+
+      if (e.code === FOOTPRINT_DEBUG_KEY_CODE) {
+        this.toggleFootprintDebug();
         return;
       }
 
@@ -252,9 +477,11 @@ export class VillageScene extends Phaser.Scene {
     // Connect Socket.IO
     this._connectSocket();
     this.onNearbyChange(0);
+    this.onNearbyNpcChange(null);
   }
 
   toggleEditor() {
+    this.target = null;
     this.roomEditor?.toggle();
     this.onEditorChange(!!this.roomEditor?.isActive);
   }
@@ -266,13 +493,24 @@ export class VillageScene extends Phaser.Scene {
     return this.showCollisionDebug;
   }
 
+  toggleFootprintDebug() {
+    this.showFootprintDebug = !this.showFootprintDebug;
+    this.roomLayout?.setFootprintDebug(this.showFootprintDebug);
+    this.onSystemNotice(this.showFootprintDebug ? 'Footprint debug ON' : 'Footprint debug OFF');
+    return this.showFootprintDebug;
+  }
+
   toggleCameraMode() {
-    const modes = ['follow', 'wide-follow', 'overview'];
+    const modes = ['ultra-close-follow', 'close-follow', 'follow', 'wide-follow', 'overview'];
     const currentIndex = Math.max(0, modes.indexOf(this.cameraMode));
     this.cameraMode = modes[(currentIndex + 1) % modes.length];
     this._applyCameraMode();
     if (this.cameraMode === 'overview') {
       this.onSystemNotice('Overview camera ON');
+    } else if (this.cameraMode === 'ultra-close-follow') {
+      this.onSystemNotice('Ultra close camera ON');
+    } else if (this.cameraMode === 'close-follow') {
+      this.onSystemNotice('Close camera ON');
     } else if (this.cameraMode === 'wide-follow') {
       this.onSystemNotice('Wide follow camera ON');
     } else {
@@ -295,7 +533,14 @@ export class VillageScene extends Phaser.Scene {
       return;
     }
 
-    cam.setZoom(this.cameraMode === 'wide-follow' ? WIDE_FOLLOW_ZOOM : FOLLOW_ZOOM);
+    const followZoom = this.cameraMode === 'ultra-close-follow'
+      ? ULTRA_CLOSE_FOLLOW_ZOOM
+      : this.cameraMode === 'close-follow'
+      ? CLOSE_FOLLOW_ZOOM
+      : this.cameraMode === 'wide-follow'
+        ? WIDE_FOLLOW_ZOOM
+        : FOLLOW_ZOOM;
+    cam.setZoom(followZoom);
     if (this.player?.avatar) {
       cam.startFollow(this.player.avatar, true, 0.1, 0.1);
     }
@@ -304,6 +549,8 @@ export class VillageScene extends Phaser.Scene {
 
   _currentAvatarScale() {
     if (this.cameraMode === 'overview') return OVERVIEW_AVATAR_SCALE;
+    if (this.cameraMode === 'ultra-close-follow') return ULTRA_CLOSE_AVATAR_SCALE;
+    if (this.cameraMode === 'close-follow') return CLOSE_AVATAR_SCALE;
     if (this.cameraMode === 'wide-follow') return WIDE_AVATAR_SCALE;
     return FOLLOW_AVATAR_SCALE;
   }
@@ -322,8 +569,103 @@ export class VillageScene extends Phaser.Scene {
     });
   }
 
+  _resolveInitialSpawn() {
+    const defaultSpawn = { x: this.scale.width / 2, y: this.scale.height / 2 };
+    const roomSpawn = this.layout?.spawnF1 || defaultSpawn;
+    const boundaryBounds = this.roomLayout?.getBoundaryBounds?.() || null;
+
+    // Outdoor rooms are large and irregular; spawn near the boundary center so
+    // the local player reliably starts inside the visible area.
+    const preferredSpawn = this.isOutdoorLocation && boundaryBounds
+      ? {
+          x: boundaryBounds.x + boundaryBounds.w / 2,
+          y: boundaryBounds.y + boundaryBounds.h / 2,
+        }
+      : roomSpawn;
+
+    return this.roomLayout?.resolveSafeSpawnPoint?.([
+      preferredSpawn,
+      roomSpawn,
+      boundaryBounds
+        ? { x: boundaryBounds.x + boundaryBounds.w * 0.5, y: boundaryBounds.y + boundaryBounds.h * 0.72 }
+        : null,
+      defaultSpawn,
+    ], 22)
+      || this.roomLayout?.clampPointToRoom(preferredSpawn.x, preferredSpawn.y, 24)
+      || preferredSpawn
+      || defaultSpawn;
+  }
+
   _emitRoomPopulation() {
     this.onRoomPopulationChange(Math.max(1, 1 + this.remotePlayers.size));
+  }
+
+  _refreshDecorationsView() {
+    if (this._isShuttingDown || !this.sys?.isActive?.() || !this.roomLayout) return;
+    this.roomEditor?.setZones(this.customZones);
+    this.roomLayout?.drawFloor(this.currentFloor);
+    this.roomLayout?.setDynamicSolids(this.customZones);
+    this.roomLayout?.setCollisionDebug(this.showCollisionDebug);
+    this.roomLayout?.setFootprintDebug(this.showFootprintDebug);
+    this._renderSavedProps();
+  }
+
+  async _spawnLocalAvatar(firstName, spawn, attempt = 0) {
+    if (!this.player) return;
+    this._localRespawnPending = true;
+
+    try {
+      const localAvatar = await createAvatarEntity(this, spawn.x, spawn.y, {
+        ...this.avatarState,
+        name: firstName,
+        isLocal: true,
+      });
+
+      if (!this.player) {
+        localAvatar?.destroy?.();
+        return;
+      }
+
+      if (localAvatar) {
+        this.player.avatar = localAvatar;
+        if (this.avatarState.photo) localAvatar.attachPhoto(this, this.avatarState.photo);
+        this.cameras.main.centerOn(spawn.x, spawn.y);
+        if (this.cameraMode !== 'overview') {
+          this.cameras.main.startFollow(localAvatar, true, 0.1, 0.1);
+        }
+        this.player.sync();
+        this._applyCameraMode();
+        this._localRespawnPending = false;
+        return;
+      }
+    } catch (error) {
+      console.warn('[VillageScene] local avatar spawn failed', error);
+    }
+
+    if (attempt < LOCAL_AVATAR_SPAWN_RETRIES) {
+      this.time.delayedCall(120 * (attempt + 1), () => {
+        this._spawnLocalAvatar(firstName, spawn, attempt + 1);
+      });
+      return;
+    }
+
+    // Last-resort visible marker so the local player is never invisible.
+    const fallback = this.add.circle(spawn.x, spawn.y, 14, 0xef4444, 0.95)
+      .setStrokeStyle(2, 0xffffff, 0.95)
+      .setDepth(DEPTH.ACTOR_MIN + Math.round(spawn.y));
+    fallback.setMovementState = () => {};
+    fallback.tick = () => {};
+    fallback.syncLabel = () => {};
+    fallback.attachPhoto = () => {};
+    this.player.avatar = fallback;
+    this.cameras.main.centerOn(spawn.x, spawn.y);
+    if (this.cameraMode !== 'overview') {
+      this.cameras.main.startFollow(fallback, true, 0.1, 0.1);
+    }
+    this.player.sync();
+    this._applyCameraMode();
+    this.onSystemNotice('Avatar loader stalled. Showing fallback marker.');
+    this._localRespawnPending = false;
   }
 
   _remoteUserKey(player, socketId) {
@@ -485,9 +827,7 @@ export class VillageScene extends Phaser.Scene {
         const zone = this._normalizeDecoration(item);
         if (zone) this.customZones.push(zone);
       });
-      this.roomLayout?.setDynamicSolids(this.customZones);
-      this.roomEditor?.setZones(this.customZones);
-      this._renderSavedProps();
+      this._refreshDecorationsView();
     });
 
     socket.on('decoration_placed', (item) => {
@@ -495,17 +835,13 @@ export class VillageScene extends Phaser.Scene {
       if (!zone) return;
       if (this.customZones.some(z => z.id === zone.id)) return;
       this.customZones.push(zone);
-      this.roomLayout?.setDynamicSolids(this.customZones);
-      this.roomEditor?.setZones(this.customZones);
-      this._renderSavedProps();
+      this._refreshDecorationsView();
     });
 
     socket.on('decoration_removed', ({ id }) => {
       if (!id) return;
       this.customZones = this.customZones.filter(z => z.id !== id);
-      this.roomLayout?.setDynamicSolids(this.customZones);
-      this.roomEditor?.setZones(this.customZones);
-      this._renderSavedProps();
+      this._refreshDecorationsView();
     });
 
     socket.on('decoration_error', ({ message }) => {
@@ -532,9 +868,54 @@ export class VillageScene extends Phaser.Scene {
     });
   }
 
-  sendChatMessage(message) {
+  sendChatMessage(message, recipient = 'players') {
     const text = (message || '').trim();
-    if (!text || !this.socket?.connected) return;
+    if (!text) return;
+    const nearbyNpc = this._getNearbyStaticNpc();
+    if (recipient === 'npc' && nearbyNpc) {
+      const npc = this.staticNpcs.find((entry) => entry.name === nearbyNpc.id);
+      if (npc) {
+        npc.target = null;
+        npc.pausedUntil = this.time.now + 15000;
+      }
+      const replyNumber = this.npcReplyCounts.get(nearbyNpc.id) || 0;
+      this.npcReplyCounts.set(nearbyNpc.id, replyNumber + 1);
+      const requestedGenre = getRequestedBookGenre(text);
+      this.onChatMessage({
+        senderName: 'You', message: text, isSelf: true,
+        distance: Math.round(nearbyNpc.distance), timestamp: Date.now(),
+      });
+      this.time.delayedCall(350, async () => {
+        if (this._isShuttingDown) return;
+        const isLibrary = this.layout?.id === 'md-anderson-library' || String(this.layout?.id || '').includes('library');
+        const isGreeting = /^(hi|hello|hey|howdy|good morning|good afternoon|good evening)[!.?\s]*$/i.test(text);
+        let response = replyNumber === 0 && isGreeting
+          ? getNpcOpeningResponse(this.layout?.id, this.isOutdoorLocation)
+          : this.isOutdoorLocation
+            ? getParkNpcResponse(nearbyNpc.name, text)
+            : isLibrary
+              ? getLibraryNpcResponse(nearbyNpc.name, text)
+              : getVenueNpcResponse(this.layout?.id, text);
+        if (requestedGenre) {
+          try {
+            const book = await getLiveBookRecommendation(requestedGenre);
+            response = `For ${requestedGenre.replace(/-/g, ' ')}, try ${book.title} by ${book.author}. ${book.signal} Source: ${book.source}.`;
+          } catch {
+            response = `${response} I could not reach the current catalog, so this is general guidance rather than a live ranking.`;
+          }
+        }
+        if (this._isShuttingDown) return;
+        this.onChatMessage({
+          senderName: nearbyNpc.name,
+          message: replyNumber === 0 && isGreeting ? response : varyNpcResponse(response, replyNumber, this.isOutdoorLocation),
+          isSelf: false,
+          distance: Math.round(nearbyNpc.distance),
+          timestamp: Date.now(),
+        });
+      });
+      return;
+    }
+    if (!this.socket?.connected) return;
     this.socket.emit('send_message', {
       roomId: this.roomId,
       message: text,
@@ -545,7 +926,13 @@ export class VillageScene extends Phaser.Scene {
     if (!this.socket?.connected) return false;
     const outdoorPlacement = Boolean(this.isOutdoorLocation);
     const inside = outdoorPlacement
-      ? this.roomLayout?.isPointInsideRoom(zone.x, zone.y, 4) ?? true
+      ? this.roomLayout?.isRectFullyInsideRoom(
+          zone.x,
+          zone.y,
+          zone.w || 60,
+          zone.h || 60,
+          2,
+        ) ?? true
       : this.roomLayout?.isRectFullyInsideRoom(
           zone.x,
           zone.y,
@@ -583,6 +970,8 @@ export class VillageScene extends Phaser.Scene {
         y: zone.y,
         w: zone.w || 60,
         h: zone.h || 60,
+        label: zone.label || '',
+        renderAsZone: zone.renderAsZone || null,
       },
     });
     return true;
@@ -620,19 +1009,38 @@ export class VillageScene extends Phaser.Scene {
     const isInside = this.roomLayout?.isRectFullyInsideRoom(clamped.x, clamped.y, width, height, 6) ?? true;
     if (!isInside) return null;
 
-    const frameKey = item.frameKey || LEGACY_TYPE_TO_FRAME_KEY[item.type] || null;
-    const outdoorTypes = new Set(['tree', 'shrub', 'bench', 'lamppost', 'flowerbed']);
-    if (frameKey && !PROP_DEFS[frameKey] && !outdoorTypes.has(item.type)) return null;
-    if (!frameKey && !outdoorTypes.has(item.type)) return null;
+    let resolvedType = item.type || '';
+    let frameKey = item.frameKey || LEGACY_TYPE_TO_FRAME_KEY[resolvedType] || null;
+
+    if (this.isOutdoorLocation) {
+      resolvedType = inferOutdoorType(resolvedType || frameKey, width, height);
+      const outdoorFrameMap = {
+        oak_tree: 'prop_plant_potted',
+        tree: 'prop_plant_potted',
+        shrub: 'prop_plant_potted',
+        hedge: 'prop_plant_potted',
+        bench: 'prop_chair_wooden',
+        lamppost: 'prop_lamp_floor',
+        flowerbed: 'prop_rug_rolled',
+      };
+      if (!frameKey || !PROP_DEFS[frameKey]) {
+        frameKey = outdoorFrameMap[resolvedType] || frameKey || null;
+      }
+    }
+
+    if (frameKey && !PROP_DEFS[frameKey] && !OUTDOOR_TYPES.has(resolvedType)) return null;
+    if (!frameKey && !OUTDOOR_TYPES.has(resolvedType)) return null;
 
     return {
       id: item.id,
       frameKey,
-      type: item.type || frameKey,
+      type: resolvedType || frameKey,
       x: clamped.x,
       y: clamped.y,
       w: width,
       h: height,
+      label: item.label || '',
+      renderAsZone: item.renderAsZone || null,
       placedBy: item.placedBy,
     };
   }
@@ -706,7 +1114,25 @@ export class VillageScene extends Phaser.Scene {
   }
 
   update(_t, delta) {
-    if (!this.player?.avatar) return;
+    if (this.roomEditor?.isActive) {
+      this.target = null;
+      this.player?.avatar?.setMovementState?.({
+        moving: false,
+        direction: this.dir || 'front',
+        facingLeft: Boolean(this.player?.facingLeft),
+      });
+      return;
+    }
+
+    const localAvatar = this.player?.avatar;
+    if (!localAvatar || localAvatar.active === false) {
+      if (!this._localRespawnPending && this.player && this._localSpawnPoint) {
+        this._spawnLocalAvatar(this._localSpawnName || 'You', this._localSpawnPoint, 0);
+      }
+      return;
+    }
+    if (localAvatar.visible === false) localAvatar.setVisible?.(true);
+    if (typeof localAvatar.alpha === 'number' && localAvatar.alpha < 1) localAvatar.setAlpha?.(1);
 
     const step = (SPEED * delta) / 1000;
     let dx = 0, dy = 0;
@@ -754,6 +1180,18 @@ export class VillageScene extends Phaser.Scene {
         this.player.gx = solidResolved.x;
         this.player.gy = solidResolved.y;
       }
+
+      // Final safety pass: keep the local avatar inside room boundaries even
+      // after collision resolution nudges, across all room shapes.
+      const safePoint = this.roomLayout?.resolveSafeSpawnPoint?.([
+        { x: this.player.gx, y: this.player.gy },
+        { x: prevX, y: prevY },
+      ], 18);
+      if (safePoint) {
+        this.player.gx = safePoint.x;
+        this.player.gy = safePoint.y;
+      }
+
       if (Math.abs(dy) >= Math.abs(dx)) {
         this.dir = dy > 0 ? 'front' : 'back';
       } else {
@@ -780,6 +1218,7 @@ export class VillageScene extends Phaser.Scene {
       });
       remotePlayer.avatar.tick(delta);
     });
+    this._updateStaticNpcs(delta);
 
     // Nearby count for chat gating UI
     let nearbyCount = 0;
@@ -791,6 +1230,11 @@ export class VillageScene extends Phaser.Scene {
     if (nearbyCount !== this._nearbyCount) {
       this._nearbyCount = nearbyCount;
       this.onNearbyChange(nearbyCount);
+    }
+    const nearbyNpc = this._getNearbyStaticNpc();
+    if (nearbyNpc?.id !== this._nearbyNpcId) {
+      this._nearbyNpcId = nearbyNpc?.id || null;
+      this.onNearbyNpcChange(nearbyNpc);
     }
 
     // Coffee cup near café
@@ -831,31 +1275,160 @@ export class VillageScene extends Phaser.Scene {
     this._propSprites.forEach(p => p.destroy());
     this._propSprites = [];
     if (!this.textures.exists('props')) return;
-    (this.customZones || []).forEach(z => {
-      if (z.frameKey) {
-        this._propSprites.push(new Prop(this, z.x, z.y, z.frameKey));
+    const layoutOutdoorZones = this.isOutdoorLocation
+      ? (this.layout?.floors?.[this.currentFloor]?.zones || []).filter((zone) => OUTDOOR_TYPES.has(zone.type))
+      : [];
+    [...layoutOutdoorZones, ...(this.customZones || [])].forEach(z => {
+      if (z.renderAsZone) return;
+      if (!z.frameKey && !OUTDOOR_TYPES.has(z.type)) return;
+      const meta = this.isOutdoorLocation ? getOutdoorSpriteMeta(z.type || z.frameKey) : null;
+      const frameKey = this.isOutdoorLocation ? (z.type || z.frameKey) : z.frameKey;
+      this._propSprites.push(new Prop(this, z.x, z.y, frameKey, {
+        textureKey: meta?.textureKey || 'props',
+        targetHeight: meta?.targetHeight,
+        displaySize: meta?.displaySize || undefined,
+        rotation: meta?.rotation,
+      }));
+    });
+  }
+
+  _renderStaticNpcs() {
+    this._npcRenderVersion += 1;
+    const renderVersion = this._npcRenderVersion;
+    this.staticNpcs.forEach((npc) => npc.destroy?.());
+    this.staticNpcs = [];
+
+    const employees = this.layout?.floors?.[this.currentFloor]?.zones
+      ?.filter((zone) => zone.type === 'employee') || [];
+
+    employees.forEach(async (employee, index) => {
+      try {
+        const npc = await createAvatarEntity(this, employee.x, employee.y, {
+          avatarModel: index % 2 === 0 ? 'bunny' : 'turtle',
+          bodyType: 'standard',
+          name: employee.label || 'Library Staff',
+          isLocal: false,
+        });
+        if (!npc) return;
+        if (this._isShuttingDown || renderVersion !== this._npcRenderVersion) {
+          npc.destroy();
+          return;
+        }
+        npc.setMovementState?.({ direction: index % 2 === 0 ? 'side' : 'front', facingLeft: index % 2 === 0 });
+        npc.setDepth(DEPTH.ACTOR_MIN + Math.round(employee.y));
+        npc.syncLabel?.();
+        this.staticNpcs.push({
+          avatar: npc,
+          gx: employee.x,
+          gy: employee.y,
+          homeX: employee.x,
+          homeY: employee.y,
+          patrol: Array.isArray(employee.patrol) ? employee.patrol : [],
+          target: null,
+          pausedUntil: 0,
+          nextTargetAt: this.time.now + 800 + Math.random() * 1600,
+          direction: index % 2 === 0 ? 'side' : 'front',
+          facingLeft: index % 2 === 0,
+          destroy: () => npc.destroy(),
+        });
+      } catch (error) {
+        console.warn('[VillageScene] failed to spawn static NPC', error);
       }
     });
   }
 
+  _updateStaticNpcs(delta) {
+    this.staticNpcs.forEach((npc) => {
+      if (!npc.avatar || npc.avatar.active === false) return;
+      const isPaused = this.time.now < npc.pausedUntil;
+      if (!isPaused && !npc.target && this.time.now >= npc.nextTargetAt) {
+        const patrol = npc.patrol
+          .filter(([x, y]) => Math.hypot(x - npc.gx, y - npc.gy) > 24)
+          .sort(() => Math.random() - 0.5);
+        for (const [x, y] of patrol) {
+          if (this.roomLayout?.isPointInsideRoom(x, y, 20)
+            && !this.roomLayout?.collidesWithSolid(x, y, 18)) {
+            npc.target = { x, y };
+            break;
+          }
+        }
+        npc.nextTargetAt = this.time.now + 1200 + Math.random() * 2600;
+      }
+
+      let moving = false;
+      if (!isPaused && npc.target) {
+        const dx = npc.target.x - npc.gx;
+        const dy = npc.target.y - npc.gy;
+        const distance = Math.hypot(dx, dy);
+        if (distance < 4) {
+          npc.target = null;
+        } else {
+          const step = Math.min(distance, (SPEED * 0.38 * delta) / 1000);
+          const nextX = npc.gx + (dx / distance) * step;
+          const nextY = npc.gy + (dy / distance) * step;
+          const resolved = this.roomLayout?.resolveAgainstSolids(npc.gx, npc.gy, nextX, nextY, 16);
+          if (resolved && Math.hypot(resolved.x - npc.gx, resolved.y - npc.gy) < 1) {
+            npc.target = null;
+          } else {
+            npc.gx = resolved?.x ?? nextX;
+            npc.gy = resolved?.y ?? nextY;
+            moving = true;
+            if (Math.abs(dy) >= Math.abs(dx)) npc.direction = dy > 0 ? 'front' : 'back';
+            else {
+              npc.direction = 'side';
+              npc.facingLeft = dx < 0;
+            }
+          }
+        }
+      }
+
+      npc.avatar.setPosition(npc.gx, npc.gy);
+      npc.avatar.setDepth(DEPTH.ACTOR_MIN + Math.round(npc.gy));
+      npc.avatar.setMovementState({ moving, direction: npc.direction, facingLeft: npc.facingLeft });
+      npc.avatar.tick(delta);
+      npc.avatar.syncLabel?.();
+    });
+  }
+
+  _getNearbyStaticNpc() {
+    let closest = null;
+    this.staticNpcs.forEach((npc) => {
+      const distance = Math.hypot(this.player.gx - npc.gx, this.player.gy - npc.gy);
+      if (distance <= PROXIMITY_RADIUS && (!closest || distance < closest.distance)) {
+        closest = { id: npc.name, name: npc.name, distance };
+      }
+    });
+    return closest;
+  }
+
   shutdown() {
+    if (this._isShuttingDown) return;
+    this._isShuttingDown = true;
     window.removeEventListener('keydown', this._onKeyDown);
     window.removeEventListener('keyup', this._onKeyUp);
     window.removeEventListener('blur', this._onWindowBlur);
+    this.socket?.removeAllListeners?.();
     this.socket?.disconnect();
+    this.socket = null;
     if (this._fallbackSyncTimer) {
       clearInterval(this._fallbackSyncTimer);
       this._fallbackSyncTimer = null;
     }
     this.remotePlayers.forEach(a => a.destroy());
     this.remotePlayers.clear();
+    this.staticNpcs?.forEach((npc) => npc.destroy?.());
+    this.staticNpcs = [];
+    this._npcRenderVersion += 1;
+    this.npcReplyCounts?.clear();
+    this.onNearbyNpcChange(null);
     this.onRoomPopulationChange(0);
     this.roomLayout?.destroy();
     this.roomEditor?.destroy();
     this._propSprites?.forEach(p => p.destroy());
     this.onEditorChange(false);
     this.onNearbyChange(0);
-        this.pendingRemoteSpawns?.clear();
+    this.onFloorStatusChange({ currentFloor: 0, totalFloors: 1, stairScaffoldActive: false, layoutId: '' });
+    this.pendingRemoteSpawns?.clear();
   }
 
   _switchFloor(floorIndex) {
@@ -863,14 +1436,26 @@ export class VillageScene extends Phaser.Scene {
     if (!this.layout.floors[floorIndex]) return;
     this.currentFloor = floorIndex;
     this.roomLayout.drawFloor(floorIndex);
+    this._emitFloorStatus();
     this.roomLayout.setDynamicSolids(this.customZones);
     this.roomLayout.setCollisionDebug(this.showCollisionDebug);
+    this.roomLayout.setFootprintDebug(this.showFootprintDebug);
     this._applyCameraMode();
+    this._renderStaticNpcs();
     const spawn = floorIndex === 0
       ? (this.layout.spawnF1 || { x: 800, y: 750 })
       : (this.layout.spawnF2 || { x: 900, y: 370 });
-    this.player.gx = spawn.x;
-    this.player.gy = spawn.y;
+    const safeSpawn = this.roomLayout?.resolveSafeSpawnPoint?.([
+      spawn,
+      this.roomLayout?.getBoundaryBounds?.()
+        ? {
+            x: this.roomLayout.getBoundaryBounds().x + (this.roomLayout.getBoundaryBounds().w / 2),
+            y: this.roomLayout.getBoundaryBounds().y + (this.roomLayout.getBoundaryBounds().h / 2),
+          }
+        : null,
+    ], 20) || spawn;
+    this.player.gx = safeSpawn.x;
+    this.player.gy = safeSpawn.y;
     this.player.sync();
   }
 }

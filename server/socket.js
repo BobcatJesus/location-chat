@@ -4,6 +4,8 @@ import http from 'http';
 import { Server } from 'socket.io';
 import pg from 'pg';
 import { createAuthService, registerAuthRoutes } from './auth.js';
+import { findRoomByLocation } from '../rooms/rooms.js';
+import { buildAutoLayout } from '../src/village/AutoLayout.js';
 
 const { Pool } = pg;
 
@@ -442,7 +444,120 @@ app.get('/health', (req, res) => {
 });
 registerAuthRoutes(app, authService);
 
-async function fetchOverpassJson(query) {
+app.post('/api/geofence/check', (req, res) => {
+  const lat = Number(req.body?.latitude);
+  const lng = Number(req.body?.longitude);
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return res.status(400).json({ error: 'Invalid latitude/longitude' });
+  }
+
+  const match = findRoomByLocation(lat, lng);
+  if (!match?.room) {
+    return res.json({ accessGranted: false, venue: null });
+  }
+
+  const room = match.room;
+  return res.json({
+    accessGranted: true,
+    distanceMeters: match.distance,
+    venue: {
+      id: room.id,
+      name: room.name,
+      lat: room.lat,
+      lng: room.lng,
+      radiusMeters: room.radiusMeters,
+      kind: room.kind,
+      contributors: room.contributors,
+      activeLayout: buildAutoLayout(room.id, room.name, room.amenityTag || '', room.shopTag || '', room.roomShape || null),
+    },
+  });
+});
+
+const BOOK_GENRES = {
+  philosophy: { query: 'philosophy', nytList: 'hardcover-nonfiction' },
+  nonfiction: { query: 'nonfiction', nytList: 'hardcover-nonfiction' },
+  manga: { query: 'manga', nytList: null },
+  humor: { query: 'humor', nytList: 'hardcover-fiction' },
+  'science-fiction': { query: 'science fiction', nytList: 'hardcover-fiction' },
+};
+
+const CURATED_BOOK_FALLBACKS = {
+  philosophy: { title: "Sophie's World", author: 'Jostein Gaarder' },
+  nonfiction: { title: 'The Wager', author: 'David Grann' },
+  manga: { title: 'Frieren: Beyond Journey’s End', author: 'Kanehito Yamada and Tsukasa Abe' },
+  humor: { title: "The Hitchhiker's Guide to the Galaxy", author: 'Douglas Adams' },
+  'science-fiction': { title: 'Project Hail Mary', author: 'Andy Weir' },
+};
+
+app.get('/api/library/recommendation', async (req, res) => {
+  const genre = String(req.query?.genre || '').toLowerCase();
+  const genreConfig = BOOK_GENRES[genre];
+  if (!genreConfig) return res.status(400).json({ error: 'Unsupported book genre.' });
+
+  try {
+    if (process.env.NYT_BOOKS_API_KEY && genreConfig.nytList) {
+      const nytResponse = await fetch(`https://api.nytimes.com/svc/books/v3/lists/current/${genreConfig.nytList}.json?api-key=${encodeURIComponent(process.env.NYT_BOOKS_API_KEY)}`);
+      const nytData = await nytResponse.json();
+      const book = nytData?.results?.books?.[0];
+      if (nytResponse.ok && book?.title) {
+        return res.json({
+          title: book.title,
+          author: book.author,
+          description: book.description || '',
+          source: 'New York Times Best Sellers',
+          signal: `Currently ranked #${book.rank || 1} on the ${genreConfig.nytList.replace(/-/g, ' ')} list.`,
+        });
+      }
+    }
+
+    const booksResponse = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(genreConfig.query)}&orderBy=relevance&maxResults=12&printType=books`);
+    const booksData = await booksResponse.json();
+    const candidates = (booksData?.items || [])
+      .map((item) => item.volumeInfo || {})
+      .filter((book) => book.title && book.authors?.length)
+      .sort((a, b) => ((Number(b.averageRating) || 0) * Math.log10((Number(b.ratingsCount) || 0) + 1)) - ((Number(a.averageRating) || 0) * Math.log10((Number(a.ratingsCount) || 0) + 1)));
+    const book = candidates[0];
+    if (!booksResponse.ok || !book) {
+      const openLibraryResponse = await fetch(`https://openlibrary.org/search.json?q=${encodeURIComponent(genreConfig.query)}&limit=12&fields=title,author_name,ratings_average,ratings_count,edition_count`);
+      const openLibraryData = await openLibraryResponse.json();
+      const openBook = (openLibraryData?.docs || [])
+        .filter((entry) => entry.title && entry.author_name?.length)
+        .sort((a, b) => ((Number(b.ratings_average) || 0) * Math.log10((Number(b.ratings_count) || 0) + 1)) - ((Number(a.ratings_average) || 0) * Math.log10((Number(a.ratings_count) || 0) + 1)))[0];
+      if (openLibraryResponse.ok && openBook) {
+        const rating = Number(openBook.ratings_average);
+        const ratingsCount = Number(openBook.ratings_count) || 0;
+        return res.json({
+          title: openBook.title,
+          author: openBook.author_name.slice(0, 2).join(', '),
+          source: 'Open Library',
+          signal: rating ? `${rating.toFixed(1)}/5 from ${ratingsCount.toLocaleString()} reader ratings across ${Number(openBook.edition_count) || 1} editions.` : `Selected from relevant ${genre.replace(/-/g, ' ')} catalog results.`,
+        });
+      }
+      const fallback = CURATED_BOOK_FALLBACKS[genre];
+      return res.json({
+        ...fallback,
+        source: 'Library staff pick',
+        signal: 'Live popularity sources are temporarily unavailable; this is a curated genre recommendation.',
+      });
+    }
+
+    const rating = Number(book.averageRating);
+    const ratingsCount = Number(book.ratingsCount) || 0;
+    return res.json({
+      title: book.title,
+      author: book.authors.join(', '),
+      description: book.description || '',
+      source: 'Google Books',
+      signal: rating ? `${rating.toFixed(1)}/5 from ${ratingsCount.toLocaleString()} reader ratings, selected from relevant ${genre.replace(/-/g, ' ')} results.` : `Selected from relevant ${genre.replace(/-/g, ' ')} results.`,
+    });
+  } catch (error) {
+    res.status(502).json({ error: error?.message || 'Book recommendation lookup failed.' });
+  }
+});
+
+async function fetchOverpassJson(query, options = {}) {
+  const timeoutMs = Math.max(3000, Number(options?.timeoutMs) || 5000);
   const endpoints = [
     'https://overpass.kumi.systems/api/interpreter',
     'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
@@ -451,9 +566,36 @@ async function fetchOverpassJson(query) {
 
   for (const endpoint of endpoints) {
     try {
-      const response = await fetch(`${endpoint}?data=${encodeURIComponent(query)}`);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+      // Prefer form-encoded POST for broader Overpass compatibility.
+      let response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+          'Accept': 'application/json',
+          'User-Agent': 'side-quest-backend/1.0',
+        },
+        body: `data=${encodeURIComponent(query)}`,
+        signal: controller.signal,
+      });
+
+      // Some mirrors still expect GET query format.
+      if (!response.ok) {
+        response = await fetch(`${endpoint}?data=${encodeURIComponent(query)}`, {
+          headers: {
+            'Accept': 'application/json',
+            'User-Agent': 'side-quest-backend/1.0',
+          },
+          signal: controller.signal,
+        });
+      }
+
+      clearTimeout(timeout);
       if (!response.ok) continue;
-      return await response.json();
+      const data = await response.json();
+      if (Array.isArray(data?.elements)) return data;
     } catch {
       continue;
     }
@@ -462,10 +604,128 @@ async function fetchOverpassJson(query) {
   throw new Error('All Overpass endpoints failed');
 }
 
+function dedupeByTypeAndId(elements = []) {
+  const seen = new Set();
+  const merged = [];
+  elements.forEach((element) => {
+    const key = `${String(element?.type || '')}:${String(element?.id || '')}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    merged.push(element);
+  });
+  return merged;
+}
+
+function buildIndoorOverpassQuery(lat, lng, radius, mode = 'strict') {
+  const ar = `(around:${radius},${lat},${lng})`;
+  const strictBlocks = [
+    `node["indoor"]${ar};`,
+    `way["indoor"]${ar};`,
+    `relation["indoor"]${ar};`,
+    `node["indoor"~"room|corridor|area|wall|door|entrance|stairs|stair|escalator|lift|atrium|void"]${ar};`,
+    `way["indoor"~"room|corridor|area|wall|door|entrance|stairs|stair|escalator|lift|atrium|void"]${ar};`,
+    `relation["indoor"~"room|corridor|area|wall|door|entrance|stairs|stair|escalator|lift|atrium|void"]${ar};`,
+    `way["building:part"]${ar};`,
+    `relation["building:part"]${ar};`,
+    `way["building:levels"]${ar};`,
+    `relation["building:levels"]${ar};`,
+    `way["level"]${ar};`,
+    `relation["level"]${ar};`,
+    `way["min_level"]${ar};`,
+    `relation["min_level"]${ar};`,
+    `way["max_level"]${ar};`,
+    `relation["max_level"]${ar};`,
+    `way["repeat_on"]${ar};`,
+    `relation["repeat_on"]${ar};`,
+  ];
+
+  const broaderBlocks = [
+    `node["room"]${ar};`,
+    `way["room"]${ar};`,
+    `relation["room"]${ar};`,
+    `node["amenity"~"library|reading_room|study_room|toilets|information|cafe"]${ar};`,
+    `way["amenity"~"library|reading_room|study_room|toilets|information|cafe"]${ar};`,
+    `relation["amenity"~"library|reading_room|study_room|toilets|information|cafe"]${ar};`,
+    `node["shop"="books"]${ar};`,
+    `way["shop"="books"]${ar};`,
+    `node["highway"="steps"]${ar};`,
+    `way["highway"="steps"]${ar};`,
+    `node["furniture"~"table|chair|seat|bench|couch|sofa|stool|desk|bookshelf|bookcase"]${ar};`,
+    `way["furniture"~"table|chair|seat|bench|couch|sofa|stool|desk|bookshelf|bookcase"]${ar};`,
+    `node["furniture"~"cabinet|shelf|study_desk"]${ar};`,
+    `way["furniture"~"cabinet|shelf|study_desk"]${ar};`,
+    `node["amenity"~"table|chair|bench"]${ar};`,
+    `way["amenity"~"table|chair|bench"]${ar};`,
+    `node["entrance"]${ar};`,
+    `way["entrance"]${ar};`,
+    `relation["entrance"]${ar};`,
+  ];
+
+  const widerBlocks = [
+    `way["building"]${ar};`,
+    `relation["building"]${ar};`,
+    `way["building"~"yes|public|civic|university|college|library"]${ar};`,
+    `relation["building"~"yes|public|civic|university|college|library"]${ar};`,
+    `node["amenity"~"library|reading_room|study_room|college|university|school"]${ar};`,
+    `way["amenity"~"library|reading_room|study_room|college|university|school"]${ar};`,
+    `relation["amenity"~"library|reading_room|study_room|college|university|school"]${ar};`,
+    `node["room"~"study|classroom|library|reading_room|lounge"]${ar};`,
+    `way["room"~"study|classroom|library|reading_room|lounge"]${ar};`,
+    `relation["room"~"study|classroom|library|reading_room|lounge"]${ar};`,
+    `node["highway"~"corridor|footway|steps"]${ar};`,
+    `way["highway"~"corridor|footway|steps"]${ar};`,
+    `relation["highway"~"corridor|footway|steps"]${ar};`,
+  ];
+
+  let blocks;
+  if (mode === 'strict') {
+    blocks = strictBlocks.concat(broaderBlocks.slice(8));
+  } else if (mode === 'broad') {
+    blocks = strictBlocks.concat(broaderBlocks);
+  } else {
+    blocks = strictBlocks.concat(broaderBlocks).concat(widerBlocks);
+  }
+  return [`[out:json][timeout:14];(`, ...blocks, `);out body geom tags;`].join('');
+}
+
+const nearbyPlacesCache = new Map();
+const NEARBY_CACHE_TTL_MS = 3 * 60 * 1000;
+
+function makeNearbyCacheKey(lat, lng, radius) {
+  const latKey = Number(lat).toFixed(4);
+  const lngKey = Number(lng).toFixed(4);
+  const radiusKey = String(Number(radius) || 1000);
+  return `${latKey}:${lngKey}:${radiusKey}`;
+}
+
+function findNearbyCacheFallback(lat, lng, radius) {
+  const now = Date.now();
+  let best = null;
+  let bestDistance = Infinity;
+
+  nearbyPlacesCache.forEach((value, key) => {
+    if (!value || (now - value.ts) > NEARBY_CACHE_TTL_MS) return;
+    const [kLat, kLng, kRadius] = key.split(':');
+    if (String(Number(radius) || 1000) !== kRadius) return;
+
+    const latDiff = Math.abs(Number(kLat) - Number(lat));
+    const lngDiff = Math.abs(Number(kLng) - Number(lng));
+    const distance = latDiff + lngDiff;
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = value;
+    }
+  });
+
+  // ~0.02 degrees ~= a couple kilometers in city contexts.
+  return bestDistance <= 0.02 ? best : null;
+}
+
 app.get('/api/nearby-places', async (req, res) => {
   const lat = Number(req.query.lat);
   const lng = Number(req.query.lng);
   const radius = Math.max(50, Math.min(3000, Number(req.query.radius || 1000)));
+  const cacheKey = makeNearbyCacheKey(lat, lng, radius);
 
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
     return res.status(400).json({ error: 'Invalid lat/lng' });
@@ -473,7 +733,7 @@ app.get('/api/nearby-places', async (req, res) => {
 
   const ar = `(around:${radius},${lat},${lng})`;
   const query = [
-    `[out:json][timeout:25];(`,
+    `[out:json][timeout:10];(`,
     `node["amenity"~"cafe|restaurant|fast_food|bar|pub|ice_cream|food_court|library|theatre|cinema|place_of_worship|gym|school|pharmacy|bank|fuel|marketplace|deli|juice_bar|hookah_lounge"]${ar};`,
     `node["shop"~"supermarket|convenience|deli|bakery|butcher|seafood|wine|coffee|clothes|books|music|art"]${ar};`,
     `node["leisure"~"park|garden|nature_reserve|dog_park|playground|swimming_pool|marina|fishing|sports_centre|stadium|golf_course|skate_park"]${ar};`,
@@ -488,26 +748,39 @@ app.get('/api/nearby-places', async (req, res) => {
     `relation["shop"~"supermarket|convenience|bakery|deli|books|music|art|clothes|wine|coffee"]${ar};`,
     `relation["leisure"~"park|garden|nature_reserve|playground|sports_centre|stadium|golf_course|dog_park|marina"]${ar};`,
     `relation["tourism"~"museum|gallery|viewpoint|artwork|picnic_site|camp_site"]${ar};`,
-    `);out center geom;`,
+    // Keep response lean for reliability; we only need marker centers here.
+    `);out center;`,
   ].join('');
 
   try {
     const data = await fetchOverpassJson(query);
-    res.json(Array.isArray(data?.elements) ? data.elements : []);
+    const elements = Array.isArray(data?.elements) ? data.elements : [];
+    nearbyPlacesCache.set(cacheKey, { ts: Date.now(), elements });
+    res.json(elements);
   } catch (error) {
-    res.status(502).json({ error: error.message || 'Nearby place lookup failed' });
+    const cached = nearbyPlacesCache.get(cacheKey);
+    if (cached && (Date.now() - cached.ts) <= NEARBY_CACHE_TTL_MS) {
+      return res.json(cached.elements || []);
+    }
+    const fallback = findNearbyCacheFallback(lat, lng, radius);
+    if (fallback) {
+      return res.json(fallback.elements || []);
+    }
+    // Degrade gracefully for the map UI instead of hard 502 spam.
+    return res.json([]);
   }
 });
 
 app.get('/api/building-footprint', async (req, res) => {
   const lat = Number(req.query.lat);
   const lng = Number(req.query.lng);
+  const radius = Math.max(50, Math.min(260, Number(req.query.radius || 90)));
 
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
     return res.status(400).json({ error: 'Invalid lat/lng' });
   }
 
-  const query = `[out:json][timeout:8];way["building"](around:60,${lat},${lng});out geom;`;
+  const query = `[out:json][timeout:8];way["building"](around:${radius},${lat},${lng});out geom;`;
 
   try {
     const data = await fetchOverpassJson(query);
@@ -521,9 +794,70 @@ app.get('/api/building-footprint', async (req, res) => {
       return !best || distance < best.distance ? { distance, way } : best;
     }, null)?.way;
 
-    res.json(closest?.geometry?.map((point) => ({ lat: point.lat, lng: point.lon })) || null);
+    res.json(closest ? {
+      geometry: closest.geometry?.map((point) => ({ lat: point.lat, lng: point.lon })) || null,
+      tags: closest.tags || {},
+      id: closest.id || null,
+    } : null);
   } catch (error) {
-    res.status(502).json({ error: error.message || 'Building footprint lookup failed' });
+    return res.json(null);
+  }
+});
+
+app.get('/api/indoor-layout', async (req, res) => {
+  const lat = Number(req.query.lat);
+  const lng = Number(req.query.lng);
+  const radius = Math.max(30, Math.min(220, Number(req.query.radius || 110)));
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return res.status(400).json({ error: 'Invalid lat/lng' });
+  }
+
+  try {
+    const queryPlan = [
+      { mode: 'strict', radius },
+      { mode: 'broad', radius: Math.max(radius + 40, Math.min(340, Math.round(radius * 1.8))) },
+      { mode: 'wider', radius: Math.max(radius + 90, Math.min(520, Math.round(radius * 2.8))) },
+    ];
+
+    let winningPlan = null;
+    let combined = [];
+    let lastError = null;
+    const hitCounts = [];
+
+    for (const step of queryPlan) {
+      try {
+        const query = buildIndoorOverpassQuery(lat, lng, step.radius, step.mode);
+        const timeoutMs = step.mode === 'strict' ? 6500 : (step.mode === 'broad' ? 9000 : 12000);
+        const data = await fetchOverpassJson(query, { timeoutMs });
+        const elements = Array.isArray(data?.elements) ? data.elements : [];
+        hitCounts.push({ mode: step.mode, radius: step.radius, hits: elements.length });
+        combined = dedupeByTypeAndId(combined.concat(elements));
+        if (!winningPlan && elements.length > 0) {
+          winningPlan = step;
+        }
+      } catch (error) {
+        hitCounts.push({ mode: step.mode, radius: step.radius, hits: 0, error: error?.message || 'failed' });
+        lastError = error;
+      }
+    }
+
+    res.json({
+      center: { lat, lng },
+      radius,
+      elements: combined,
+      source: winningPlan ? `live-overpass-${winningPlan.mode}` : 'live-overpass-empty',
+      queryPlan,
+      hitCounts,
+      ...(lastError && !combined.length ? { error: lastError.message || 'Indoor layout lookup failed' } : {}),
+    });
+  } catch (error) {
+    res.json({
+      center: { lat, lng },
+      radius,
+      elements: [],
+      error: error.message || 'Indoor layout lookup failed',
+    });
   }
 });
 

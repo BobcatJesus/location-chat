@@ -17,19 +17,36 @@ export const PROP_DEFS = {
 };
 
 export class Prop {
-  constructor(scene, x, y, frameKey) {
-    const def = PROP_DEFS[frameKey];
-    if (!def) { console.warn('[Prop] unknown key:', frameKey); return; }
+  constructor(scene, x, y, frameKey, options = {}) {
+    const textureKey = options.textureKey || 'props';
+    const def = PROP_DEFS[frameKey] || {};
+    if (textureKey === 'props' && !def.w) {
+      console.warn('[Prop] unknown key:', frameKey);
+      return;
+    }
 
     this.scene = scene;
     this.frameKey = frameKey;
     this.x = x;
     this.y = y;
 
-    this.sprite = scene.add.image(x, y, 'props', frameKey)
+    const angle = Number.isFinite(options.rotation) ? options.rotation : 0;
+    const targetHeight = Number(options.targetHeight ?? options.displaySize?.h ?? def.h ?? 40);
+
+    const useDirectTexture = textureKey !== 'props' || scene.textures.exists(frameKey);
+    this.sprite = scene.add.image(
+      x,
+      y,
+      useDirectTexture ? (textureKey === 'props' ? frameKey : textureKey) : 'props',
+      useDirectTexture && textureKey === 'props' ? frameKey : undefined
+    )
       .setOrigin(0.5, 1)
-      .setDisplaySize(def.w, def.h)
+      .setAngle(angle)
       .setDepth(y);
+
+    const naturalHeight = Number(this.sprite.texture?.frame?.height ?? this.sprite.height ?? 1);
+    const scale = naturalHeight > 0 ? (targetHeight / naturalHeight) : 1;
+    this.sprite.setScale(scale);
   }
 
   destroy() {

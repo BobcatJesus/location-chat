@@ -88,6 +88,380 @@ const POI_TYPES = [
 ];
 
 const POI_RADIUS = 40; // metres
+const AUTHORITATIVE_FOOTPRINTS_URL = '/assets/footprints/parks.geojson';
+let authoritativeParkFootprints = [];
+let authoritativeParkFootprintsLoad = null;
+
+const LIVE_OAK_PARK_CENTER = { lat: 29.754535, lng: -95.409365 };
+const LIVE_OAK_OSM_WAY_ID = '392274785';
+// Exact OSM polygon for Live Oak Park (way 392274785), used as a stable
+// footprint override when provider footprints are missing or noisy.
+const LIVE_OAK_PARK_FOOTPRINT = [
+  { lat: 29.7543320, lon: -95.4098284 },
+  { lat: 29.7542983, lon: -95.4098136 },
+  { lat: 29.7542808, lon: -95.4097895 },
+  { lat: 29.7542738, lon: -95.4097372 },
+  { lat: 29.7542808, lon: -95.4089674 },
+  { lat: 29.7542924, lon: -95.4089312 },
+  { lat: 29.7543087, lon: -95.4089151 },
+  { lat: 29.7543367, lon: -95.4089151 },
+  { lat: 29.7547314, lon: -95.4089110 },
+  { lat: 29.7547523, lon: -95.4089245 },
+  { lat: 29.7547698, lon: -95.4089513 },
+  { lat: 29.7547733, lon: -95.4089848 },
+  { lat: 29.7547663, lon: -95.4090183 },
+  { lat: 29.7544345, lon: -95.4097921 },
+  { lat: 29.7544182, lon: -95.4098176 },
+  { lat: 29.7543798, lon: -95.4098284 },
+  { lat: 29.7543320, lon: -95.4098284 },
+];
+
+const SHEPHERD_PARK_CENTER = { lat: 29.8341952, lng: -95.4174423 };
+const SHEPHERD_PARK_OSM_WAY_ID = '289943234';
+// Exact OSM polygon for Shepherd Park (way 289943234), normalized to
+// { lat, lon } pairs for the in-room boundary pipeline.
+const SHEPHERD_PARK_FOOTPRINT = [
+  { lat: 29.8335422, lon: -95.4186888 },
+  { lat: 29.8335639, lon: -95.4163778 },
+  { lat: 29.8349965, lon: -95.4163985 },
+  { lat: 29.8349885, lon: -95.4182790 },
+  { lat: 29.8348102, lon: -95.4182811 },
+  { lat: 29.8346319, lon: -95.4183171 },
+  { lat: 29.8343713, lon: -95.4184029 },
+  { lat: 29.8340191, lon: -95.4185923 },
+  { lat: 29.8337291, lon: -95.4186845 },
+  { lat: 29.8335422, lon: -95.4186888 },
+];
+
+const HOMEWOOD_PARK_CENTER = { lat: 29.7546720, lng: -95.4202793 };
+const HOMEWOOD_PARK_OSM_WAY_ID = '123419608';
+const HOMEWOOD_PARK_FOOTPRINT = [
+  { lat: 29.7542423, lon: -95.4207945 },
+  { lat: 29.7540095, lon: -95.4207784 },
+  { lat: 29.7537766, lon: -95.4207328 },
+  { lat: 29.7536998, lon: -95.4207006 },
+  { lat: 29.7536509, lon: -95.4206577 },
+  { lat: 29.7536206, lon: -95.4205987 },
+  { lat: 29.7535973, lon: -95.4205182 },
+  { lat: 29.7536089, lon: -95.4204377 },
+  { lat: 29.7536415, lon: -95.4203814 },
+  { lat: 29.7537184, lon: -95.4203036 },
+  { lat: 29.7539000, lon: -95.4201534 },
+  { lat: 29.7541259, lon: -95.4200139 },
+  { lat: 29.7543262, lon: -95.4199201 },
+  { lat: 29.7545613, lon: -95.4198503 },
+  { lat: 29.7547826, lon: -95.4198208 },
+  { lat: 29.7550736, lon: -95.4198101 },
+  { lat: 29.7553042, lon: -95.4198450 },
+  { lat: 29.7554788, lon: -95.4198986 },
+  { lat: 29.7555230, lon: -95.4199335 },
+  { lat: 29.7555463, lon: -95.4199764 },
+  { lat: 29.7555650, lon: -95.4200434 },
+  { lat: 29.7555696, lon: -95.4201266 },
+  { lat: 29.7555370, lon: -95.4202097 },
+  { lat: 29.7554346, lon: -95.4203144 },
+  { lat: 29.7552483, lon: -95.4204565 },
+  { lat: 29.7550294, lon: -95.4205960 },
+  { lat: 29.7547919, lon: -95.4206899 },
+  { lat: 29.7545194, lon: -95.4207650 },
+  { lat: 29.7542423, lon: -95.4207945 },
+];
+
+const CHERRYHURST_PARK_CENTER = { lat: 29.7442870, lng: -95.3984587 };
+const CHERRYHURST_PARK_OSM_WAY_ID = '87450845';
+const CHERRYHURST_PARK_FOOTPRINT = [
+  { lat: 29.7443799, lon: -95.3990871 },
+  { lat: 29.7437791, lon: -95.3987123 },
+  { lat: 29.7441940, lon: -95.3978302 },
+  { lat: 29.7447948, lon: -95.3982051 },
+  { lat: 29.7443799, lon: -95.3990871 },
+];
+
+const SPOTTS_PARK_CENTER = { lat: 29.7649672, lng: -95.3959186 };
+const SPOTTS_PARK_OSM_WAY_ID = '54030375';
+const SPOTTS_PARK_FOOTPRINT = [
+  { lat: 29.7658252, lon: -95.3975612 },
+  { lat: 29.7657720, lon: -95.3975608 },
+  { lat: 29.7655255, lon: -95.3975590 },
+  { lat: 29.7653177, lon: -95.3974742 },
+  { lat: 29.7650894, lon: -95.3973277 },
+  { lat: 29.7648450, lon: -95.3971575 },
+  { lat: 29.7646648, lon: -95.3969837 },
+  { lat: 29.7644178, lon: -95.3965052 },
+  { lat: 29.7642325, lon: -95.3960726 },
+  { lat: 29.7641457, lon: -95.3957130 },
+  { lat: 29.7639529, lon: -95.3949912 },
+  { lat: 29.7637659, lon: -95.3941657 },
+  { lat: 29.7636157, lon: -95.3936408 },
+  { lat: 29.7634604, lon: -95.3931367 },
+  { lat: 29.7634003, lon: -95.3929210 },
+  { lat: 29.7633273, lon: -95.3926253 },
+  { lat: 29.7634635, lon: -95.3926113 },
+  { lat: 29.7635570, lon: -95.3931100 },
+  { lat: 29.7637767, lon: -95.3938339 },
+  { lat: 29.7639319, lon: -95.3943412 },
+  { lat: 29.7641575, lon: -95.3946086 },
+  { lat: 29.7652532, lon: -95.3945896 },
+  { lat: 29.7665466, lon: -95.3946335 },
+  { lat: 29.7665461, lon: -95.3946519 },
+  { lat: 29.7664921, lon: -95.3946670 },
+  { lat: 29.7664597, lon: -95.3947142 },
+  { lat: 29.7664337, lon: -95.3947912 },
+  { lat: 29.7664372, lon: -95.3948742 },
+  { lat: 29.7664942, lon: -95.3949627 },
+  { lat: 29.7665937, lon: -95.3950402 },
+  { lat: 29.7665884, lon: -95.3956306 },
+  { lat: 29.7660481, lon: -95.3956323 },
+  { lat: 29.7660439, lon: -95.3962784 },
+  { lat: 29.7660929, lon: -95.3964940 },
+  { lat: 29.7663551, lon: -95.3965986 },
+  { lat: 29.7663543, lon: -95.3969067 },
+  { lat: 29.7665632, lon: -95.3969133 },
+  { lat: 29.7665145, lon: -95.3970582 },
+  { lat: 29.7664619, lon: -95.3972378 },
+  { lat: 29.7661869, lon: -95.3973623 },
+  { lat: 29.7659218, lon: -95.3975049 },
+  { lat: 29.7658308, lon: -95.3975153 },
+  { lat: 29.7658252, lon: -95.3975612 },
+];
+
+const KNOX_PARK_CENTER = { lat: 29.7661730, lng: -95.3978686 };
+const KNOX_PARK_OSM_WAY_ID = '221233748';
+const KNOX_PARK_FOOTPRINT = [
+  { lat: 29.7657631, lon: -95.3980504 },
+  { lat: 29.7657557, lon: -95.3980342 },
+  { lat: 29.7657841, lon: -95.3980022 },
+  { lat: 29.7660635, lon: -95.3977822 },
+  { lat: 29.7662824, lon: -95.3976293 },
+  { lat: 29.7664169, lon: -95.3975621 },
+  { lat: 29.7664588, lon: -95.3975460 },
+  { lat: 29.7664914, lon: -95.3975702 },
+  { lat: 29.7664961, lon: -95.3976453 },
+  { lat: 29.7664914, lon: -95.3980449 },
+  { lat: 29.7659815, lon: -95.3980235 },
+  { lat: 29.7658120, lon: -95.3980397 },
+  { lat: 29.7657631, lon: -95.3980504 },
+];
+
+function normalizePlaceText(value = '') {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isParkLikeAmenity(amenity = '') {
+  const value = normalizePlaceText(amenity);
+  return value === 'park' || value === 'garden' || value === 'nature reserve' || value === 'playground';
+}
+
+function normalizeGeoJsonFeature(feature = {}) {
+  const geometry = feature?.geometry || {};
+  if (geometry.type !== 'Polygon') return null;
+  const ring = Array.isArray(geometry.coordinates?.[0]) ? geometry.coordinates[0] : [];
+  const footprint = ring
+    .map((point) => ({ lon: Number(point?.[0]), lat: Number(point?.[1]) }))
+    .filter((point) => Number.isFinite(point.lat) && Number.isFinite(point.lon));
+  if (footprint.length < 3) return null;
+
+  const deduped = [];
+  const epsilon = 1e-9;
+  footprint.forEach((point) => {
+    const prev = deduped[deduped.length - 1];
+    if (!prev || Math.abs(prev.lat - point.lat) > epsilon || Math.abs(prev.lon - point.lon) > epsilon) {
+      deduped.push(point);
+    }
+  });
+  if (deduped.length >= 3) {
+    const first = deduped[0];
+    const last = deduped[deduped.length - 1];
+    if (Math.abs(first.lat - last.lat) <= epsilon && Math.abs(first.lon - last.lon) <= epsilon) {
+      deduped.pop();
+    }
+  }
+  if (deduped.length < 3) return null;
+
+  const centerLat = deduped.reduce((sum, point) => sum + point.lat, 0) / deduped.length;
+  const centerLon = deduped.reduce((sum, point) => sum + point.lon, 0) / deduped.length;
+  return {
+    nameKey: normalizePlaceText(feature?.properties?.name || ''),
+    osmWayId: String(feature?.properties?.osmWayId || ''),
+    source: String(feature?.properties?.source || 'authoritative-geojson'),
+    matchRadiusMeters: Math.max(100, Number(feature?.properties?.matchRadiusMeters || 320)),
+    centerLat,
+    centerLon,
+    footprint: deduped,
+  };
+}
+
+function loadAuthoritativeFootprints() {
+  if (authoritativeParkFootprintsLoad) return authoritativeParkFootprintsLoad;
+  authoritativeParkFootprintsLoad = fetch(AUTHORITATIVE_FOOTPRINTS_URL)
+    .then((res) => (res.ok ? res.json() : null))
+    .then((data) => {
+      const features = Array.isArray(data?.features) ? data.features : [];
+      authoritativeParkFootprints = features.map(normalizeGeoJsonFeature).filter(Boolean);
+      return authoritativeParkFootprints;
+    })
+    .catch(() => {
+      authoritativeParkFootprints = [];
+      return authoritativeParkFootprints;
+    });
+  return authoritativeParkFootprintsLoad;
+}
+
+function findAuthoritativeFootprint(place = {}) {
+  if (!Array.isArray(authoritativeParkFootprints) || !authoritativeParkFootprints.length) return null;
+  const nameKey = normalizePlaceText(place?.name || '');
+  const amenity = normalizePlaceText(place?.amenity || '');
+  const lat = Number(place?.lat);
+  const lng = Number(place?.lng);
+
+  for (const candidate of authoritativeParkFootprints) {
+    if (!candidate?.footprint) continue;
+    if (candidate.osmWayId && hasOsmWayId(place, candidate.osmWayId)) {
+      return {
+        footprint: candidate.footprint,
+        source: 'authoritative-footprint',
+        authority: candidate.source,
+      };
+    }
+  }
+
+  for (const candidate of authoritativeParkFootprints) {
+    if (!candidate?.footprint) continue;
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+    if (!isParkLikeAmenity(amenity)) continue;
+    const byName = nameKey && candidate.nameKey && nameKey.includes(candidate.nameKey);
+    const nearCenter = getDistanceMeters(lat, lng, candidate.centerLat, candidate.centerLon) <= candidate.matchRadiusMeters;
+    if (byName || nearCenter) {
+      return {
+        footprint: candidate.footprint,
+        source: 'authoritative-footprint',
+        authority: candidate.source,
+      };
+    }
+  }
+  return null;
+}
+
+function hasOsmWayId(place = {}, osmWayId = '') {
+  if (!osmWayId) return false;
+  const rawId = String(place?.id || '');
+  return rawId === `osm-${osmWayId}` || rawId.endsWith(`-${osmWayId}`) || rawId.includes(osmWayId);
+}
+
+function isValidFootprint(footprint) {
+  return Array.isArray(footprint)
+    && footprint.length >= 3
+    && footprint.every((point) => Number.isFinite(Number(point?.lat)) && Number.isFinite(Number(point?.lon ?? point?.lng)));
+}
+
+function createRadiusFallbackFootprint(place = {}) {
+  const lat = Number(place?.lat);
+  const lng = Number(place?.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+
+  const radiusMeters = Math.max(30, Number(place?.radiusMeters || place?.radius || POI_RADIUS || 50));
+  const northSouthRadiusMeters = radiusMeters * 0.88;
+  const eastWestRadiusMeters = radiusMeters;
+  const lonScale = Math.max(0.000001, Math.cos((lat * Math.PI) / 180));
+
+  // Use a rounded 12-point footprint so unknown places do not render as hard rectangles.
+  const ringProfile = [
+    [0.00, 1.00],
+    [0.48, 0.88],
+    [0.84, 0.52],
+    [1.00, 0.00],
+    [0.84, -0.52],
+    [0.48, -0.88],
+    [0.00, -1.00],
+    [-0.48, -0.88],
+    [-0.84, -0.52],
+    [-1.00, 0.00],
+    [-0.84, 0.52],
+    [-0.48, 0.88],
+  ];
+
+  return ringProfile.map(([dx, dy]) => {
+    const latDelta = (dy * northSouthRadiusMeters) / 111320;
+    const lonDelta = (dx * eastWestRadiusMeters) / (111320 * lonScale);
+    return {
+      lat: lat + latDelta,
+      lon: lng + lonDelta,
+    };
+  });
+}
+
+function getFootprintOverrideForPlace(place = {}) {
+  const name = normalizePlaceText(place?.name || '');
+  const amenity = normalizePlaceText(place?.amenity || '');
+  const lat = Number(place?.lat);
+  const lng = Number(place?.lng);
+
+  if (hasOsmWayId(place, LIVE_OAK_OSM_WAY_ID)) return { footprint: LIVE_OAK_PARK_FOOTPRINT, source: 'known-override' };
+  if (hasOsmWayId(place, SHEPHERD_PARK_OSM_WAY_ID)) return { footprint: SHEPHERD_PARK_FOOTPRINT, source: 'known-override' };
+  if (hasOsmWayId(place, HOMEWOOD_PARK_OSM_WAY_ID)) return { footprint: HOMEWOOD_PARK_FOOTPRINT, source: 'known-override' };
+  if (hasOsmWayId(place, CHERRYHURST_PARK_OSM_WAY_ID)) return { footprint: CHERRYHURST_PARK_FOOTPRINT, source: 'known-override' };
+  if (hasOsmWayId(place, SPOTTS_PARK_OSM_WAY_ID)) return { footprint: SPOTTS_PARK_FOOTPRINT, source: 'known-override' };
+  if (hasOsmWayId(place, KNOX_PARK_OSM_WAY_ID)) return { footprint: KNOX_PARK_FOOTPRINT, source: 'known-override' };
+
+  const looksLikeLiveOak = name.includes('live oak park');
+  const looksLikeShepherdPark = name.includes('shepherd park');
+  const looksLikeHomewoodPark = name.includes('homewood park');
+  const looksLikeCherryhurstPark = name.includes('cherryhurst park');
+  const looksLikeSpottsPark = name.includes('spotts park');
+  const looksLikeKnoxPark = name.includes('knox park');
+  const nearbyLiveOakCenter = Number.isFinite(lat) && Number.isFinite(lng)
+    && getDistanceMeters(lat, lng, LIVE_OAK_PARK_CENTER.lat, LIVE_OAK_PARK_CENTER.lng) <= 280;
+  const nearbyShepherdParkCenter = Number.isFinite(lat) && Number.isFinite(lng)
+    && getDistanceMeters(lat, lng, SHEPHERD_PARK_CENTER.lat, SHEPHERD_PARK_CENTER.lng) <= 320;
+  const nearbyHomewoodParkCenter = Number.isFinite(lat) && Number.isFinite(lng)
+    && getDistanceMeters(lat, lng, HOMEWOOD_PARK_CENTER.lat, HOMEWOOD_PARK_CENTER.lng) <= 320;
+  const nearbyCherryhurstParkCenter = Number.isFinite(lat) && Number.isFinite(lng)
+    && getDistanceMeters(lat, lng, CHERRYHURST_PARK_CENTER.lat, CHERRYHURST_PARK_CENTER.lng) <= 320;
+  const nearbySpottsParkCenter = Number.isFinite(lat) && Number.isFinite(lng)
+    && getDistanceMeters(lat, lng, SPOTTS_PARK_CENTER.lat, SPOTTS_PARK_CENTER.lng) <= 360;
+  const nearbyKnoxParkCenter = Number.isFinite(lat) && Number.isFinite(lng)
+    && getDistanceMeters(lat, lng, KNOX_PARK_CENTER.lat, KNOX_PARK_CENTER.lng) <= 240;
+
+  if (looksLikeLiveOak || (amenity === 'park' && nearbyLiveOakCenter)) {
+    return { footprint: LIVE_OAK_PARK_FOOTPRINT, source: 'known-override' };
+  }
+  if (looksLikeShepherdPark || (amenity === 'park' && nearbyShepherdParkCenter)) {
+    return { footprint: SHEPHERD_PARK_FOOTPRINT, source: 'known-override' };
+  }
+  if (looksLikeHomewoodPark || (amenity === 'park' && nearbyHomewoodParkCenter)) {
+    return { footprint: HOMEWOOD_PARK_FOOTPRINT, source: 'known-override' };
+  }
+  if (looksLikeCherryhurstPark || (amenity === 'park' && nearbyCherryhurstParkCenter)) {
+    return { footprint: CHERRYHURST_PARK_FOOTPRINT, source: 'known-override' };
+  }
+  if (looksLikeSpottsPark || (amenity === 'park' && nearbySpottsParkCenter)) {
+    return { footprint: SPOTTS_PARK_FOOTPRINT, source: 'known-override' };
+  }
+  if (looksLikeKnoxPark || (amenity === 'park' && nearbyKnoxParkCenter)) {
+    return { footprint: KNOX_PARK_FOOTPRINT, source: 'known-override' };
+  }
+  return null;
+}
+
+function resolveRoomFootprint(place = {}, fetchedFootprint = null) {
+  const authoritative = findAuthoritativeFootprint(place);
+  if (authoritative?.footprint) return authoritative;
+  const override = getFootprintOverrideForPlace(place);
+  if (override?.footprint) return override;
+  const fetchedGeometry = Array.isArray(fetchedFootprint)
+    ? fetchedFootprint
+    : Array.isArray(fetchedFootprint?.geometry)
+      ? fetchedFootprint.geometry
+      : null;
+  if (isValidFootprint(fetchedGeometry)) return { footprint: fetchedGeometry, source: 'provider-footprint' };
+  const fallback = createRadiusFallbackFootprint(place);
+  if (fallback) return { footprint: fallback, source: 'radius-fallback' };
+  return null;
+}
 
 function deriveElementCoords(element) {
   if (Number.isFinite(element?.lat) && Number.isFinite(element?.lon)) {
@@ -125,6 +499,7 @@ async function fetchNearbyPOIs(lat, lng, radiusMeters = 800) {
         amenity: typeInfo.value,
         emoji: typeInfo.emoji,
         color: typeInfo.color,
+        tags: el.tags || {},
       };
     }).filter((poi) => Number.isFinite(poi.lat) && Number.isFinite(poi.lng));
   } catch {
@@ -143,8 +518,39 @@ async function fetchBuildingFootprint(lat, lng) {
   }
 }
 
+async function fetchIndoorLayout(lat, lng) {
+  try {
+    const res = await fetch(`${SOCKET_SERVER_URL}/api/indoor-layout?lat=${encodeURIComponent(lat)}&lng=${encodeURIComponent(lng)}`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+function shouldProbeIndoorLayout(place = {}) {
+  const text = `${place?.id || ''} ${place?.name || ''} ${place?.amenity || ''} ${place?.shop || ''}`.toLowerCase();
+  if (!text.trim()) return false;
+  if (text.includes('park') || text.includes('garden') || text.includes('forest') || text.includes('trail')) return false;
+  return Boolean(place?.lat && place?.lng) || Boolean(place?.tags?.building || place?.tags?.indoor || place?.tags?.level || place?.tags?.repeat_on);
+}
+
+function attachIndoorLayout(place, baseRoom = {}, onEnterRoom = () => {}) {
+  if (!shouldProbeIndoorLayout(place)) return;
+  fetchIndoorLayout(place.lat, place.lng).then((layout) => {
+    if (!layout?.elements?.length) return;
+    onEnterRoom(place.id, {
+      ...baseRoom,
+      ...place,
+      indoorLayout: layout,
+      indoorLayoutSource: 'provider-indoor',
+    });
+  });
+}
+
 const ROOM_STYLES = {
   'starbucks-spring': { color: '#00704a', emoji: '☕' },
+  'mcdonalds-practice': { color: '#ffbc0d', emoji: '🍟' },
   'agora-houston':    { color: '#9333ea', emoji: '🍷' },
   'downtown-hub':     { color: '#60a5fa', emoji: '🏙️' },
   'forest-gate':      { color: '#4ade80', emoji: '🌲' },
@@ -160,13 +566,28 @@ export default function MapView({ location, rooms, onEnterRoom }) {
   const allPinsRef = useRef([]);
   const [poiCount, setPoiCount] = useState(0);
   const [poiStatus, setPoiStatus] = useState('loading');
+  const poiStatusRef = useRef('loading');
   const poiLoadedRef = useRef(false);
   const lastFetchPosRef = useRef(null);
   const roomCountsRef = useRef({});
 
+  const updatePoiStatus = (nextStatus) => {
+    poiStatusRef.current = nextStatus;
+    setPoiStatus(nextStatus);
+  };
+
+  const withDiscoveryMeta = (roomData = {}) => {
+    const status = poiStatusRef.current || 'loading';
+    return {
+      ...roomData,
+      poiDiscoveryStatus: status,
+      poiDiscoveryPending: status === 'loading',
+    };
+  };
+
   const loadPOIs = (lat, lng) => {
     if (!leafletRef.current) return;
-    setPoiStatus('loading');
+    updatePoiStatus('loading');
     fetchNearbyPOIs(lat, lng, 1000).then(pois => {
       if (!leafletRef.current) return;
       // Remove old POI markers
@@ -181,9 +602,28 @@ export default function MapView({ location, rooms, onEnterRoom }) {
       filtered.forEach(poi => {
         addPin(leafletRef.current, poi.lat, poi.lng, poi.name, poi.emoji, poi.color, poi.radiusMeters,
           () => {
-            onEnterRoomRef.current(poi.id, { ...poi });
+            const initialResult = resolveRoomFootprint(poi, null);
+            onEnterRoomRef.current(
+              poi.id,
+              initialResult?.footprint
+                ? withDiscoveryMeta({ ...poi, footprint: initialResult.footprint, footprintSource: initialResult.source })
+                : withDiscoveryMeta({ ...poi }),
+            );
+            attachIndoorLayout(poi, initialResult?.footprint
+              ? { ...poi, footprint: initialResult.footprint, footprintSource: initialResult.source }
+              : { ...poi }, onEnterRoomRef.current);
+            if (initialResult?.source === 'known-override' || initialResult?.source === 'provider-footprint') return;
             fetchBuildingFootprint(poi.lat, poi.lng).then(footprint => {
-              if (footprint) onEnterRoomRef.current(poi.id, { ...poi, footprint });
+              const resolvedResult = resolveRoomFootprint(poi, footprint);
+              if (resolvedResult?.footprint) {
+                onEnterRoomRef.current(poi.id, {
+                  ...withDiscoveryMeta(),
+                  ...poi,
+                  footprint: resolvedResult.footprint,
+                  footprintSource: resolvedResult.source,
+                  tags: { ...(poi.tags || {}), ...(footprint?.tags || {}) },
+                });
+              }
             });
           }, true);
       });
@@ -192,13 +632,17 @@ export default function MapView({ location, rooms, onEnterRoom }) {
       const lng2 = playerMarkerRef.current?.getLatLng()?.lng || lng;
       updateAllPins(lat2, lng2);
       setPoiCount(filtered.length);
-      setPoiStatus(filtered.length > 0 ? 'found' : 'none');
+      updatePoiStatus(filtered.length > 0 ? 'found' : 'none');
       poiLoadedRef.current = true;
       lastFetchPosRef.current = { lat, lng };
-    }).catch(() => setPoiStatus('error'));
+    }).catch(() => updatePoiStatus('error'));
   };
 
   useEffect(() => { onEnterRoomRef.current = onEnterRoom; });
+
+  useEffect(() => {
+    loadAuthoritativeFootprints();
+  }, []);
 
   // Subscribe to live room counts from the server
   useEffect(() => {
@@ -212,9 +656,28 @@ export default function MapView({ location, rooms, onEnterRoom }) {
       if (!leafletRef.current) return;
       addPin(leafletRef.current, loc.lat, loc.lng, loc.name, loc.emoji || '📍', loc.color || '#f97316', loc.radius || 50,
         () => {
-          onEnterRoomRef.current(loc.id, { ...loc });
+          const initialResult = resolveRoomFootprint(loc, null);
+          onEnterRoomRef.current(
+            loc.id,
+            initialResult?.footprint
+              ? withDiscoveryMeta({ ...loc, footprint: initialResult.footprint, footprintSource: initialResult.source })
+              : withDiscoveryMeta({ ...loc }),
+          );
+          attachIndoorLayout(loc, initialResult?.footprint
+            ? { ...loc, footprint: initialResult.footprint, footprintSource: initialResult.source }
+            : { ...loc }, onEnterRoomRef.current);
+          if (initialResult?.source === 'known-override' || initialResult?.source === 'provider-footprint') return;
           fetchBuildingFootprint(loc.lat, loc.lng).then(footprint => {
-            if (footprint) onEnterRoomRef.current(loc.id, { ...loc, footprint });
+            const resolvedResult = resolveRoomFootprint(loc, footprint);
+            if (resolvedResult?.footprint) {
+              onEnterRoomRef.current(loc.id, {
+                ...withDiscoveryMeta(),
+                ...loc,
+                footprint: resolvedResult.footprint,
+                footprintSource: resolvedResult.source,
+                tags: { ...(loc.tags || {}), ...(footprint?.tags || {}) },
+              });
+            }
           });
         }, false, loc.id);
       const pos = playerMarkerRef.current?.getLatLng();
@@ -232,9 +695,28 @@ export default function MapView({ location, rooms, onEnterRoom }) {
         locs.forEach(loc => {
           addPin(leafletRef.current, loc.lat, loc.lng, loc.name, loc.emoji || '📍', loc.color || '#f97316', loc.radius || 50,
             () => {
-              onEnterRoomRef.current(loc.id, { ...loc });
+              const initialResult = resolveRoomFootprint(loc, null);
+              onEnterRoomRef.current(
+                loc.id,
+                initialResult?.footprint
+                  ? withDiscoveryMeta({ ...loc, footprint: initialResult.footprint, footprintSource: initialResult.source })
+                  : withDiscoveryMeta({ ...loc }),
+              );
+              attachIndoorLayout(loc, initialResult?.footprint
+                ? { ...loc, footprint: initialResult.footprint, footprintSource: initialResult.source }
+                : { ...loc }, onEnterRoomRef.current);
+              if (initialResult?.source === 'known-override' || initialResult?.source === 'provider-footprint') return;
               fetchBuildingFootprint(loc.lat, loc.lng).then(footprint => {
-                if (footprint) onEnterRoomRef.current(loc.id, { ...loc, footprint });
+                const resolvedResult = resolveRoomFootprint(loc, footprint);
+                if (resolvedResult?.footprint) {
+                  onEnterRoomRef.current(loc.id, {
+                    ...withDiscoveryMeta(),
+                    ...loc,
+                    footprint: resolvedResult.footprint,
+                    footprintSource: resolvedResult.source,
+                    tags: { ...(loc.tags || {}), ...(footprint?.tags || {}) },
+                  });
+                }
               });
             }, false, loc.id);
         });
@@ -246,7 +728,7 @@ export default function MapView({ location, rooms, onEnterRoom }) {
   // Build icon HTML based on current in-range state
   const makeIcon = (emoji, color, name, inRange, count) => L.divIcon({
     className: '',
-    html: `<div style="display:flex;flex-direction:column;align-items:center;cursor:${inRange ? 'pointer' : 'default'}">
+    html: `<div style="display:flex;flex-direction:column;align-items:center;cursor:${inRange ? 'pointer' : 'default'};opacity:${inRange ? '1' : '0.78'}">
       <div style="background:${color};font-size:16px;width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:3px solid #2b2b33;box-shadow:2px 2px 0 #2b2b33">${emoji}</div>
       <div style="background:rgba(250,240,215,0.98);color:#1f2937;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;margin-top:2px;white-space:nowrap;font-family:'Courier New',monospace;max-width:96px;overflow:hidden;text-overflow:ellipsis;border:1.5px solid #111827;box-shadow:2px 2px 0 rgba(17,24,39,0.85);text-shadow:0 1px 0 rgba(255,255,255,0.75)">${name}${inRange ? ' ✦' : ''}${count ? ` · 👤${count}` : ''}</div>
       <div style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:6px solid #2b2b33"></div>
@@ -263,6 +745,7 @@ export default function MapView({ location, rooms, onEnterRoom }) {
       const el = pin.marker.getElement();
       if (el) {
         el.style.filter = inRange ? 'none' : 'none';
+        el.style.opacity = inRange ? '1' : '0.78';
         el.style.cursor = inRange ? 'pointer' : 'default';
         const dot = el.querySelector('div > div:first-child');
         if (dot) dot.style.boxShadow = inRange ? `0 0 10px ${pin.color}cc` : `0 0 5px ${pin.color}88`;
@@ -351,9 +834,28 @@ export default function MapView({ location, rooms, onEnterRoom }) {
       const style = ROOM_STYLES[room.id] || { color: '#a78bfa', emoji: '📍' };
       addPin(map, room.lat, room.lng, room.name, style.emoji, style.color, room.radiusMeters,
         () => {
-          onEnterRoomRef.current(room.id, null);
+          const initialResult = resolveRoomFootprint(room, null);
+          onEnterRoomRef.current(
+            room.id,
+            initialResult?.footprint
+              ? withDiscoveryMeta({ ...room, footprint: initialResult.footprint, footprintSource: initialResult.source })
+              : withDiscoveryMeta({ ...room }),
+          );
+              attachIndoorLayout(room, initialResult?.footprint
+                ? { ...room, footprint: initialResult.footprint, footprintSource: initialResult.source }
+                : { ...room }, onEnterRoomRef.current);
+          if (initialResult?.source === 'known-override' || initialResult?.source === 'provider-footprint') return;
           fetchBuildingFootprint(room.lat, room.lng).then(footprint => {
-            if (footprint) onEnterRoomRef.current(room.id, { ...room, footprint });
+            const resolvedResult = resolveRoomFootprint(room, footprint);
+            if (resolvedResult?.footprint) {
+              onEnterRoomRef.current(room.id, {
+                ...withDiscoveryMeta(),
+                ...room,
+                footprint: resolvedResult.footprint,
+                footprintSource: resolvedResult.source,
+                tags: { ...(room.tags || {}), ...(footprint?.tags || {}) },
+              });
+            }
           });
         }, false, room.id);
     });

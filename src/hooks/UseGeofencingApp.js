@@ -25,6 +25,7 @@ export function useGeofencedMap(apiEndpoint = '/api/geofence/check', enabled = t
   const [isInsideVenue, setIsInsideVenue] = useState(false);
   const [error, setError] = useState(null);
   const [isLocating, setIsLocating] = useState(true);
+  const [retryToken, setRetryToken] = useState(0);
 
   // Tracks active venue ID to prevent redundant re-fetches during minor GPS drift
   const activeVenueIdRef = useRef(null);
@@ -39,6 +40,12 @@ export function useGeofencedMap(apiEndpoint = '/api/geofence/check', enabled = t
       setMapData(null);
       setIsInsideVenue(false);
       setError(null);
+      setIsLocating(false);
+      return;
+    }
+
+    if (typeof window !== 'undefined' && !window.isSecureContext && window.location.hostname !== 'localhost') {
+      setError('Location requires HTTPS on iPhone. Open the secure site URL and try again.');
       setIsLocating(false);
       return;
     }
@@ -134,7 +141,7 @@ export function useGeofencedMap(apiEndpoint = '/api/geofence/check', enabled = t
     return () => {
       navigator.geolocation.clearWatch(watchId);
     };
-  }, [apiEndpoint, enabled]);
+  }, [apiEndpoint, enabled, retryToken]);
 
   return {
     location,        // Raw { latitude, longitude, accuracy }
@@ -142,7 +149,13 @@ export function useGeofencedMap(apiEndpoint = '/api/geofence/check', enabled = t
     mapData,         // 16-bit Tilemap & Furniture JSON payload
     isInsideVenue,   // Boolean flag for rendering space vs lock screen
     error,           // Location/API error string
-    isLocating       // Initial loading state during GPS acquisition
+    isLocating,      // Initial loading state during GPS acquisition
+    retryLocation: () => {
+      activeVenueIdRef.current = null;
+      setError(null);
+      setIsLocating(true);
+      setRetryToken((token) => token + 1);
+    },
   };
 }
 0       

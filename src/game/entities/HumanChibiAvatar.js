@@ -16,69 +16,16 @@ const AVATAR_VARIANTS = {
   },
 };
 
-const MALE_SHEET_KEYS = {
-  step1: 'hoodie-source-turnaround-step1',
-  step2: 'hoodie-source-walk-step2',
+const MALE_FRAME_KEYS = {
+  front: ['male-front-step1', 'male-front-step2'],
+  back: ['male-back-step1', 'male-back-step2'],
+  side: ['male-side-step1', 'male-side-step2'],
 };
 
-const MALE_FRAME_CROPS = {
-  front: {
-    step1: { x: 40, y: 130, w: 720, h: 1240 },
-    step2: { x: 620, y: 150, w: 640, h: 1220 },
-  },
-  back: {
-    step1: { x: 780, y: 130, w: 900, h: 1240 },
-    step2: { x: 1240, y: 150, w: 650, h: 1220 },
-  },
-  side: {
-    step1: { x: 1720, y: 130, w: 800, h: 1240 },
-    step2: { x: 1860, y: 150, w: 680, h: 1220 },
-  },
-};
-
-function generateMaleFrameFromSheet(scene, key, sourceKey, crop) {
-  if (scene.textures.exists(key)) return true;
-  if (!scene.textures.exists(sourceKey)) return false;
-
-  const sourceImage = scene.textures.get(sourceKey)?.getSourceImage?.();
-  if (!sourceImage) return false;
-
-  const canvas = scene.textures.createCanvas(key, 96, 96);
-  if (!canvas) return false;
-  const ctx = canvas.getContext();
-  if (!ctx) return false;
-
-  ctx.clearRect(0, 0, 96, 96);
-  ctx.drawImage(
-    sourceImage,
-    crop.x,
-    crop.y,
-    crop.w,
-    crop.h,
-    0,
-    0,
-    96,
-    96,
-  );
-  canvas.refresh();
-  return true;
-}
-
-function makeMaleFrameKeysFromSource(scene) {
-  const keys = {
-    front: ['male-front-step1', 'male-front-step2'],
-    back: ['male-back-step1', 'male-back-step2'],
-    side: ['male-side-step1', 'male-side-step2'],
-  };
-
-  const ok = generateMaleFrameFromSheet(scene, keys.front[0], MALE_SHEET_KEYS.step1, MALE_FRAME_CROPS.front.step1)
-    && generateMaleFrameFromSheet(scene, keys.front[1], MALE_SHEET_KEYS.step2, MALE_FRAME_CROPS.front.step2)
-    && generateMaleFrameFromSheet(scene, keys.back[0], MALE_SHEET_KEYS.step1, MALE_FRAME_CROPS.back.step1)
-    && generateMaleFrameFromSheet(scene, keys.back[1], MALE_SHEET_KEYS.step2, MALE_FRAME_CROPS.back.step2)
-    && generateMaleFrameFromSheet(scene, keys.side[0], MALE_SHEET_KEYS.step1, MALE_FRAME_CROPS.side.step1)
-    && generateMaleFrameFromSheet(scene, keys.side[1], MALE_SHEET_KEYS.step2, MALE_FRAME_CROPS.side.step2);
-
-  return ok ? keys : null;
+function hasAllMaleFrames(scene) {
+  return MALE_FRAME_KEYS.front.every((key) => scene.textures.exists(key))
+    && MALE_FRAME_KEYS.back.every((key) => scene.textures.exists(key))
+    && MALE_FRAME_KEYS.side.every((key) => scene.textures.exists(key));
 }
 
 function normalizeAvatarGender(value) {
@@ -405,18 +352,15 @@ export default class HumanChibiAvatar extends SpriteAvatarBase {
     const avatarGender = normalizeAvatarGender(options.avatarGender);
     const variant = AVATAR_VARIANTS[avatarGender];
 
-    if (avatarGender === 'male') {
-      const maleKeys = makeMaleFrameKeysFromSource(scene);
-      if (maleKeys) {
+    if (avatarGender === 'male' && hasAllMaleFrames(scene)) {
         super(scene, x, y, {
           ...options,
           bodyType: 'standard',
-          frameKeys: maleKeys,
+          frameKeys: MALE_FRAME_KEYS,
           targetHeight: 76,
           shadowColor: 0x000000,
         });
         return;
-      }
     }
 
     const palette = {

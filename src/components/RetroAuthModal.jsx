@@ -23,7 +23,7 @@ const sanitizeCharacterName = (value = '') => value
 const getStepTitle = (isSignUp, signUpStep, isResetMode) => {
   if (!isSignUp && isResetMode) return 'Reset Password';
   if (!isSignUp) return 'Log In';
-  if (signUpStep === 1) return 'Step 1: Build Your Avatar';
+  if (signUpStep === 1) return 'Step 1: Choose Your Avatar';
   if (signUpStep === 2) return 'Step 2: Account Security';
   return 'Step 3: Quest Readiness';
 };
@@ -727,9 +727,6 @@ export default function RetroAuthModal({ onLogin }) {
           <div style={{ display: 'inline-block', color: '#fbbf24', fontSize: 11, letterSpacing: '0.18em', textTransform: 'uppercase', border: '1px solid #7c2d12', padding: '5px 10px', background: 'rgba(124,45,18,0.25)', marginBottom: 10, transform: 'translateZ(18px)' }}>
             Side Quest Access Node
           </div>
-          <h1 style={{ margin: '0 0 10px', fontFamily: 'Bebas Neue, Impact, sans-serif', fontSize: 'clamp(2.4rem, 7vw, 4rem)', lineHeight: 0.9, textTransform: 'uppercase', letterSpacing: '0.04em', color: '#fef3c7', transform: 'translateZ(28px)' }}>
-            Create Your Entry
-          </h1>
           <p style={{ margin: '0 0 14px', color: '#cbd5e1', fontSize: 14, lineHeight: 1.5, maxWidth: 460, transform: 'translateZ(12px)' }}>
             Your first impression now has weight: craft your human avatar, lock your account, and complete entry conditions before you hit the world map.
           </p>

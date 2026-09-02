@@ -1,6 +1,6 @@
 ## Frontend Deploy
 
-Production frontend is hosted on Netlify at `https://rad-cassata-e95d89.netlify.app`.
+Production frontend is hosted on Netlify at `https://sidequestbobcat.netlify.app`.
 
 Important: this site is currently using Netlify Drop, not a repo-connected build. A `git push` to `main` does not publish frontend changes by itself.
 
@@ -13,7 +13,7 @@ Important: this site is currently using Netlify Drop, not a repo-connected build
 ### Manual Publish Steps
 
 1. Run `npm run build`
-2. Upload the contents of `dist` to the Netlify project `rad-cassata-e95d89`
+2. Upload the contents of `dist` to the Netlify site `https://sidequestbobcat.netlify.app` (project `sidequestbobcat`)
 3. After publish, verify the site loads a new `assets/index-*.js` bundle
 
 ### Notes
