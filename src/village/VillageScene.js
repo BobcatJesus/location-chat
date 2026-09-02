@@ -1304,7 +1304,7 @@ export class VillageScene extends Phaser.Scene {
     employees.forEach(async (employee, index) => {
       try {
         const npc = await createAvatarEntity(this, employee.x, employee.y, {
-          avatarModel: index % 2 === 0 ? 'bunny' : 'turtle',
+          avatarModel: index % 3 === 0 ? 'bunny' : (index % 3 === 1 ? 'turtle' : 'snake'),
           bodyType: 'standard',
           name: employee.label || 'Library Staff',
           isLocal: false,
