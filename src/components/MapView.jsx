@@ -82,12 +82,48 @@ const POI_TYPES = [
   { tag: 'shop',    value: 'books',            emoji: '📚', color: '#6366f1', label: 'Bookstore' },
   { tag: 'shop',    value: 'music',            emoji: '🎵', color: '#a855f7', label: 'Music' },
   { tag: 'shop',    value: 'art',              emoji: '🎨', color: '#818cf8', label: 'Art Shop' },
+  { tag: 'shop',    value: 'ticket',           emoji: '🎟️', color: '#f97316', label: 'Tickets' },
+  { tag: 'shop',    value: 'hairdresser',      emoji: '✂️', color: '#ec4899', label: 'Hair Salon' },
+  { tag: 'shop',    value: 'beauty',           emoji: '💄', color: '#db2777', label: 'Beauty' },
+  { tag: 'shop',    value: 'car_parts',        emoji: '🔧', color: '#64748b', label: 'Auto Parts' },
+  { tag: 'shop',    value: 'hardware',         emoji: '🛠️', color: '#78716c', label: 'Hardware' },
+  { tag: 'shop',    value: 'florist',          emoji: '🌷', color: '#f472b6', label: 'Florist' },
+  { tag: 'shop',    value: 'gift',             emoji: '🎁', color: '#f59e0b', label: 'Gift Shop' },
+  { tag: 'shop',    value: 'shoes',            emoji: '👟', color: '#475569', label: 'Shoes' },
+  { tag: 'shop',    value: 'jewelry',          emoji: '💎', color: '#0ea5e9', label: 'Jewelry' },
+  { tag: 'shop',    value: 'mobile_phone',     emoji: '📱', color: '#2563eb', label: 'Phone Store' },
+  { tag: 'shop',    value: 'electronics',      emoji: '🔌', color: '#4f46e5', label: 'Electronics' },
+  { tag: 'shop',    value: 'laundry',          emoji: '🧺', color: '#38bdf8', label: 'Laundry' },
+  { tag: 'shop',    value: 'dry_cleaning',     emoji: '🧥', color: '#64748b', label: 'Dry Cleaner' },
+  { tag: 'shop',    value: 'bicycle',          emoji: '🚲', color: '#16a34a', label: 'Bike Shop' },
+  { tag: 'shop',    value: 'pet',              emoji: '🐾', color: '#a16207', label: 'Pet Shop' },
+  { tag: 'shop',    value: 'optician',         emoji: '👓', color: '#0891b2', label: 'Optician' },
+  { tag: 'shop',    value: 'mall',             emoji: '🛍️', color: '#f59e0b', label: 'Mall' },
+  { tag: 'shop',    value: 'department_store', emoji: '🛍️', color: '#d97706', label: 'Department Store' },
   { tag: 'amenity', value: 'deli',             emoji: '🥪', color: '#f59e0b', label: 'Deli' },
   { tag: 'amenity', value: 'juice_bar',        emoji: '🥤', color: '#4ade80', label: 'Juice Bar' },
   { tag: 'amenity', value: 'hookah_lounge',    emoji: '💨', color: '#a78bfa', label: 'Lounge' },
+  { tag: 'amenity', value: 'atm',              emoji: '💵', color: '#64748b', label: 'ATM' },
+  { tag: 'amenity', value: 'clinic',           emoji: '🏥', color: '#10b981', label: 'Clinic' },
+  { tag: 'amenity', value: 'doctors',          emoji: '🩺', color: '#10b981', label: 'Doctor' },
+  { tag: 'amenity', value: 'dentist',          emoji: '🦷', color: '#06b6d4', label: 'Dentist' },
+  { tag: 'amenity', value: 'veterinary',       emoji: '🐾', color: '#84cc16', label: 'Veterinary' },
+  { tag: 'amenity', value: 'post_office',      emoji: '✉️', color: '#ef4444', label: 'Post Office' },
+  { tag: 'office',  value: 'company',          emoji: '🏢', color: '#64748b', label: 'Business' },
+  { tag: 'office',  value: 'coworking',        emoji: '💻', color: '#0ea5e9', label: 'Coworking' },
+  { tag: 'office',  value: 'insurance',        emoji: '📄', color: '#64748b', label: 'Insurance' },
+  { tag: 'office',  value: 'estate_agent',     emoji: '🏠', color: '#059669', label: 'Real Estate' },
+  { tag: 'office',  value: 'lawyer',           emoji: '⚖️', color: '#475569', label: 'Law Office' },
+  { tag: 'office',  value: 'accountant',       emoji: '🧾', color: '#64748b', label: 'Accountant' },
+  { tag: 'office',  value: 'travel_agent',     emoji: '✈️', color: '#0ea5e9', label: 'Travel Agency' },
+  { tag: 'healthcare', value: 'clinic',        emoji: '🏥', color: '#10b981', label: 'Clinic' },
+  { tag: 'healthcare', value: 'doctor',        emoji: '🩺', color: '#10b981', label: 'Doctor' },
+  { tag: 'healthcare', value: 'dentist',       emoji: '🦷', color: '#06b6d4', label: 'Dentist' },
+  { tag: 'craft', value: 'brewery',            emoji: '🍺', color: '#a16207', label: 'Brewery' },
+  { tag: 'craft', value: 'photographer',       emoji: '📷', color: '#818cf8', label: 'Photographer' },
 ];
 
-const POI_RADIUS = 40; // metres
+const POI_RADIUS = 100; // metres
 const AUTHORITATIVE_FOOTPRINTS_URL = '/assets/footprints/parks.geojson';
 let authoritativeParkFootprints = [];
 let authoritativeParkFootprintsLoad = null;
@@ -480,31 +516,37 @@ function deriveElementCoords(element) {
   return { lat: null, lng: null };
 }
 
+function getPoiTypeInfo(tags = {}) {
+  const fallback = { emoji: '📍', color: '#94a3b8', label: 'Place', value: 'default' };
+  const tagPriority = ['shop', 'amenity', 'office', 'healthcare', 'craft', 'tourism', 'leisure', 'natural', 'historic', 'highway'];
+  for (const tag of tagPriority) {
+    const match = POI_TYPES.find((type) => type.tag === tag && tags?.[tag] === type.value);
+    if (match) return match;
+  }
+  return fallback;
+}
+
 // Fetch nearby POIs from OpenStreetMap Overpass API (free, no key)
 async function fetchNearbyPOIs(lat, lng, radiusMeters = 800) {
-  try {
-    const res = await fetch(`${SOCKET_SERVER_URL}/api/nearby-places?lat=${encodeURIComponent(lat)}&lng=${encodeURIComponent(lng)}&radius=${encodeURIComponent(radiusMeters)}`);
-    if (!res.ok) return [];
-    const elements = await res.json();
-    return (Array.isArray(elements) ? elements : []).map((el) => {
-      const coords = deriveElementCoords(el);
-      const typeInfo = POI_TYPES.find((t) => el.tags?.[t.tag] === t.value) || { emoji: '📍', color: '#94a3b8', label: 'Place', value: 'default' };
-      return {
-        id: `osm-${el.id}`,
-        name: el.tags?.name || typeInfo.label,
-        lat: coords.lat,
-        lng: coords.lng,
-        radiusMeters: POI_RADIUS,
-        kind: 'osm',
-        amenity: typeInfo.value,
-        emoji: typeInfo.emoji,
-        color: typeInfo.color,
-        tags: el.tags || {},
-      };
-    }).filter((poi) => Number.isFinite(poi.lat) && Number.isFinite(poi.lng));
-  } catch {
-    return [];
-  }
+  const res = await fetch(`${SOCKET_SERVER_URL}/api/nearby-places?lat=${encodeURIComponent(lat)}&lng=${encodeURIComponent(lng)}&radius=${encodeURIComponent(radiusMeters)}`);
+  if (!res.ok) throw new Error(`Nearby places request failed (${res.status})`);
+  const elements = await res.json();
+  return (Array.isArray(elements) ? elements : []).map((el) => {
+    const coords = deriveElementCoords(el);
+    const typeInfo = getPoiTypeInfo(el.tags || {});
+    return {
+      id: `osm-${el.id}`,
+      name: el.tags?.name || typeInfo.label,
+      lat: coords.lat,
+      lng: coords.lng,
+      radiusMeters: POI_RADIUS,
+      kind: 'osm',
+      amenity: typeInfo.value,
+      emoji: typeInfo.emoji,
+      color: typeInfo.color,
+      tags: el.tags || {},
+    };
+  }).filter((poi) => Number.isFinite(poi.lat) && Number.isFinite(poi.lng));
 }
 
 // Fetch the building polygon footprint nearest to a given point
@@ -816,8 +858,8 @@ export default function MapView({ location, rooms, onEnterRoom }) {
     const map = L.map(mapRef.current, { center: [lat, lng], zoom: 17, zoomControl: false, clickTolerance: 5 });
     leafletRef.current = map;
 
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-      attribution: '© OpenStreetMap © CARTO', maxZoom: 20,
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors', maxZoom: 19,
     }).addTo(map);
 
     // Player dot

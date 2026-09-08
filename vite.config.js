@@ -6,6 +6,9 @@ const buildStamp = new Date().toISOString();
 
 export default defineConfig({
   plugins: [react()],
+  server: {
+    allowedHosts: ['.trycloudflare.com'],
+  },
   define: {
     'import.meta.env.VITE_BUILD_STAMP': JSON.stringify(buildStamp),
   },

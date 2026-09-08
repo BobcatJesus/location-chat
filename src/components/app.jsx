@@ -7,6 +7,8 @@ import { createUserRoom, deleteUserRoom, loadUserRooms, acceptRoomInvite, getAll
 import { getDistanceMeters } from '../geo';
 import { normalizeAvatarModel } from '../game/entities/avatarModelInfo';
 import { deriveLocationPalette } from '../utils/locationPalette';
+import { signOut } from '../lib/authClient';
+import { getRoomAccessRadius, isOpenAccessRoom } from '../accessPolicy';
 
 const VillageCanvas = lazy(() => import('../village/VillageCanvas.jsx'));
 const MapView = lazy(() => import('./MapView.jsx'));
@@ -63,25 +65,8 @@ const mergeRoomsById = (...roomSets) => {
   return Array.from(byId.values());
 };
 
-export const hasTemporaryAccess = (roomId = '', roomName = '') => {
-  const text = `${roomId} ${roomName}`
-    .toLowerCase()
-    .replace(/[_\-]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  const tokens = text.split(' ');
-  const parkLike = ['park', 'garden', 'lawn', 'green square', 'green space'];
-
-  if (String(roomId || '').toLowerCase() === 'shepherd-park') return true;
-  if (String(roomId || '').toLowerCase() === 'starbucks-spring') return true;
-  if (String(roomId || '').toLowerCase() === 'mcdonalds-practice') return true;
-  if (text.includes('shepherd park')) return true;
-  if (text.includes('starbucks')) return true;
-  if (text.includes('mcdonald')) return true;
-  if (tokens.includes('shepherd') && tokens.includes('park')) return true;
-  if (tokens.includes('forest') && tokens.includes('gate')) return true;
-  if (parkLike.some((keyword) => text.includes(keyword))) return true;
+export const hasTemporaryAccess = () => {
+  // GPS proximity is required to enter any GPS-anchored location; no bypasses.
   return false;
 };
 
@@ -675,6 +660,37 @@ function App() {
   };
 
   useEffect(() => {
+    if (isLoggedIn) return;
+    try {
+      const raw = localStorage.getItem('sidequest_profile');
+      const savedProfile = raw ? JSON.parse(raw) : null;
+      if (!savedProfile || typeof savedProfile !== 'object') return;
+      if (!savedProfile.email && !savedProfile.characterName) return;
+
+      const { migrated, changed } = migrateProfileForAvatar(savedProfile);
+      const restoredAuthProfile = {
+        mode: migrated.guestMode ? 'guest' : 'login',
+        profile: migrated,
+      };
+
+      if (changed) {
+        localStorage.setItem('sidequest_profile', JSON.stringify(migrated));
+      }
+      setProfile(restoredAuthProfile);
+      setIsLoggedIn(true);
+      loadUserRooms(migrated.email || restoredAuthProfile.mode || 'guest');
+
+      if (!isAvatarOnboardingComplete(migrated)) {
+        startAvatarOnboarding(restoredAuthProfile);
+      } else {
+        setOnboardingRequired(false);
+      }
+    } catch {
+      localStorage.removeItem('sidequest_profile');
+    }
+  }, [isLoggedIn]);
+
+  useEffect(() => {
     try {
       const params = new URLSearchParams(window.location.search);
       const quickStart = params.get('quickStart');
@@ -782,11 +798,18 @@ function App() {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await signOut();
+    } catch (signOutError) {
+      setProfileError(signOutError.message || 'Could not end your session.');
+      return;
+    }
     localStorage.removeItem('sidequest_profile');
     localStorage.removeItem('sidequest_signup_draft_v1');
     setIsLoggedIn(false);
     setProfile(null);
+    setShowLanding(true);
     setOnboardingRequired(false);
     setEditingProfile(false);
     setProfileError(null);
@@ -853,7 +876,12 @@ function App() {
   const roomMatch = staticRoomMatch;
 
   const handleCreateRoom = () => {
-    if (!location) return;
+    if (!location) {
+      setGpsToast('Waiting for GPS. Use Retry Location before creating a place.');
+      setTimeout(() => setGpsToast(null), 4000);
+      retryLocation();
+      return;
+    }
     setNewRoomName('');
     setNewRoomCategory('social');
     setNewRoomPublic(false);
@@ -912,6 +940,7 @@ function App() {
     const roomId = `user-${Date.now()}`;
 
     let publicRoomCreated = !newRoomPublic;
+    let localRoomIsPublic = newRoomPublic;
 
     if (newRoomPublic) {
       const THREE_DAYS = 3 * 24 * 60 * 60 * 1000;
@@ -938,10 +967,16 @@ function App() {
         });
         if (!resp.ok) {
           const err = await resp.json().catch(() => ({}));
-          setCreatingRoom(false);
-          setGpsToast(`Community save failed: ${err.error || resp.status}`);
-          setTimeout(() => setGpsToast(null), 5000);
-          return;
+          if (resp.status === 503 && err.error === 'No database') {
+            localRoomIsPublic = false;
+            setGpsToast('Database unavailable. Saved this place privately on this device.');
+            setTimeout(() => setGpsToast(null), 5000);
+          } else {
+            setCreatingRoom(false);
+            setGpsToast(`Community save failed: ${err.error || resp.status}`);
+            setTimeout(() => setGpsToast(null), 5000);
+            return;
+          }
         } else {
           const created = normalizeCommunityRoom(await resp.json().catch(() => null));
           if (created) {
@@ -963,7 +998,7 @@ function App() {
       newRoom = createUserRoom({
         id: roomId, name: roomName,
         lat: location.latitude, lng: location.longitude,
-        radiusMeters: 60, contributor: contributorName, ownerId, isPublic: newRoomPublic,
+        radiusMeters: 60, contributor: contributorName, ownerId, isPublic: localRoomIsPublic,
       });
     }
 
@@ -992,7 +1027,7 @@ function App() {
       radiusMeters: room.radiusMeters,
       ownerId: room.ownerId,
       contributors: room.contributors,
-      icon: (room.kind === 'user-created' || room.kind === 'community') ? (room.emoji || '🔥') : { 'starbucks-spring': '☕', 'mcdonalds-practice': '🍟', 'agora-houston': '🍷', 'downtown-hub': '🏙️', 'forest-gate': '🌲', 'sunset-temple': '⛩️' }[room.id] || '🏛️',
+      icon: (room.kind === 'user-created' || room.kind === 'community') ? (room.emoji || '🔥') : { 'starbucks-spring': '☕', 'mcdonalds-practice': '🍟', 'agora-houston': '🍷', 'downtown-hub': '🏙️', 'forest-gate': '🌲', 'sunset-temple': '⛩️', 'hermann-park': '🦆' }[room.id] || '🏛️',
       blurb: (room.kind === 'user-created' || room.kind === 'community')
         ? `Community space · ${room.contributors.join(', ')}`
         : `GPS-anchored · ${room.radiusMeters}m radius`,
@@ -1037,29 +1072,6 @@ function App() {
           tile: '◻◻◻\n◻◼◻\n◻◻◻'
         };
   const presentDistance = roomMatch ? roomMatch.distance : null;
-
-  const buildDebugSnapshot = () => JSON.stringify({
-    scene: activeScene,
-    selectedRoom,
-    activeRoom: activeRoom?.id || null,
-    osmRoom: osmRoom?.id || null,
-    roomName: osmRoom?.name || activeRoom?.name || null,
-    location: location
-      ? { latitude: location.latitude, longitude: location.longitude }
-      : null,
-    gps: isLocating ? 'scanning' : 'ready',
-    nearby: isInsideVenue ? 'inside' : 'outside',
-    timestamp: new Date().toISOString(),
-  }, null, 2);
-
-  const copyDebugSnapshot = async () => {
-    try {
-      await navigator.clipboard.writeText(buildDebugSnapshot());
-      setGpsToast('Debug snapshot copied');
-    } catch {
-      setGpsToast('Copy failed');
-    }
-  };
 
   const fetchJsonWithTimeout = async (url, timeoutMs = 4500) => {
     const controller = new AbortController();
@@ -1107,7 +1119,9 @@ function App() {
     ]);
     const requestError = nearby == null || footprint == null;
 
-    const nearbyElements = Array.isArray(nearby?.elements) ? nearby.elements : [];
+    const nearbyElements = Array.isArray(nearby)
+      ? nearby
+      : (Array.isArray(nearby?.elements) ? nearby.elements : []);
     const nearestElement = nearbyElements
       .filter((el) => Number.isFinite(Number(el?.lat)) && Number.isFinite(Number(el?.lng)))
       .sort((a, b) => {
@@ -1172,6 +1186,7 @@ function App() {
   };
 
   const handleEnterRoom = (roomId, poiMeta = null) => {
+    const hasOpenAccess = isOpenAccessRoom(roomId);
     const canonicalRoom = allRooms.find((room) => room.id === roomId) || null;
     const mergedPoiMeta = poiMeta
       ? {
@@ -1185,7 +1200,7 @@ function App() {
         }
       : null;
     const temporaryAccess = hasTemporaryAccess(roomId, mergedPoiMeta?.name || canonicalRoom?.name || '');
-    const strictModeEnabled = OSM_STRICT_READY_MODE && !temporaryAccess;
+    const strictModeEnabled = OSM_STRICT_READY_MODE && !temporaryAccess && !hasOpenAccess;
     const baseRoomData = {
       ...(mergedPoiMeta || canonicalRoom || {}),
       id: roomId,
@@ -1209,9 +1224,14 @@ function App() {
     ];
 
     // GPS gating for named GPS rooms (no poiMeta)
-    if (!poiMeta) {
+    if (!hasOpenAccess && !poiMeta) {
       const target = allRooms.find(r => r.id === roomId);
-      if (target && target.kind === 'gps' && location && !temporaryAccess) {
+      if (target && target.kind === 'gps') {
+        if (!location) {
+          setGpsToast(`Waiting for GPS lock. You must be within ${target.radiusMeters}m of ${target.name} to enter.`);
+          setTimeout(() => setGpsToast(null), 3500);
+          return;
+        }
         const dist = getDistanceMeters(location.latitude, location.longitude, target.lat, target.lng);
         if (dist > target.radiusMeters) {
           setGpsToast(`You need to be within ${target.radiusMeters}m of ${target.name} to enter. You are ${Math.round(dist)}m away.`);
@@ -1220,18 +1240,20 @@ function App() {
         }
       }
     }
-    // GPS gating for community/user rooms passed via poiMeta with a radius
-    if (mergedPoiMeta?.radius && mergedPoiMeta?.lat && location && !temporaryAccess) {
-      const dist = getDistanceMeters(location.latitude, location.longitude, mergedPoiMeta.lat, mergedPoiMeta.lng);
-      if (dist > mergedPoiMeta.radius) {
-        setGpsToast(`You need to be within ${mergedPoiMeta.radius}m of ${mergedPoiMeta.name || 'this location'} to enter. You are ${Math.round(dist)}m away.`);
+    // GPS gating for all map locations passed through poiMeta.
+    const accessRadius = getRoomAccessRadius(mergedPoiMeta || {});
+    if (!hasOpenAccess && Number.isFinite(accessRadius) && accessRadius > 0 && Number.isFinite(Number(mergedPoiMeta?.lat)) && Number.isFinite(Number(mergedPoiMeta?.lng))) {
+      if (!location) {
+        setGpsToast(`Waiting for GPS lock. You must be within ${accessRadius}m of ${mergedPoiMeta.name || 'this location'} to enter.`);
         setTimeout(() => setGpsToast(null), 3500);
         return;
       }
-    }
-    if (temporaryAccess) {
-      setGpsToast(`Temporary access enabled for ${mergedPoiMeta?.name || roomId}. GPS is not required right now.`);
-      setTimeout(() => setGpsToast(null), 3500);
+      const dist = getDistanceMeters(location.latitude, location.longitude, mergedPoiMeta.lat, mergedPoiMeta.lng);
+      if (dist > accessRadius) {
+        setGpsToast(`You need to be within ${accessRadius}m of ${mergedPoiMeta.name || 'this location'} to enter. You are ${Math.round(dist)}m away.`);
+        setTimeout(() => setGpsToast(null), 3500);
+        return;
+      }
     }
     setOsmRoom(baseRoomData);
     setSelectedRoom(roomId);
@@ -1377,13 +1399,6 @@ function App() {
         </div>
       )}
 
-      <button
-        onClick={copyDebugSnapshot}
-        style={{ position: 'fixed', bottom: 12, left: 12, zIndex: 30000, background: '#111827', color: '#fde68a', border: '2px solid #fbbf24', borderRadius: 8, padding: '6px 12px', cursor: 'pointer', fontSize: 11, fontWeight: 'bold', fontFamily: 'Courier New, monospace', boxShadow: '2px 2px 0 #000' }}
-      >
-        Copy Debug Snapshot
-      </button>
-
       {/* Create room name prompt */}
       {!avatarStudioOpen && creatingRoom && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', zIndex: 10001, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setCreatingRoom(false)}>
@@ -1509,7 +1524,7 @@ function App() {
                     onClick={retryLocation}
                     style={{ display: 'block', marginTop: 6, background: '#7f1d1d', border: '1px solid #ef4444', color: '#fee2e2', fontSize: 10, cursor: 'pointer', padding: '4px 8px', fontFamily: 'monospace', textTransform: 'uppercase' }}
                   >
-                    Enable Location
+                    Retry Location
                   </button>
                 </div>
               )}
@@ -1552,7 +1567,7 @@ function App() {
             ) : (
               <div style={{ flex: 1, border: '2px solid #334155', borderRadius: 12, overflow: 'hidden', position: 'relative' }}>
                 <Suspense fallback={<div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', color: '#94a3b8', background: '#0f172a' }}>Loading room…</div>}>
-                  <VillageCanvas room={osmRoom ? { ...osmRoom, id: osmRoom.id } : activeRoom} profile={profile} onLeave={() => { setActiveScene('world'); setOsmRoom(null); }} />
+                  <VillageCanvas room={osmRoom ? { ...osmRoom, id: osmRoom.id } : activeRoom} profile={profile} location={location} onLeave={() => { setActiveScene('world'); setOsmRoom(null); }} />
                 </Suspense>
                 {(activeRoom?.kind === 'user-created' || activeRoom?.kind === 'community') && (activeRoom.ownerId === (profile?.profile?.email || profile?.mode || 'guest') || activeRoom.ownerId === (profile?.profile?.characterName || '')) && (
                   <button

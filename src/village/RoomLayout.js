@@ -101,6 +101,7 @@ const SOLID_ZONE_TYPES = new Set([
   'toy_display',
   'cd_rack',
   'bathroom',
+  'pond',
 ]);
 
 export class RoomLayout {
@@ -906,6 +907,7 @@ export class RoomLayout {
 
       case 'shelf':
       case 'wall_shelf':
+      case 'book_shelf':
         this._drawShelf(x, y, w, h, z.label);
         if (z.interact) this.interactZones.push(z);
         break;
@@ -1178,6 +1180,24 @@ export class RoomLayout {
         this._drawCustomZone(z);
         break;
 
+      case 'pond': {
+        const cx = x + w / 2;
+        const cy = y + h / 2;
+        g.fillStyle(0x1a4971, 0.35);
+        g.fillEllipse(cx, cy + 6, w * 1.02, h * 1.05);
+        g.fillStyle(0x2b6cb0, 1);
+        g.fillEllipse(cx, cy, w, h);
+        g.fillStyle(0x63b3ed, 0.55);
+        g.fillEllipse(cx, cy, w * 0.8, h * 0.72);
+        g.lineStyle(3, 0x1a4971, 0.9);
+        g.strokeEllipse(cx, cy, w, h);
+        g.lineStyle(1.5, 0xbee3f8, 0.55);
+        g.strokeEllipse(cx, cy - h * 0.1, w * 0.5, h * 0.32);
+        g.strokeEllipse(cx + w * 0.12, cy + h * 0.14, w * 0.3, h * 0.18);
+        if (z.label) this._lbl(cx, y - 10, z.label, LABEL_STYLE, 0.5, 1);
+        break;
+      }
+
       case 'escalator_up':
       case 'escalator_down': {
         const isUp = z.type === 'escalator_up';
@@ -1208,26 +1228,74 @@ export class RoomLayout {
 
   _drawShelf(x, y, w, h, label) {
     const g = this.gfx;
-    // Wood body
-    g.fillStyle(C.SHELF_WOOD, 1);
-    g.fillRect(x, y, w, h);
-    // Top cap lighter
-    g.fillStyle(C.SHELF_TOP, 1);
-    g.fillRect(x, y, w, 8);
-    g.lineStyle(1.5, C.WALL, 1);
+    const horizontal = w >= h;
+    const frame = Math.max(7, Math.min(12, Math.round(Math.min(w, h) * 0.22)));
+    const innerX = x + frame;
+    const innerY = y + frame;
+    const innerW = Math.max(1, w - frame * 2);
+    const innerH = Math.max(1, h - frame * 2);
+
+    g.fillStyle(0x140d09, 0.36);
+    g.fillRect(x + 6, y + 7, w, h);
+    g.fillStyle(0x4b2f1f, 1);
+    g.fillRoundedRect(x, y, w, h, 4);
+    g.fillStyle(0x27180f, 1);
+    g.fillRoundedRect(innerX, innerY, innerW, innerH, 2);
+    g.lineStyle(3, 0x140d09, 1);
     g.strokeRect(x, y, w, h);
-    // Book spines — packed in rows
-    const spineW = Math.max(6, Math.floor(w * 0.7));
-    const spineH = 16;
-    const leftPad = Math.floor((w - spineW) / 2);
-    let si = 0;
-    for (let sy = y + 14; sy + spineH < y + h - 4; sy += spineH + 2) {
-      const col = SPINES[si % SPINES.length];
-      g.fillStyle(col, 0.9);
-      g.fillRect(x + leftPad, sy, spineW, spineH);
-      si++;
+
+    g.fillStyle(0x7a4a28, 1);
+    if (horizontal) {
+      g.fillRect(x, y, frame, h);
+      g.fillRect(x + w - frame, y, frame, h);
+    } else {
+      g.fillRect(x, y, w, frame);
+      g.fillRect(x, y + h - frame, w, frame);
     }
-    if (label) this._lbl(x + w / 2, y - 10, label, LABEL_STYLE, 0.5, 1);
+
+    const shelfLines = horizontal
+      ? Math.max(2, Math.floor(innerH / 22))
+      : Math.max(3, Math.floor(innerH / 38));
+    const rowH = innerH / shelfLines;
+    let spineIndex = 0;
+
+    for (let row = 0; row < shelfLines; row += 1) {
+      const rowY = innerY + row * rowH;
+      g.fillStyle(0x8b5a2b, 1);
+      g.fillRect(innerX, rowY + rowH - 5, innerW, 5);
+
+      let bx = innerX + 5;
+      while (bx < innerX + innerW - 7) {
+        const bookW = 7 + ((spineIndex + row) % 4) * 3;
+        const bookH = Math.max(13, rowH - 9 - ((spineIndex + row) % 3) * 4);
+        const by = rowY + rowH - 4 - bookH;
+        g.fillStyle(SPINES[spineIndex % SPINES.length], 0.96);
+        g.fillRect(bx, by, Math.min(bookW, innerX + innerW - bx - 2), bookH);
+        g.fillStyle(0xffffff, 0.22);
+        g.fillRect(bx + 1, by + 2, 1, Math.max(2, bookH - 4));
+        bx += bookW + 4;
+        spineIndex += 1;
+      }
+    }
+
+    const plaqueW = horizontal ? Math.min(w - 14, 78) : Math.min(w - 10, 58);
+    const plaqueH = horizontal ? 20 : Math.min(h - 18, 78);
+    const plaqueX = x + w / 2 - plaqueW / 2;
+    const plaqueY = y + h / 2 - plaqueH / 2;
+    g.fillStyle(0xf8e7b8, 0.98);
+    g.fillRoundedRect(plaqueX, plaqueY, plaqueW, plaqueH, 3);
+    g.lineStyle(2, 0x7c4a1d, 1);
+    g.strokeRect(plaqueX, plaqueY, plaqueW, plaqueH);
+
+    const shelfMark = horizontal ? 'BOOKS' : 'BOOK\nSHELF';
+    this._lbl(x + w / 2, y + h / 2, shelfMark, {
+      fontSize: horizontal ? '12px' : '10px',
+      fontFamily: 'Courier New, monospace',
+      color: '#3f2a20',
+      backgroundColor: undefined,
+      padding: { x: 2, y: 1 },
+    }, 0.5, 0.5);
+    if (label) this._lbl(x + w / 2, y - 14, `BOOKS - ${label}`, { ...SIGN_STYLE, fontSize: '9px' }, 0.5, 1);
   }
 
   _lbl(x, y, text, style, ox = 0.5, oy = 0) {

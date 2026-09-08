@@ -69,6 +69,31 @@ describe('auth endpoints', () => {
     expect(data.ok).toBe(true);
   });
 
+  it('preserves the avatar profile across signup and login', async () => {
+    const profile = {
+      email: 'round-trip@side.quest',
+      characterName: 'round_trip',
+      firstName: 'Round Trip',
+      avatarModel: 'bunny',
+      avatarOnboardingComplete: true,
+    };
+
+    const signup = await postJson('/api/auth/signup', {
+      email: profile.email,
+      password: 'round-trip-pass',
+      profile,
+    });
+    expect(signup.response.status).toBe(200);
+
+    const login = await postJson('/api/auth/login', {
+      email: profile.email,
+      password: 'round-trip-pass',
+    });
+    expect(login.response.status).toBe(200);
+    expect(login.data.ok).toBe(true);
+    expect(login.data.profile).toEqual(profile);
+  });
+
   it('rejects wrong password', async () => {
     await postJson('/api/auth/signup', {
       email: 'wrong-pass@side.quest',

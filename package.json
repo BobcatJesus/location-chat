@@ -5,6 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "concurrently \"npm run dev:client\" \"npm run dev:server\"",
+    "dev:clean": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/dev-clean.ps1",
+    "check:env": "node scripts/check-env.js",
+    "check:nearby": "node scripts/check-nearby.js",
     "dev:client": "vite",
     "dev:server": "node server/socket.js",
     "build": "vite build",
@@ -16,6 +19,8 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "@supabase/server": "^1.5.3",
+    "@supabase/supabase-js": "^2.115.0",
     "bcryptjs": "^3.0.3",
     "exp": "^57.2.1",
     "express": "^4.19.2",

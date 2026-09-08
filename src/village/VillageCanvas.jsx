@@ -46,58 +46,6 @@ const SHEPHERD_PARK_FOOTPRINT = [
 ];
 
 const RUNTIME_SESSION_STAMP = new Date().toISOString();
-const ROOM_SHAPE_PRESETS = [
-  { id: 'auto', label: 'Auto' },
-  { id: 'cozy', label: 'Cozy' },
-  { id: 'wide', label: 'Wide' },
-  { id: 'long', label: 'Long' },
-  { id: 'l-shape', label: 'L-Shape' },
-  { id: 'courtyard', label: 'Courtyard' },
-];
-
-function metersToLatLon(room = {}, dxMeters = 0, dyMeters = 0) {
-  const lat = Number(room?.lat);
-  const lng = Number(room?.lng);
-  const centerLat = Number.isFinite(lat) ? lat : 0;
-  const centerLng = Number.isFinite(lng) ? lng : 0;
-  const lonScale = Math.max(0.000001, Math.cos((centerLat * Math.PI) / 180));
-  return {
-    lat: centerLat + (dyMeters / 111320),
-    lon: centerLng + (dxMeters / (111320 * lonScale)),
-  };
-}
-
-function createUserRoomShapeFootprint(room = {}, presetId = 'auto') {
-  if (!presetId || presetId === 'auto') return null;
-
-  const radiusMeters = Math.max(36, Number(room?.radiusMeters || room?.radius || 82));
-  const scale = radiusMeters / 82;
-  const shapes = {
-    cozy: [
-      [-58, -40], [58, -40], [74, -18], [74, 42], [42, 60], [-42, 60], [-74, 42], [-74, -18],
-    ],
-    wide: [
-      [-112, -38], [112, -38], [130, -18], [130, 46], [88, 66], [-88, 66], [-130, 46], [-130, -18],
-    ],
-    long: [
-      [-48, -92], [48, -92], [68, -68], [68, 86], [44, 114], [-44, 114], [-68, 86], [-68, -68],
-    ],
-    'l-shape': [
-      [-100, -76], [48, -76], [48, -22], [102, -22], [102, 74], [-100, 74],
-    ],
-    courtyard: [
-      [0, -104], [74, -78], [112, -12], [92, 62], [28, 104], [-48, 96], [-106, 42], [-102, -34], [-52, -88],
-    ],
-  };
-
-  const points = shapes[presetId];
-  if (!points) return null;
-  return points.map(([dx, dy]) => metersToLatLon(room, dx * scale, dy * scale));
-}
-
-function storageKeyForRoomShape(roomId = '') {
-  return `sidequest:room-shape:${roomId || 'unknown'}`;
-}
 
 function formatDebugStamp(value = '') {
   const text = String(value || '').trim();
@@ -259,7 +207,7 @@ function createDecahedronRoomFootprint(room = {}) {
   return points;
 }
 
-export default function VillageCanvas({ room, profile, onLeave }) {
+export default function VillageCanvas({ room, profile, onLeave, location }) {
   const BASE_WIDTH = 1600;
   const BASE_HEIGHT = 900;
   const containerRef = useRef(null);
@@ -275,12 +223,10 @@ export default function VillageCanvas({ room, profile, onLeave }) {
   const [systemNotice, setSystemNotice] = useState('');
   const [roomPopulation, setRoomPopulation] = useState(1);
   const [cameraMode, setCameraMode] = useState('wide-follow');
-  const [footprintDebug, setFootprintDebug] = useState(false);
   const [currentFloor, setCurrentFloor] = useState(0);
   const [totalFloors, setTotalFloors] = useState(1);
   const [stairScaffoldActive, setStairScaffoldActive] = useState(false);
   const roomId = canonicalRoomId(room);
-  const [roomShapePreset, setRoomShapePreset] = useState('auto');
   const isMcDonaldsRoom = roomId.includes('mcdonald') || normalizePlaceText(room?.name || '').includes('mcdonald');
   const normalizedAmenity = inferAmenityTag(room);
   const normalizedRoom = {
@@ -299,8 +245,7 @@ export default function VillageCanvas({ room, profile, onLeave }) {
       : Array.isArray(knownRoomFootprint)
         ? knownRoomFootprint
         : localRadiusFallbackFootprint;
-  const userShapeFootprint = createUserRoomShapeFootprint(normalizedRoom, roomShapePreset);
-  const roomFootprint = Array.isArray(userShapeFootprint) ? userShapeFootprint : baseRoomFootprint;
+  const roomFootprint = baseRoomFootprint;
   const footprintKey = Array.isArray(roomFootprint)
     ? roomFootprint
         .map((point) => `${Number(point?.lat ?? point?.y ?? 0).toFixed(5)}:${Number(point?.lng ?? point?.lon ?? point?.x ?? 0).toFixed(5)}`)
@@ -312,7 +257,6 @@ export default function VillageCanvas({ room, profile, onLeave }) {
   const seedRoomMeta = ROOMS.find((candidate) => candidate?.id === roomId) || null;
   const roomSignature = [
     roomId,
-    roomShapePreset,
     normalizedRoom?.name || '',
     normalizedRoom?.amenity || '',
     normalizedRoom?.shop || '',
@@ -469,17 +413,6 @@ export default function VillageCanvas({ room, profile, onLeave }) {
   }, []);
 
   useEffect(() => {
-    if (!roomId) return;
-    try {
-      const saved = window.localStorage?.getItem(storageKeyForRoomShape(roomId));
-      const hasPreset = ROOM_SHAPE_PRESETS.some((preset) => preset.id === saved);
-      setRoomShapePreset(hasPreset ? saved : 'auto');
-    } catch {
-      setRoomShapePreset('auto');
-    }
-  }, [roomId]);
-
-  useEffect(() => {
     setShowEditHint(true);
     const timer = setTimeout(() => setShowEditHint(false), 7000);
     return () => clearTimeout(timer);
@@ -522,10 +455,17 @@ export default function VillageCanvas({ room, profile, onLeave }) {
       roomData: normalizedRoom,
       explicitLayout,
       profile,
+      userLocation: location || null,
+      onLeave,
       preferredCameraMode,
       onEditorChange: setEditorActive,
       onNearbyChange: setNearbyCount,
       onNearbyNpcChange: setNearbyNpc,
+      onNpcConversationClear: ({ npcId } = {}) => {
+        setMessages((prev) => prev.filter((msg) => msg.channel !== 'npc' || msg.npcId !== npcId));
+        setDraft('');
+        setChatRecipient('players');
+      },
       onRoomPopulationChange: (count) => {
         setRoomPopulation(Math.max(0, Number(count) || 0));
       },
@@ -583,24 +523,11 @@ export default function VillageCanvas({ room, profile, onLeave }) {
       setSystemNotice('');
       setRoomPopulation(1);
       setCameraMode('wide-follow');
-      setFootprintDebug(false);
       setCurrentFloor(0);
       setTotalFloors(1);
       setStairScaffoldActive(false);
     };
   }, [roomSignature, roomId, outdoorMode, forceBookstoreLayout, forceLibraryLayout, preferredCameraMode, shouldForceMultiLevelScaffold]);
-
-  const changeRoomShapePreset = (event) => {
-    const nextPreset = event.target.value;
-    const hasPreset = ROOM_SHAPE_PRESETS.some((preset) => preset.id === nextPreset);
-    const safePreset = hasPreset ? nextPreset : 'auto';
-    setRoomShapePreset(safePreset);
-    try {
-      if (roomId) window.localStorage?.setItem(storageKeyForRoomShape(roomId), safePreset);
-    } catch {}
-    const label = ROOM_SHAPE_PRESETS.find((preset) => preset.id === safePreset)?.label || safePreset;
-    setSystemNotice(safePreset === 'auto' ? 'Room shape set to Auto' : `Room shape: ${label}`);
-  };
 
   const toggleEditor = () => {
     const scene = gameRef.current?.scene?.getScene('VillageScene');
@@ -632,13 +559,6 @@ export default function VillageCanvas({ room, profile, onLeave }) {
     if (!scene?.sys?.isActive()) return;
     const nextMode = scene.toggleCameraMode?.();
     if (nextMode) setCameraMode(nextMode);
-  };
-
-  const toggleFootprintDebug = () => {
-    const scene = gameRef.current?.scene?.getScene('VillageScene');
-    if (!scene?.sys?.isActive()) return;
-    const nextState = scene.toggleFootprintDebug?.();
-    if (typeof nextState === 'boolean') setFootprintDebug(nextState);
   };
 
   const copyDebugSnapshot = async () => {
@@ -750,81 +670,33 @@ export default function VillageCanvas({ room, profile, onLeave }) {
         >
           Zoom: {zoomLabel}
         </button>
-        <label style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          background: roomShapePreset === 'auto' ? 'rgba(0,0,0,0.55)' : '#38bdf8',
-          color: roomShapePreset === 'auto' ? '#fff' : '#082f49',
-          border: 'none',
-          borderRadius: 8,
-          padding: '6px 10px',
-          minHeight: 0,
-          fontSize: 14,
-          fontWeight: 'bold',
-        }}>
-          Shape
-          <select
-            value={roomShapePreset}
-            onChange={changeRoomShapePreset}
-            onKeyDown={(event) => event.stopPropagation()}
-            onKeyUp={(event) => event.stopPropagation()}
-            style={{
-              border: '1px solid rgba(15,23,42,0.3)',
-              borderRadius: 6,
-              background: '#f8fafc',
-              color: '#0f172a',
-              fontSize: 13,
-              fontWeight: 'bold',
-              cursor: 'pointer',
-            }}
-          >
-            {ROOM_SHAPE_PRESETS.map((preset) => (
-              <option key={preset.id} value={preset.id}>{preset.label}</option>
-            ))}
-          </select>
-        </label>
-        <button
-          onClick={toggleFootprintDebug}
-          style={{
-            background: footprintDebug ? '#38bdf8' : 'rgba(0,0,0,0.55)',
-            color: footprintDebug ? '#082f49' : '#fff',
-            border: 'none',
-            borderRadius: 8,
-            padding: '6px 14px',
-            minHeight: 0,
-            cursor: 'pointer',
-            fontSize: 14,
-            fontWeight: 'bold',
-          }}
-        >
-          Border Debug
-        </button>
       </div>
 
-      <div style={{
-        position: 'absolute',
-        left: 12,
-        bottom: 12,
-        zIndex: 1000,
-      }}>
-        <button
-          onClick={copyDebugSnapshot}
-          style={{
-            background: '#0f172acc',
-            color: '#bfdbfe',
-            border: '1px solid #1d4ed8',
-            borderRadius: 8,
-            padding: '6px 12px',
-            cursor: 'pointer',
-            fontSize: 11,
-            fontWeight: 'bold',
-            fontFamily: 'Courier New, monospace',
-          }}
-        >
-          Copy Debug Snapshot
-        </button>
-      </div>
+      {import.meta.env.DEV && (
+        <div style={{
+          position: 'absolute',
+          left: 12,
+          bottom: 12,
+          zIndex: 1000,
+        }}>
+          <button
+            onClick={copyDebugSnapshot}
+            style={{
+              background: '#0f172acc',
+              color: '#bfdbfe',
+              border: '1px solid #1d4ed8',
+              borderRadius: 8,
+              padding: '6px 12px',
+              cursor: 'pointer',
+              fontSize: 11,
+              fontWeight: 'bold',
+              fontFamily: 'Courier New, monospace',
+            }}
+          >
+            Copy Debug Snapshot
+          </button>
+        </div>
+      )}
 
       <div style={{
         position: 'absolute',

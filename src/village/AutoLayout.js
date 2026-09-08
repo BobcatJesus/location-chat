@@ -401,7 +401,7 @@ function resolveSpawn(theme, footprint) {
   return valid || centroid;
 }
 
-function buildShepherdParkTrees(footprint, spawn, rng) {
+function buildShepherdParkTrees(footprint, spawn, rng, exclusionRects = []) {
   if (!Array.isArray(footprint) || footprint.length < 3) return [];
 
   const xs = footprint.map((point) => point.x);
@@ -418,7 +418,10 @@ function buildShepherdParkTrees(footprint, spawn, rng) {
     const x = minX + rng() * (maxX - minX);
     const y = minY + rng() * (maxY - minY);
     const isNearSpawn = Math.hypot(x - spawn.x, y - spawn.y) < 260;
-    if (!isNearSpawn && isPointInPolygon(x, y, footprint)) {
+    const isInExclusionRect = exclusionRects.some((rect) => (
+      x >= rect.x && x <= rect.x + rect.w && y >= rect.y && y <= rect.y + rect.h
+    ));
+    if (!isNearSpawn && !isInExclusionRect && isPointInPolygon(x, y, footprint)) {
       trees.push({
         type: 'tree',
         x,
@@ -431,6 +434,32 @@ function buildShepherdParkTrees(footprint, spawn, rng) {
   }
 
   return trees;
+}
+
+// Builds a pond zone (bounding box, top-left anchored) sized proportionally to the
+// room footprint and placed away from the spawn point so it reads as a distinct feature.
+function buildPondZone(footprint, spawn, label = '🦆 Pond') {
+  if (!Array.isArray(footprint) || footprint.length < 3) return null;
+
+  const xs = footprint.map((point) => point.x);
+  const ys = footprint.map((point) => point.y);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const spanX = maxX - minX;
+  const spanY = maxY - minY;
+  const w = Math.max(220, spanX * 0.34);
+  const h = Math.max(160, spanY * 0.22);
+
+  let cx = minX + spanX * 0.62;
+  let cy = minY + spanY * 0.42;
+  if (Math.hypot(cx - spawn.x, cy - spawn.y) < 260) {
+    cx = minX + spanX * 0.32;
+    cy = minY + spanY * 0.62;
+  }
+
+  return { type: 'pond', x: cx - w / 2, y: cy - h / 2, w, h, solid: true, label };
 }
 
 function hasStructuredIndoorSource(roomData = null) {
@@ -595,6 +624,19 @@ export function buildAutoLayout(roomId, roomName, amenityTag, shopTag = '', room
       { type: 'employee', x: 1040, y: 1580, label: 'Morning Jogger', patrol: [[1040, 1580], [1320, 1640], [1580, 1540], [1860, 1640], [2140, 1540]] },
       { type: 'employee', x: 2380, y: 900, label: 'Park Regular', patrol: [[2380, 900], [2620, 820], [2860, 960], [2740, 1200], [2460, 1160]] },
       { type: 'employee', x: 820, y: 1480, label: 'Pond Watcher', patrol: [[820, 1480], [620, 1360], [760, 1180], [1020, 1240], [1080, 1460]] },
+    );
+  }
+
+  const isHermannPark = `${roomId || ''} ${roomName || ''}`.toLowerCase().includes('hermann');
+  if (isHermannPark && footprint) {
+    const spawnPoint = resolveSpawn(theme, footprint);
+    const pond = buildPondZone(footprint, spawnPoint, '🦆 McGovern Lake');
+    if (pond) contentZones.push(pond);
+    contentZones.push(...buildShepherdParkTrees(footprint, spawnPoint, rng, pond ? [pond] : []));
+    contentZones.push(
+      { type: 'employee', x: 900, y: 1400, label: 'Duck Feeder', patrol: [[900, 1400], [1040, 1460], [960, 1540], [820, 1480]] },
+      { type: 'employee', x: 1600, y: 900, label: 'Paddleboat Guide', patrol: [[1600, 900], [1780, 940], [1720, 1040], [1540, 1000]] },
+      { type: 'employee', x: 2400, y: 1700, label: 'Trail Runner', patrol: [[2400, 1700], [2640, 1620], [2860, 1720], [2620, 1820]] },
     );
   }
   const zones = [wallZone, ...contentZones];

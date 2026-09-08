@@ -1,255 +1,250 @@
 Add-Type -AssemblyName System.Drawing
 
-$sourcePath = "public\avatars\source\snake_source.png"
-$outputDir = "public\avatars\snake"
+$sourcePath = (Resolve-Path "public\avatars\source\snake_source.png").Path
+$outputDir = (Join-Path (Get-Location) "public\avatars\snake")
 
 if (!(Test-Path $outputDir)) {
     New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
 }
 
-$srcBmp = [System.Drawing.Bitmap]::FromFile((Resolve-Path $sourcePath).Path)
-$w = $srcBmp.Width
-$h = $srcBmp.Height
+$code = @'
+using System;
+using System.Collections.Generic;
+using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
+using System.IO;
 
-Write-Host "Processing snake sprite sheet: ${w}x${h}"
+public static class SnakeSpriteProcessor
+{
+    const int Target = 128;
+    const int Pad = 10;      // transparent margin kept around the tallest pose
+    const int Baseline = 6;  // gap between sprite feet and the bottom of the frame
 
-$argb = New-Object System.Drawing.Bitmap($w, $h, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
-$g = [System.Drawing.Graphics]::FromImage($argb)
-$g.DrawImage($srcBmp, 0, 0, $w, $h)
-$g.Dispose()
-$srcBmp.Dispose()
-
-# Determine background threshold
-# In the source image, the background is plain white/off-white (R>235, G>235, B>235 with low saturation)
-# Snake belly is pale yellow/peach (B is much lower than R & G, e.g., R=255, G=230, B=195 -> (R-B) > 35)
-# Eyes specular highlight is small white dots inside the dark eye (R,G,B < 60 surrounds them)
-
-function IsWhiteBackground($c) {
-    # Check if pixel is pure/near white and neutral (not yellowish/peachy like belly)
-    $minVal = [Math]::Min($c.R, [Math]::Min($c.G, $c.B))
-    $maxVal = [Math]::Max($c.R, [Math]::Max($c.G, $c.B))
-    $diff = $maxVal - $minVal
-
-    # Neutral off-white/pure white: all channels high (>= 225) and low color divergence (diff <= 18)
-    if ($minVal -ge 225 -and $diff -le 20) {
-        return $true
+    static bool IsBackground(int argb)
+    {
+        int r = (argb >> 16) & 0xFF, g = (argb >> 8) & 0xFF, b = argb & 0xFF;
+        int min = Math.Min(r, Math.Min(g, b));
+        int max = Math.Max(r, Math.Max(g, b));
+        return min >= 195 && (max - min) <= 45;
     }
-    # Also near-pure white with slight compression noise (>= 215, diff <= 12)
-    if ($minVal -ge 215 -and $diff -le 12) {
-        return $true
-    }
-    return $false
-}
 
-# Flood fill from boundaries AND find enclosed background pockets (e.g. between tail and neck)
-$visited = New-Object 'bool[,]' $w, $h
-$queue = New-Object System.Collections.Generic.Queue[System.Drawing.Point]
-
-# Enqueue border pixels
-for ($x = 0; $x -lt $w; $x++) {
-    if (IsWhiteBackground ($argb.GetPixel($x, 0))) {
-        $visited[$x, 0] = $true
-        $queue.Enqueue((New-Object System.Drawing.Point($x, 0)))
+    static bool IsHalo(int argb)
+    {
+        int r = (argb >> 16) & 0xFF, g = (argb >> 8) & 0xFF, b = argb & 0xFF;
+        int min = Math.Min(r, Math.Min(g, b));
+        int max = Math.Max(r, Math.Max(g, b));
+        return min >= 205 && (max - min) <= 60;
     }
-    if (IsWhiteBackground ($argb.GetPixel($x, $h - 1))) {
-        $visited[$x, $h - 1] = $true
-        $queue.Enqueue((New-Object System.Drawing.Point($x, $h - 1)))
-    }
-}
-for ($y = 0; $y -lt $h; $y++) {
-    if (IsWhiteBackground ($argb.GetPixel(0, $y))) {
-        $visited[0, $y] = $true
-        $queue.Enqueue((New-Object System.Drawing.Point(0, $y)))
-    }
-    if (IsWhiteBackground ($argb.GetPixel($w - 1, $y))) {
-        $visited[$w - 1, $y] = $true
-        $queue.Enqueue((New-Object System.Drawing.Point($w - 1, $y)))
-    }
-}
 
-while ($queue.Count -gt 0) {
-    $pt = $queue.Dequeue()
-    $px = $pt.X
-    $py = $pt.Y
-    
-    $argb.SetPixel($px, $py, [System.Drawing.Color]::FromArgb(0, 0, 0, 0))
-
-    $neighbors = @(
-        (New-Object System.Drawing.Point($px + 1, $py)),
-        (New-Object System.Drawing.Point($px - 1, $py)),
-        (New-Object System.Drawing.Point($px, $py + 1)),
-        (New-Object System.Drawing.Point($px, $py - 1))
-    )
-
-    foreach ($n in $neighbors) {
-        if ($n.X -ge 0 -and $n.X -lt $w -and $n.Y -ge 0 -and $n.Y -lt $h) {
-            if (-not $visited[$n.X, $n.Y]) {
-                $visited[$n.X, $n.Y] = $true
-                $col = $argb.GetPixel($n.X, $n.Y)
-                if (IsWhiteBackground $col) {
-                    $queue.Enqueue($n)
-                }
+    public static void Run(string sourcePath, string outputDir)
+    {
+        int w, h;
+        int[] px;
+        using (var src = new Bitmap(sourcePath))
+        {
+            w = src.Width;
+            h = src.Height;
+            using (var argb = new Bitmap(w, h, PixelFormat.Format32bppArgb))
+            {
+                using (var g = Graphics.FromImage(argb)) { g.DrawImage(src, 0, 0, w, h); }
+                px = ReadPixels(argb, w, h);
             }
         }
-    }
-}
+        Console.WriteLine("Source sheet: " + w + "x" + h);
 
-# Second pass: check for enclosed background holes (e.g. inside loop of tail)
-# Any large connected component of IsWhiteBackground pixels that isn't inside the eye
-# (Eye specular dots are small, < 30 pixels total, and surrounded by very dark brown/black pixels R,G,B < 70)
-for ($y = 0; $y -lt $h; $y++) {
-    for ($x = 0; $x -lt $w; $x++) {
-        if (-not $visited[$x, $y]) {
-            $col = $argb.GetPixel($x, $y)
-            if (IsWhiteBackground $col) {
-                # Find the full connected component of this white pocket
-                $pocketQueue = New-Object System.Collections.Generic.Queue[System.Drawing.Point]
-                $pocketPoints = New-Object System.Collections.Generic.List[System.Drawing.Point]
-                
-                $visited[$x, $y] = $true
-                $pocketQueue.Enqueue((New-Object System.Drawing.Point($x, $y)))
-                $pocketPoints.Add((New-Object System.Drawing.Point($x, $y)))
+        FloodFillBackground(px, w, h);
+        // Two erosion passes strip the near-white anti-aliased fringe left by the fill.
+        StripHalo(px, w, h);
+        StripHalo(px, w, h);
 
-                while ($pocketQueue.Count -gt 0) {
-                    $p = $pocketQueue.Dequeue()
-                    $pNeighbors = @(
-                        (New-Object System.Drawing.Point($p.X + 1, $p.Y)),
-                        (New-Object System.Drawing.Point($p.X - 1, $p.Y)),
-                        (New-Object System.Drawing.Point($p.X, $p.Y + 1)),
-                        (New-Object System.Drawing.Point($p.X, $p.Y - 1))
-                    )
-                    foreach ($pn in $pNeighbors) {
-                        if ($pn.X -ge 0 -and $pn.X -lt $w -and $pn.Y -ge 0 -and $pn.Y -lt $h) {
-                            if (-not $visited[$pn.X, $pn.Y]) {
-                                $visited[$pn.X, $pn.Y] = $true
-                                $pnCol = $argb.GetPixel($pn.X, $pn.Y)
-                                if (IsWhiteBackground $pnCol) {
-                                    $pocketQueue.Enqueue($pn)
-                                    $pocketPoints.Add($pn)
-                                }
-                            }
-                        }
-                    }
-                }
+        var bands = FindBands(px, w, h);
+        if (bands.Count < 3) throw new Exception("Expected 3 character bands, found " + bands.Count);
+        bands.Sort((a, b) => b.Opaque.CompareTo(a.Opaque));
+        bands = bands.GetRange(0, 3);
+        bands.Sort((a, b) => a.X0.CompareTo(b.X0));
 
-                # If the pocket has more than 150 pixels, it's definitely an enclosed background pocket, not an eye specular highlight!
-                if ($pocketPoints.Count -gt 150) {
-                    foreach ($p in $pocketPoints) {
-                        $argb.SetPixel($p.X, $p.Y, [System.Drawing.Color]::FromArgb(0, 0, 0, 0))
-                    }
-                }
-            }
+        foreach (var band in bands) TightenBand(px, w, h, band);
+
+        // One shared scale keeps the three poses in proportion with each other.
+        int tallest = 0, widest = 0;
+        foreach (var band in bands)
+        {
+            tallest = Math.Max(tallest, band.Y1 - band.Y0 + 1);
+            widest = Math.Max(widest, band.X1 - band.X0 + 1);
         }
-    }
-}
+        double scale = Math.Min((double)(Target - Pad) / tallest, (double)(Target - Pad) / widest);
 
-# Edge cleanup: feather/defringe near-white border halos
-for ($y = 0; $y -lt $h; $y++) {
-    for ($x = 0; $x -lt $w; $x++) {
-        $col = $argb.GetPixel($x, $y)
-        if ($col.A -gt 0) {
-            $minVal = [Math]::Min($col.R, [Math]::Min($col.G, $col.B))
-            $maxVal = [Math]::Max($col.R, [Math]::Max($col.G, $col.B))
-            $diff = $maxVal - $minVal
+        string[] labels = { "front", "back", "side" };
+        for (int i = 0; i < 3; i++)
+        {
+            var band = bands[i];
+            string name = labels[i];
+            int bw = band.X1 - band.X0 + 1;
+            int bh = band.Y1 - band.Y0 + 1;
+            Console.WriteLine(name + ": (" + band.X0 + "," + band.Y0 + ") to (" + band.X1 + "," + band.Y1 + ") " + bw + "x" + bh);
 
-            if ($minVal -ge 210 -and $diff -le 25) {
-                # Check if touching transparent pixel
-                $isBorder = $false
-                for ($dy = -1; $dy -le 1; $dy++) {
-                    for ($dx = -1; $dx -le 1; $dx++) {
-                        $nx = $x + $dx
-                        $ny = $y + $dy
-                        if ($nx -ge 0 -and $nx -lt $w -and $ny -ge 0 -and $ny -lt $h) {
-                            if ($argb.GetPixel($nx, $ny).A -eq 0) {
-                                $isBorder = $true
-                                break
-                            }
-                        }
-                    }
-                    if ($isBorder) { break }
-                }
+            using (var isolated = Crop(px, w, band))
+            {
+                // Side art must face right; the base sprite flips it when walking left.
+                if (name == "side") isolated.RotateFlip(RotateFlipType.RotateNoneFlipX);
 
-                if ($isBorder) {
-                    $argb.SetPixel($x, $y, [System.Drawing.Color]::FromArgb(0, 0, 0, 0))
-                }
-            }
-        }
-    }
-}
+                int dw = Math.Max(1, (int)Math.Round(bw * scale));
+                int dh = Math.Max(1, (int)Math.Round(bh * scale));
+                int dx = (Target - dw) / 2;
+                int dy = Target - dh - Baseline;
 
-Write-Host "Defringing complete."
-
-function Process-Figure($name, $x1, $x2) {
-    $minX = $x2
-    $maxX = $x1
-    $minY = $h
-    $maxY = 0
-
-    for ($y = 0; $y -lt $h; $y++) {
-        for ($x = $x1; $x -lt $x2; $x++) {
-            $p = $argb.GetPixel($x, $y)
-            if ($p.A -gt 0) {
-                if ($x -lt $minX) { $minX = $x }
-                if ($x -gt $maxX) { $maxX = $x }
-                if ($y -lt $minY) { $minY = $y }
-                if ($y -gt $maxY) { $maxY = $y }
+                Render(isolated, Path.Combine(outputDir, name + "-step1.png"), dx, dy, dw, dh);
+                int dw2 = (int)Math.Round(dw * 1.03);
+                int dh2 = (int)Math.Round(dh * 0.97);
+                Render(isolated, Path.Combine(outputDir, name + "-step2.png"), (Target - dw2) / 2, dy + (dh - dh2), dw2, dh2);
             }
         }
     }
 
-    if ($minX -ge $maxX -or $minY -ge $maxY) {
-        Write-Host "Error: No pixels found for $name!"
-        return
+    static int[] ReadPixels(Bitmap bmp, int w, int h)
+    {
+        var data = bmp.LockBits(new Rectangle(0, 0, w, h), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+        var px = new int[w * h];
+        System.Runtime.InteropServices.Marshal.Copy(data.Scan0, px, 0, px.Length);
+        bmp.UnlockBits(data);
+        return px;
     }
 
-    $bw = $maxX - $minX + 1
-    $bh = $maxY - $minY + 1
-    Write-Host "$name bounds: ($minX, $minY) to ($maxX, $maxY) -> size ${bw}x${bh}"
+    static void FloodFillBackground(int[] px, int w, int h)
+    {
+        var stack = new Stack<int>();
+        var seen = new bool[px.Length];
+        Action<int, int> seed = (x, y) =>
+        {
+            int idx = y * w + x;
+            if (!seen[idx]) { seen[idx] = true; stack.Push(idx); }
+        };
+        for (int x = 0; x < w; x++) { seed(x, 0); seed(x, h - 1); }
+        for (int y = 0; y < h; y++) { seed(0, y); seed(w - 1, y); }
 
-    $targetSize = 128
-    $scale = [Math]::Min(($targetSize - 20) / $bw, ($targetSize - 20) / $bh)
-    $dw = [int]($bw * $scale)
-    $dh = [int]($bh * $scale)
-    $dx = [int](($targetSize - $dw) / 2)
-    $dy = [int]($targetSize - $dh - 8)
+        while (stack.Count > 0)
+        {
+            int idx = stack.Pop();
+            if (!IsBackground(px[idx])) continue;
+            px[idx] = 0;
+            int x = idx % w, y = idx / w;
+            if (x > 0 && !seen[idx - 1]) { seen[idx - 1] = true; stack.Push(idx - 1); }
+            if (x < w - 1 && !seen[idx + 1]) { seen[idx + 1] = true; stack.Push(idx + 1); }
+            if (y > 0 && !seen[idx - w]) { seen[idx - w] = true; stack.Push(idx - w); }
+            if (y < h - 1 && !seen[idx + w]) { seen[idx + w] = true; stack.Push(idx + w); }
+        }
+    }
 
-    # Step 1
-    $bmp1 = New-Object System.Drawing.Bitmap($targetSize, $targetSize, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
-    $g1 = [System.Drawing.Graphics]::FromImage($bmp1)
-    $g1.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-    $g1.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
+    static void StripHalo(int[] px, int w, int h)
+    {
+        var kill = new List<int>();
+        for (int y = 0; y < h; y++)
+        {
+            for (int x = 0; x < w; x++)
+            {
+                int idx = y * w + x;
+                if ((px[idx] >> 24) == 0) continue;
+                bool edge = (x > 0 && (px[idx - 1] >> 24) == 0)
+                    || (x < w - 1 && (px[idx + 1] >> 24) == 0)
+                    || (y > 0 && (px[idx - w] >> 24) == 0)
+                    || (y < h - 1 && (px[idx + w] >> 24) == 0);
+                if (edge && IsHalo(px[idx])) kill.Add(idx);
+            }
+        }
+        foreach (int idx in kill) px[idx] = 0;
+    }
 
-    $srcRect = New-Object System.Drawing.Rectangle($minX, $minY, $bw, $bh)
-    $dstRect1 = New-Object System.Drawing.Rectangle($dx, $dy, $dw, $dh)
-    $g1.DrawImage($argb, $dstRect1, $srcRect, [System.Drawing.GraphicsUnit]::Pixel)
-    $g1.Dispose()
+    public class Band { public int X0, X1, Y0, Y1; public long Opaque; }
 
-    $file1 = Join-Path $outputDir "$name-step1.png"
-    $bmp1.Save($file1, [System.Drawing.Imaging.ImageFormat]::Png)
-    $bmp1.Dispose()
+    static List<Band> FindBands(int[] px, int w, int h)
+    {
+        var counts = new int[w];
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++)
+                if ((px[y * w + x] >> 24) != 0) counts[x]++;
 
-    # Step 2: Slither / Walk animation frame
-    $bmp2 = New-Object System.Drawing.Bitmap($targetSize, $targetSize, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
-    $g2 = [System.Drawing.Graphics]::FromImage($bmp2)
-    $g2.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-    $g2.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::HighQuality
+        int gapLimit = Math.Max(8, w / 120);
+        var bands = new List<Band>();
+        int x0 = -1, gap = 0;
+        for (int x = 0; x < w; x++)
+        {
+            if (counts[x] > 0)
+            {
+                if (x0 < 0) x0 = x;
+                gap = 0;
+            }
+            else if (x0 >= 0)
+            {
+                gap++;
+                if (gap >= gapLimit) { bands.Add(new Band { X0 = x0, X1 = x - gap }); x0 = -1; gap = 0; }
+            }
+        }
+        if (x0 >= 0) bands.Add(new Band { X0 = x0, X1 = w - 1 });
 
-    $step2Dw = [int]($dw * 1.03)
-    $step2Dh = [int]($dh * 0.97)
-    $step2Dx = [int](($targetSize - $step2Dw) / 2)
-    $step2Dy = $dy + 3
-    $dstRect2 = New-Object System.Drawing.Rectangle($step2Dx, $step2Dy, $step2Dw, $step2Dh)
-    $g2.DrawImage($argb, $dstRect2, $srcRect, [System.Drawing.GraphicsUnit]::Pixel)
-    $g2.Dispose()
+        foreach (var band in bands)
+        {
+            long total = 0;
+            for (int x = band.X0; x <= band.X1; x++) total += counts[x];
+            band.Opaque = total;
+            band.Y0 = 0;
+            band.Y1 = h - 1;
+        }
+        return bands;
+    }
 
-    $file2 = Join-Path $outputDir "$name-step2.png"
-    $bmp2.Save($file2, [System.Drawing.Imaging.ImageFormat]::Png)
-    $bmp2.Dispose()
+    static void TightenBand(int[] px, int w, int h, Band band)
+    {
+        int minX = int.MaxValue, maxX = int.MinValue, minY = int.MaxValue, maxY = int.MinValue;
+        for (int y = 0; y < h; y++)
+        {
+            for (int x = band.X0; x <= band.X1; x++)
+            {
+                if ((px[y * w + x] >> 24) == 0) continue;
+                if (x < minX) minX = x;
+                if (x > maxX) maxX = x;
+                if (y < minY) minY = y;
+                if (y > maxY) maxY = y;
+            }
+        }
+        band.X0 = minX; band.X1 = maxX; band.Y0 = minY; band.Y1 = maxY;
+    }
+
+    static Bitmap Crop(int[] px, int w, Band band)
+    {
+        int bw = band.X1 - band.X0 + 1;
+        int bh = band.Y1 - band.Y0 + 1;
+        var bmp = new Bitmap(bw, bh, PixelFormat.Format32bppArgb);
+        var data = bmp.LockBits(new Rectangle(0, 0, bw, bh), ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
+        var buffer = new int[bw * bh];
+        for (int y = 0; y < bh; y++)
+            for (int x = 0; x < bw; x++)
+                buffer[y * bw + x] = px[(band.Y0 + y) * w + (band.X0 + x)];
+        System.Runtime.InteropServices.Marshal.Copy(buffer, 0, data.Scan0, buffer.Length);
+        bmp.UnlockBits(data);
+        return bmp;
+    }
+
+    static void Render(Bitmap isolated, string path, int dx, int dy, int dw, int dh)
+    {
+        using (var frame = new Bitmap(Target, Target, PixelFormat.Format32bppArgb))
+        {
+            using (var g = Graphics.FromImage(frame))
+            {
+                g.Clear(Color.Transparent);
+                g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                g.SmoothingMode = SmoothingMode.HighQuality;
+                g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                g.CompositingQuality = CompositingQuality.HighQuality;
+                g.DrawImage(isolated, new Rectangle(dx, dy, dw, dh), new Rectangle(0, 0, isolated.Width, isolated.Height), GraphicsUnit.Pixel);
+            }
+            frame.Save(path, ImageFormat.Png);
+        }
+    }
 }
+'@
 
-Process-Figure "front" 0 ([int]($w * 0.35))
-Process-Figure "back"  ([int]($w * 0.33)) ([int]($w * 0.67))
-Process-Figure "side"  ([int]($w * 0.65)) $w
+Add-Type -TypeDefinition $code -ReferencedAssemblies System.Drawing
 
-$argb.Dispose()
-Write-Host "All snake avatar frames cleanly extracted into $outputDir!"
+[SnakeSpriteProcessor]::Run($sourcePath, $outputDir)
+Write-Host "Snake avatar frames regenerated (background flood-filled, bands isolated, side facing right)."

@@ -6,7 +6,7 @@ export default class SnakeAvatar extends SpriteAvatarBase {
     super(scene, x, y, {
       ...options,
       frameKeys: AVATAR_FRAME_KEYS.snake,
-      targetHeight: 60,
+      targetHeight: 50,
       shadowColor: 0x3d3438,
     });
   }

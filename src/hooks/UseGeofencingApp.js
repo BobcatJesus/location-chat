@@ -117,7 +117,7 @@ export function useGeofencedMap(apiEndpoint = '/api/geofence/check', enabled = t
       setIsLocating(false);
       switch (err.code) {
         case err.PERMISSION_DENIED:
-          setError('Location access denied. Please grant GPS permissions.');
+          setError('Location is blocked. Use your browser site settings to allow Location, then select Enable Location.');
           break;
         case err.POSITION_UNAVAILABLE:
           setError('Location information unavailable.');
@@ -154,6 +154,13 @@ export function useGeofencedMap(apiEndpoint = '/api/geofence/check', enabled = t
       activeVenueIdRef.current = null;
       setError(null);
       setIsLocating(true);
+      if (typeof navigator !== 'undefined' && navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          () => {},
+          () => {},
+          { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 },
+        );
+      }
       setRetryToken((token) => token + 1);
     },
   };

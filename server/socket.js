@@ -4,8 +4,10 @@ import http from 'http';
 import { Server } from 'socket.io';
 import pg from 'pg';
 import { createAuthService, registerAuthRoutes } from './auth.js';
-import { findRoomByLocation } from '../rooms/rooms.js';
+import { findRoomByLocation, getAllRooms } from '../rooms/rooms.js';
+import { isWithinRadius } from '../src/geo.js';
 import { buildAutoLayout } from '../src/village/AutoLayout.js';
+import { getRoomAccessRadius, isOpenAccessRoom } from '../src/accessPolicy.js';
 
 const { Pool } = pg;
 
@@ -205,6 +207,27 @@ const creatorRates = {}; // keyed by `${userId}:${roomId}`
 const socketCreatorRooms = {}; // socketId → Set<roomId>
 const socketUserMap = {};
 
+// Daily add/delete cap for non-creators, separate from the burst limiter above.
+const DAILY_EDIT_LIMIT = 3;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const dailyEditRates = {}; // keyed by `${userId}:${roomId}`
+
+function checkDailyEditLimit(userId, roomId) {
+  const key = `${userId}:${roomId}`;
+  const now = Date.now();
+  const r = dailyEditRates[key];
+  if (!r || now - r.windowStart > DAY_MS) {
+    dailyEditRates[key] = { count: 1, windowStart: now };
+    return { allowed: true, remaining: DAILY_EDIT_LIMIT - 1 };
+  }
+  if (r.count >= DAILY_EDIT_LIMIT) {
+    const resetInMinutes = Math.max(1, Math.ceil((r.windowStart + DAY_MS - now) / 60000));
+    return { allowed: false, remaining: 0, resetInMinutes };
+  }
+  r.count += 1;
+  return { allowed: true, remaining: DAILY_EDIT_LIMIT - r.count };
+}
+
 function checkRateLimit(userId) {
   const now = Date.now();
   const r = changeRates[userId];
@@ -249,7 +272,25 @@ io.on('connection', (socket) => {
   console.log(`⚡ Client connected: ${socket.id}`);
 
   // JOIN ROOM
-  socket.on('join_room', async ({ roomId, user }) => {
+  socket.on('join_room', async ({ roomId, user, lat, lng }) => {
+    // Enforce GPS proximity for GPS-anchored locations; reject joins from outside the radius.
+    const targetRoom = getAllRooms().find((r) => r.id === roomId);
+    if (!isOpenAccessRoom(roomId) && targetRoom && Number.isFinite(targetRoom.lat) && Number.isFinite(targetRoom.lng)) {
+      const userLat = Number(lat);
+      const userLng = Number(lng);
+      const radiusMeters = getRoomAccessRadius(targetRoom) || 100;
+      const hasValidCoords = Number.isFinite(userLat) && Number.isFinite(userLng);
+      if (!hasValidCoords || !isWithinRadius(userLat, userLng, targetRoom.lat, targetRoom.lng, radiusMeters)) {
+        socket.emit('join_denied', {
+          roomId,
+          reason: hasValidCoords
+            ? `You must be within ${radiusMeters}m of ${targetRoom.name} to enter.`
+            : 'GPS location is required to enter this location.',
+        });
+        return;
+      }
+    }
+
     socket.join(roomId);
 
     if (!rooms[roomId]) {
@@ -362,6 +403,13 @@ io.on('connection', (socket) => {
     if (!rate.allowed) {
       socket.emit('decoration_error', { message: `Limit reached. Resets in ~${rate.resetInMinutes}m.` });
       return;
+    }
+    if (!isCreator) {
+      const daily = checkDailyEditLimit(userId, roomId);
+      if (!daily.allowed) {
+        socket.emit('decoration_error', { message: `Daily edit limit reached (${DAILY_EDIT_LIMIT}/day). Resets in ~${daily.resetInMinutes}m.` });
+        return;
+      }
     }
     if (!decorations[roomId]) decorations[roomId] = [];
     const decoration = { ...item, id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, placedBy: userId };
@@ -732,30 +780,78 @@ app.get('/api/nearby-places', async (req, res) => {
   }
 
   const ar = `(around:${radius},${lat},${lng})`;
+  const amenityTypes = 'cafe|restaurant|fast_food|bar|pub|ice_cream|food_court|library|theatre|cinema|place_of_worship|gym|school|pharmacy|bank|atm|fuel|marketplace|deli|juice_bar|hookah_lounge|clinic|doctors|dentist|veterinary|post_office';
+  const shopTypes = 'supermarket|convenience|deli|bakery|butcher|seafood|wine|coffee|clothes|books|music|art|ticket|hairdresser|beauty|car_parts|hardware|florist|gift|shoes|jewelry|mobile_phone|electronics|laundry|dry_cleaning|bicycle|pet|optician|variety_store|mall|department_store';
+  const officeTypes = 'company|coworking|insurance|estate_agent|lawyer|accountant|travel_agent|financial|financial_advisor|educational_institution|government|it';
+  const healthcareTypes = 'clinic|doctor|dentist|pharmacy|hospital|physiotherapist|optometrist|therapist|counselling';
+  const craftTypes = 'brewery|caterer|photographer|tailor|printer|plumber|electrician|carpenter|gardener';
   const query = [
     `[out:json][timeout:10];(`,
-    `node["amenity"~"cafe|restaurant|fast_food|bar|pub|ice_cream|food_court|library|theatre|cinema|place_of_worship|gym|school|pharmacy|bank|fuel|marketplace|deli|juice_bar|hookah_lounge"]${ar};`,
-    `node["shop"~"supermarket|convenience|deli|bakery|butcher|seafood|wine|coffee|clothes|books|music|art"]${ar};`,
-    `node["leisure"~"park|garden|nature_reserve|dog_park|playground|swimming_pool|marina|fishing|sports_centre|stadium|golf_course|skate_park"]${ar};`,
-    `node["tourism"~"museum|gallery|artwork|information|viewpoint|picnic_site|camp_site|wilderness_hut"]${ar};`,
-    `node["natural"~"beach|peak|waterfall|water|spring"]${ar};`,
-    `node["historic"~"monument|ruins|memorial|castle"]${ar};`,
-    `way["amenity"~"cafe|restaurant|fast_food|bar|pub|library|theatre|cinema|school|gym|marketplace|place_of_worship"]${ar};`,
-    `way["shop"~"supermarket|convenience|bakery|deli|books|music|art|clothes|wine|coffee"]${ar};`,
-    `way["leisure"~"park|garden|nature_reserve|playground|sports_centre|stadium|golf_course|dog_park|marina"]${ar};`,
-    `way["tourism"~"museum|gallery|viewpoint|artwork|picnic_site|camp_site"]${ar};`,
-    `relation["amenity"~"cafe|restaurant|fast_food|bar|pub|library|theatre|cinema|school|gym|marketplace|place_of_worship"]${ar};`,
-    `relation["shop"~"supermarket|convenience|bakery|deli|books|music|art|clothes|wine|coffee"]${ar};`,
-    `relation["leisure"~"park|garden|nature_reserve|playground|sports_centre|stadium|golf_course|dog_park|marina"]${ar};`,
-    `relation["tourism"~"museum|gallery|viewpoint|artwork|picnic_site|camp_site"]${ar};`,
+    `node["amenity"~"^(${amenityTypes})$"]${ar};`,
+    `node["shop"~"^(${shopTypes})$"]${ar};`,
+    `node["office"~"^(${officeTypes})$"]["name"]${ar};`,
+    `node["healthcare"~"^(${healthcareTypes})$"]["name"]${ar};`,
+    `node["craft"~"^(${craftTypes})$"]["name"]${ar};`,
+    `node["leisure"~"^(park|garden|nature_reserve|dog_park|playground|swimming_pool|marina|fishing|sports_centre|stadium|golf_course|skate_park)$"]${ar};`,
+    `node["tourism"~"^(museum|gallery|viewpoint|picnic_site|camp_site|wilderness_hut)$"]${ar};`,
+    `node["natural"~"^(beach|peak|waterfall|water|spring)$"]${ar};`,
+    `node["historic"~"^(monument|ruins|memorial|castle)$"]${ar};`,
+    `way["amenity"~"^(${amenityTypes})$"]${ar};`,
+    `way["shop"~"^(${shopTypes})$"]${ar};`,
+    `way["office"~"^(${officeTypes})$"]["name"]${ar};`,
+    `way["healthcare"~"^(${healthcareTypes})$"]["name"]${ar};`,
+    `way["craft"~"^(${craftTypes})$"]["name"]${ar};`,
+    `way["leisure"~"^(park|garden|nature_reserve|playground|sports_centre|stadium|golf_course|dog_park|marina)$"]${ar};`,
+    `way["tourism"~"^(museum|gallery|viewpoint|picnic_site|camp_site)$"]${ar};`,
+    `relation["amenity"~"^(${amenityTypes})$"]${ar};`,
+    `relation["shop"~"^(${shopTypes})$"]${ar};`,
+    `relation["office"~"^(${officeTypes})$"]["name"]${ar};`,
+    `relation["healthcare"~"^(${healthcareTypes})$"]["name"]${ar};`,
+    `relation["craft"~"^(${craftTypes})$"]["name"]${ar};`,
+    `relation["leisure"~"^(park|garden|nature_reserve|playground|sports_centre|stadium|golf_course|dog_park|marina)$"]${ar};`,
+    `relation["tourism"~"^(museum|gallery|viewpoint|picnic_site|camp_site)$"]${ar};`,
     // Keep response lean for reliability; we only need marker centers here.
     `);out center;`,
+  ].join('');
+  const broadNamedBusinessQuery = [
+    `[out:json][timeout:12];(`,
+    `nwr["amenity"]["name"]${ar};`,
+    `nwr["shop"]["name"]${ar};`,
+    `nwr["office"]["name"]${ar};`,
+    `nwr["craft"]["name"]${ar};`,
+    `nwr["tourism"]["name"]${ar};`,
+    `);out center;`,
+  ].join('');
+  const genericNamedPlaceQuery = [
+    `[out:json][timeout:12];`,
+    `nwr["name"]${ar};`,
+    `out center 150;`,
+  ].join('');
+  const expandedSearchRadius = Math.min(3000, Math.max(radius, 2500));
+  const expandedAr = `(around:${expandedSearchRadius},${lat},${lng})`;
+  const expandedNamedPlaceQuery = [
+    `[out:json][timeout:14];`,
+    `nwr["name"]${expandedAr};`,
+    `out center 200;`,
   ].join('');
 
   try {
     const data = await fetchOverpassJson(query);
-    const elements = Array.isArray(data?.elements) ? data.elements : [];
-    nearbyPlacesCache.set(cacheKey, { ts: Date.now(), elements });
+    let elements = Array.isArray(data?.elements) ? data.elements : [];
+    if (!elements.length) {
+      const broadData = await fetchOverpassJson(broadNamedBusinessQuery, { timeoutMs: 9000 });
+      elements = Array.isArray(broadData?.elements) ? broadData.elements : [];
+    }
+    if (!elements.length) {
+      const genericData = await fetchOverpassJson(genericNamedPlaceQuery, { timeoutMs: 12000 });
+      elements = Array.isArray(genericData?.elements) ? genericData.elements : [];
+    }
+    if (!elements.length) {
+      const expandedData = await fetchOverpassJson(expandedNamedPlaceQuery, { timeoutMs: 14000 });
+      elements = Array.isArray(expandedData?.elements) ? expandedData.elements : [];
+    }
+    // Empty Overpass replies are often transient; never turn them into a cached blank map.
+    if (elements.length) nearbyPlacesCache.set(cacheKey, { ts: Date.now(), elements });
     res.json(elements);
   } catch (error) {
     const cached = nearbyPlacesCache.get(cacheKey);

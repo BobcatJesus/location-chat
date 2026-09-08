@@ -89,10 +89,10 @@ describe('outdoor room detection', () => {
     expect(layout.id).toContain('auto-park');
   });
 
-  it('allows shepherd park variants to bypass GPS gating for temporary access', () => {
-    expect(hasTemporaryAccess('shepherd-park', 'Shepherd Park')).toBe(true);
-    expect(hasTemporaryAccess('shepherd_park', 'Shepherd Park')).toBe(true);
-    expect(hasTemporaryAccess('shepherd park', 'North Lawn')).toBe(true);
+  it('no longer bypasses GPS gating for any room (strict proximity enforcement)', () => {
+    expect(hasTemporaryAccess('shepherd-park', 'Shepherd Park')).toBe(false);
+    expect(hasTemporaryAccess('shepherd_park', 'Shepherd Park')).toBe(false);
+    expect(hasTemporaryAccess('shepherd park', 'North Lawn')).toBe(false);
     expect(hasTemporaryAccess('downtown-hub', 'Downtown Plaza')).toBe(false);
   });
 
@@ -122,7 +122,7 @@ describe('outdoor room detection', () => {
   it('treats green square and lawn names as outdoor park layouts', () => {
     expect(isOutdoorLocation('green-square', 'Green Square', '', '')).toBe(true);
     expect(buildAutoLayout('green-square', 'Green Square', '', '').id).toContain('auto-park');
-    expect(hasTemporaryAccess('green-square', 'Green Square')).toBe(true);
+    expect(hasTemporaryAccess('green-square', 'Green Square')).toBe(false);
   });
 
   it('includes a shepherd park room in the catalog so it can be entered directly', () => {

@@ -119,98 +119,126 @@ function getLibraryNpcResponse(npcName, message) {
   const lovesReading = text.includes('love reading') || text.includes('love books') || text.includes('reader');
   const isGreeting = /^(hi|hello|hey|howdy|good morning|good afternoon|good evening)[!.?\s]*$/i.test(text.trim());
   if (isGreeting) {
-    return 'Hello. What are you in the mood to read today: a favorite genre, a new recommendation, or something for a class?';
+    return "What's your favorite book?";
   }
   if (mentionsAllNighter) {
-    return 'An all-nighter is rough. Pick your three most important tasks, take a five-minute break each hour, drink water, and protect some sleep before anything high-stakes.';
+    return 'Pick three tasks, then take a break.';
   }
   if (asksForFavoriteBook) {
     const favorites = {
-      'Archives Guide': 'My favorite book is A Pattern Language by Christopher Alexander. It makes you notice the stories hidden in ordinary places.',
-      'Research Mentor': 'I keep returning to The Demon-Haunted World by Carl Sagan. It is a warm guide to asking better questions.',
-      'Reference Desk': 'My favorite book is The Left Hand of Darkness by Ursula K. Le Guin. It is thoughtful, strange, and rewards a second read.',
-      Librarian: 'My favorite book is The City and the City by China Mieville. It is part mystery, part world-building puzzle, and very hard to forget.',
+      'Archives Guide': 'Mine is A Pattern Language.',
+      'Research Mentor': 'Mine is The Demon-Haunted World.',
+      'Reference Desk': 'Mine is The Left Hand of Darkness.',
+      Librarian: 'Mine is The City and the City.',
     };
-    return favorites[npcName] || 'My favorite book changes with the season, but I always admire a story that sends someone back to the shelves for more.';
+    return favorites[npcName] || 'Mine is The Shining.';
   }
   if (lovesReading) {
-    return 'That is excellent company to keep. What kind of book makes you forget to check the time?';
+    return 'I love books too. Try Station Eleven.';
   }
   if (mentionsStudyHelp) {
-    return 'Try a 25-minute focused block, then summarize what you learned in your own words. A short retrieval quiz beats rereading every time.';
+    return 'Try 25 minutes, then a break.';
   }
   if (npcName === 'Archives Guide') {
-    if (text.includes('map') || text.includes('history')) return 'The local history maps are in the Archives & Special Collections stacks. Handle them gently.';
-    if (asksForFavoriteSection) return 'My favorite section is local history. A city map beside a first-person account can make the past feel wonderfully close.';
-    if (asksForSuggestion) return 'For a remarkable afternoon, try a local history collection, then follow its footnotes into the rare-book catalog.';
-    return 'Archives holds rare books, manuscripts, and Houston history. What would you like to explore?';
+    if (text.includes('map') || text.includes('history')) return 'Old maps are upstairs.';
+    if (asksForFavoriteSection) return 'Local history is my favorite.';
+    if (asksForSuggestion) return 'Try The Library Book by Susan Orlean.';
+    return 'Try The Library Book by Susan Orlean.';
   }
   if (npcName === 'Research Mentor') {
-    if (text.includes('source') || text.includes('cite')) return 'Start with the library catalog, then check peer-reviewed databases. Save each citation as you go.';
-    if (asksForSuggestion) return 'Choose one book that gives the big picture, then one recent article that challenges it. That is a strong research pairing.';
-    if (mentionsReading) return 'For deep reading, begin with the introduction and conclusion, then follow the evidence that catches your attention.';
-    return 'I can help you shape a research question, find sources, or build a citation plan.';
+    if (text.includes('source') || text.includes('cite')) return 'Save citations as you go.';
+    if (asksForSuggestion) return 'Try The Wager by David Grann.';
+    if (mentionsReading) return 'Start with the intro.';
+    return 'Try The Wager by David Grann.';
   }
   if (npcName === 'Reference Desk') {
-    if (text.includes('book') || text.includes('find')) return 'Tell me the title, author, or subject and I will point you toward the right shelf or catalog search.';
-    if (asksForFavoriteSection) return 'I am partial to the science shelves, but a good library section is whichever one makes you lose track of time.';
-    if (asksForSuggestion) return 'Tell me a subject you enjoy and I can suggest a shelf. Fiction, history, science, and the arts are all nearby.';
-    return 'Welcome to reference. Need help finding a book, article, or database?';
+    if (text.includes('book') || text.includes('find')) return 'Try Project Hail Mary.';
+    if (asksForFavoriteSection) return 'Science shelves, easy.';
+    if (asksForSuggestion) return 'Try Project Hail Mary by Andy Weir.';
+    return 'Try Project Hail Mary by Andy Weir.';
   }
-  if (asksForFavoriteSection) return 'My favorite section changes often, but today I would pick the arts shelves. They are full of unexpected detours.';
-  if (asksForSuggestion) return 'Try a book from a section you do not usually visit, then choose another from the shelf right beside it.';
-  if (mentionsReading) return 'A good reading session needs a comfortable chair, a little time, and permission to follow your curiosity.';
-  if (text.includes('book') || text.includes('borrow') || text.includes('checkout')) return 'You can check out books at the circulation desk. Keep your account details handy.';
-  return 'Tell me what you are looking for: a genre recommendation, a favorite book, help finding a title, or a study plan.';
+  if (asksForFavoriteSection) return 'Arts shelves today.';
+  if (asksForSuggestion) return 'Try The Shining by Stephen King.';
+  if (mentionsReading) return 'Good reading weather.';
+  if (text.includes('book') || text.includes('borrow') || text.includes('checkout')) return 'Try the front desk.';
+  return 'Try The Shining by Stephen King.';
+}
+
+function getRecommendationFromFavoriteBook(message) {
+  const text = String(message || '').toLowerCase();
+  if (text.includes('shining') || text.includes('stephen king') || text.includes('horror')) return "Try Salem's Lot by Stephen King.";
+  if (text.includes('dune')) return 'Try Hyperion by Dan Simmons.';
+  if (text.includes('harry potter') || text.includes('fantasy')) return 'Try A Wizard of Earthsea by Ursula K. Le Guin.';
+  if (text.includes('gatsby')) return 'Try The Secret History by Donna Tartt.';
+  if (text.includes('pride') || text.includes('austen') || text.includes('romance')) return 'Try Persuasion by Jane Austen.';
+  if (text.includes('1984') || text.includes('orwell')) return 'Try Brave New World by Aldous Huxley.';
+  if (text.includes('manga') || text.includes('anime')) return 'Try Frieren: Beyond Journey’s End.';
+  if (text.includes('project hail mary') || text.includes('martian') || text.includes('science fiction') || text.includes('sci-fi')) return 'Try Dark Matter by Blake Crouch.';
+  if (text.includes('wager') || text.includes('history') || text.includes('nonfiction')) return 'Try The Devil in the White City.';
+  if (text.includes('poetry')) return 'Try Devotions by Mary Oliver.';
+  return 'Try The Shining by Stephen King.';
 }
 
 function getParkNpcResponse(npcName, message) {
   const text = String(message || '').toLowerCase();
   const isGreeting = /^(hi|hello|hey|howdy|good morning|good afternoon|good evening)[!.?\s]*$/i.test(text.trim());
-  if (text.includes('how are you') || text.includes('how r you')) return 'I am doing well, thanks. It is nice to be out in the park.';
-  if (text.includes('feeding the ducks') || text.includes('feed the ducks')) return 'That sounds peaceful. Just be sure to use duck-friendly food instead of bread.';
-  if (text.includes('beautiful day') || text.includes('day is beautiful') || text.includes('nice day')) return 'It really is. The trees make the park feel especially calm today.';
-  if (text.includes('raining') || text.includes('rainy') || text.includes('rain today')) return 'Rain changes the whole park. The paths can get slick, but the trees and pond look lovely afterward.';
-  if (text.includes('jog') || text.includes('run') || text.includes('exercise')) return 'The outer path is great for a relaxed jog. Start easy, bring water, and leave some energy for the walk home.';
-  if (text.includes('sun') || text.includes('weather') || text.includes('outside')) return 'A little time in the sun can be lovely. A shady bench and sunscreen make it much easier to enjoy.';
-  if (text.includes('playground') || text.includes('play')) return 'The playground is busiest after school. It is a cheerful spot, and the nearby benches make it easy to keep an eye on the action.';
-  if (text.includes('duck') || text.includes('pond') || text.includes('bird')) return 'The pond is peaceful for birdwatching. Please skip bread for ducks; their natural food is much better for them.';
-  if (text.includes('picnic') || text.includes('eat') || text.includes('lunch')) return 'There are good picnic spots under the trees. Pack out what you bring in so the park stays welcoming.';
-  if (npcName === 'Morning Jogger') return isGreeting ? 'Hey there. I am just finishing a loop. Are you out for a walk or a jog?' : 'I like an early loop before the park gets busy. The tree-lined stretch is my favorite part.';
-  if (npcName === 'Pond Watcher') return isGreeting ? 'Hello. The pond is especially calm this morning. Have you spotted any birds yet?' : 'I come here to slow down and watch the water for a while. It is a fine place to reset.';
-  return isGreeting ? 'Hi. It is a great day to be outside. Are you exploring the paths, the playground, or the pond?' : 'This park has a little room for every kind of afternoon: a walk, a run, a picnic, or simply some quiet.';
+  if (text.includes('how are you') || text.includes('how r you')) return 'Doing good. Nice breeze.';
+  if (text.includes('feeding the ducks') || text.includes('feed the ducks')) return 'Duck food, not bread.';
+  if (text.includes('beautiful day') || text.includes('day is beautiful') || text.includes('nice day')) return 'Beautiful day.';
+  if (text.includes('raining') || text.includes('rainy') || text.includes('rain today')) return 'Might rain soon.';
+  if (text.includes('jog') || text.includes('run') || text.includes('exercise')) return 'Good day for a loop.';
+  if (text.includes('sun') || text.includes('weather') || text.includes('outside')) return 'Nice weather.';
+  if (text.includes('playground') || text.includes('play')) return 'Playground is lively.';
+  if (text.includes('duck') || text.includes('pond') || text.includes('bird')) return 'The pond is calm.';
+  if (text.includes('picnic') || text.includes('eat') || text.includes('lunch')) return 'Picnic weather.';
+  if (npcName === 'Morning Jogger') return isGreeting ? 'Hey! Nice day for a loop.' : 'The path is quiet right now.';
+  if (npcName === 'Pond Watcher') return isGreeting ? 'Hey. The pond is calm today.' : 'The water looks peaceful.';
+  if (npcName === 'Duck Feeder') return isGreeting ? 'Hey! The ducks are busy.' : 'The pond is lively today.';
+  if (npcName === 'Paddleboat Guide') return isGreeting ? 'Hey! Good lake weather.' : 'The lake is smooth today.';
+  if (npcName === 'Trail Runner') return isGreeting ? 'Hey! Great trail weather.' : 'Might rain soon.';
+  return isGreeting ? 'Hey! What a nice day.' : 'It might rain soon.';
 }
 
 function getVenueNpcResponse(layoutId, message) {
   const text = String(message || '').toLowerCase();
   const isGreeting = /^(hi|hello|hey|howdy|good morning|good afternoon|good evening)[!.?\s]*$/i.test(text.trim());
   const theme = String(layoutId || '').replace(/^auto-/, '').replace(/-poly.*$/, '');
-  const responses = {
-    cafe: text.includes('study') ? 'This is a good study spot. Coffee first, then the to-do list.' : text.includes('drink') || text.includes('coffee') ? 'What are you drinking today? The pastry case is tempting too.' : 'The window seats fill up fast, but there is usually a quiet corner nearby.',
-    restaurant: text.includes('order') || text.includes('food') ? 'Have you decided what to order? I hear the special is good today.' : text.includes('dessert') ? 'Save room for dessert.' : 'The best conversations happen over a meal.',
-    shop: text.includes('find') || text.includes('looking') ? 'Looking for anything in particular? There are some good finds near the back.' : text.includes('opinion') ? 'Need a second opinion? I like browsing without a plan.' : 'Take your time. The best finds are often unexpected.',
-    gym: text.includes('leg') ? 'Leg day? Start light and focus on form.' : text.includes('workout') || text.includes('train') ? 'What are you training today? A warm-up makes the rest feel better.' : 'You have got this. Remember to cool down afterward.',
-    theater: text.includes('movie') || text.includes('see') ? 'What are you here to see? The trailers start soon.' : text.includes('popcorn') ? 'Popcorn is practically required.' : 'I love the quiet before a movie starts.',
-    bar: text.includes('music') ? 'Good music tonight.' : text.includes('friend') || text.includes('meeting') ? 'Are you meeting friends? There is a seat open nearby.' : 'How is your night going? Take your time getting home.',
-    pharmacy: text.includes('medicine') || text.includes('prescription') ? 'The pharmacist can help with medication questions. For anything urgent, please seek professional care.' : 'I hope you find what you need. Take care of yourself.',
-    default: text.includes('nearby') || text.includes('place') ? 'Have you checked out the nearby spots?' : 'It is nice seeing the neighborhood out and about.',
+  const greetings = {
+    cafe: 'Study sesh?',
+    restaurant: 'Smells good, right?',
+    shop: 'Browsing day?',
+    gym: 'Workout time?',
+    theater: 'Movie night?',
+    bar: 'Good music tonight.',
+    pharmacy: 'Hope you find it.',
+    default: 'Hey!',
   };
-  return isGreeting ? 'Hi. What brings you by today?' : (responses[theme] || responses.default);
+  const responses = {
+    cafe: text.includes('study') ? 'Good study spot.' : text.includes('drink') || text.includes('coffee') ? 'Coffee smells great today.' : 'Window seat looks cozy.',
+    restaurant: text.includes('order') || text.includes('food') ? 'The special looks good.' : text.includes('dessert') ? 'Save room for dessert.' : 'Smells good in here.',
+    shop: text.includes('find') || text.includes('looking') ? 'Good finds near the back.' : text.includes('opinion') ? 'I like that one.' : 'Take your time browsing.',
+    gym: text.includes('leg') ? 'Leg day?' : text.includes('workout') || text.includes('train') ? 'Warm up first.' : 'Remember water.',
+    theater: text.includes('movie') || text.includes('see') ? 'Trailers start soon.' : text.includes('popcorn') ? 'Popcorn time.' : 'Movie night.',
+    bar: text.includes('music') ? 'Good music tonight.' : text.includes('friend') || text.includes('meeting') ? 'Your friends might be inside.' : 'Nice night out.',
+    pharmacy: text.includes('medicine') || text.includes('prescription') ? 'Ask the pharmacist.' : 'Take care.',
+    default: text.includes('nearby') || text.includes('place') ? 'Lots nearby today.' : 'Nice seeing people out.',
+  };
+  return isGreeting ? (greetings[theme] || greetings.default) : (responses[theme] || responses.default);
 }
 
 function getNpcOpeningResponse(layoutId, isOutdoorLocation) {
-  if (isOutdoorLocation) return 'Hello! Enjoying the park?';
+  if (isOutdoorLocation) return 'Beautiful day.';
   const layoutName = String(layoutId || '');
   const theme = layoutName.includes('library') ? 'library' : layoutName.replace(/^auto-/, '').replace(/-poly.*$/, '');
-  if (theme === 'library') return 'Hello! Want a book suggestion?';
-  if (theme === 'cafe') return 'Hello! Getting coffee or finding a study spot?';
-  if (theme === 'restaurant') return 'Hello! Have you decided what to order?';
-  if (theme === 'shop') return 'Hello! Looking for anything in particular?';
-  if (theme === 'gym') return 'Hello! What are you training today?';
-  if (theme === 'theater') return 'Hello! What are you here to see?';
-  if (theme === 'bar') return 'Hello! How is your night going?';
-  if (theme === 'pharmacy') return 'Hello! I hope you find what you need.';
-  return 'Hello! What brings you by today?';
+  if (theme === 'library') return "What's your favorite book?";
+  if (theme === 'cafe') return 'Study sesh?';
+  if (theme === 'restaurant') return 'Smells good, right?';
+  if (theme === 'shop') return 'Browsing day?';
+  if (theme === 'gym') return 'Workout time?';
+  if (theme === 'theater') return 'Movie night?';
+  if (theme === 'bar') return 'Good music tonight.';
+  if (theme === 'pharmacy') return 'Hope you find it.';
+  return 'Hey!';
 }
 
 function getRequestedBookGenre(message) {
@@ -230,34 +258,49 @@ async function getLiveBookRecommendation(genre) {
 }
 
 function varyNpcResponse(response, replyNumber, isOutdoorLocation) {
-  const followUps = isOutdoorLocation ? [
-    'It is good to take a moment and enjoy it.',
-    'There is always something new to notice outside.',
-    'The park feels different every time you visit.',
-    'A slow walk is never a bad idea.',
-    'The fresh air helps put things in perspective.',
-    'I hope you get to enjoy the rest of your day here.',
-    'The trees make a fine place to pause.',
-    'Take your time and enjoy the path ahead.',
-    'It is a nice place to reset for a few minutes.',
-    'There is no rush in a good park afternoon.',
-    'I am glad you stopped to chat.',
-    'The next turn on the path might be the best one.',
-  ] : [
-    'Want another direction to explore?',
-    'I can offer a different shelf if that is not your style.',
-    'The catalog can help you find a copy that is available today.',
-    'A neighboring call number often leads to a good surprise.',
-    'Tell me what mood you are in and I will narrow it down.',
-    'There is always another excellent path through the stacks.',
-    'A different corner of this place may have exactly what you need.',
-    'It is worth taking a little time to look around.',
-    'The best option is often the one you did not expect.',
-    'Ask again with a detail and I can be more specific.',
-    'There is always room for one more good idea.',
-    'I am glad you asked.',
-  ];
-  return `${response} ${followUps[replyNumber % followUps.length]}`;
+  return response;
+}
+
+function getNpcAmbientLines(layoutId, isOutdoorLocation, npcName = '') {
+  const layoutName = String(layoutId || '').toLowerCase();
+  if (isOutdoorLocation) {
+    const pondLines = ['What a nice day.', 'Might rain soon.', 'The water is calm.', 'The ducks are busy.', 'Good pond weather.', 'Nice breeze today.'];
+    const parkLines = ['What a nice day.', 'It might rain soon.', 'The path is quiet.', 'Fresh air helps.', 'Nice shade here.', 'Good day for a walk.'];
+    if (layoutName.includes('hermann') || ['Pond Watcher', 'Duck Feeder', 'Paddleboat Guide'].includes(npcName)) return pondLines;
+    return parkLines;
+  }
+
+  if (layoutName.includes('library')) {
+    return ['Try The Shining.', 'Try Project Hail Mary.', 'Try The Wager.', 'Try Station Eleven.', 'Try The Library Book.', 'Good reading weather.'];
+  }
+
+  if (layoutName.includes('cafe')) return ['Coffee smells great.', 'Nice corner table.', 'Busy morning.', 'Good pastry day.', 'Window seat is open.'];
+  if (layoutName.includes('theater')) return ['Trailers start soon.', 'Popcorn smells good.', 'Good seats today.', 'Quiet before the show.'];
+  if (layoutName.includes('gym')) return ['Good warm-up.', 'Remember water.', 'Light stretch first.', 'Strong pace today.'];
+  return ['Hey!', 'Nice place.', 'Good to see people out.', 'Quiet moment here.', 'This spot feels calm.'];
+}
+
+const BLOCKED_NPC_RESPONSE_PATTERNS = [
+  /tell me what you are looking for/i,
+  /i can offer a different shelf/i,
+  /what are you in the mood/i,
+  /do you have any interests/i,
+  /genre recommendation, a favorite book/i,
+];
+
+function normalizeNpcResponseLine(value = '') {
+  return String(value || '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+function isOverlongNpcResponse(value = '') {
+  const text = String(value || '').trim();
+  if (/^try\s+.+\s+by\s+.+\.$/i.test(text)) return text.length > 90;
+  return text.length > 72;
+}
+
+function shouldReplaceNpcResponse(value = '') {
+  const text = String(value || '').trim();
+  return !text || isOverlongNpcResponse(text) || BLOCKED_NPC_RESPONSE_PATTERNS.some((pattern) => pattern.test(text));
 }
 
 
@@ -278,6 +321,8 @@ export class VillageScene extends Phaser.Scene {
     this.roomData   = d.roomData   ?? null;
     this.explicitLayout = d.explicitLayout ?? null;
     this.profile    = d.profile    ?? {};
+    this.userLocation = d.userLocation ?? null;
+    this.onLeave    = d.onLeave    ?? (() => {});
     this.preferredCameraMode = ['ultra-close-follow', 'close-follow', 'follow', 'wide-follow', 'overview'].includes(d.preferredCameraMode)
       ? d.preferredCameraMode
       : null;
@@ -285,11 +330,14 @@ export class VillageScene extends Phaser.Scene {
     this.onEditorChange = d.onEditorChange ?? (() => {});
     this.onNearbyChange = d.onNearbyChange ?? (() => {});
     this.onNearbyNpcChange = d.onNearbyNpcChange ?? (() => {});
+    this.onNpcConversationClear = d.onNpcConversationClear ?? (() => {});
     this.onRoomPopulationChange = d.onRoomPopulationChange ?? (() => {});
     this.onChatMessage = d.onChatMessage ?? (() => {});
     this.onSystemNotice = d.onSystemNotice ?? (() => {});
     this.onFloorStatusChange = d.onFloorStatusChange ?? (() => {});
     this.npcReplyCounts = new Map();
+    this.npcRecentResponses = new Map();
+    this.npcConversationState = new Map();
   }
 
   _emitFloorStatus() {
@@ -705,9 +753,16 @@ export class VillageScene extends Phaser.Scene {
     const ownerId = String(this.roomOwnerId || '').trim();
     const isCreator = Boolean(ownerId && (ownerId === String(userId) || ownerId === String(userName)));
 
+    socket.on('join_denied', ({ reason } = {}) => {
+      this.onSystemNotice?.(reason || 'You must be within GPS range of this location to enter.');
+      this.onLeave?.();
+    });
+
     socket.on('connect', () => {
       socket.emit('join_room', {
         roomId: this.roomId,
+        lat: this.userLocation?.latitude ?? null,
+        lng: this.userLocation?.longitude ?? null,
         user: {
           id: userId,
           name: userName,
@@ -868,6 +923,32 @@ export class VillageScene extends Phaser.Scene {
     });
   }
 
+  _selectNpcResponse(npcId, response, npcName) {
+    const key = npcId || npcName || 'npc';
+    const recent = this.npcRecentResponses.get(key) || [];
+    const normalizedRecent = new Set(recent.map(normalizeNpcResponseLine));
+    let selected = response;
+    const candidates = getNpcAmbientLines(this.layout?.id, this.isOutdoorLocation, npcName);
+    const normalizedSelected = normalizeNpcResponseLine(selected);
+
+    if (shouldReplaceNpcResponse(selected) || normalizedRecent.has(normalizedSelected)) {
+      selected = candidates.find((line) => !normalizedRecent.has(normalizeNpcResponseLine(line)) && !shouldReplaceNpcResponse(line))
+        || candidates[0]
+        || 'Hey!';
+    }
+
+    this.npcRecentResponses.set(key, [selected, ...recent.filter((line) => line !== selected)].slice(0, 4));
+    return selected;
+  }
+
+  _clearNpcConversation(npcId) {
+    if (!npcId) return;
+    this.npcReplyCounts.delete(npcId);
+    this.npcRecentResponses.delete(npcId);
+    this.npcConversationState.delete(npcId);
+    this.onNpcConversationClear({ npcId });
+  }
+
   sendChatMessage(message, recipient = 'players') {
     const text = (message || '').trim();
     if (!text) return;
@@ -884,33 +965,50 @@ export class VillageScene extends Phaser.Scene {
       this.onChatMessage({
         senderName: 'You', message: text, isSelf: true,
         distance: Math.round(nearbyNpc.distance), timestamp: Date.now(),
+        channel: 'npc', npcId: nearbyNpc.id,
       });
       this.time.delayedCall(350, async () => {
         if (this._isShuttingDown) return;
         const isLibrary = this.layout?.id === 'md-anderson-library' || String(this.layout?.id || '').includes('library');
         const isGreeting = /^(hi|hello|hey|howdy|good morning|good afternoon|good evening)[!.?\s]*$/i.test(text);
-        let response = replyNumber === 0 && isGreeting
+        const awaitingFavoriteBook = this.npcConversationState.get(nearbyNpc.id) === 'favorite-book';
+        const wantsLibraryPick = isLibrary && /\b(recommend|suggest|bestseller|best seller|what should i read|book)\b/i.test(text);
+        let response = isLibrary && awaitingFavoriteBook && !isGreeting
+          ? getRecommendationFromFavoriteBook(text)
+          : replyNumber === 0 && isGreeting
           ? getNpcOpeningResponse(this.layout?.id, this.isOutdoorLocation)
           : this.isOutdoorLocation
             ? getParkNpcResponse(nearbyNpc.name, text)
             : isLibrary
               ? getLibraryNpcResponse(nearbyNpc.name, text)
               : getVenueNpcResponse(this.layout?.id, text);
-        if (requestedGenre) {
+        if (isLibrary && awaitingFavoriteBook && !isGreeting) {
+          this.npcConversationState.delete(nearbyNpc.id);
+        }
+        if ((requestedGenre || wantsLibraryPick) && !awaitingFavoriteBook) {
           try {
-            const book = await getLiveBookRecommendation(requestedGenre);
-            response = `For ${requestedGenre.replace(/-/g, ' ')}, try ${book.title} by ${book.author}. ${book.signal} Source: ${book.source}.`;
+            const book = await getLiveBookRecommendation(requestedGenre || 'nonfiction');
+            response = `Try ${book.title} by ${book.author}.`;
           } catch {
-            response = `${response} I could not reach the current catalog, so this is general guidance rather than a live ranking.`;
+            response = response || 'Try The Shining by Stephen King.';
           }
         }
         if (this._isShuttingDown) return;
+        const finalResponse = this._selectNpcResponse(
+          nearbyNpc.id,
+          replyNumber === 0 && isGreeting ? response : varyNpcResponse(response, replyNumber, this.isOutdoorLocation),
+          nearbyNpc.name,
+        );
+        if (isLibrary && finalResponse === "What's your favorite book?") {
+          this.npcConversationState.set(nearbyNpc.id, 'favorite-book');
+        }
         this.onChatMessage({
           senderName: nearbyNpc.name,
-          message: replyNumber === 0 && isGreeting ? response : varyNpcResponse(response, replyNumber, this.isOutdoorLocation),
+          message: finalResponse,
           isSelf: false,
           distance: Math.round(nearbyNpc.distance),
           timestamp: Date.now(),
+          channel: 'npc', npcId: nearbyNpc.id,
         });
       });
       return;
@@ -1233,6 +1331,7 @@ export class VillageScene extends Phaser.Scene {
     }
     const nearbyNpc = this._getNearbyStaticNpc();
     if (nearbyNpc?.id !== this._nearbyNpcId) {
+      if (this._nearbyNpcId) this._clearNpcConversation(this._nearbyNpcId);
       this._nearbyNpcId = nearbyNpc?.id || null;
       this.onNearbyNpcChange(nearbyNpc);
     }

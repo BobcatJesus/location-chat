@@ -3,6 +3,8 @@ import AvatarSetupFields from './AvatarSetupFields';
 import { accessoryHueToColor, hairHueToColor, skinToneToColor } from '../utils/avatarColors';
 import { getAuthLayoutState } from './authLayout';
 import { normalizeAvatarModel } from '../game/entities/avatarModelInfo';
+import { supabase } from '../lib/supabaseClient';
+import { signInWithProfile, signUpWithProfile } from '../lib/authClient';
 
 const normalizeHairStyle = (hairStyle) => {
   const allowed = new Set(['bun', 'bob', 'curly', 'lob', 'messy', 'combed']);
@@ -386,7 +388,7 @@ export default function RetroAuthModal({ onLogin }) {
   const outfitSwatch = accessoryHueToColor(formData.outfitHue ?? 220);
   const outfitDark = accessoryHueToColor(formData.outfitHue ?? 220, 48, 34);
   const stepAnimationKey = isSignUp ? `signup-${signUpStep}` : 'login';
-  const showHeroPanel = !isCompactLayout;
+  const showHeroPanel = false;
   const stepAnimationName = transitionDirection === 'back'
     ? 'authStepEnterBack'
     : transitionDirection === 'forward'
@@ -477,11 +479,22 @@ export default function RetroAuthModal({ onLogin }) {
       };
 
       if (isSignUp) {
-        await callAuthApi('/api/auth/signup', {
-          email: authEmail,
-          password: formData.password,
-          profile,
-        });
+        if (supabase) {
+          const data = await signUpWithProfile(authEmail, formData.password, profile);
+          if (!data.session) {
+            localStorage.setItem('sidequest_profile', JSON.stringify(profile));
+            setIsSignUp(false);
+            setSignUpStep(1);
+            setNotice('Account created. Confirm the email from Supabase, then log in.');
+            return;
+          }
+        } else {
+          await callAuthApi('/api/auth/signup', {
+            email: authEmail,
+            password: formData.password,
+            profile,
+          });
+        }
 
         localStorage.removeItem('sidequest_profile');
         localStorage.setItem('sidequest_profile', JSON.stringify(profile));
@@ -499,10 +512,15 @@ export default function RetroAuthModal({ onLogin }) {
       } else {
         let loginResult;
         try {
-          loginResult = await callAuthApi('/api/auth/login', {
-            email: authEmail,
-            password: formData.password,
-          });
+          if (supabase) {
+            const data = await signInWithProfile(authEmail, formData.password);
+            loginResult = { profile: data.profile };
+          } else {
+            loginResult = await callAuthApi('/api/auth/login', {
+              email: authEmail,
+              password: formData.password,
+            });
+          }
         } catch (authErr) {
           const canRecover = authErr?.code === 'ACCOUNT_NOT_FOUND';
           if (!canRecover) throw authErr;
@@ -615,6 +633,8 @@ export default function RetroAuthModal({ onLogin }) {
           ? ` (stored format: ${err.diagnostics.passwordStorageFormat})`
           : '';
         setError(`Password rejected for this account${formatHint}. Try Reset Password.`);
+      } else if (/email not confirmed/i.test(err?.message || '')) {
+        setError('Confirm your email using the link Supabase sent, then log in.');
       } else {
         setError(err?.message || 'HP CRITICAL! Invalid credentials or connection error.');
       }
@@ -696,12 +716,12 @@ export default function RetroAuthModal({ onLogin }) {
       </a>
       <div
         style={{
-          maxWidth: 1200,
+          maxWidth: 560,
           margin: '42px auto 0',
           padding: isCompactLayout ? '14px 10px 22px' : '24px 16px 36px',
           display: 'grid',
-          gridTemplateColumns: isCompactLayout ? '1fr' : 'minmax(280px, 1fr) minmax(330px, 560px)',
-          gap: isCompactLayout ? 10 : 18,
+          gridTemplateColumns: 'minmax(0, 1fr)',
+          gap: 0,
           alignItems: 'start',
         }}
       >

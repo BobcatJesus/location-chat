@@ -114,6 +114,32 @@ export const ROOMS = [
     contributors: ['system']
   },
   {
+    id: 'hermann-park',
+    name: 'Hermann Park',
+    lat: 29.7213,
+    lng: -95.3903,
+    radiusMeters: 320,
+    amenity: 'park',
+    tags: {
+      name: 'Hermann Park',
+      amenity: 'park',
+      leisure: 'park',
+      water: 'pond',
+      'addr:city': 'Houston',
+      'addr:state': 'Texas',
+      'addr:country': 'US',
+    },
+    metadata: {
+      city: 'Houston',
+      state: 'TX',
+      country: 'US',
+      osmCategory: 'park',
+      landmark: 'McGovern Lake',
+    },
+    kind: 'gps',
+    contributors: ['system']
+  },
+  {
     id: 'shepherd-park',
     name: 'Shepherd Park',
     lat: 29.834235,
