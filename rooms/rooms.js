@@ -162,6 +162,25 @@ export const ROOMS = [
     contributors: ['system']
   },
   {
+    id: 'asgard-games',
+    name: 'Asgard Games',
+    lat: 29.7365705,
+    lng: -95.4109610,
+    radiusMeters: 100,
+    amenity: 'games',
+    tags: {
+      name: 'Asgard Games',
+      shop: 'games',
+      'addr:housenumber': '3302',
+      'addr:street': 'South Shepherd Drive',
+      'addr:city': 'Houston',
+      'addr:state': 'Texas',
+      'addr:country': 'US',
+    },
+    kind: 'gps',
+    contributors: ['system'],
+  },
+  {
     id: 'sunset-temple',
     name: 'Sunset Temple',
     lat: 29.7585,

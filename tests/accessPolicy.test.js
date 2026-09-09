@@ -7,12 +7,14 @@ import {
 } from '../src/accessPolicy.js';
 
 describe('room access policy', () => {
-  it('keeps the two featured rooms open without GPS proximity', () => {
-    expect(OPEN_ACCESS_ROOM_IDS).toEqual(['md-anderson-library', 'shepherd-park']);
+  it('keeps the featured rooms open without GPS proximity', () => {
+    expect(OPEN_ACCESS_ROOM_IDS).toEqual(['md-anderson-library', 'shepherd-park', 'asgard-games']);
     expect(isOpenAccessRoom('md-anderson-library')).toBe(true);
     expect(isOpenAccessRoom('shepherd-park')).toBe(true);
+    expect(isOpenAccessRoom('asgard-games')).toBe(true);
     expect(requiresGpsProximity({ id: 'md-anderson-library', radiusMeters: 120 })).toBe(false);
     expect(requiresGpsProximity({ id: 'shepherd-park', radiusMeters: 220 })).toBe(false);
+    expect(requiresGpsProximity({ id: 'asgard-games', radiusMeters: 100 })).toBe(false);
   });
 
   it('keeps ordinary rooms GPS-gated and normalizes radius fields', () => {

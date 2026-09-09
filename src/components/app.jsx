@@ -194,7 +194,7 @@ function AvatarStudioPage({
   );
 }
 
-function RetroLandingPage({ onEnter, onOpenShepherdPark, onOpenMdAndersonLibrary }) {
+function RetroLandingPage({ onEnter, onOpenShepherdPark, onOpenMdAndersonLibrary, onOpenAsgardGames }) {
   const referenceArtCandidates = ['/assets/landing-original.png', '/assets/landing-reference.png'];
   const [useReferenceArt, setUseReferenceArt] = useState(true);
   const [referenceArtIndex, setReferenceArtIndex] = useState(0);
@@ -457,6 +457,24 @@ function RetroLandingPage({ onEnter, onOpenShepherdPark, onOpenMdAndersonLibrary
             }}
           >
             Open MD Anderson Library
+          </button>
+          <button
+            onClick={onOpenAsgardGames}
+            style={{
+              padding: '12px 20px',
+              background: '#7c2d12',
+              border: '3px solid #7c2d12',
+              color: '#ffedd5',
+              fontWeight: 900,
+              cursor: 'pointer',
+              borderRadius: 999,
+              fontSize: 11,
+              textTransform: 'uppercase',
+              letterSpacing: '0.1em',
+              boxShadow: '0 5px 0 rgba(0,0,0,0.32)',
+            }}
+          >
+            Open Asgard Games
           </button>
         </div>
       </div>
@@ -1465,6 +1483,9 @@ function App() {
           }}
           onOpenMdAndersonLibrary={() => {
             window.location.href = `${window.location.pathname}?quickStart=guest&openRoom=md-anderson-library`;
+          }}
+          onOpenAsgardGames={() => {
+            window.location.href = `${window.location.pathname}?quickStart=guest&openRoom=asgard-games`;
           }}
         />
       )}

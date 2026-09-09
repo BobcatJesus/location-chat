@@ -1,6 +1,7 @@
 export const OPEN_ACCESS_ROOM_IDS = Object.freeze([
   'md-anderson-library',
   'shepherd-park',
+  'asgard-games',
 ]);
 
 const openAccessRoomIds = new Set(OPEN_ACCESS_ROOM_IDS);
