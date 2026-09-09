@@ -199,10 +199,43 @@ function getParkNpcResponse(npcName, message) {
   return isGreeting ? 'Hey! What a nice day.' : 'It might rain soon.';
 }
 
+function getAsgardNpcResponse(npcName, message) {
+  const text = String(message || '').toLowerCase();
+  const isGreeting = /^(hi|hello|hey|howdy|good morning|good afternoon|good evening)[!.?\s]*$/i.test(text.trim());
+  const asksAboutPokemon = text.includes('pokemon') || text.includes('pokémon');
+  const asksAboutMagic = text.includes('magic') || text.includes('mtg') || text.includes('commander');
+  const asksAboutDnd = text.includes('d&d') || text.includes('dnd') || text.includes('dungeon') || text.includes('dragon');
+  const asksAboutWarhammer = text.includes('warhammer') || text.includes('40k') || text.includes('miniature') || text.includes('paint');
+  const asksAboutCards = text.includes('card') || text.includes('tcg') || text.includes('deck');
+  const asksAboutBoardGames = text.includes('board') || text.includes('game night') || text.includes('tabletop');
+  const asksForRecommendation = text.includes('recommend') || text.includes('suggest') || text.includes('what should') || text.includes('best game');
+
+  if (isGreeting) {
+    if (npcName === 'Dungeon Master') return 'Welcome, adventurer. What are we rolling tonight?';
+    return 'Welcome to Asgard. Looking for a game or a party?';
+  }
+  if (asksAboutPokemon) return 'Pokémon nights get competitive fast. Bring a deck and a trade binder.';
+  if (asksAboutMagic) return 'Commander is a great way to meet people. Politics are part of the format.';
+  if (asksAboutDnd) return 'D&D needs three things: a character, a d20, and a story worth telling.';
+  if (asksAboutWarhammer) return 'Warhammer starts on the table and ends in the paint station. Pick a faction you love.';
+  if (asksAboutCards) return 'Card games reward practice, but the best matchups start with a good hello.';
+  if (asksAboutBoardGames) return 'There is a table for almost every kind of night: quick, strategic, cooperative, or chaotic.';
+  if (asksForRecommendation) {
+    if (npcName === 'Dungeon Master') return 'Try a cooperative campaign game. It gives everyone a role.';
+    return 'Try a game you can teach in five minutes, then stay for the rematch.';
+  }
+  if (text.includes('event') || text.includes('tournament')) return 'Check the event board by the back tables.';
+  if (text.includes('paint') || text.includes('model')) return 'Thin your paints, take your time, and let the details carry the army.';
+  if (text.includes('party') || text.includes('people') || text.includes('meet')) return 'The open-play tables are the easiest way to find your party.';
+  if (npcName === 'Dungeon Master') return 'Every campaign needs a good hook. What story are you bringing?';
+  return 'The demo tables are open. Pick something and let us teach you.';
+}
+
 function getVenueNpcResponse(layoutId, message) {
   const text = String(message || '').toLowerCase();
   const isGreeting = /^(hi|hello|hey|howdy|good morning|good afternoon|good evening)[!.?\s]*$/i.test(text.trim());
   const theme = String(layoutId || '').replace(/^auto-/, '').replace(/-poly.*$/, '');
+  if (theme.includes('asgard')) return getAsgardNpcResponse('', message);
   const greetings = {
     cafe: 'Study sesh?',
     restaurant: 'Smells good, right?',
@@ -230,6 +263,7 @@ function getNpcOpeningResponse(layoutId, isOutdoorLocation) {
   if (isOutdoorLocation) return 'Beautiful day.';
   const layoutName = String(layoutId || '');
   const theme = layoutName.includes('library') ? 'library' : layoutName.replace(/^auto-/, '').replace(/-poly.*$/, '');
+  if (theme.includes('asgard')) return 'Welcome to Asgard. What are we rolling tonight?';
   if (theme === 'library') return "What's your favorite book?";
   if (theme === 'cafe') return 'Study sesh?';
   if (theme === 'restaurant') return 'Smells good, right?';
@@ -272,6 +306,19 @@ function getNpcAmbientLines(layoutId, isOutdoorLocation, npcName = '') {
 
   if (layoutName.includes('library')) {
     return ['Try The Shining.', 'Try Project Hail Mary.', 'Try The Wager.', 'Try Station Eleven.', 'Try The Library Book.', 'Good reading weather.'];
+  }
+
+  if (layoutName.includes('asgard')) {
+    return [
+      'Demo tables are open.',
+      'Someone is always looking for a fourth player.',
+      'The event board has the latest game nights.',
+      'Pokémon trades happen near the front.',
+      'Commander pods are forming.',
+      'The paint station is busy tonight.',
+      'A good campaign starts with a good table.',
+      'Roll for initiative.',
+    ];
   }
 
   if (layoutName.includes('cafe')) return ['Coffee smells great.', 'Nice corner table.', 'Busy morning.', 'Good pastry day.', 'Window seat is open.'];
@@ -981,6 +1028,8 @@ export class VillageScene extends Phaser.Scene {
             ? getParkNpcResponse(nearbyNpc.name, text)
             : isLibrary
               ? getLibraryNpcResponse(nearbyNpc.name, text)
+              : String(this.layout?.id || '').toLowerCase().includes('asgard')
+                ? getAsgardNpcResponse(nearbyNpc.name, text)
               : getVenueNpcResponse(this.layout?.id, text);
         if (isLibrary && awaitingFavoriteBook && !isGreeting) {
           this.npcConversationState.delete(nearbyNpc.id);
