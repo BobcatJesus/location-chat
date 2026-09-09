@@ -1,5 +1,6 @@
 import { bookstore } from './layouts/bookstore.js';
 import { library } from './layouts/library.js';
+import { asgardGames } from './layouts/asgardGames.js';
 import { buildAutoLayout } from './AutoLayout.js';
 
 const NAME_KEYWORDS = [
@@ -26,6 +27,7 @@ function hasStructuredIndoorSource(roomData = null) {
 
 export function pickLayout(roomId = '', roomName = '', amenityTag = '', shopTag = '', roomShape = null, roomData = null) {
   const lower = (roomName + ' ' + roomId).toLowerCase();
+  if (lower.includes('asgard-games') || lower.includes('asgard games')) return asgardGames;
   const isLibrary = amenityTag === 'library' || lower.includes('library');
   if (isLibrary) return library;
 
