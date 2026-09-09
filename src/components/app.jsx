@@ -678,37 +678,6 @@ function App() {
   };
 
   useEffect(() => {
-    if (isLoggedIn) return;
-    try {
-      const raw = localStorage.getItem('sidequest_profile');
-      const savedProfile = raw ? JSON.parse(raw) : null;
-      if (!savedProfile || typeof savedProfile !== 'object') return;
-      if (!savedProfile.email && !savedProfile.characterName) return;
-
-      const { migrated, changed } = migrateProfileForAvatar(savedProfile);
-      const restoredAuthProfile = {
-        mode: migrated.guestMode ? 'guest' : 'login',
-        profile: migrated,
-      };
-
-      if (changed) {
-        localStorage.setItem('sidequest_profile', JSON.stringify(migrated));
-      }
-      setProfile(restoredAuthProfile);
-      setIsLoggedIn(true);
-      loadUserRooms(migrated.email || restoredAuthProfile.mode || 'guest');
-
-      if (!isAvatarOnboardingComplete(migrated)) {
-        startAvatarOnboarding(restoredAuthProfile);
-      } else {
-        setOnboardingRequired(false);
-      }
-    } catch {
-      localStorage.removeItem('sidequest_profile');
-    }
-  }, [isLoggedIn]);
-
-  useEffect(() => {
     try {
       const params = new URLSearchParams(window.location.search);
       const quickStart = params.get('quickStart');
