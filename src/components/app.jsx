@@ -1479,13 +1479,16 @@ function App() {
         <RetroLandingPage
           onEnter={() => setShowLanding(false)}
           onOpenShepherdPark={() => {
-            window.location.href = `${window.location.pathname}?quickStart=guest&openRoom=shepherd-park`;
+            setShowLanding(false);
+            window.history.replaceState({}, '', `${window.location.pathname}?openRoom=shepherd-park`);
           }}
           onOpenMdAndersonLibrary={() => {
-            window.location.href = `${window.location.pathname}?quickStart=guest&openRoom=md-anderson-library`;
+            setShowLanding(false);
+            window.history.replaceState({}, '', `${window.location.pathname}?openRoom=md-anderson-library`);
           }}
           onOpenAsgardGames={() => {
-            window.location.href = `${window.location.pathname}?quickStart=guest&openRoom=asgard-games`;
+            setShowLanding(false);
+            window.history.replaceState({}, '', `${window.location.pathname}?openRoom=asgard-games`);
           }}
         />
       )}
