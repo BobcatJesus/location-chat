@@ -1,0 +1,13 @@
+{
+  "md-anderson-library::0::0:guest": {
+    "playerName": "Traveler",
+    "facts": [
+      {
+        "fact": "Traveler is talking about the current conversation."
+      },
+      {
+        "fact": "good is the player."
+      }
+    ]
+  }
+}

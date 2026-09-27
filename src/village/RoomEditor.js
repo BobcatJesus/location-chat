@@ -276,9 +276,9 @@ export class RoomEditor {
 
       if (isPrimary && usingEraseTool) {
         if (hitZone?.id) {
-          const canRemove = !hitZone.placedBy || hitZone.placedBy === this.scene.userId;
+          const canRemove = this.scene.canManageVenue || !hitZone.placedBy || hitZone.placedBy === this.scene.userId;
           if (!canRemove) {
-            this.scene.onSystemNotice?.('You can only erase items you placed.');
+            this.scene.onSystemNotice?.('You can only erase items you placed, unless you are a venue moderator.');
             return;
           }
           this.scene.removeDecoration?.(hitZone.id);

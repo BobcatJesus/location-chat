@@ -10,6 +10,49 @@ import { createAvatarEntity, preloadAvatarTextures } from '../game/entities/avat
 import { normalizeAvatarModel } from '../game/entities/avatarModels';
 import { isOutdoorLocation } from './outdoorRoomDetection.js';
 
+function getTimeOfDayMood(date = new Date()) {
+  if (date && typeof date === 'object' && 'label' in date && 'tone' in date) {
+    return date;
+  }
+
+  const resolvedDate = date instanceof Date ? date : new Date(date);
+  const hour = Number.isFinite(resolvedDate?.getTime?.()) ? resolvedDate.getHours() : 12;
+
+  if (hour >= 5 && hour < 11) {
+    return {
+      label: 'morning',
+      tone: 'fresh, half-awake, and practical',
+      description: 'The place feels calm and a little sleepy, with coffee and quiet routines taking over.',
+    };
+  }
+
+  if (hour >= 11 && hour < 17) {
+    return {
+      label: 'afternoon',
+      tone: 'busy, bright, and social',
+      description: 'The place is active, people are moving through, and everyone is a little more animated.',
+    };
+  }
+
+  if (hour >= 17 && hour < 21) {
+    return {
+      label: 'evening',
+      tone: 'warm, relaxed, and a little social',
+      description: 'The atmosphere is softer and more conversational, with people lingering longer.',
+      lighting: 'sunset light stretches warm orange across the room',
+      backgroundColor: 0xe7835b,
+    };
+  }
+
+  return {
+    label: 'night',
+    tone: 'quiet, dim, and intimate',
+    description: 'The room is winding down, conversations are lower, and the vibe is more private.',
+    lighting: 'late-night light is cool, low, and pooled around the quiet areas',
+    backgroundColor: 0x111827,
+  };
+}
+
 const SOCKET_SERVER_URL = import.meta.env.VITE_BACKEND_URL ||
   (import.meta.env.PROD ? 'https://location-chat-production.up.railway.app' : 'http://localhost:4000');
 
@@ -368,6 +411,7 @@ export class VillageScene extends Phaser.Scene {
     this.roomData   = d.roomData   ?? null;
     this.explicitLayout = d.explicitLayout ?? null;
     this.profile    = d.profile    ?? {};
+    this.canManageVenue = Boolean(d.canManageVenue);
     this.userLocation = d.userLocation ?? null;
     this.onLeave    = d.onLeave    ?? (() => {});
     this.preferredCameraMode = ['ultra-close-follow', 'close-follow', 'follow', 'wide-follow', 'overview'].includes(d.preferredCameraMode)
@@ -400,6 +444,19 @@ export class VillageScene extends Phaser.Scene {
     });
   }
 
+  _applyRoomMood() {
+    const mood = getTimeOfDayMood(this.roomMood || new Date());
+    this.roomMood = mood;
+    const bgMap = {
+      morning: 0xf8d7a2,
+      afternoon: 0xcfe7ff,
+      evening: mood.backgroundColor ?? 0xe7835b,
+      night: mood.backgroundColor ?? 0x111827,
+    };
+    this.cameras?.main?.setBackgroundColor(bgMap[mood.label] ?? 0xffffff);
+    return mood;
+  }
+
   preload() {
     preloadAvatarTextures(this);
     this.load.atlas('props', '/assets/props/props.png', '/assets/props/props.json');
@@ -429,6 +486,8 @@ export class VillageScene extends Phaser.Scene {
     this.roomLayout.setFootprintDebug(false);
     this.cameraMode = this.preferredCameraMode || 'follow';
     this.isOutdoorLocation = isOutdoorLocation(this.roomId, this.roomName, this.amenityTag, this.shopTag);
+    this.roomMood = getTimeOfDayMood(new Date());
+    this._applyRoomMood();
 
     // Initialize editor (press ~ or use the UI toggle)
     this.roomEditor = this.isOutdoorLocation ? new OutdoorEditor(this) : new RoomEditor(this);
@@ -812,6 +871,7 @@ export class VillageScene extends Phaser.Scene {
         lng: this.userLocation?.longitude ?? null,
         user: {
           id: userId,
+          email: this.profile?.profile?.email || '',
           name: userName,
           firstName,
           isCreator,
@@ -968,6 +1028,37 @@ export class VillageScene extends Phaser.Scene {
         });
       }
     });
+
+    // AI-backed NPC reply from the Inworld Router (server/socket.js `send_message` handler).
+    socket.on('npc_reply', (payload) => {
+      if (!payload?.message) return;
+      this.onChatMessage({
+        senderName: 'NPC',
+        message: payload.message,
+        isSelf: false,
+        timestamp: payload.timestamp || Date.now(),
+        channel: 'npc',
+        npcId: payload.roomId,
+      });
+    });
+
+    // AI-backed reply for a specific static NPC (server/socket.js `npc_chat` handler).
+    socket.on('npc_chat_reply', ({ npcId, message: reply, error } = {}) => {
+      if (!npcId) return;
+      const npcEntry = this.staticNpcs.find((entry) => entry.id === npcId);
+      const distance = npcEntry
+        ? Math.hypot(this.player.gx - npcEntry.gx, this.player.gy - npcEntry.gy)
+        : 0;
+      this.onChatMessage({
+        senderName: npcEntry?.name || 'NPC',
+        message: error || !reply ? 'Sorry, could you say that again?' : reply,
+        isSelf: false,
+        distance: Math.round(distance),
+        timestamp: Date.now(),
+        channel: 'npc',
+        npcId,
+      });
+    });
   }
 
   _selectNpcResponse(npcId, response, npcName) {
@@ -1001,19 +1092,37 @@ export class VillageScene extends Phaser.Scene {
     if (!text) return;
     const nearbyNpc = this._getNearbyStaticNpc();
     if (recipient === 'npc' && nearbyNpc) {
-      const npc = this.staticNpcs.find((entry) => entry.name === nearbyNpc.id);
+      const npc = this.staticNpcs.find((entry) => entry.id === nearbyNpc.id);
       if (npc) {
         npc.target = null;
         npc.pausedUntil = this.time.now + 15000;
       }
       const replyNumber = this.npcReplyCounts.get(nearbyNpc.id) || 0;
       this.npcReplyCounts.set(nearbyNpc.id, replyNumber + 1);
-      const requestedGenre = getRequestedBookGenre(text);
       this.onChatMessage({
         senderName: 'You', message: text, isSelf: true,
         distance: Math.round(nearbyNpc.distance), timestamp: Date.now(),
         channel: 'npc', npcId: nearbyNpc.id,
       });
+
+      if (this.socket?.connected) {
+        // AI-backed reply (server/socket.js `npc_chat` handler); response arrives via `npc_chat_reply`.
+        this.socket.emit('npc_chat', {
+          npcId: nearbyNpc.id,
+          npcName: nearbyNpc.name,
+          layoutId: this.layout?.id,
+          roomId: this.layout?.id || this.roomId || 'npc-room',
+          isOutdoor: Boolean(this.isOutdoorLocation),
+          timeOfDay: this.roomMood?.label || getTimeOfDayMood(new Date()).label,
+          message: text,
+          playerId: this.player?.id || this.player?._id || 'guest',
+          playerName: this.player?.name || 'Traveler',
+        });
+        return;
+      }
+
+      // Offline fallback: rule-based canned responses when there's no server connection.
+      const requestedGenre = getRequestedBookGenre(text);
       this.time.delayedCall(350, async () => {
         if (this._isShuttingDown) return;
         const isLibrary = this.layout?.id === 'md-anderson-library' || String(this.layout?.id || '').includes('library');
@@ -1466,6 +1575,9 @@ export class VillageScene extends Phaser.Scene {
         npc.setDepth(DEPTH.ACTOR_MIN + Math.round(employee.y));
         npc.syncLabel?.();
         this.staticNpcs.push({
+          // Unique per spawned instance so two NPCs sharing a label never collide (e.g. same reply history).
+          id: `${this.layout?.id || 'layout'}::${this.currentFloor}::${index}`,
+          name: employee.label || 'Library Staff',
           avatar: npc,
           gx: employee.x,
           gy: employee.y,
@@ -1560,7 +1672,7 @@ export class VillageScene extends Phaser.Scene {
     this.staticNpcs.forEach((npc) => {
       const distance = Math.hypot(this.player.gx - npc.gx, this.player.gy - npc.gy);
       if (distance <= PROXIMITY_RADIUS && (!closest || distance < closest.distance)) {
-        closest = { id: npc.name, name: npc.name, distance };
+        closest = { id: npc.id, name: npc.name, distance };
       }
     });
     return closest;

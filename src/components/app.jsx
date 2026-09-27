@@ -517,6 +517,10 @@ function App() {
   const [newRoomPublic, setNewRoomPublic] = useState(false);
   const [inviteToast, setInviteToast] = useState(null);
   const [communityRooms, setCommunityRooms] = useState([]);
+  const [venueEvents, setVenueEvents] = useState([]);
+  const [venuePermissions, setVenuePermissions] = useState({ canManage: false });
+  const [creatingEvent, setCreatingEvent] = useState(false);
+  const [eventForm, setEventForm] = useState({ title: '', description: '', startsAt: '', endsAt: '' });
   const osmHydrationTokenRef = useRef(0);
   const OSM_STRICT_READY_MODE = import.meta.env.DEV && String(import.meta.env.VITE_OSM_STRICT_READY || 'true').toLowerCase() !== 'false';
 
@@ -1029,6 +1033,75 @@ function App() {
   ];
 
   const activeRoom = roomCards.find((room) => room.id === selectedRoom) || roomMatch?.room || roomCards[0];
+
+  useEffect(() => {
+    if (activeScene !== 'room' || !activeRoom?.id) {
+      setVenueEvents([]);
+      return undefined;
+    }
+    let cancelled = false;
+    const loadEvents = async () => {
+      try {
+        const response = await fetch(`${SOCKET_SERVER_URL}/api/venue-events?roomId=${encodeURIComponent(activeRoom.id)}`);
+        const nextEvents = response.ok ? await response.json() : [];
+        if (!cancelled) setVenueEvents(Array.isArray(nextEvents) ? nextEvents : []);
+      } catch {
+        if (!cancelled) setVenueEvents([]);
+      }
+    };
+    loadEvents();
+    const timer = setInterval(loadEvents, 60000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [activeScene, activeRoom?.id, SOCKET_SERVER_URL]);
+
+  useEffect(() => {
+    if (activeScene !== 'room' || !activeRoom?.id) {
+      setVenuePermissions({ canManage: false });
+      return undefined;
+    }
+    const actorId = profile?.profile?.email || profile?.mode || 'guest';
+    let cancelled = false;
+    fetch(`${SOCKET_SERVER_URL}/api/venue-permissions?roomId=${encodeURIComponent(activeRoom.id)}&actorId=${encodeURIComponent(actorId)}`)
+      .then((response) => response.ok ? response.json() : { canManage: false })
+      .then((permissions) => { if (!cancelled) setVenuePermissions(permissions || { canManage: false }); })
+      .catch(() => { if (!cancelled) setVenuePermissions({ canManage: false }); });
+    return () => { cancelled = true; };
+  }, [activeScene, activeRoom?.id, profile, SOCKET_SERVER_URL]);
+
+  const openCreateEvent = () => {
+    const start = new Date(Date.now() + 60 * 60 * 1000);
+    const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
+    const toLocalInput = (date) => {
+      const offset = date.getTimezoneOffset() * 60000;
+      return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+    };
+    setEventForm({ title: '', description: '', startsAt: toLocalInput(start), endsAt: toLocalInput(end) });
+    setCreatingEvent(true);
+  };
+
+  const submitCreateEvent = async (event) => {
+    event.preventDefault();
+    try {
+      const response = await fetch(`${SOCKET_SERVER_URL}/api/venue-events`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roomId: activeRoom.id,
+          ...eventForm,
+          creator: profile?.profile?.email || profile?.mode || 'guest',
+        }),
+      });
+      const created = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(created.error || 'Event could not be created.');
+      setVenueEvents((previous) => [...previous, created].sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt)));
+      setCreatingEvent(false);
+      setGpsToast('Event created for this location.');
+      setTimeout(() => setGpsToast(null), 3000);
+    } catch (error) {
+      setGpsToast(error.message || 'Event could not be created.');
+      setTimeout(() => setGpsToast(null), 4000);
+    }
+  };
   const visibleRoomName = osmRoom?.name || activeRoom?.name || '';
   const worldTitle = visibleRoomName ? `${visibleRoomName} overworld` : 'The Lost overworld';
   const activeRoomSummary = selectedRoom === 'your-room'
@@ -1560,8 +1633,15 @@ function App() {
             ) : (
               <div style={{ flex: 1, border: '2px solid #334155', borderRadius: 12, overflow: 'hidden', position: 'relative' }}>
                 <Suspense fallback={<div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', color: '#94a3b8', background: '#0f172a' }}>Loading room…</div>}>
-                  <VillageCanvas room={osmRoom ? { ...osmRoom, id: osmRoom.id } : activeRoom} profile={profile} location={location} onLeave={() => { setActiveScene('world'); setOsmRoom(null); }} />
+                  <VillageCanvas room={osmRoom ? { ...osmRoom, id: osmRoom.id } : activeRoom} venueEvents={venueEvents} canManageVenue={venuePermissions.canManage} profile={profile} location={location} onLeave={() => { setActiveScene('world'); setOsmRoom(null); }} />
                 </Suspense>
+                {venuePermissions.canManage && <button
+                  type="button"
+                  onClick={openCreateEvent}
+                  style={{ position: 'absolute', top: 12, left: 12, zIndex: 1001, background: '#fbbf24', color: '#111827', border: '2px solid #111827', padding: '7px 10px', fontFamily: 'Courier New', fontSize: 11, fontWeight: 'bold', cursor: 'pointer', boxShadow: '2px 2px 0 #000' }}
+                >
+                  + Create event
+                </button>}
                 {(activeRoom?.kind === 'user-created' || activeRoom?.kind === 'community') && (activeRoom.ownerId === (profile?.profile?.email || profile?.mode || 'guest') || activeRoom.ownerId === (profile?.profile?.characterName || '')) && (
                   <button
                     onClick={() => handleDeleteRoom(activeRoom)}
@@ -1592,6 +1672,25 @@ function App() {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {creatingEvent && activeRoom && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(2,6,23,0.75)', display: 'grid', placeItems: 'center', padding: 20 }}>
+          <form onSubmit={submitCreateEvent} style={{ width: 'min(440px, 100%)', background: '#111827', border: '2px solid #fbbf24', boxShadow: '6px 6px 0 #000', padding: 18, color: '#f8fafc', fontFamily: 'Courier New, monospace' }}>
+            <h2 style={{ margin: '0 0 4px', color: '#fbbf24', fontSize: 20 }}>Create event</h2>
+            <div style={{ marginBottom: 14, color: '#94a3b8', fontSize: 11 }}>{activeRoom.name || 'This location'}</div>
+            <label style={{ display: 'block', marginBottom: 10, fontSize: 11 }}>Title<input required maxLength={80} value={eventForm.title} onChange={(e) => setEventForm({ ...eventForm, title: e.target.value })} style={{ display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 4, padding: 8, background: '#020617', color: '#fff', border: '1px solid #475569', fontFamily: 'inherit' }} /></label>
+            <label style={{ display: 'block', marginBottom: 10, fontSize: 11 }}>What is happening?<textarea required maxLength={240} value={eventForm.description} onChange={(e) => setEventForm({ ...eventForm, description: e.target.value })} style={{ display: 'block', width: '100%', boxSizing: 'border-box', minHeight: 70, marginTop: 4, padding: 8, resize: 'vertical', background: '#020617', color: '#fff', border: '1px solid #475569', fontFamily: 'inherit' }} /></label>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <label style={{ fontSize: 11 }}>Starts<input required type="datetime-local" value={eventForm.startsAt} onChange={(e) => setEventForm({ ...eventForm, startsAt: e.target.value })} style={{ display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 4, padding: 7, background: '#020617', color: '#fff', border: '1px solid #475569', fontFamily: 'inherit' }} /></label>
+              <label style={{ fontSize: 11 }}>Ends<input required type="datetime-local" value={eventForm.endsAt} onChange={(e) => setEventForm({ ...eventForm, endsAt: e.target.value })} style={{ display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 4, padding: 7, background: '#020617', color: '#fff', border: '1px solid #475569', fontFamily: 'inherit' }} /></label>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+              <button type="button" onClick={() => setCreatingEvent(false)} style={{ padding: '8px 12px', background: 'transparent', color: '#cbd5e1', border: '1px solid #475569', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+              <button type="submit" style={{ padding: '8px 12px', background: '#fbbf24', color: '#111827', border: '2px solid #111827', cursor: 'pointer', fontWeight: 'bold', fontFamily: 'inherit' }}>Publish event</button>
+            </div>
+          </form>
         </div>
       )}
     </div>

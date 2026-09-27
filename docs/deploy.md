@@ -9,6 +9,9 @@ Important: this site is currently using Netlify Drop, not a repo-connected build
 - Build command: `npm run build`
 - Publish directory: `dist`
 - Backend env var: `VITE_BACKEND_URL=https://location-chat-production.up.railway.app`
+- Backend moderator env var: `MODERATOR_EMAILS=moderator@example.com,another@example.com`
+
+Moderators are assigned server-side with `MODERATOR_EMAILS`. Venue owners are also allowed to manage events and remove user decorations for their own venue. Restart the backend after changing this variable.
 
 ### Manual Publish Steps
 

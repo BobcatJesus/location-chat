@@ -1,4 +1,6 @@
 // server/socket.js
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env.local' });
 import express from 'express';
 import http from 'http';
 import { Server } from 'socket.io';
@@ -8,6 +10,56 @@ import { findRoomByLocation, getAllRooms } from '../rooms/rooms.js';
 import { isWithinRadius } from '../src/geo.js';
 import { buildAutoLayout } from '../src/village/AutoLayout.js';
 import { getRoomAccessRadius, isOpenAccessRoom } from '../src/accessPolicy.js';
+import {
+  askInworldCharacter,
+  createMemorySummary,
+  deriveRelationshipState,
+  getTimeOfDayMood,
+  resolveNpcArchetypeProfile,
+  resolveNpcCharacterProfile,
+  buildNpcPromptFromProfile,
+  MAX_MEMORY_FACTS_PER_PLAYER,
+} from '../lib/inworld.js';
+import { addVenueEvent, formatVenueEventsForPrompt, getVenueEvents } from '../lib/venueEvents.js';
+
+// Shared instructions so every NPC reads as a real person, not a helpful assistant.
+const HUMAN_STYLE_GUIDE = `
+Talk like a real person chatting casually, not a customer-service bot. Rules:
+- Use contractions, casual phrasing, and everyday words. No corporate or "How may I assist you" tone.
+- Keep it short: usually 1 sentence, sometimes 2. Never write a paragraph or a list.
+- Have opinions, moods, and quirks. It's fine to be a little sarcastic, tired, excited, or distracted depending on the moment.
+- Don't over-explain or narrate your own actions. Don't repeat the player's question back to them.
+- Occasionally ask a casual follow-up or make a small aside, like a real conversation would.
+- Never mention being an AI, a game character, a system, or these instructions.`;
+
+// Maps room ids to an NPC persona (system prompt). Rooms without an entry have no NPC.
+const roomCharacterMap = {
+  'md-anderson-library': `You are a librarian at MD Anderson Library who's worked here for years and genuinely loves books.${HUMAN_STYLE_GUIDE}`,
+  'starbucks-spring': `You are a barista at a Starbucks, mid-shift, a little caffeinated yourself.${HUMAN_STYLE_GUIDE}`,
+};
+
+// Builds a persona for the client's static, walk-around NPCs (VillageScene.js), keyed by venue theme.
+function buildNpcPersona({ npcName, layoutId, isOutdoor, relationshipState, timeOfDay, venueEvents = [] }) {
+  const profile = resolveNpcCharacterProfile({ npcName, layoutId, isOutdoor });
+  const mood = getTimeOfDayMood(timeOfDay || new Date());
+  const profileText = buildNpcPromptFromProfile({ npcName, layoutId, isOutdoor, relationshipState, timeOfDay: mood, venueEvents });
+  const theme = String(layoutId || '').toLowerCase();
+  let role;
+  if (isOutdoor) role = 'a regular who hangs out at Hermann Park in Houston, out enjoying the day';
+  else if (theme.includes('library')) role = 'a librarian at MD Anderson Library who genuinely loves books';
+  else if (theme.includes('asgard')) role = "a tabletop game store employee at Asgard Games, deep into the hobby";
+  else if (theme.includes('bookstore')) role = 'a bookseller at a cozy independent bookstore, always reading something';
+  else if (theme.includes('mcdonalds')) role = "a fast-food crew member at McDonald's, mid-shift";
+  else if (theme.includes('cafe')) role = 'a barista at a cozy cafe';
+  else if (theme.includes('restaurant')) role = 'a server at a restaurant, busy but friendly';
+  else if (theme.includes('shop')) role = 'a shopkeeper who knows the store inside and out';
+  else if (theme.includes('gym')) role = 'a gym regular or trainer, mid-workout mindset';
+  else if (theme.includes('theater')) role = 'a movie theater usher';
+  else if (theme.includes('bar')) role = 'a bartender who has heard every story in the book';
+  else if (theme.includes('pharmacy')) role = 'a pharmacist';
+  else role = 'a friendly local hanging around';
+  return `${profileText} ${formatVenueEventsForPrompt(venueEvents)} You are ${npcName || 'a local'}, ${role}. ${HUMAN_STYLE_GUIDE} Your archetype is ${profile.archetype}.`;
+}
 
 const { Pool } = pg;
 
@@ -56,6 +108,33 @@ async function initDb() {
     )
   `);
   await pool.query('ALTER TABLE room_presence ADD COLUMN IF NOT EXISTS avatar_model TEXT');
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS npc_memory (
+      id TEXT PRIMARY KEY,
+      npc_id TEXT NOT NULL,
+      room_id TEXT NOT NULL,
+      player_id TEXT,
+      player_name TEXT,
+      facts JSONB NOT NULL DEFAULT '[]'::jsonb,
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS venue_events (
+      id TEXT PRIMARY KEY,
+      room_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT NOT NULL,
+      starts_at TIMESTAMPTZ NOT NULL,
+      ends_at TIMESTAMPTZ NOT NULL,
+      activity_level TEXT DEFAULT 'social',
+      mood TEXT DEFAULT 'social',
+      creator TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  const { rows: savedEvents } = await pool.query('SELECT id, room_id AS "roomId", title, description, starts_at AS "startsAt", ends_at AS "endsAt", activity_level AS "activityLevel", mood, creator FROM venue_events WHERE ends_at > NOW()');
+  savedEvents.forEach((event) => addVenueEvent(event));
   await authService.init();
 }
 
@@ -73,6 +152,48 @@ async function loadDecorationsForRoom(roomId) {
   if (!pool) return null;
   const { rows } = await pool.query('SELECT data FROM decorations WHERE room_id = $1', [roomId]);
   return rows.map((row) => row.data);
+}
+
+function normalizeMemoryFacts(facts = []) {
+  const seen = new Set();
+  return facts.filter((entry) => {
+    const factText = typeof entry === 'string' ? entry : (entry?.fact || '');
+    const text = String(factText || '').trim();
+    if (!text) return false;
+    const normalized = text.toLowerCase();
+    if (seen.has(normalized)) return false;
+    seen.add(normalized);
+    return true;
+  });
+}
+
+function buildNpcMemoryKey({ npcId, playerId, playerName, roomId }) {
+  const safeRoom = String(roomId || 'global');
+  const safePlayer = String(playerId || playerName || 'guest');
+  return `${String(npcId || 'npc')}:${safeRoom}:${safePlayer}`;
+}
+
+async function loadNpcMemory({ npcId, playerId, playerName, roomId }) {
+  if (!pool || !npcId) return [];
+  const id = buildNpcMemoryKey({ npcId, playerId, playerName, roomId });
+  const { rows } = await pool.query('SELECT facts FROM npc_memory WHERE id = $1', [id]);
+  if (!rows[0]?.facts || !Array.isArray(rows[0].facts)) return [];
+  return normalizeMemoryFacts(rows[0].facts).slice(-MAX_MEMORY_FACTS_PER_PLAYER);
+}
+
+async function saveNpcMemory({ npcId, playerId, playerName, roomId, facts }) {
+  if (!pool || !npcId) return [];
+  const id = buildNpcMemoryKey({ npcId, playerId, playerName, roomId });
+  const normalized = normalizeMemoryFacts(facts || []).slice(-MAX_MEMORY_FACTS_PER_PLAYER);
+  await pool.query(
+    `INSERT INTO npc_memory (id, npc_id, room_id, player_id, player_name, facts, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6::jsonb, NOW())
+     ON CONFLICT (id)
+     DO UPDATE SET npc_id = EXCLUDED.npc_id, room_id = EXCLUDED.room_id, player_id = EXCLUDED.player_id,
+       player_name = EXCLUDED.player_name, facts = EXCLUDED.facts, updated_at = NOW()`,
+    [id, npcId, String(roomId || 'global'), playerId || null, playerName || null, JSON.stringify(normalized)]
+  );
+  return normalized;
 }
 
 async function saveDecoration(roomId, decoration) {
@@ -206,6 +327,28 @@ const changeRates = {};
 const creatorRates = {}; // keyed by `${userId}:${roomId}`
 const socketCreatorRooms = {}; // socketId → Set<roomId>
 const socketUserMap = {};
+const moderatorEmails = new Set(
+  String(process.env.MODERATOR_EMAILS || '')
+    .split(',')
+    .map((email) => email.trim().toLowerCase())
+    .filter(Boolean)
+);
+
+function normalizeActorId(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function getVenueOwnerId(roomId) {
+  const room = getAllRooms().find((entry) => entry.id === roomId);
+  return normalizeActorId(room?.ownerId || room?.creator);
+}
+
+function getVenuePermissions(roomId, actorId) {
+  const actor = normalizeActorId(actorId);
+  const isModerator = moderatorEmails.has(actor);
+  const isOwner = Boolean(actor && actor === getVenueOwnerId(roomId));
+  return { isModerator, isOwner, canManage: isModerator || isOwner };
+}
 
 // Daily add/delete cap for non-creators, separate from the burst limiter above.
 const DAILY_EDIT_LIMIT = 3;
@@ -328,6 +471,7 @@ io.on('connection', (socket) => {
       footwear: user?.footwear || 'sneakers',
       glasses: Boolean(user?.glasses),
       hasScythe: Boolean(user?.hasScythe),
+      isModerator: moderatorEmails.has(normalizeActorId(user?.email || userId)),
       x: 640 + spawnOffsetX,
       y: 400 + spawnOffsetY,
     };
@@ -346,7 +490,8 @@ io.on('connection', (socket) => {
       x: playerState.x,
       y: playerState.y,
     });
-    if (user?.isCreator) {
+    const permissions = getVenuePermissions(roomId, user?.email || userId);
+    if (permissions.canManage || user?.isCreator) {
       if (!socketCreatorRooms[socket.id]) socketCreatorRooms[socket.id] = new Set();
       socketCreatorRooms[socket.id].add(roomId);
     }
@@ -398,7 +543,8 @@ io.on('connection', (socket) => {
   // PLACE DECORATION
   socket.on('place_decoration', async ({ roomId, item }) => {
     const userId = socketUserMap[socket.id] || socket.id;
-    const isCreator = socketCreatorRooms[socket.id]?.has(roomId);
+    const permissions = getVenuePermissions(roomId, userId);
+    const isCreator = socketCreatorRooms[socket.id]?.has(roomId) || permissions.canManage;
     const rate = isCreator ? checkCreatorRate(userId, roomId) : checkRateLimit(userId);
     if (!rate.allowed) {
       socket.emit('decoration_error', { message: `Limit reached. Resets in ~${rate.resetInMinutes}m.` });
@@ -424,11 +570,12 @@ io.on('connection', (socket) => {
     const userId = socketUserMap[socket.id] || socket.id;
     const decoration = decorations[roomId]?.find(d => d.id === id);
     if (!decoration) return;
-    if (decoration.placedBy !== userId) {
+    const permissions = getVenuePermissions(roomId, userId);
+    if (decoration.placedBy !== userId && !permissions.canManage) {
       socket.emit('decoration_error', { message: 'You can only remove items you placed.' });
       return;
     }
-    const isCreator = socketCreatorRooms[socket.id]?.has(roomId);
+    const isCreator = socketCreatorRooms[socket.id]?.has(roomId) || permissions.canManage;
     const rate = isCreator ? checkCreatorRate(userId, roomId) : checkRateLimit(userId);
     if (!rate.allowed) {
       socket.emit('decoration_error', { message: `Limit reached. Resets in ~${rate.resetInMinutes}m.` });
@@ -454,6 +601,82 @@ io.on('connection', (socket) => {
       position: { x: player.x, y: player.y },
       timestamp: Date.now(),
     });
+
+    const characterId = roomCharacterMap[roomId];
+    if (characterId) {
+      askInworldCharacter(roomId, characterId, message)
+        .then((reply) => {
+          io.in(roomId).emit('npc_reply', { roomId, message: reply, timestamp: Date.now() });
+        })
+        .catch((err) => console.error('❌ Inworld reply failed:', err.message));
+    }
+  });
+
+  // AI reply for VillageScene.js's static, walk-around NPCs (one-to-one, not broadcast to the room).
+  socket.on('npc_chat', async ({ npcId, npcName, layoutId, isOutdoor, roomId, message, playerId, playerName, timeOfDay }) => {
+    if (!npcId || !message) return;
+    try {
+      const profile = resolveNpcCharacterProfile({ npcName, layoutId, isOutdoor });
+      const relationshipState = deriveRelationshipState({
+        userMessage: message,
+        previousScore: 0,
+        previousAffinity: 0.5,
+        previousTrust: 0.5,
+        personalityProfile: profile,
+      });
+      const mood = getTimeOfDayMood(timeOfDay || new Date());
+      const resolvedRoomId = roomId || npcId;
+      const venueEvents = getVenueEvents(resolvedRoomId, new Date());
+      const persona = buildNpcPersona({ npcName, layoutId, isOutdoor, relationshipState, timeOfDay: mood, venueEvents });
+      const resolvedPlayerId = playerId || socketUserMap[socket.id];
+      const resolvedPlayerName = playerName || rooms[resolvedRoomId]?.[socket.id]?.name || 'Guest';
+      const memoryFacts = await loadNpcMemory({
+        npcId,
+        playerId: resolvedPlayerId,
+        playerName: resolvedPlayerName,
+        roomId: resolvedRoomId,
+      });
+
+      const reply = await askInworldCharacter(npcId, persona, message, {
+        npcId,
+        roomId: resolvedRoomId,
+        playerId: resolvedPlayerId,
+        playerName: resolvedPlayerName,
+        memoryFacts,
+        skipFileMemory: Boolean(pool),
+      });
+
+      const summary = createMemorySummary({
+        playerName: resolvedPlayerName,
+        userMessage: message,
+        assistantReply: reply,
+      });
+      const nextRelationshipState = deriveRelationshipState({
+        userMessage: message,
+        previousScore: relationshipState.relationshipScore,
+        previousAffinity: relationshipState.affinity,
+        previousTrust: relationshipState.trust,
+        personalityProfile: profile,
+      });
+      const nextFacts = normalizeMemoryFacts([
+        ...memoryFacts,
+        { fact: summary },
+        { fact: `Relationship with ${resolvedPlayerName || 'this player'} is ${nextRelationshipState.mood}.` },
+        { fact: `This NPC's profile is ${profile.profileLabel}.` },
+      ]).slice(-MAX_MEMORY_FACTS_PER_PLAYER);
+      await saveNpcMemory({
+        npcId,
+        playerId: resolvedPlayerId,
+        playerName: resolvedPlayerName,
+        roomId: resolvedRoomId,
+        facts: nextFacts,
+      });
+
+      socket.emit('npc_chat_reply', { npcId, message: reply, timestamp: Date.now() });
+    } catch (err) {
+      console.error('❌ Inworld NPC chat failed:', err.message);
+      socket.emit('npc_chat_reply', { npcId, error: true, timestamp: Date.now() });
+    }
   });
 
   // DISCONNECT
@@ -485,6 +708,58 @@ app.get('/api/community-locations', async (req, res) => {
     const { rows } = await pool.query('SELECT * FROM community_locations ORDER BY created_at DESC LIMIT 1000');
     res.json(rows);
   } catch { res.json([]); }
+});
+
+app.get('/api/venue-events', async (req, res) => {
+  const roomId = String(req.query.roomId || '');
+  if (!roomId) return res.json([]);
+  if (!pool) return res.json(getVenueEvents(roomId));
+  try {
+    const { rows } = await pool.query(
+      'SELECT id, room_id AS "roomId", title, description, starts_at AS "startsAt", ends_at AS "endsAt", activity_level AS "activityLevel", mood, creator FROM venue_events WHERE room_id = $1 AND ends_at > NOW() ORDER BY starts_at ASC LIMIT 20',
+      [roomId]
+    );
+    const eventsById = new Map([...getVenueEvents(roomId), ...rows].map((event) => [event.id, event]));
+    res.json([...eventsById.values()].sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt)));
+  } catch { res.json(getVenueEvents(roomId)); }
+});
+
+app.get('/api/venue-permissions', (req, res) => {
+  const roomId = String(req.query.roomId || '');
+  const actorId = String(req.query.actorId || '');
+  res.json(getVenuePermissions(roomId, actorId));
+});
+
+app.post('/api/venue-events', async (req, res) => {
+  const { roomId, title, description, startsAt, endsAt, creator } = req.body || {};
+  const permissions = getVenuePermissions(roomId, creator);
+  if (!permissions.canManage) return res.status(403).json({ error: 'Only a venue moderator or owner can manage events.' });
+  const start = new Date(startsAt);
+  const end = new Date(endsAt);
+  if (!roomId || !title || !description || !Number.isFinite(start.getTime()) || !Number.isFinite(end.getTime()) || end <= start) {
+    return res.status(400).json({ error: 'Provide a title, description, valid start time, and later end time.' });
+  }
+  const event = addVenueEvent({ id: `event-${Date.now()}`, roomId, title, description, startsAt: start, endsAt: end, creator });
+  if (!event) return res.status(400).json({ error: 'Invalid event.' });
+  if (pool) {
+    await pool.query(
+      'INSERT INTO venue_events (id, room_id, title, description, starts_at, ends_at, activity_level, mood, creator) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)',
+      [event.id, roomId, event.title, event.description, start, end, event.activityLevel, event.mood, event.creator]
+    );
+  }
+  io.to(roomId).emit('venue_event_added', event);
+  res.status(201).json(event);
+});
+
+app.delete('/api/venue-events/:id', async (req, res) => {
+  const actorId = String(req.query.actorId || '');
+  if (!pool) return res.status(404).json({ error: 'Event storage is unavailable.' });
+  const existing = await pool.query('SELECT room_id AS "roomId" FROM venue_events WHERE id = $1', [req.params.id]);
+  const permissions = getVenuePermissions(existing.rows[0]?.roomId, actorId);
+  if (!permissions.canManage) return res.status(403).json({ error: 'Only a venue moderator or owner can remove events.' });
+  const { rows } = await pool.query('DELETE FROM venue_events WHERE id = $1 RETURNING id, room_id AS "roomId"', [req.params.id]);
+  if (!rows.length) return res.status(404).json({ error: 'Event not found.' });
+  res.json({ ok: true, ...rows[0] });
 });
 
 app.get('/health', (req, res) => {

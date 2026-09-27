@@ -7,6 +7,7 @@ import { bookstore } from './layouts/bookstore.js';
 import { library } from './layouts/library.js';
 import { getDistanceMeters } from '../geo';
 import { ROOMS } from '../../rooms/rooms.js';
+import { getVenueEvents } from '../../lib/venueEvents.js';
 
 const LIVE_OAK_PARK_CENTER = { lat: 29.754535, lng: -95.409365 };
 const LIVE_OAK_OSM_WAY_ID = '392274785';
@@ -207,7 +208,7 @@ function createDecahedronRoomFootprint(room = {}) {
   return points;
 }
 
-export default function VillageCanvas({ room, profile, onLeave, location }) {
+export default function VillageCanvas({ room, profile, onLeave, location, venueEvents: providedVenueEvents = [], canManageVenue = false }) {
   const BASE_WIDTH = 1600;
   const BASE_HEIGHT = 900;
   const containerRef = useRef(null);
@@ -226,7 +227,12 @@ export default function VillageCanvas({ room, profile, onLeave, location }) {
   const [currentFloor, setCurrentFloor] = useState(0);
   const [totalFloors, setTotalFloors] = useState(1);
   const [stairScaffoldActive, setStairScaffoldActive] = useState(false);
+  const [eventClock, setEventClock] = useState(() => Date.now());
   const roomId = canonicalRoomId(room);
+  const venueEvents = providedVenueEvents.length
+    ? providedVenueEvents
+    : getVenueEvents(roomId, new Date(eventClock));
+  const featuredEvent = venueEvents[0] || null;
   const isMcDonaldsRoom = roomId.includes('mcdonald') || normalizePlaceText(room?.name || '').includes('mcdonald');
   const normalizedAmenity = inferAmenityTag(room);
   const normalizedRoom = {
@@ -423,6 +429,12 @@ export default function VillageCanvas({ room, profile, onLeave, location }) {
   }, [roomSignature]);
 
   useEffect(() => {
+    setEventClock(Date.now());
+    const timer = setInterval(() => setEventClock(Date.now()), 60000);
+    return () => clearInterval(timer);
+  }, [roomSignature]);
+
+  useEffect(() => {
     if (!containerRef.current || !roomId) return;
 
     // Defensive cleanup: if a previous scene leaked UI, clear it before mounting.
@@ -455,6 +467,7 @@ export default function VillageCanvas({ room, profile, onLeave, location }) {
       roomData: normalizedRoom,
       explicitLayout,
       profile,
+      canManageVenue,
       userLocation: location || null,
       onLeave,
       preferredCameraMode,
@@ -614,6 +627,29 @@ export default function VillageCanvas({ room, profile, onLeave, location }) {
           boxShadow: '0 4px 14px rgba(0,0,0,0.35)',
         }}>
           {systemNotice}
+        </div>
+      )}
+      {featuredEvent && (
+        <div style={{
+          position: 'absolute',
+          top: 58,
+          left: 12,
+          zIndex: 1000,
+          width: 'min(320px, calc(100vw - 24px))',
+          boxSizing: 'border-box',
+          background: featuredEvent.status === 'active' ? '#3f2f16ee' : '#0f172add',
+          border: `1px solid ${featuredEvent.status === 'active' ? '#fbbf24' : '#64748b'}`,
+          borderRadius: 8,
+          padding: '9px 11px',
+          color: '#f8fafc',
+          fontFamily: 'Courier New, monospace',
+          boxShadow: '0 4px 14px rgba(0,0,0,0.3)',
+        }}>
+          <div style={{ color: featuredEvent.status === 'active' ? '#fbbf24' : '#cbd5e1', fontSize: 10, fontWeight: 'bold', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
+            {featuredEvent.status === 'active' ? 'Happening Here' : 'Coming Here'}
+          </div>
+          <div style={{ marginTop: 3, fontSize: 14, fontWeight: 'bold' }}>{featuredEvent.title}</div>
+          <div style={{ marginTop: 3, color: '#cbd5e1', fontSize: 11, lineHeight: 1.35 }}>{featuredEvent.description}</div>
         </div>
       )}
       <div style={{

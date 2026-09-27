@@ -378,6 +378,15 @@ export default function SpatialCanvas({ room, profile, onLeave }) {
       }
     });
 
+    // AI-backed NPC reply from the Inworld Router (server/socket.js `send_message` handler).
+    socket.on('npc_reply', (payload) => {
+      if (!payload?.message) return;
+      setMessages((prev) => [...prev.slice(-9), { senderName: 'NPC', message: payload.message, timestamp: payload.timestamp }]);
+      if (localPlayerRef.current && sceneRef.current) {
+        spawnBubble(sceneRef.current, localPlayerRef.current, payload.message);
+      }
+    });
+
     return () => {
       socket.disconnect();
       socketRef.current = null;
