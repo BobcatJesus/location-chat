@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import Phaser from 'phaser';
 import { VillageScene } from './VillageScene.js';
+import ShelfPanel from './ShelfPanel.jsx';
 import { buildAutoLayout } from './AutoLayout.js';
 import { isOutdoorLocation } from './outdoorRoomDetection.js';
 import { bookstore } from './layouts/bookstore.js';
@@ -227,6 +228,7 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
   const [currentFloor, setCurrentFloor] = useState(0);
   const [totalFloors, setTotalFloors] = useState(1);
   const [stairScaffoldActive, setStairScaffoldActive] = useState(false);
+  const [openShelf, setOpenShelf] = useState(null);
   const [eventClock, setEventClock] = useState(() => Date.now());
   const roomId = canonicalRoomId(room);
   const venueEvents = providedVenueEvents.length
@@ -473,6 +475,7 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
       preferredCameraMode,
       onEditorChange: setEditorActive,
       onNearbyChange: setNearbyCount,
+      onOpenShelf: (info) => setOpenShelf(info),
       onNearbyNpcChange: setNearbyNpc,
       onNpcConversationClear: ({ npcId } = {}) => {
         setMessages((prev) => prev.filter((msg) => msg.channel !== 'npc' || msg.npcId !== npcId));
@@ -590,6 +593,14 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
+      {openShelf && (
+        <ShelfPanel
+          roomId={roomId}
+          shelf={openShelf.shelf}
+          onClose={() => setOpenShelf(null)}
+          getSocket={() => gameRef.current?.scene?.getScene('VillageScene')?.socket}
+        />
+      )}
       {showEditHint && (
         <div style={{
           position: 'absolute',

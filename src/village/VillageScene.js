@@ -415,6 +415,7 @@ export class VillageScene extends Phaser.Scene {
     this.canManageVenue = Boolean(d.canManageVenue);
     this.userLocation = d.userLocation ?? null;
     this.onLeave    = d.onLeave    ?? (() => {});
+    this.onOpenShelf = d.onOpenShelf ?? (() => {});
     this.preferredCameraMode = ['ultra-close-follow', 'close-follow', 'follow', 'wide-follow', 'overview'].includes(d.preferredCameraMode)
       ? d.preferredCameraMode
       : null;
@@ -543,6 +544,14 @@ export class VillageScene extends Phaser.Scene {
       padding: { x: 8, y: 4 },
     }).setOrigin(0.5, 1).setDepth(DEPTH.UI).setAlpha(0);
 
+    // Bookshelf interaction (library shelves)
+    this.shelfPrompt = this.add.text(0, 0, '📚 Browse shelf [E]', {
+      fontSize: '15px',
+      color: '#4a2c14',
+      backgroundColor: 'rgba(255,255,255,0.85)',
+      padding: { x: 8, y: 4 },
+    }).setOrigin(0.5, 1).setDepth(DEPTH.UI).setAlpha(0);
+
     // Escalator debounce flag
     this._escalatorCooldown = 0;
 
@@ -606,6 +615,11 @@ export class VillageScene extends Phaser.Scene {
       }
 
       if (key === 'e') {
+        const shelf = this._nearestShelf();
+        if (shelf) {
+          this.onOpenShelf({ shelf: shelf.label, roomId: this.roomId });
+          return;
+        }
         this._tryFeedDucks();
         return;
       }
@@ -864,6 +878,21 @@ export class VillageScene extends Phaser.Scene {
   }
 
   /** Feed the ducks at the nearest pond (E key). Broadcast to the room. */
+  _nearestShelf() {
+    if (!this.player || !this.roomLayout?.interactZones) return null;
+    const px = this.player.gx, py = this.player.gy;
+    let best = null, bestD = 110;
+    for (const z of this.roomLayout.interactZones) {
+      if (z.type !== 'shelf' && z.type !== 'wall_shelf') continue;
+      if (!z.label) continue;
+      const cx = Math.max(z.x, Math.min(px, z.x + (z.w || 0)));
+      const cy = Math.max(z.y, Math.min(py, z.y + (z.h || 0)));
+      const d = Math.hypot(px - cx, py - cy);
+      if (d < bestD) { bestD = d; best = z; }
+    }
+    return best ? { label: best.label } : null;
+  }
+
   _tryFeedDucks() {
     if (!this.duckPond || this._feedCooldownMs > 0) return;
     if (!this.player) return;
@@ -1559,6 +1588,14 @@ export class VillageScene extends Phaser.Scene {
       this.feedPrompt.setAlpha(0);
     }
 
+    // Bookshelf: prompt near interactable shelves (duck prompt takes priority).
+    const nearShelf = this._nearestShelf();
+    if (nearShelf && !nearPond) {
+      this.shelfPrompt.setText(`📚 ${nearShelf.label} [E]`).setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
+    } else {
+      this.shelfPrompt.setAlpha(0);
+    }
+
     // Escalator check
     this._escalatorCooldown = Math.max(0, this._escalatorCooldown - delta);
     if (this._escalatorCooldown === 0 && this.roomLayout) {
@@ -1749,6 +1786,7 @@ export class VillageScene extends Phaser.Scene {
     this.duckPond?.destroy();
     this.duckPond = null;
     this.feedPrompt?.destroy();
+    this.shelfPrompt?.destroy();
     this.staticNpcs?.forEach((npc) => npc.destroy?.());
     this.staticNpcs = [];
     this._npcRenderVersion += 1;
