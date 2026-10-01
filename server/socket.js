@@ -1123,6 +1123,17 @@ app.delete('/api/venue-events/:id', async (req, res) => {
 app.get('/health', (req, res) => {
   res.json({ db: !!pool, env: !!process.env.DATABASE_URL });
 });
+
+// Debug: test Inworld API directly
+app.get('/debug/inworld', async (req, res) => {
+  try {
+    const { askInworldCharacter } = await import('../lib/inworld.js');
+    const reply = await askInworldCharacter('debug', 'You are a helpful assistant.', 'Say hello');
+    res.json({ ok: true, reply });
+  } catch (e) {
+    res.json({ ok: false, error: e.message });
+  }
+});
 registerAuthRoutes(app, authService);
 
 app.post('/api/geofence/check', (req, res) => {
