@@ -886,10 +886,52 @@ export class VillageScene extends Phaser.Scene {
   _removeRemoteBySocketId(socketId) {
     const remotePlayer = this.remotePlayers.get(socketId);
     if (remotePlayer) {
-      remotePlayer.destroy();
+      this._convertToGhost(remotePlayer);
       this.remotePlayers.delete(socketId);
     }
     this.pendingRemoteSpawns?.delete(socketId);
+  }
+
+  // Lingering presence: departed players leave a translucent ghost.
+  // No name, no photo, no chat — just a presence that fades after 10 min.
+  _convertToGhost(remotePlayer) {
+    const avatar = remotePlayer.avatar;
+    if (!avatar) return;
+    try {
+      // Hide name label and photo
+      if (avatar._label) avatar._label.setVisible(false);
+      if (avatar._photo) avatar._photo.setVisible(false);
+      // Make translucent
+      avatar.setAlpha(0.4);
+      // Track for fade-out
+      if (!this.ghosts) this.ghosts = new Map();
+      const ghostId = 'ghost_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+      this.ghosts.set(ghostId, {
+        avatar,
+        expiresAt: Date.now() + 10 * 60 * 1000, // 10 minutes
+        destroy: () => {
+          try { avatar.destroy(); } catch {}
+          this.ghosts.delete(ghostId);
+        },
+      });
+    } catch (e) {
+      // Fallback: just destroy if ghost conversion fails
+      try { remotePlayer.destroy(); } catch {}
+    }
+  }
+
+  _updateGhosts() {
+    if (!this.ghosts || this.ghosts.size === 0) return;
+    const now = Date.now();
+    for (const [id, ghost] of this.ghosts) {
+      const remaining = ghost.expiresAt - now;
+      if (remaining <= 0) {
+        ghost.destroy();
+      } else if (remaining < 60000) {
+        // Fade out in the last minute
+        ghost.avatar.setAlpha(0.4 * (remaining / 60000));
+      }
+    }
   }
 
   /** Feed the ducks at the nearest pond (E key). Broadcast to the room. */
@@ -1596,6 +1638,7 @@ export class VillageScene extends Phaser.Scene {
       remotePlayer.avatar.tick(delta);
     });
     this._updateStaticNpcs(delta);
+    this._updateGhosts();
 
     // Nearby count for chat gating UI
     let nearbyCount = 0;
@@ -1851,6 +1894,7 @@ export class VillageScene extends Phaser.Scene {
     this.shelfPrompt?.destroy();
     this.jukeboxPrompt?.destroy();
     jukeboxAudio.stop();
+    if (this.ghosts) { for (const [, g] of this.ghosts) { try { g.avatar.destroy(); } catch {} } this.ghosts.clear(); }
     this.staticNpcs?.forEach((npc) => npc.destroy?.());
     this.staticNpcs = [];
     this._npcRenderVersion += 1;
