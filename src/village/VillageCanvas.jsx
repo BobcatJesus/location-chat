@@ -4,6 +4,7 @@ import { VillageScene } from './VillageScene.js';
 import ShelfPanel from './ShelfPanel.jsx';
 import JukeboxPanel from './JukeboxPanel.jsx';
 import InteriorSketchModal from './InteriorSketchModal.jsx';
+import ModQueuePanel from './ModQueuePanel.jsx';
 import { getCoins } from './CoinWallet.js';
 import { buildAutoLayout } from './AutoLayout.js';
 import { isOutdoorLocation } from './outdoorRoomDetection.js';
@@ -228,6 +229,7 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
   const [systemNotice, setSystemNotice] = useState('');
   const [coinBalance, setCoinBalance] = useState(() => getCoins());
   const [showInteriorSketch, setShowInteriorSketch] = useState(false);
+  const [showModQueue, setShowModQueue] = useState(false);
   const [roomPopulation, setRoomPopulation] = useState(1);
   const [cameraMode, setCameraMode] = useState('wide-follow');
   const [currentFloor, setCurrentFloor] = useState(0);
@@ -617,6 +619,9 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
           getSocket={() => gameRef.current?.scene?.getScene('VillageScene')?.socket}
         />
       )}
+      {showModQueue && (
+        <ModQueuePanel onClose={() => setShowModQueue(false)} />
+      )}
       {showInteriorSketch && (
         <InteriorSketchModal
           roomName={room?.name || roomId}
@@ -778,6 +783,18 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
           }}
         >
           🏠 Layout
+        </button>
+        <button
+          onClick={() => setShowModQueue(true)}
+          title="Review pending layout submissions"
+          style={{
+            background: 'rgba(0,0,0,0.55)', color: '#ffb02e',
+            border: '2px solid #ffb02e',
+            borderRadius: 8, padding: '6px 14px',
+            fontSize: 14, fontWeight: 'bold', cursor: 'pointer',
+          }}
+        >
+          📋 Review
         </button>
       </div>
 
