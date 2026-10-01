@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { jukeboxAudio } from './JukeboxAudio.js';
+import { getCoins, spendCoins, JUKEBOX_QUEUE_JUMP_COST } from './CoinWallet.js';
 
 // JukeboxPanel — see what's playing on the bar jukebox, vote songs up the
 // queue, request a song, or vote to skip the current track. Talk to the
@@ -81,6 +82,20 @@ export default function JukeboxPanel({ roomId, onClose, getSocket }) {
   const skip = () => {
     const socket = getSocket?.();
     if (socket?.connected) socket.emit('skip_song', { roomId });
+  };
+
+  const [coins, setCoins] = useState(() => getCoins());
+  const playNow = (index) => {
+    if (!spendCoins(JUKEBOX_QUEUE_JUMP_COST)) {
+      setError(`Not enough coins — you need ${JUKEBOX_QUEUE_JUMP_COST}.`);
+      return;
+    }
+    setCoins(getCoins());
+    setError('');
+    if (jukeboxAudio.playTrack(index)) {
+      const t = jukeboxAudio.tracks[index];
+      setNowPlaying({ title: t.title, artist: 'Kevin MacLeod' });
+    }
   };
 
   const panelStyle = {
@@ -227,6 +242,47 @@ export default function JukeboxPanel({ roomId, onClose, getSocket }) {
     </form>
   );
 
+  const localTracksEl = (
+    <div style={{ padding: '14px 16px', borderTop: '2px solid #ffb02e' }}>
+      <div style={{ fontSize: 11, letterSpacing: '0.15em', color: '#35e0ff', marginBottom: 4 }}>
+        💿 HOUSE TRACKS <span style={{ color: '#ffb02e' }}>· 🪙 {coins}</span>
+      </div>
+      <div style={{ fontSize: 11, color: '#8a8296', marginBottom: 8 }}>
+        Free rotation plays on its own. {JUKEBOX_QUEUE_JUMP_COST} coins to jump the queue.
+      </div>
+      {jukeboxAudio.tracks.map((t, i) => (
+        <div
+          key={i}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '6px 0', borderBottom: '1px solid rgba(255,176,46,0.12)',
+          }}
+        >
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {t.title}
+            </div>
+            <div style={{ fontSize: 11, color: '#8a8296' }}>Kevin MacLeod · CC BY 4.0</div>
+          </div>
+          <button
+            onClick={() => playNow(i)}
+            disabled={coins < JUKEBOX_QUEUE_JUMP_COST}
+            style={{
+              padding: '4px 10px', fontSize: 12, cursor: coins < JUKEBOX_QUEUE_JUMP_COST ? 'not-allowed' : 'pointer',
+              background: coins < JUKEBOX_QUEUE_JUMP_COST ? '#3a3348' : '#ff3da6',
+              border: 'none', color: '#f4f1e6',
+              borderRadius: 999, fontWeight: 700, fontFamily: 'inherit',
+              opacity: coins < JUKEBOX_QUEUE_JUMP_COST ? 0.5 : 1,
+            }}
+            title={`Play now for ${JUKEBOX_QUEUE_JUMP_COST} coins`}
+          >
+            ▶ {JUKEBOX_QUEUE_JUMP_COST}🪙
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+
   return (
     <div style={panelStyle}>
       <div style={{
@@ -247,6 +303,7 @@ export default function JukeboxPanel({ roomId, onClose, getSocket }) {
       </div>
       {nowPlayingEl}
       {view === 'queue' ? queueEl : null}
+      {view === 'queue' ? localTracksEl : null}
       {view === 'queue' ? (
         <div style={{ padding: '10px 16px 14px' }}>
           <button

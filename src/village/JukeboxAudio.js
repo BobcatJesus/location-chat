@@ -85,6 +85,15 @@ class JukeboxAudio {
     else this._emit();
   }
 
+  // Jump to a specific track (for coin-paid queue jumps).
+  playTrack(index) {
+    if (index < 0 || index >= TRACKS.length) return false;
+    this.trackIndex = index;
+    this._loadCurrent();
+    this.play();
+    return true;
+  }
+
   // Call every frame (or on move) with player + jukebox positions.
   // Returns true if audible.
   updateProximity(px, py, jx, jy) {

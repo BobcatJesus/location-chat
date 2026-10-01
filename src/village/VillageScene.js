@@ -480,6 +480,10 @@ export class VillageScene extends Phaser.Scene {
     // Pick and draw layout
     this.layout = this.explicitLayout || pickLayout(this.roomId, this.roomName, this.amenityTag, this.shopTag, this.roomShape, this.roomData);
     console.log('[VillageScene] room:', this.roomId, '| name:', this.roomName, '| layout:', this.layout.id);
+    // Award coins for first visit to a new place
+    try {
+      import('./CoinWallet.js').then((m) => m.awardNewPlaceVisit(this.roomId)).catch(() => {});
+    } catch {}
     this.roomLayout = new RoomLayout(this, this.layout);
     this.currentFloor = 0;
     this.roomLayout.drawFloor(0);
