@@ -540,6 +540,20 @@ io.on('connection', (socket) => {
     }
   });
 
+  // FEED DUCKS (shared pond interaction — low-stakes, rate-limited broadcast)
+  socket.on('feed_ducks', ({ roomId, x, y }) => {
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const userId = socketUserMap[socket.id] || socket.id;
+    const rate = checkRateLimit(userId);
+    if (!rate.allowed) return;
+    const px = Number(x);
+    const py = Number(y);
+    if (!Number.isFinite(px) || !Number.isFinite(py)) return;
+    const cx = Math.max(-5000, Math.min(10000, Math.round(px)));
+    const cy = Math.max(-5000, Math.min(10000, Math.round(py)));
+    socket.to(roomId).emit('duck_fed', { x: cx, y: cy });
+  });
+
   // PLACE DECORATION
   socket.on('place_decoration', async ({ roomId, item }) => {
     const userId = socketUserMap[socket.id] || socket.id;
