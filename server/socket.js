@@ -38,6 +38,10 @@ const roomCharacterMap = {
   'starbucks-spring': `You are a barista at a Starbucks, mid-shift, a little caffeinated yourself.${HUMAN_STYLE_GUIDE}`,
 };
 
+// Throttle fallback NPC lines so a dead AI API doesn't spam the room.
+const npcFallbackTimestamps = {}; // roomId → last fallback ms
+const NPC_FALLBACK_COOLDOWN_MS = 60 * 1000;
+
 // Builds a persona for the client's static, walk-around NPCs (VillageScene.js), keyed by venue theme.
 function buildNpcPersona({ npcName, layoutId, isOutdoor, relationshipState, timeOfDay, venueEvents = [] }) {
   const profile = resolveNpcCharacterProfile({ npcName, layoutId, isOutdoor });
@@ -727,7 +731,19 @@ io.on('connection', (socket) => {
         .then((reply) => {
           io.in(roomId).emit('npc_reply', { roomId, message: reply, timestamp: Date.now() });
         })
-        .catch((err) => console.error('❌ Inworld reply failed:', err.message));
+        .catch((err) => {
+          console.error('❌ Inworld reply failed:', err.message);
+          // Don't leave the room hanging: the NPC says *something*, throttled
+          // so a dead API doesn't spam the room on every message.
+          const now = Date.now();
+          if (now - (npcFallbackTimestamps[roomId] || 0) < NPC_FALLBACK_COOLDOWN_MS) return;
+          npcFallbackTimestamps[roomId] = now;
+          io.in(roomId).emit('npc_reply', {
+            roomId,
+            message: 'Sorry — I lost my train of thought. Say that again?',
+            timestamp: now,
+          });
+        });
     }
   });
 
