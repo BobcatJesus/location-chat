@@ -3,7 +3,7 @@
   publish = "dist"
 
 [build.environment]
-  VITE_BACKEND_URL = "https://location-chat-1.onrender.com"
+  VITE_BACKEND_URL = "https://location-chat-production.up.railway.app"
 
 [[headers]]
   for = "/"
