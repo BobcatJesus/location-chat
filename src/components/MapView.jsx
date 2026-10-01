@@ -3,7 +3,6 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { io } from 'socket.io-client';
 import { getDistanceMeters } from '../geo';
-import PlaceSketchModal from '../village/PlaceSketchModal.jsx';
 
 const SOCKET_SERVER_URL = import.meta.env.VITE_BACKEND_URL ||
   (import.meta.env.PROD ? 'https://location-chat-production.up.railway.app' : 'http://localhost:4000');
@@ -961,18 +960,6 @@ export default function MapView({ location, rooms, onEnterRoom }) {
       )}
       <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
 
-      <button
-        onClick={() => setShowSketch(true)}
-        style={{
-          position: 'absolute', top: 12, right: 12, zIndex: 1000,
-          background: '#ff3da6', color: '#fff', border: '2px solid #2b2b33',
-          borderRadius: 8, padding: '8px 14px',
-          fontFamily: 'Courier New', fontSize: 12, fontWeight: 'bold',
-          cursor: 'pointer', boxShadow: '2px 2px 0 #2b2b33',
-        }}
-      >
-        + Suggest place
-      </button>
       {/* "You're here" banner when inside a named room's radius */}
       {nearbyRoom && (
         <div style={{ position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 1000, background: '#faf0d7', color: '#2b2b33', fontFamily: 'Courier New', fontSize: 13, fontWeight: 'bold', padding: '6px 16px', borderRadius: 6, border: '2px solid #2b2b33', boxShadow: '2px 2px 0 #2b2b33', whiteSpace: 'nowrap' }}>

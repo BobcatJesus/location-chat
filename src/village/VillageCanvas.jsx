@@ -3,6 +3,7 @@ import Phaser from 'phaser';
 import { VillageScene } from './VillageScene.js';
 import ShelfPanel from './ShelfPanel.jsx';
 import JukeboxPanel from './JukeboxPanel.jsx';
+import InteriorSketchModal from './InteriorSketchModal.jsx';
 import { getCoins } from './CoinWallet.js';
 import { buildAutoLayout } from './AutoLayout.js';
 import { isOutdoorLocation } from './outdoorRoomDetection.js';
@@ -226,6 +227,7 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
   const [showEditHint, setShowEditHint] = useState(false);
   const [systemNotice, setSystemNotice] = useState('');
   const [coinBalance, setCoinBalance] = useState(() => getCoins());
+  const [showInteriorSketch, setShowInteriorSketch] = useState(false);
   const [roomPopulation, setRoomPopulation] = useState(1);
   const [cameraMode, setCameraMode] = useState('wide-follow');
   const [currentFloor, setCurrentFloor] = useState(0);
@@ -615,6 +617,21 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
           getSocket={() => gameRef.current?.scene?.getScene('VillageScene')?.socket}
         />
       )}
+      {showInteriorSketch && (
+        <InteriorSketchModal
+          roomName={roomName}
+          onClose={() => setShowInteriorSketch(false)}
+          onSubmit={(layout) => {
+            try {
+              const k = 'location-chat-pending-layouts';
+              const pending = JSON.parse(localStorage.getItem(k) || '[]');
+              pending.push({ ...layout, roomId, submittedAt: new Date().toISOString(), status: 'pending' });
+              localStorage.setItem(k, JSON.stringify(pending));
+            } catch {}
+            setShowInteriorSketch(false);
+          }}
+        />
+      )}
       {openJukebox && (
         <JukeboxPanel
           roomId={roomId}
@@ -749,6 +766,18 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
         >
           🪙 {coinBalance}
         </div>
+        <button
+          onClick={() => setShowInteriorSketch(true)}
+          title="Sketch the interior layout of this place"
+          style={{
+            background: 'rgba(0,0,0,0.55)', color: '#35e0ff',
+            border: '2px solid #35e0ff',
+            borderRadius: 8, padding: '6px 14px',
+            fontSize: 14, fontWeight: 'bold', cursor: 'pointer',
+          }}
+        >
+          🏠 Layout
+        </button>
       </div>
 
       {import.meta.env.DEV && (
