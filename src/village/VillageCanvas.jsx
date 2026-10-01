@@ -708,7 +708,8 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
         zIndex: 1000,
         display: 'flex',
         gap: 6,
-        flexWrap: 'nowrap',
+        flexWrap: 'wrap',
+        maxWidth: '70vw',
       }}>
         <button
           onClick={onLeave}
