@@ -3,6 +3,7 @@ import Phaser from 'phaser';
 import { VillageScene } from './VillageScene.js';
 import ShelfPanel from './ShelfPanel.jsx';
 import JukeboxPanel from './JukeboxPanel.jsx';
+import { getCoins } from './CoinWallet.js';
 import { buildAutoLayout } from './AutoLayout.js';
 import { isOutdoorLocation } from './outdoorRoomDetection.js';
 import { bookstore } from './layouts/bookstore.js';
@@ -224,6 +225,7 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
   const [draft, setDraft] = useState('');
   const [showEditHint, setShowEditHint] = useState(false);
   const [systemNotice, setSystemNotice] = useState('');
+  const [coinBalance, setCoinBalance] = useState(() => getCoins());
   const [roomPopulation, setRoomPopulation] = useState(1);
   const [cameraMode, setCameraMode] = useState('wide-follow');
   const [currentFloor, setCurrentFloor] = useState(0);
@@ -231,6 +233,15 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
   const [stairScaffoldActive, setStairScaffoldActive] = useState(false);
   const [openShelf, setOpenShelf] = useState(null);
   const [openJukebox, setOpenJukebox] = useState(null);
+
+  // Refresh coin balance when jukebox closes or every 5s
+  useEffect(() => {
+    if (!openJukebox) setCoinBalance(getCoins());
+  }, [openJukebox]);
+  useEffect(() => {
+    const t = setInterval(() => setCoinBalance(getCoins()), 5000);
+    return () => clearInterval(t);
+  }, []);
   const [eventClock, setEventClock] = useState(() => Date.now());
   const roomId = canonicalRoomId(room);
   const venueEvents = providedVenueEvents.length
@@ -727,6 +738,17 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
         >
           Zoom: {zoomLabel}
         </button>
+        <div
+          title="Your coins — earn 10 daily, 5 for new places"
+          style={{
+            background: 'rgba(0,0,0,0.55)', color: '#ffb02e',
+            borderRadius: 8, padding: '6px 14px',
+            fontSize: 14, fontWeight: 'bold',
+            display: 'flex', alignItems: 'center', gap: 4,
+          }}
+        >
+          🪙 {coinBalance}
+        </div>
       </div>
 
       {import.meta.env.DEV && (
