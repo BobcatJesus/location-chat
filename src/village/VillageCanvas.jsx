@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import Phaser from 'phaser';
 import { VillageScene } from './VillageScene.js';
 import ShelfPanel from './ShelfPanel.jsx';
+import JukeboxPanel from './JukeboxPanel.jsx';
 import { buildAutoLayout } from './AutoLayout.js';
 import { isOutdoorLocation } from './outdoorRoomDetection.js';
 import { bookstore } from './layouts/bookstore.js';
@@ -229,6 +230,7 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
   const [totalFloors, setTotalFloors] = useState(1);
   const [stairScaffoldActive, setStairScaffoldActive] = useState(false);
   const [openShelf, setOpenShelf] = useState(null);
+  const [openJukebox, setOpenJukebox] = useState(null);
   const [eventClock, setEventClock] = useState(() => Date.now());
   const roomId = canonicalRoomId(room);
   const venueEvents = providedVenueEvents.length
@@ -476,6 +478,7 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
       onEditorChange: setEditorActive,
       onNearbyChange: setNearbyCount,
       onOpenShelf: (info) => setOpenShelf(info),
+      onOpenJukebox: (info) => setOpenJukebox(info),
       onNearbyNpcChange: setNearbyNpc,
       onNpcConversationClear: ({ npcId } = {}) => {
         setMessages((prev) => prev.filter((msg) => msg.channel !== 'npc' || msg.npcId !== npcId));
@@ -598,6 +601,13 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
           roomId={roomId}
           shelf={openShelf.shelf}
           onClose={() => setOpenShelf(null)}
+          getSocket={() => gameRef.current?.scene?.getScene('VillageScene')?.socket}
+        />
+      )}
+      {openJukebox && (
+        <JukeboxPanel
+          roomId={roomId}
+          onClose={() => setOpenJukebox(null)}
           getSocket={() => gameRef.current?.scene?.getScene('VillageScene')?.socket}
         />
       )}

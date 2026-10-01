@@ -416,6 +416,7 @@ export class VillageScene extends Phaser.Scene {
     this.userLocation = d.userLocation ?? null;
     this.onLeave    = d.onLeave    ?? (() => {});
     this.onOpenShelf = d.onOpenShelf ?? (() => {});
+    this.onOpenJukebox = d.onOpenJukebox ?? (() => {});
     this.preferredCameraMode = ['ultra-close-follow', 'close-follow', 'follow', 'wide-follow', 'overview'].includes(d.preferredCameraMode)
       ? d.preferredCameraMode
       : null;
@@ -552,6 +553,14 @@ export class VillageScene extends Phaser.Scene {
       padding: { x: 8, y: 4 },
     }).setOrigin(0.5, 1).setDepth(DEPTH.UI).setAlpha(0);
 
+    // Jukebox interaction (bar jukeboxes)
+    this.jukeboxPrompt = this.add.text(0, 0, '🎵 Jukebox [E]', {
+      fontSize: '15px',
+      color: '#0b5a6e',
+      backgroundColor: 'rgba(255,255,255,0.85)',
+      padding: { x: 8, y: 4 },
+    }).setOrigin(0.5, 1).setDepth(DEPTH.UI).setAlpha(0);
+
     // Escalator debounce flag
     this._escalatorCooldown = 0;
 
@@ -618,6 +627,11 @@ export class VillageScene extends Phaser.Scene {
         const shelf = this._nearestShelf();
         if (shelf) {
           this.onOpenShelf({ shelf: shelf.label, roomId: this.roomId });
+          return;
+        }
+        const jukebox = this._nearestJukebox();
+        if (jukebox) {
+          this.onOpenJukebox({ roomId: this.roomId });
           return;
         }
         this._tryFeedDucks();
@@ -885,6 +899,20 @@ export class VillageScene extends Phaser.Scene {
     for (const z of this.roomLayout.interactZones) {
       if (z.type !== 'shelf' && z.type !== 'wall_shelf') continue;
       if (!z.label) continue;
+      const cx = Math.max(z.x, Math.min(px, z.x + (z.w || 0)));
+      const cy = Math.max(z.y, Math.min(py, z.y + (z.h || 0)));
+      const d = Math.hypot(px - cx, py - cy);
+      if (d < bestD) { bestD = d; best = z; }
+    }
+    return best ? { label: best.label } : null;
+  }
+
+  _nearestJukebox() {
+    if (!this.player || !this.roomLayout?.interactZones) return null;
+    const px = this.player.gx, py = this.player.gy;
+    let best = null, bestD = 110;
+    for (const z of this.roomLayout.interactZones) {
+      if (z.type !== 'jukebox') continue;
       const cx = Math.max(z.x, Math.min(px, z.x + (z.w || 0)));
       const cy = Math.max(z.y, Math.min(py, z.y + (z.h || 0)));
       const d = Math.hypot(px - cx, py - cy);
@@ -1596,6 +1624,14 @@ export class VillageScene extends Phaser.Scene {
       this.shelfPrompt.setAlpha(0);
     }
 
+    // Jukebox: prompt near jukeboxes (pond and shelf prompts take priority).
+    const nearJukebox = this._nearestJukebox();
+    if (nearJukebox && !nearPond && !nearShelf) {
+      this.jukeboxPrompt.setText('🎵 Jukebox [E]').setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
+    } else {
+      this.jukeboxPrompt.setAlpha(0);
+    }
+
     // Escalator check
     this._escalatorCooldown = Math.max(0, this._escalatorCooldown - delta);
     if (this._escalatorCooldown === 0 && this.roomLayout) {
@@ -1787,6 +1823,7 @@ export class VillageScene extends Phaser.Scene {
     this.duckPond = null;
     this.feedPrompt?.destroy();
     this.shelfPrompt?.destroy();
+    this.jukeboxPrompt?.destroy();
     this.staticNpcs?.forEach((npc) => npc.destroy?.());
     this.staticNpcs = [];
     this._npcRenderVersion += 1;

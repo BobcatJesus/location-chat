@@ -102,6 +102,7 @@ const SOLID_ZONE_TYPES = new Set([
   'cd_rack',
   'bathroom',
   'pond',
+  'jukebox',
 ]);
 
 export class RoomLayout {
@@ -928,6 +929,11 @@ export class RoomLayout {
         if (z.interact) this.interactZones.push(z);
         break;
 
+      case 'jukebox':
+        this._drawJukebox(x, y, w, h, z.label);
+        if (z.interact) this.interactZones.push(z);
+        break;
+
       case 'counter':
         if (isMcDonaldsLayout(this.layout)) {
           g.fillStyle(0xd62828, 1);
@@ -1240,6 +1246,57 @@ export class RoomLayout {
         // Rendered by VillageScene as an NPC sprite placeholder
         break;
     }
+  }
+
+  _drawJukebox(x, y, w, h, label) {
+    const g = this._g();
+    if (!g || !this._canDraw()) return;
+    // Cabinet body — dark with chrome trim
+    g.fillStyle(0x1a1a24, 1);
+    g.fillRect(x, y, w, h);
+    g.lineStyle(3, 0xc0c8d0, 1);
+    g.strokeRect(x, y, w, h);
+    // Arched top in neon amber
+    g.fillStyle(0xffb02e, 1);
+    g.fillRect(x + 6, y + 6, w - 12, 18);
+    g.fillStyle(0xff3da6, 1);
+    g.fillRect(x + 6, y + 24, w - 12, 10);
+    // Neon color strips down the sides
+    g.fillStyle(0x35e0ff, 1);
+    g.fillRect(x + 4, y + 40, 8, h - 52);
+    g.fillRect(x + w - 12, y + 40, 8, h - 52);
+    // Song title window
+    const winW = w - 28;
+    const winH = Math.max(18, h * 0.22);
+    g.fillStyle(0xf4f1e6, 0.98);
+    g.fillRect(x + 14, y + 40, winW, winH);
+    g.lineStyle(2, 0x444a55, 1);
+    g.strokeRect(x + 14, y + 40, winW, winH);
+    this._lbl(x + w / 2, y + 40 + winH / 2, 'NOW\nPLAYING', {
+      fontSize: '10px',
+      fontFamily: 'Courier New, monospace',
+      color: '#444a55',
+      backgroundColor: undefined,
+      padding: { x: 1, y: 1 },
+    }, 0.5, 0.5);
+    // Coin slot + speaker grille
+    g.fillStyle(0xc0c8d0, 1);
+    g.fillRect(x + w / 2 - 6, y + 40 + winH + 8, 12, 6);
+    g.fillStyle(0x2c313a, 1);
+    const grilleY = y + 40 + winH + 22;
+    const grilleH = Math.max(10, y + h - 10 - grilleY);
+    g.fillRect(x + 12, grilleY, w - 24, grilleH);
+    g.fillStyle(0x35e0ff, 0.5);
+    for (let gy = grilleY + 3; gy < grilleY + grilleH - 2; gy += 6) {
+      g.fillRect(x + 16, gy, w - 32, 2);
+    }
+    this._lbl(x + w / 2, y - 12, '🎵 JUKEBOX', {
+      fontSize: '11px',
+      fontFamily: 'Courier New, monospace',
+      color: '#ffb02e',
+      backgroundColor: 'rgba(20,14,10,0.85)',
+      padding: { x: 6, y: 2 },
+    }, 0.5, 1);
   }
 
   _drawShelf(x, y, w, h, label) {
