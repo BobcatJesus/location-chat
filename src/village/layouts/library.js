@@ -75,6 +75,11 @@ const F1_ZONES = [
   { type: 'shelf', x: 1092, y: 70, w: 72, h: 180, label: 'Reference Stacks', interact: true, solid: true },
   { type: 'shelf', x: 1180, y: 70, w: 72, h: 180, label: 'Reference Stacks', interact: true, solid: true },
 
+  { type: 'sign', x: 1396, y: 118, w: 200, h: 28, label: 'HORROR • MANGA • DCC' },
+  { type: 'shelf', x: 1420, y: 156, w: 72, h: 140, label: 'Horror Stacks', interact: true, solid: true },
+  { type: 'shelf', x: 1420, y: 306, w: 72, h: 140, label: 'Manga Stacks', interact: true, solid: true },
+  { type: 'shelf', x: 1420, y: 456, w: 72, h: 140, label: 'Dungeon Crawler Carl', interact: true, solid: true },
+
   { type: 'shelf', x: 224, y: 565, w: 64, h: 142, label: 'Youth Books', interact: true, solid: true },
   { type: 'shelf', x: 298, y: 565, w: 64, h: 142, label: 'Youth Books', interact: true, solid: true },
   { type: 'shelf', x: 372, y: 565, w: 64, h: 142, label: 'Youth Books', interact: true, solid: true },
