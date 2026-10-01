@@ -1,8 +1,7 @@
 // DuckPond.js — procedural duck-feeding interaction template.
 //
-// Design: any pond zone (type: 'pond', generated from OSM water tags by
-// AutoLayout) automatically becomes a living duck pond. No per-location
-// authoring: park + pond => ducks + feeding, everywhere.
+// Design: any pond zone (type: 'pond') automatically becomes a living duck
+// pond. No per-location authoring: park + pond => ducks + feeding, everywhere.
 //
 //   - Ducks spawn on each pond and wander inside the water ellipse.
 //   - A player near a pond can feed: a crumb pellet is tossed, nearby ducks
@@ -19,7 +18,7 @@ const DUCKS_PER_POND = 3;
 const MAX_DUCKS_TOTAL = 9;
 const WANDER_SPEED = 30;   // px/sec
 const SEEK_SPEED = 110;    // px/sec when chasing food
-const FEED_RANGE = 230;    // px from pond center the player must be within
+const FEED_RANGE = 150;    // px from the pond's edge the player must be within
 const PELLET_BITES = 3;    // bites before a crumb is gone
 const EAT_PAUSE_MS = 450;
 
@@ -27,8 +26,7 @@ function pondCenter(pond) {
   return { x: pond.x + pond.w / 2, y: pond.y + pond.h / 2 };
 }
 
-function pondRadii(pond) {
-  // Keep ducks comfortably inside the drawn water (which is an ellipse).
+function pondRadii(pond) {  // Keep ducks comfortably inside the drawn water (which is an ellipse).
   return { rx: (pond.w / 2) * 0.78, ry: (pond.h / 2) * 0.7 };
 }
 
@@ -48,6 +46,15 @@ function clampPointToPond(pond, x, y) {
   const d = Math.hypot(dx, dy);
   if (d <= 1) return { x, y };
   return { x: c.x + (dx / d) * rx, y: c.y + (dy / d) * ry };
+}
+
+// Distance from (x, y) to the pond rectangle's edge (0 when inside/overlapping).
+// Measured to the edge — not the center — so standing anywhere along the
+// shoreline counts as "at the pond", no matter how large the pond is.
+function distToPondEdge(pond, x, y) {
+  const dx = Math.max(pond.x - x, 0, x - (pond.x + pond.w));
+  const dy = Math.max(pond.y - y, 0, y - (pond.y + pond.h));
+  return Math.hypot(dx, dy);
 }
 
 // A simple, readable duck drawn with vector shapes (faces right by default).
@@ -108,13 +115,12 @@ export class DuckPond {
     });
   }
 
-  /** Pond zone whose center is within FEED_RANGE of (x, y), or null. */
+  /** Pond zone whose edge is within FEED_RANGE of (x, y), or null. */
   nearestFeedablePond(x, y) {
     let best = null;
     let bestD = Infinity;
     for (const pond of this.ponds) {
-      const c = pondCenter(pond);
-      const d = Math.hypot(x - c.x, y - c.y);
+      const d = distToPondEdge(pond, x, y);
       if (d < FEED_RANGE && d < bestD) {
         best = pond;
         bestD = d;
@@ -134,8 +140,7 @@ export class DuckPond {
     if (!pond && this.ponds.length) {
       let bestD = Infinity;
       for (const p of this.ponds) {
-        const c = pondCenter(p);
-        const d = Math.hypot(x - c.x, y - c.y);
+        const d = distToPondEdge(p, x, y);
         if (d < bestD) { bestD = d; pond = p; }
       }
       if (bestD > FEED_RANGE * 1.5) return false;

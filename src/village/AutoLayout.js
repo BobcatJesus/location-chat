@@ -622,7 +622,13 @@ export function buildAutoLayout(roomId, roomName, amenityTag, shopTag = '', room
     const shepherdSpawn = resolveSpawn(theme, footprint);
     const shepherdPond = buildPondZone(footprint, shepherdSpawn, '🦆 Duck Pond');
     if (shepherdPond) contentZones.push(shepherdPond);
-    contentZones.push(...buildShepherdParkTrees(footprint, shepherdSpawn, rng, shepherdPond ? [shepherdPond] : []));
+    // Keep a clear shoreline: trees stay a margin outside the pond so players
+    // can always walk the water's edge and reach the ducks.
+    const pondMargin = shepherdPond ? [{
+      x: shepherdPond.x - 90, y: shepherdPond.y - 90,
+      w: shepherdPond.w + 180, h: shepherdPond.h + 180,
+    }] : [];
+    contentZones.push(...buildShepherdParkTrees(footprint, shepherdSpawn, rng, pondMargin));
     contentZones.push(
       { type: 'employee', x: 1040, y: 1580, label: 'Morning Jogger', patrol: [[1040, 1580], [1320, 1640], [1580, 1540], [1860, 1640], [2140, 1540]] },
       { type: 'employee', x: 2380, y: 900, label: 'Park Regular', patrol: [[2380, 900], [2620, 820], [2860, 960], [2740, 1200], [2460, 1160]] },
@@ -635,7 +641,10 @@ export function buildAutoLayout(roomId, roomName, amenityTag, shopTag = '', room
     const spawnPoint = resolveSpawn(theme, footprint);
     const pond = buildPondZone(footprint, spawnPoint, '🦆 McGovern Lake');
     if (pond) contentZones.push(pond);
-    contentZones.push(...buildShepherdParkTrees(footprint, spawnPoint, rng, pond ? [pond] : []));
+    const hermannMargin = pond ? [{
+      x: pond.x - 90, y: pond.y - 90, w: pond.w + 180, h: pond.h + 180,
+    }] : [];
+    contentZones.push(...buildShepherdParkTrees(footprint, spawnPoint, rng, hermannMargin));
     contentZones.push(
       { type: 'employee', x: 900, y: 1400, label: 'Duck Feeder', patrol: [[900, 1400], [1040, 1460], [960, 1540], [820, 1480]] },
       { type: 'employee', x: 1600, y: 900, label: 'Paddleboat Guide', patrol: [[1600, 900], [1780, 940], [1720, 1040], [1540, 1000]] },
