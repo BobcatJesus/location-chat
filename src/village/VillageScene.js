@@ -8,6 +8,7 @@ import { RoomEditor } from './RoomEditor.js';
 import { OutdoorEditor } from './OutdoorEditor.js';
 import { Prop, PROP_DEFS } from './Prop.js';
 import { createAvatarEntity, preloadAvatarTextures } from '../game/entities/avatarFactory';
+import { jukeboxAudio } from './JukeboxAudio.js';
 import { normalizeAvatarModel } from '../game/entities/avatarModels';
 import { isOutdoorLocation } from './outdoorRoomDetection.js';
 
@@ -921,6 +922,26 @@ export class VillageScene extends Phaser.Scene {
     return best ? { label: best.label } : null;
   }
 
+  _updateJukeboxAudio() {
+    if (!this.player || !this.roomLayout?.interactZones) {
+      jukeboxAudio.pause();
+      return;
+    }
+    let best = null, bestD = Infinity;
+    for (const z of this.roomLayout.interactZones) {
+      if (z.type !== 'jukebox') continue;
+      const jx = z.x + (z.w || 0) / 2;
+      const jy = z.y + (z.h || 0) / 2;
+      const d = Math.hypot(this.player.gx - jx, this.player.gy - jy);
+      if (d < bestD) { bestD = d; best = { x: jx, y: jy }; }
+    }
+    if (best) {
+      jukeboxAudio.updateProximity(this.player.gx, this.player.gy, best.x, best.y);
+    } else {
+      jukeboxAudio.pause();
+    }
+  }
+
   _tryFeedDucks() {
     if (!this.duckPond || this._feedCooldownMs > 0) return;
     if (!this.player) return;
@@ -1625,12 +1646,14 @@ export class VillageScene extends Phaser.Scene {
     }
 
     // Jukebox: prompt near jukeboxes (pond and shelf prompts take priority).
+    // Client-side audio: play CC-licensed tracks when near any jukebox.
     const nearJukebox = this._nearestJukebox();
     if (nearJukebox && !nearPond && !nearShelf) {
       this.jukeboxPrompt.setText('🎵 Jukebox [E]').setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
     } else {
       this.jukeboxPrompt.setAlpha(0);
     }
+    this._updateJukeboxAudio();
 
     // Escalator check
     this._escalatorCooldown = Math.max(0, this._escalatorCooldown - delta);
@@ -1827,6 +1850,7 @@ export class VillageScene extends Phaser.Scene {
     this.feedPrompt?.destroy();
     this.shelfPrompt?.destroy();
     this.jukeboxPrompt?.destroy();
+    jukeboxAudio.stop();
     this.staticNpcs?.forEach((npc) => npc.destroy?.());
     this.staticNpcs = [];
     this._npcRenderVersion += 1;

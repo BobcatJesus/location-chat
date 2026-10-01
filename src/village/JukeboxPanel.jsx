@@ -1,8 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { jukeboxAudio } from './JukeboxAudio.js';
 
 // JukeboxPanel — see what's playing on the bar jukebox, vote songs up the
 // queue, request a song, or vote to skip the current track. Talk to the
-// server over the scene socket. No audio — the jukebox is a shared queue.
+// server over the scene socket when available. Client-side CC-licensed audio
+// plays automatically near the jukebox (no server needed).
 export default function JukeboxPanel({ roomId, onClose, getSocket }) {
   const [nowPlaying, setNowPlaying] = useState(null);
   const [queue, setQueue] = useState([]);
@@ -40,10 +42,18 @@ export default function JukeboxPanel({ roomId, onClose, getSocket }) {
     socket.on('song_error', onSongError);
     socket.emit('get_jukebox', { roomId: roomRef.current });
 
+    // Client-side audio fallback: show what's actually playing.
+    const unsubAudio = jukeboxAudio.onChange((np) => {
+      if (np && !nowPlaying) setNowPlaying({ title: np.title, artist: np.artist });
+    });
+    const initial = jukeboxAudio.nowPlaying;
+    if (initial && jukeboxAudio.isPlaying) setNowPlaying({ title: initial.title, artist: initial.artist });
+
     return () => {
       socket.off('jukebox_state', onJukeboxState);
       socket.off('song_added', onSongAdded);
       socket.off('song_error', onSongError);
+      unsubAudio();
     };
   }, [roomId, getSocket]);
 
