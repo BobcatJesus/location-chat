@@ -1,32 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-
-const AVATAR_MODELS = {
-  og: {
-    id: 'og',
-    label: 'OG Demon',
-    previewSrc: '/village-sprites/characters/demon-front-step1.png',
-  },
-  bunny: {
-    id: 'bunny',
-    label: 'Bunny',
-    previewSrc: '/avatars/bunny/front-step1.png',
-  },
-  turtle: {
-    id: 'turtle',
-    label: 'Turtle',
-    previewSrc: '/avatars/turtle/front-step1.png',
-  },
-  snake: {
-    id: 'snake',
-    label: 'Snake',
-    previewSrc: '/avatars/snake/front-step1.png',
-  },
-  sheep: {
-    id: 'sheep',
-    label: 'Demon Sheep',
-    previewSrc: '/avatars/sheep/front-step1.png',
-  },
-};
+import { AVATAR_MODELS, AVATAR_MODEL_MAP, getAvatarModelEntry } from '../game/entities/avatarModels.js';
 
 const BASE_AVATAR_LEGACY = {
   skinId: 'slate',
@@ -44,13 +17,7 @@ const BASE_AVATAR_LEGACY = {
 };
 
 function getAvatarModel(formData = {}) {
-  const selected = String(formData.avatarModel || '').trim().toLowerCase();
-  if (['og', 'demon', 'og-demon', 'original', 'legacy'].includes(selected)) return AVATAR_MODELS.og;
-  if (['bunny', 'rabbit', 'bun', 'modular', 'bunny-avatar'].includes(selected)) return AVATAR_MODELS.bunny;
-  if (['turtle', 'tortoise', 'turtle-avatar'].includes(selected)) return AVATAR_MODELS.turtle;
-  if (['snake', 'serpent', 'snake-avatar'].includes(selected)) return AVATAR_MODELS.snake;
-  if (['sheep', 'lamb', 'ram', 'demon-sheep', 'demon sheep', 'sheep-avatar'].includes(selected)) return AVATAR_MODELS.sheep;
-  return AVATAR_MODELS.bunny;
+  return getAvatarModelEntry(formData.avatarModel);
 }
 
 function AvatarBuildPreview({ formData }) {
@@ -122,7 +89,7 @@ export default function AvatarSetupFields({
       avatarModel: modelId,
     }));
 
-    const model = AVATAR_MODELS[modelId] || AVATAR_MODELS.bunny;
+    const model = AVATAR_MODEL_MAP[modelId] || AVATAR_MODEL_MAP.bunny;
     showPreviewPulse(`${model.label} selected`);
   };
 
@@ -246,7 +213,7 @@ export default function AvatarSetupFields({
         </div>
 
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-          {Object.values(AVATAR_MODELS).map((model) => {
+          {AVATAR_MODELS.map((model) => {
             const selected = selectedModel.id === model.id;
             return (
               <button

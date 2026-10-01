@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import AvatarSetupFields from './AvatarSetupFields';
 import { accessoryHueToColor, hairHueToColor, skinToneToColor } from '../utils/avatarColors';
 import { getAuthLayoutState } from './authLayout';
-import { normalizeAvatarModel } from '../game/entities/avatarModelInfo';
+import { normalizeAvatarModel } from '../game/entities/avatarModels.js';
 import { supabase } from '../lib/supabaseClient';
 import { signInWithProfile, signUpWithProfile } from '../lib/authClient';
 
