@@ -133,6 +133,44 @@ async function initDb() {
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS shelf_books (
+      id TEXT PRIMARY KEY,
+      room_id TEXT NOT NULL,
+      shelf TEXT NOT NULL,
+      title TEXT NOT NULL,
+      author TEXT DEFAULT '',
+      blurb TEXT DEFAULT '',
+      added_by TEXT,
+      added_by_name TEXT DEFAULT '',
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query('CREATE INDEX IF NOT EXISTS shelf_books_room_shelf ON shelf_books (room_id, shelf)');
+  // Seed the MD Anderson Library's featured shelves (original blurbs, no book text).
+  const seeds = [
+    {
+      id: 'seed-shining', room_id: 'md-anderson-library', shelf: 'Horror Stacks',
+      title: 'The Shining', author: 'Stephen King',
+      blurb: 'A snowed-in hotel, a struggling writer, and a boy who shines. King\'s haunted-house masterpiece about isolation and the evil patiently waiting behind the doors of the Overlook.',
+    },
+    {
+      id: 'seed-aot', room_id: 'md-anderson-library', shelf: 'Manga Stacks',
+      title: 'Attack on Titan', author: 'Hajime Isayama',
+      blurb: 'Humanity cowers behind walls while towering Titans devour anyone outside. Eren Yeager\'s rage sets off a brutal epic about freedom, cycles of hatred, and what monsters are really made of.',
+    },
+    {
+      id: 'seed-dcc', room_id: 'md-anderson-library', shelf: 'Dungeon Crawler Carl',
+      title: 'Dungeon Crawler Carl', author: 'Matt Dinsmore',
+      blurb: 'The world collapses into a dungeon-crawl reality show. Carl and his ex-girlfriend\'s cat, Princess Donut, fight to survive — and to win the audience. LitRPG at its funniest and most heartfelt. This shelf is all his.',
+    },
+  ];
+  for (const s of seeds) {
+    await pool.query(
+      'INSERT INTO shelf_books (id, room_id, shelf, title, author, blurb, added_by, added_by_name) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (id) DO NOTHING',
+      [s.id, s.room_id, s.shelf, s.title, s.author, s.blurb, 'librarian', 'The Librarian']
+    );
+  }
   const { rows: savedEvents } = await pool.query('SELECT id, room_id AS "roomId", title, description, starts_at AS "startsAt", ends_at AS "endsAt", activity_level AS "activityLevel", mood, creator FROM venue_events WHERE ends_at > NOW()');
   savedEvents.forEach((event) => addVenueEvent(event));
   await authService.init();
@@ -207,6 +245,35 @@ async function saveDecoration(roomId, decoration) {
 async function deleteDecoration(id) {
   if (!pool) return;
   await pool.query('DELETE FROM decorations WHERE id = $1', [id]);
+}
+
+// Shelf books: { roomId: [ { id, shelf, title, author, blurb, addedBy, addedByName, createdAt } ] }
+const shelfBooks = {};
+const shelfBooksLoaded = new Set();
+
+async function saveShelfBook(roomId, book) {
+  if (!pool) return;
+  await pool.query(
+    'INSERT INTO shelf_books (id, room_id, shelf, title, author, blurb, added_by, added_by_name) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT (id) DO UPDATE SET title=$4, author=$5, blurb=$6',
+    [book.id, roomId, book.shelf, book.title, book.author, book.blurb, book.addedBy, book.addedByName]
+  );
+}
+
+async function loadShelfBooks(roomId) {
+  if (shelfBooksLoaded.has(roomId)) return shelfBooks[roomId] || [];
+  shelfBooksLoaded.add(roomId);
+  shelfBooks[roomId] = [];
+  if (!pool) return shelfBooks[roomId];
+  try {
+    const { rows } = await pool.query(
+      'SELECT id, shelf, title, author, blurb, added_by AS "addedBy", added_by_name AS "addedByName", created_at AS "createdAt" FROM shelf_books WHERE room_id = $1 ORDER BY created_at ASC',
+      [roomId]
+    );
+    shelfBooks[roomId] = rows;
+  } catch (e) {
+    console.error('loadShelfBooks failed:', e.message);
+  }
+  return shelfBooks[roomId];
 }
 
 async function upsertPresence({ socketId, userId, roomId, name, firstName, skinId, avatarModel, x, y }) {
@@ -554,9 +621,47 @@ io.on('connection', (socket) => {
     socket.to(roomId).emit('duck_fed', { x: cx, y: cy });
   });
 
-  // PLACE DECORATION
-  socket.on('place_decoration', async ({ roomId, item }) => {
+  // SHELF BOOKS (library: browse a shelf, read book cards, add books)
+  socket.on('get_shelf_books', async ({ roomId, shelf }) => {
+    if (!roomId || !shelf) return;
+    const list = await loadShelfBooks(roomId);
+    socket.emit('shelf_books', { shelf: String(shelf), books: list.filter((b) => b.shelf === shelf) });
+  });
+
+  socket.on('add_book', async ({ roomId, shelf, title, author, blurb }) => {
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
     const userId = socketUserMap[socket.id] || socket.id;
+    const rate = checkRateLimit(userId);
+    if (!rate.allowed) {
+      socket.emit('book_error', { message: 'Whoa, slow down — try again in a bit.' });
+      return;
+    }
+    const cleanTitle = String(title || '').trim().slice(0, 120);
+    const cleanAuthor = String(author || '').trim().slice(0, 120);
+    const cleanBlurb = String(blurb || '').trim().slice(0, 500);
+    const cleanShelf = String(shelf || '').trim().slice(0, 80);
+    if (!cleanTitle || !cleanShelf) {
+      socket.emit('book_error', { message: 'A book needs at least a title.' });
+      return;
+    }
+    const list = await loadShelfBooks(roomId);
+    const book = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      shelf: cleanShelf,
+      title: cleanTitle,
+      author: cleanAuthor,
+      blurb: cleanBlurb,
+      addedBy: userId,
+      addedByName: rooms[roomId][socket.id]?.name || 'Someone',
+      createdAt: new Date().toISOString(),
+    };
+    list.push(book);
+    await saveShelfBook(roomId, book);
+    io.in(roomId).emit('book_added', { roomId, shelf: cleanShelf, book });
+  });
+
+  // PLACE DECORATION
+  socket.on('place_decoration', async ({ roomId, item }) => {    const userId = socketUserMap[socket.id] || socket.id;
     const permissions = getVenuePermissions(roomId, userId);
     const isCreator = socketCreatorRooms[socket.id]?.has(roomId) || permissions.canManage;
     const rate = isCreator ? checkCreatorRate(userId, roomId) : checkRateLimit(userId);
