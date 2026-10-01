@@ -708,6 +708,22 @@ export class RoomLayout {
     const y = Number(z?.y);
     if (!Number.isFinite(w) || !Number.isFinite(h) || !Number.isFinite(x) || !Number.isFinite(y)) return;
     if (w <= 0 || h <= 0) return;
+    // Trees are rendered bottom-anchored: the sprite's base (trunk foot) sits at
+    // (x, y) and the canopy extends UP from there (origin 0.5, 1). A full
+    // x,y,w,h box would block empty air below-right of the visible tree while
+    // letting players walk through the canopy. Collide only with the trunk.
+    const type = String(z?.type || '').toLowerCase();
+    if (type === 'tree' || type === 'oak_tree') {
+      const trunkW = Math.min(22, w);
+      const trunkH = Math.min(30, h);
+      this.staticSolidZones.push({
+        left: x - trunkW / 2,
+        top: y - trunkH,
+        right: x + trunkW / 2,
+        bottom: y,
+      });
+      return;
+    }
     this.staticSolidZones.push({
       left: x,
       top: y,
