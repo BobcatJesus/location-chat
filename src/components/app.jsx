@@ -194,7 +194,7 @@ function AvatarStudioPage({
   );
 }
 
-function RetroLandingPage({ onEnter, onOpenShepherdPark, onOpenMdAndersonLibrary, onOpenAsgardGames }) {
+function RetroLandingPage({ onEnter, onOpenShepherdPark, onOpenMdAndersonLibrary, onOpenAsgardGames, onOpenLolasDepot }) {
   const referenceArtCandidates = ['/assets/landing-original.png', '/assets/landing-reference.png'];
   const [useReferenceArt, setUseReferenceArt] = useState(true);
   const [referenceArtIndex, setReferenceArtIndex] = useState(0);
@@ -475,6 +475,24 @@ function RetroLandingPage({ onEnter, onOpenShepherdPark, onOpenMdAndersonLibrary
             }}
           >
             Open Asgard Games
+          </button>
+          <button
+            onClick={onOpenLolasDepot}
+            style={{
+              padding: '12px 20px',
+              background: '#0e7490',
+              border: '3px solid #0e7490',
+              color: '#ecfeff',
+              fontWeight: 900,
+              cursor: 'pointer',
+              borderRadius: 999,
+              fontSize: 11,
+              textTransform: 'uppercase',
+              letterSpacing: '0.1em',
+              boxShadow: '0 5px 0 rgba(0,0,0,0.32)',
+            }}
+          >
+            Old Faithful
           </button>
         </div>
       </div>
@@ -1531,6 +1549,10 @@ function App() {
           onOpenAsgardGames={() => {
             setShowLanding(false);
             window.history.replaceState({}, '', `${window.location.pathname}?openRoom=asgard-games`);
+          }}
+          onOpenLolasDepot={() => {
+            setShowLanding(false);
+            window.history.replaceState({}, '', `${window.location.pathname}?openRoom=lolas-depot`);
           }}
         />
       )}
