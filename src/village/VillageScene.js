@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { DEPTH } from './depth.js';
+import { DuckPond } from './DuckPond.js';
 import { io } from 'socket.io-client';
 import { RoomLayout } from './RoomLayout.js';
 import { pickLayout } from './layoutPicker.js';
@@ -531,6 +532,17 @@ export class VillageScene extends Phaser.Scene {
     this.coffeeCup = this.add.text(0, 0, '☕', { fontSize: '18px' })
       .setOrigin(0.5, 1).setDepth(DEPTH.UI).setAlpha(0);
 
+    // Duck pond interaction (procedural: any pond zone gets ducks + feeding)
+    this.duckPond = new DuckPond(this);
+    this.duckPond.refresh();
+    this._feedCooldownMs = 0;
+    this.feedPrompt = this.add.text(0, 0, '🦆 Feed the ducks [E]', {
+      fontSize: '15px',
+      color: '#1a4971',
+      backgroundColor: 'rgba(255,255,255,0.85)',
+      padding: { x: 8, y: 4 },
+    }).setOrigin(0.5, 1).setDepth(DEPTH.UI).setAlpha(0);
+
     // Escalator debounce flag
     this._escalatorCooldown = 0;
 
@@ -590,6 +602,11 @@ export class VillageScene extends Phaser.Scene {
 
       if (e.code === FOOTPRINT_DEBUG_KEY_CODE) {
         this.toggleFootprintDebug();
+        return;
+      }
+
+      if (key === 'e') {
+        this._tryFeedDucks();
         return;
       }
 
@@ -846,6 +863,27 @@ export class VillageScene extends Phaser.Scene {
     this.pendingRemoteSpawns?.delete(socketId);
   }
 
+  /** Feed the ducks at the nearest pond (E key). Broadcast to the room. */
+  _tryFeedDucks() {
+    if (!this.duckPond || this._feedCooldownMs > 0) return;
+    if (!this.player) return;
+    const pond = this.duckPond.nearestFeedablePond(this.player.gx, this.player.gy);
+    if (!pond) return;
+    // Toss the crumb toward the pond center from the player's position.
+    const cx = pond.x + pond.w / 2;
+    const cy = pond.y + pond.h / 2;
+    const dx = cx - this.player.gx;
+    const dy = cy - this.player.gy;
+    const d = Math.hypot(dx, dy) || 1;
+    const toss = Math.min(d * 0.45, 120);
+    const fx = this.player.gx + (dx / d) * toss;
+    const fy = this.player.gy + (dy / d) * toss;
+    if (this.duckPond.feed(fx, fy)) {
+      this._feedCooldownMs = 2500;
+      this.socket?.emit('feed_ducks', { roomId: this.roomId, x: Math.round(fx), y: Math.round(fy) });
+    }
+  }
+
   _connectSocket() {
     const socket = io(SOCKET_SERVER_URL, { transports: ['websocket'] });
     this.socket = socket;
@@ -1027,6 +1065,11 @@ export class VillageScene extends Phaser.Scene {
           timestamp: payload.timestamp || Date.now(),
         });
       }
+    });
+
+    // Remote player fed the ducks: mirror the feeding frenzy locally.
+    socket.on('duck_fed', ({ x, y } = {}) => {
+      this.duckPond?.feed(x, y, true);
     });
 
     // AI-backed NPC reply from the Inworld Router (server/socket.js `send_message` handler).
@@ -1506,6 +1549,16 @@ export class VillageScene extends Phaser.Scene {
       this.coffeeCup.setAlpha(0);
     }
 
+    // Duck pond: tick ducks, show feed prompt near ponds, decay feed cooldown.
+    this._feedCooldownMs = Math.max(0, (this._feedCooldownMs || 0) - delta);
+    this.duckPond?.update(delta);
+    const nearPond = this.duckPond?.nearestFeedablePond(this.player.gx, this.player.gy);
+    if (nearPond && this._feedCooldownMs <= 0) {
+      this.feedPrompt.setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
+    } else {
+      this.feedPrompt.setAlpha(0);
+    }
+
     // Escalator check
     this._escalatorCooldown = Math.max(0, this._escalatorCooldown - delta);
     if (this._escalatorCooldown === 0 && this.roomLayout) {
@@ -1693,6 +1746,9 @@ export class VillageScene extends Phaser.Scene {
     }
     this.remotePlayers.forEach(a => a.destroy());
     this.remotePlayers.clear();
+    this.duckPond?.destroy();
+    this.duckPond = null;
+    this.feedPrompt?.destroy();
     this.staticNpcs?.forEach((npc) => npc.destroy?.());
     this.staticNpcs = [];
     this._npcRenderVersion += 1;
@@ -1713,6 +1769,7 @@ export class VillageScene extends Phaser.Scene {
     if (!this.layout.floors[floorIndex]) return;
     this.currentFloor = floorIndex;
     this.roomLayout.drawFloor(floorIndex);
+    this.duckPond?.refresh();
     this._emitFloorStatus();
     this.roomLayout.setDynamicSolids(this.customZones);
     this.roomLayout.setCollisionDebug(this.showCollisionDebug);
