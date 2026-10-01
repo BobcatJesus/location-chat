@@ -188,6 +188,31 @@ export const ROOMS = [
     radiusMeters: 180,
     kind: 'gps',
     contributors: ['system']
+  },
+  {
+    id: 'lolas-depot',
+    name: "Lola's Depot",
+    lat: 29.74831,
+    lng: -95.39097,
+    radiusMeters: 60,
+    amenity: 'bar',
+    tags: {
+      name: "Lola's Depot",
+      amenity: 'bar',
+      'addr:housenumber': '2327',
+      'addr:street': 'Grant St',
+      'addr:city': 'Houston',
+      'addr:state': 'Texas',
+      'addr:country': 'US',
+    },
+    metadata: {
+      city: 'Houston',
+      state: 'TX',
+      country: 'US',
+      neighborhood: 'Montrose',
+    },
+    kind: 'gps',
+    contributors: ['system']
   }
 ];
 
