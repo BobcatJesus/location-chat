@@ -619,7 +619,7 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
       )}
       {showInteriorSketch && (
         <InteriorSketchModal
-          roomName={roomName}
+          roomName={room?.name || roomId}
           onClose={() => setShowInteriorSketch(false)}
           onSubmit={(layout) => {
             try {
