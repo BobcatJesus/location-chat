@@ -1249,7 +1249,7 @@ export class RoomLayout {
   }
 
   _drawJukebox(x, y, w, h, label) {
-    const g = this._g();
+    const g = this.gfx;
     if (!g || !this._canDraw()) return;
     // Cabinet body — dark with chrome trim
     g.fillStyle(0x1a1a24, 1);
