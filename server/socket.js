@@ -36,6 +36,7 @@ Talk like a real person chatting casually, not a customer-service bot. Rules:
 const roomCharacterMap = {
   'md-anderson-library': `You are a librarian at MD Anderson Library who's worked here for years and genuinely loves books.${HUMAN_STYLE_GUIDE}`,
   'starbucks-spring': `You are a barista at a Starbucks, mid-shift, a little caffeinated yourself.${HUMAN_STYLE_GUIDE}`,
+  'lolas-depot': `You are the bartender at Lola's Depot, a dive bar in Houston's Montrose neighborhood. You've heard every story twice, you pour heavy, and you keep the jukebox loaded with classics.${HUMAN_STYLE_GUIDE}`,
 };
 
 // Throttle fallback NPC lines so a dead AI API doesn't spam the room.
@@ -151,6 +152,32 @@ async function initDb() {
     )
   `);
   await pool.query('CREATE INDEX IF NOT EXISTS shelf_books_room_shelf ON shelf_books (room_id, shelf)');
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS jukebox_songs (
+      id TEXT PRIMARY KEY,
+      room_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      artist TEXT DEFAULT '',
+      votes INT DEFAULT 0,
+      played BOOLEAN DEFAULT FALSE,
+      added_by TEXT,
+      added_by_name TEXT DEFAULT '',
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query('CREATE INDEX IF NOT EXISTS jukebox_songs_room_played ON jukebox_songs (room_id, played)');
+  // Seed the Lola's Depot jukebox with a few house classics.
+  const jukeboxSeeds = [
+    { id: 'seed-juke-1', room_id: 'lolas-depot', title: 'Ring of Fire', artist: 'Johnny Cash' },
+    { id: 'seed-juke-2', room_id: 'lolas-depot', title: 'Superstition', artist: 'Stevie Wonder' },
+    { id: 'seed-juke-3', room_id: 'lolas-depot', title: 'La Grange', artist: 'ZZ Top' },
+  ];
+  for (const s of jukeboxSeeds) {
+    await pool.query(
+      'INSERT INTO jukebox_songs (id, room_id, title, artist, added_by, added_by_name) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (id) DO NOTHING',
+      [s.id, s.room_id, s.title, s.artist, 'bartender', 'The Bartender']
+    );
+  }
   // Seed the MD Anderson Library's featured shelves (original blurbs, no book text).
   const seeds = [
     {
@@ -278,6 +305,109 @@ async function loadShelfBooks(roomId) {
     console.error('loadShelfBooks failed:', e.message);
   }
   return shelfBooks[roomId];
+}
+
+// Jukebox: per-room shared song queue.
+// state: { queue: [ { id, title, artist, votes, addedBy, addedByName, votedBy:Set, createdAt } ],
+//          nowPlaying: { ...song, startedAt, skipVotes:Set } | null, timer: NodeTimeout|null }
+const jukeboxRooms = {};
+const jukeboxLoaded = new Set();
+const SONG_MS = 3 * 60 * 1000; // simulated track length
+const SKIP_VOTES_NEEDED = 2;
+
+function jukeboxState(roomId) {
+  if (!jukeboxRooms[roomId]) jukeboxRooms[roomId] = { queue: [], nowPlaying: null, timer: null };
+  return jukeboxRooms[roomId];
+}
+
+function sortJukeboxQueue(queue) {
+  queue.sort((a, b) => (b.votes - a.votes) || (a.createdAt - b.createdAt));
+}
+
+function publicJukeboxState(roomId, userId) {
+  const st = jukeboxRooms[roomId];
+  if (!st) return { nowPlaying: null, queue: [] };
+  const nowPlaying = st.nowPlaying
+    ? {
+        id: st.nowPlaying.id,
+        title: st.nowPlaying.title,
+        artist: st.nowPlaying.artist,
+        addedByName: st.nowPlaying.addedByName,
+        startedAt: st.nowPlaying.startedAt,
+        skipVotes: st.nowPlaying.skipVotes ? st.nowPlaying.skipVotes.size : 0,
+      }
+    : null;
+  const queue = st.queue.map((s) => ({
+    id: s.id,
+    title: s.title,
+    artist: s.artist,
+    votes: s.votes,
+    addedByName: s.addedByName,
+    voted: userId ? s.votedBy.has(userId) : false,
+  }));
+  return { nowPlaying, queue };
+}
+
+async function loadJukebox(roomId) {
+  if (jukeboxLoaded.has(roomId)) return jukeboxRooms[roomId];
+  jukeboxLoaded.add(roomId);
+  const st = jukeboxState(roomId);
+  if (!pool) return st;
+  try {
+    const { rows } = await pool.query(
+      'SELECT id, title, artist, votes, added_by AS "addedBy", added_by_name AS "addedByName", created_at AS "createdAt" FROM jukebox_songs WHERE room_id = $1 AND played = FALSE ORDER BY votes DESC, created_at ASC',
+      [roomId]
+    );
+    st.queue = rows.map((r) => ({ ...r, votedBy: new Set(), createdAt: new Date(r.createdAt).getTime() || Date.now() }));
+  } catch (e) {
+    console.error('loadJukebox failed:', e.message);
+  }
+  return st;
+}
+
+async function saveJukeboxSong(roomId, song) {
+  if (!pool) return;
+  await pool.query(
+    'INSERT INTO jukebox_songs (id, room_id, title, artist, votes, played, added_by, added_by_name) VALUES ($1,$2,$3,$4,$5,FALSE,$6,$7) ON CONFLICT (id) DO UPDATE SET votes=$5',
+    [song.id, roomId, song.title, song.artist, song.votes, song.addedBy, song.addedByName]
+  );
+}
+
+async function markSongPlayed(songId) {
+  if (!pool) return;
+  await pool.query('UPDATE jukebox_songs SET played = TRUE WHERE id = $1', [songId]);
+}
+
+function broadcastJukebox(roomId) {
+  // Per-socket personalization (voted flags) needs each socket's user id.
+  const room = rooms[roomId];
+  if (!room) return;
+  for (const sid of Object.keys(room)) {
+    const userId = socketUserMap[sid] || sid;
+    const target = io.sockets.sockets.get(sid);
+    if (target) target.emit('jukebox_state', publicJukeboxState(roomId, userId));
+  }
+}
+
+function advanceJukebox(roomId) {
+  const st = jukeboxRooms[roomId];
+  if (!st) return;
+  if (st.timer) {
+    clearTimeout(st.timer);
+    st.timer = null;
+  }
+  sortJukeboxQueue(st.queue);
+  const next = st.queue.shift();
+  if (!next) {
+    st.nowPlaying = null;
+    broadcastJukebox(roomId);
+    return;
+  }
+  markSongPlayed(next.id);
+  st.nowPlaying = { ...next, votedBy: undefined, startedAt: Date.now(), skipVotes: new Set() };
+  broadcastJukebox(roomId);
+  st.timer = setTimeout(() => advanceJukebox(roomId), SONG_MS);
+  if (st.timer.unref) st.timer.unref();
 }
 
 async function upsertPresence({ socketId, userId, roomId, name, firstName, skinId, avatarModel, x, y }) {
@@ -662,6 +792,86 @@ io.on('connection', (socket) => {
     list.push(book);
     await saveShelfBook(roomId, book);
     io.in(roomId).emit('book_added', { roomId, shelf: cleanShelf, book });
+  });
+
+  // JUKEBOX (bar: shared song queue — now playing, voting, skips)
+  socket.on('get_jukebox', async ({ roomId }) => {
+    if (!roomId || !rooms[roomId]) return;
+    const st = await loadJukebox(roomId);
+    if (!st.nowPlaying && st.queue.length > 0) {
+      advanceJukebox(roomId);
+    } else {
+      const userId = socketUserMap[socket.id] || socket.id;
+      socket.emit('jukebox_state', publicJukeboxState(roomId, userId));
+    }
+  });
+
+  socket.on('add_song', async ({ roomId, title, artist }) => {
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const userId = socketUserMap[socket.id] || socket.id;
+    const rate = checkRateLimit(userId);
+    if (!rate.allowed) {
+      socket.emit('song_error', { message: 'Whoa, slow down — try again in a bit.' });
+      return;
+    }
+    const cleanTitle = String(title || '').trim().slice(0, 120);
+    const cleanArtist = String(artist || '').trim().slice(0, 120);
+    if (!cleanTitle) {
+      socket.emit('song_error', { message: 'A song needs at least a title.' });
+      return;
+    }
+    const st = await loadJukebox(roomId);
+    const song = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      title: cleanTitle,
+      artist: cleanArtist,
+      votes: 0,
+      addedBy: userId,
+      addedByName: rooms[roomId][socket.id]?.name || 'Someone',
+      votedBy: new Set(),
+      createdAt: Date.now(),
+    };
+    st.queue.push(song);
+    await saveJukeboxSong(roomId, song);
+    if (!st.nowPlaying) {
+      advanceJukebox(roomId);
+    } else {
+      broadcastJukebox(roomId);
+    }
+    socket.emit('song_added', { roomId, song: { id: song.id, title: song.title, artist: song.artist } });
+  });
+
+  socket.on('vote_song', async ({ roomId, songId }) => {
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const userId = socketUserMap[socket.id] || socket.id;
+    const st = await loadJukebox(roomId);
+    const song = st.queue.find((s) => s.id === songId);
+    if (!song) return;
+    if (song.votedBy.has(userId)) return; // one vote per user per song
+    song.votedBy.add(userId);
+    song.votes += 1;
+    await saveJukeboxSong(roomId, song);
+    sortJukeboxQueue(st.queue);
+    broadcastJukebox(roomId);
+  });
+
+  socket.on('skip_song', async ({ roomId }) => {
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const userId = socketUserMap[socket.id] || socket.id;
+    const st = jukeboxRooms[roomId];
+    if (!st || !st.nowPlaying) return;
+    const np = st.nowPlaying;
+    // The person who queued it can skip it outright.
+    if (np.addedBy === userId) {
+      advanceJukebox(roomId);
+      return;
+    }
+    np.skipVotes.add(userId);
+    if (np.skipVotes.size >= SKIP_VOTES_NEEDED) {
+      advanceJukebox(roomId);
+    } else {
+      broadcastJukebox(roomId);
+    }
   });
 
   // PLACE DECORATION
