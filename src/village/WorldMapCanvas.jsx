@@ -133,28 +133,32 @@ export default function WorldMapCanvas({ location, rooms, onEnterRoom, profile }
   const msg = loadState === 'gps' ? 'Acquiring GPS… (or waiting for permission)' : 'Loading map…';
 
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+    <div style={{ position: 'relative', width: '100%', height: '100%', background: 'linear-gradient(180deg, rgba(9,17,14,0.9), rgba(12,21,18,0.95))' }}>
       <style>{spinnerStyle}</style>
       {showOverlay && (
         <div style={{
           position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
           alignItems: 'center', justifyContent: 'center', gap: 14,
-          background: '#f0ebe0', color: '#2b2b33',
-          fontFamily: 'Courier New, monospace', fontSize: 13, zIndex: 10,
+          background: 'radial-gradient(circle at center, rgba(17,28,23,0.75), rgba(7,19,15,0.94))',
+          color: '#edf5f0',
+          fontFamily: 'Space Grotesk, sans-serif', fontSize: 13, zIndex: 10,
+          backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)',
         }}>
           <div style={{
             width: 36, height: 36, borderRadius: '50%',
-            border: '3px solid #d6c9a8', borderTopColor: '#2b2b33',
+            border: '2px solid rgba(180,255,205,0.18)', borderTopColor: '#b8ff5c',
             animation: 'wm-spin 0.8s linear infinite',
           }} />
-          <span style={{ animation: 'wm-pulse 1.4s ease-in-out infinite' }}>{msg}</span>
+          <span style={{ animation: 'wm-pulse 1.4s ease-in-out infinite', letterSpacing: '0.08em', textTransform: 'uppercase', color: '#a7bdb0' }}>{msg}</span>
           {loadState === 'gps' && (
             <button
+              type="button"
               onClick={() => setEffectiveLoc({ latitude: 29.8368, longitude: -95.4201 })}
               style={{
-                marginTop: 8, background: '#2b2b33', color: '#faf0d7',
-                border: 'none', borderRadius: 8, padding: '7px 18px',
-                fontFamily: 'Courier New, monospace', fontSize: 12, cursor: 'pointer',
+                marginTop: 8, background: 'rgba(184,255,92,0.12)', color: '#edf5f0',
+                border: '1px solid rgba(184,255,92,0.35)', borderRadius: 999, padding: '9px 18px',
+                fontFamily: 'DM Mono, monospace', fontSize: 11, cursor: 'pointer',
+                letterSpacing: '0.08em', textTransform: 'uppercase',
               }}
             >
               Load without GPS
@@ -163,6 +167,7 @@ export default function WorldMapCanvas({ location, rooms, onEnterRoom, profile }
         </div>
       )}
       <button
+        type="button"
         onClick={recenterToGPS}
         disabled={gpsBusy}
         style={{
@@ -170,15 +175,18 @@ export default function WorldMapCanvas({ location, rooms, onEnterRoom, profile }
           right: 12,
           top: 'calc(12px + env(safe-area-inset-top, 0px))',
           zIndex: 12,
-          background: '#2b2b33',
-          color: '#faf0d7',
-          border: 'none',
-          borderRadius: 8,
-          padding: '8px 12px',
-          fontFamily: 'Courier New, monospace',
-          fontSize: 12,
+          background: 'rgba(16,27,23,0.8)',
+          color: '#edf5f0',
+          border: '1px solid rgba(180,255,205,0.16)',
+          borderRadius: 12,
+          padding: '9px 12px',
+          fontFamily: 'DM Mono, monospace',
+          fontSize: 11,
+          letterSpacing: '0.08em',
+          textTransform: 'uppercase',
           cursor: gpsBusy ? 'default' : 'pointer',
           opacity: gpsBusy ? 0.6 : 1,
+          boxShadow: '0 10px 24px rgba(0,0,0,0.2)',
         }}
       >
         {gpsBusy ? 'Locating…' : 'Recenter to GPS'}
@@ -189,12 +197,15 @@ export default function WorldMapCanvas({ location, rooms, onEnterRoom, profile }
           right: 12,
           top: 'calc(52px + env(safe-area-inset-top, 0px))',
           zIndex: 12,
-          background: '#00000099',
-          color: '#ffd2d2',
-          borderRadius: 6,
-          padding: '6px 8px',
-          fontFamily: 'Courier New, monospace',
-          fontSize: 11,
+          background: 'rgba(16,27,23,0.8)',
+          color: '#ffd9dc',
+          border: '1px solid rgba(255,107,114,0.32)',
+          borderRadius: 12,
+          padding: '7px 10px',
+          fontFamily: 'DM Mono, monospace',
+          fontSize: 10,
+          letterSpacing: '0.06em',
+          textTransform: 'uppercase',
         }}>
           {gpsError}
         </div>

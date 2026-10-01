@@ -771,9 +771,9 @@ export default function MapView({ location, rooms, onEnterRoom }) {
   const makeIcon = (emoji, color, name, inRange, count) => L.divIcon({
     className: '',
     html: `<div style="display:flex;flex-direction:column;align-items:center;cursor:${inRange ? 'pointer' : 'default'};opacity:${inRange ? '1' : '0.78'}">
-      <div style="background:${color};font-size:16px;width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:3px solid #2b2b33;box-shadow:2px 2px 0 #2b2b33">${emoji}</div>
-      <div style="background:rgba(250,240,215,0.98);color:#1f2937;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;margin-top:2px;white-space:nowrap;font-family:'Courier New',monospace;max-width:96px;overflow:hidden;text-overflow:ellipsis;border:1.5px solid #111827;box-shadow:2px 2px 0 rgba(17,24,39,0.85);text-shadow:0 1px 0 rgba(255,255,255,0.75)">${name}${inRange ? ' ✦' : ''}${count ? ` · 👤${count}` : ''}</div>
-      <div style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:6px solid #2b2b33"></div>
+      <div style="background:${color};font-size:16px;width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:2px solid rgba(255,255,255,0.7);box-shadow:0 10px 24px rgba(0,0,0,0.28)">${emoji}</div>
+      <div style="background:rgba(16,27,23,0.86);color:#edf5f0;font-size:10px;font-weight:700;padding:3px 8px;border-radius:999px;margin-top:4px;white-space:nowrap;font-family:'DM Mono',monospace;max-width:96px;overflow:hidden;text-overflow:ellipsis;border:1px solid rgba(180,255,205,0.16);box-shadow:0 10px 22px rgba(0,0,0,0.18)">${name}${inRange ? ' ✦' : ''}${count ? ` · ${count}` : ''}</div>
+      <div style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-top:6px solid rgba(16,27,23,0.86)"></div>
     </div>`,
     iconSize: [80, 58], iconAnchor: [40, 58],
   });
@@ -941,33 +941,32 @@ export default function MapView({ location, rooms, onEnterRoom }) {
   }, [location?.latitude, location?.longitude]);
 
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+    <div style={{ position: 'relative', width: '100%', height: '100%', background: 'linear-gradient(180deg, rgba(11,18,15,0.8), rgba(9,16,14,0.9))' }}>
       <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
 
-      {/* "You're here" banner when inside a named room's radius */}
       {nearbyRoom && (
-        <div style={{ position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 1000, background: '#faf0d7', color: '#2b2b33', fontFamily: 'Courier New', fontSize: 13, fontWeight: 'bold', padding: '6px 16px', borderRadius: 6, border: '2px solid #2b2b33', boxShadow: '2px 2px 0 #2b2b33', whiteSpace: 'nowrap' }}>
-          📍 You're at {nearbyRoom} — tap the pin to enter
+        <div style={{ position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 1000, background: 'rgba(16,27,23,0.8)', color: '#edf5f0', fontFamily: 'Space Grotesk, sans-serif', fontSize: 13, fontWeight: 600, padding: '8px 14px', borderRadius: 999, border: '1px solid rgba(180,255,205,0.18)', boxShadow: '0 12px 26px rgba(0,0,0,0.25)', whiteSpace: 'nowrap', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)' }}>
+          📍 You’re at {nearbyRoom}
         </div>
       )}
-      {/* Legend */}
-      <div style={{ position: 'absolute', bottom: 12, left: 12, zIndex: 1000, background: '#faf0d7', border: '2px solid #2b2b33', borderRadius: 8, padding: '8px 12px', fontFamily: 'Courier New', fontSize: 11, color: '#2b2b33', boxShadow: '2px 2px 0 #2b2b33' }}>
-        <div style={{ color: '#5a3e2b', fontWeight: 'bold', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 2 }}>Nearby places</div>
-        <div>✦ Tap a lit pin to enter</div>
-        {poiStatus === 'loading' && <div style={{ marginTop: 4, color: '#60a5fa', display: 'flex', alignItems: 'center', gap: 6 }}>
+
+      <div style={{ position: 'absolute', bottom: 12, left: 12, zIndex: 1000, background: 'rgba(16,27,23,0.78)', border: '1px solid rgba(180,255,205,0.12)', borderRadius: 16, padding: '10px 12px', fontFamily: 'Space Grotesk, sans-serif', fontSize: 11, color: '#edf5f0', boxShadow: '0 12px 26px rgba(0,0,0,0.2)', backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)' }}>
+        <div style={{ color: '#a7bdb0', fontWeight: 700, marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.14em' }}>Nearby places</div>
+        <div style={{ color: '#edf5f0' }}>✦ Tap a lit pin to enter</div>
+        {poiStatus === 'loading' && <div style={{ marginTop: 6, color: '#65f5bb', display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'DM Mono, monospace' }}>
           <span>Discovering…</span>
           <span style={{ animation: 'pulse 1s infinite', fontSize: 14 }}>⟳</span>
         </div>}
-        {poiStatus === 'found' && <div style={{ marginTop: 4, color: '#4ade80' }}>{poiCount} places found</div>}
+        {poiStatus === 'found' && <div style={{ marginTop: 6, color: '#b8ff5c', fontFamily: 'DM Mono, monospace' }}>{poiCount} places found</div>}
         {(poiStatus === 'none' || poiStatus === 'error') && (
-          <div style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <div style={{ color: poiStatus === 'error' ? '#ef4444' : '#f97316' }}>
+          <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <div style={{ color: poiStatus === 'error' ? '#ff6b72' : '#f3c969', fontFamily: 'DM Mono, monospace' }}>
               {poiStatus === 'error' ? 'Load failed' : 'None found nearby'}
             </div>
             <button onClick={() => {
               const pos = playerMarkerRef.current?.getLatLng();
               if (pos) loadPOIs(pos.lat, pos.lng);
-            }} style={{ background: '#faf0d7', border: '2px solid #2b2b33', color: '#2b2b33', padding: '3px 8px', cursor: 'pointer', fontFamily: 'Courier New', fontSize: 10, borderRadius: 4, boxShadow: '1px 1px 0 #2b2b33' }}>
+            }} style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(180,255,205,0.16)', color: '#edf5f0', padding: '6px 10px', cursor: 'pointer', fontFamily: 'DM Mono, monospace', fontSize: 10, borderRadius: 10, minHeight: 32 }}>
               ↺ Retry
             </button>
           </div>

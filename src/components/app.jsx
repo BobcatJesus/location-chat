@@ -124,7 +124,7 @@ function AvatarStudioPage({
   const emergencyLabel = onboardingRequired ? 'Exit To World' : 'Exit Editor';
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 20000, minHeight: '100vh', width: '100%', background: 'radial-gradient(120% 100% at 0% 0%, #12203a 0%, #0f172a 45%, #020617 100%)', color: '#f8fafc', fontFamily: 'Courier New, monospace', overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+    <div className="avatar-studio-page">
       {emergencyAction && (
         <a
           href="?quickStart=complete"
@@ -132,61 +132,67 @@ function AvatarStudioPage({
             e.preventDefault();
             emergencyAction();
           }}
-          style={{ position: 'fixed', top: 10, right: 10, zIndex: 20050, padding: '8px 12px', border: '2px solid #f59e0b', background: '#111827', color: '#fde68a', fontFamily: 'Courier New, monospace', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.07em', cursor: 'pointer', textDecoration: 'none' }}
+          style={{ position: 'fixed', top: 14, right: 14, zIndex: 20050, padding: '9px 14px', borderRadius: 999, border: '1px solid rgba(243, 201, 105, 0.5)', background: 'rgba(18, 31, 25, 0.8)', color: '#fde68a', fontFamily: 'DM Mono, monospace', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.12em', cursor: 'pointer', textDecoration: 'none' }}
         >
           {emergencyLabel}
         </a>
       )}
-      <div style={{ maxWidth: 560, margin: '0 auto', padding: '22px 14px 34px' }}>
-        <section style={{ border: '4px solid #fff', background: '#0f172a', padding: 4, boxShadow: '8px 8px 0 #000' }}>
-          <div style={{ border: '2px solid #3b82f6', background: '#0f172a', padding: 16 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 14, borderBottom: '2px solid #1e293b', paddingBottom: 10 }}>
-              <h2 style={{ margin: 0, color: '#fbbf24', fontSize: 16, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                {onboardingRequired ? 'Complete Avatar Setup' : 'Edit Avatar'}
-              </h2>
-              {!onboardingRequired && onCancel && (
-                <button onClick={onCancel} style={{ background: 'none', border: '1px solid #334155', color: '#94a3b8', fontFamily: 'Courier New, monospace', fontSize: 11, cursor: 'pointer', padding: '3px 8px', textTransform: 'uppercase' }}>
-                  Back to map
-                </button>
-              )}
-            </div>
-
-            {profileError && (
-              <div style={{ marginBottom: 12, padding: '8px 10px', border: '2px solid #ef4444', background: 'rgba(127,29,29,0.8)', color: '#fca5a5', fontSize: 11 }}>
-                {profileError}
-              </div>
-            )}
-
-            <AvatarSetupFields
-              formData={formData}
-              setFormData={setFormData}
-              photoDataUrl={formData.photo}
-              setPhotoDataUrl={(photo) => setFormData((f) => ({ ...f, photo }))}
-              firstNameLabel="First Name"
-              characterNameLabel="Display Name"
-            />
-
-            <div style={{ display: 'flex', gap: 8, marginTop: 14, position: 'sticky', bottom: 0, zIndex: 20, background: 'linear-gradient(180deg, rgba(15,23,42,0.25) 0%, rgba(15,23,42,0.98) 40%)', paddingTop: 10, paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 8px)' }}>
-              {!onboardingRequired && onCancel && (
-                <button onClick={onCancel} style={{ flex: 1, padding: '10px 0', background: 'transparent', border: '2px solid #334155', color: '#94a3b8', fontFamily: 'Courier New, monospace', fontSize: 12, textTransform: 'uppercase', cursor: 'pointer' }}>
-                  Cancel
-                </button>
-              )}
-              {onboardingRequired && onForceEnter && (
-                <button
-                  onClick={onForceEnter}
-                  style={{ flex: 1, padding: '10px 0', background: 'transparent', border: '2px dashed #f59e0b', color: '#fde68a', fontFamily: 'Courier New, monospace', fontSize: 12, textTransform: 'uppercase', cursor: 'pointer' }}
-                >
-                  Enter World Now
-                </button>
-              )}
-              <button
-                onClick={onSave}
-                style={{ flex: 1, padding: '10px 0', background: '#16a34a', border: '2px solid #000', boxShadow: '2px 2px 0 #000', color: '#fff', fontWeight: 'bold', fontFamily: 'Courier New, monospace', fontSize: 12, letterSpacing: '0.08em', textTransform: 'uppercase', cursor: 'pointer' }}
-              >
-                {onboardingRequired ? 'Save and Enter World' : 'Save Avatar'}
+      <div className="studio-inner">
+        <section className="studio-panel">
+          <div className="studio-header">
+            <h2>{onboardingRequired ? 'Complete Avatar Setup' : 'Edit Avatar'}</h2>
+            {!onboardingRequired && onCancel && (
+              <button className="ghost-button" onClick={onCancel} type="button">
+                Back to map
               </button>
+            )}
+          </div>
+
+          {profileError && (
+            <div style={{ margin: '16px 20px 0', padding: '10px 14px', border: '1px solid rgba(255, 107, 114, 0.4)', background: 'rgba(255, 107, 114, 0.08)', color: '#ffd9dc', borderRadius: 12, fontFamily: 'DM Mono, monospace', fontSize: 12 }}>
+              {profileError}
             </div>
+          )}
+
+          <div className="studio-grid">
+            <div className="studio-preview">
+              <div className="preview-shell">
+                <div style={{ width: 180, height: 180, borderRadius: 180, background: 'radial-gradient(circle at 50% 22%, rgba(184,255,92,0.2), rgba(101,245,187,0.06) 45%, rgba(9,18,14,0.9) 100%)', border: '1px solid rgba(180,255,205,0.18)', display: 'grid', placeItems: 'center' }}>
+                  {formData.photo ? (
+                    <img src={formData.photo} alt="Avatar preview" style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
+                  ) : (
+                    <div style={{ fontFamily: 'DM Mono, monospace', fontSize: 12, color: '#a7bdb0', letterSpacing: '0.12em', textTransform: 'uppercase' }}>Avatar</div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="studio-fields">
+              <AvatarSetupFields
+                formData={formData}
+                setFormData={setFormData}
+                photoDataUrl={formData.photo}
+                setPhotoDataUrl={(photo) => setFormData((f) => ({ ...f, photo }))}
+                firstNameLabel="First Name"
+                characterNameLabel="Display Name"
+              />
+            </div>
+          </div>
+
+          <div className="studio-actions">
+            {!onboardingRequired && onCancel && (
+              <button className="studio-button secondary" onClick={onCancel} type="button">
+                Cancel
+              </button>
+            )}
+            {onboardingRequired && onForceEnter && (
+              <button className="studio-button ghost" onClick={onForceEnter} type="button">
+                Enter World Now
+              </button>
+            )}
+            <button className="studio-button primary" onClick={onSave} type="button">
+              {onboardingRequired ? 'Save and Enter World' : 'Save Avatar'}
+            </button>
           </div>
         </section>
       </div>
@@ -275,207 +281,30 @@ function RetroLandingPage({ onEnter, onOpenShepherdPark, onOpenMdAndersonLibrary
   };
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 22000,
-        minHeight: '100vh',
-        width: '100%',
-        overflow: 'hidden',
-        color: '#111',
-        fontFamily: 'Helvetica Neue, Arial, sans-serif',
-        background: 'radial-gradient(circle at center, #f0c12a 0%, #e5b61f 60%, #d8ab16 100%)',
-      }}
-    >
-      {!useReferenceArt && (
-        <>
-          <div
-            style={{
-              position: 'absolute',
-              inset: 0,
-              backgroundImage: 'radial-gradient(rgba(0,0,0,0.08) 1px, transparent 1px)',
-              backgroundSize: '6px 6px',
-              opacity: 0.45,
-              pointerEvents: 'none',
-            }}
-          />
-          {avatarDots.map((dot, index) => (
-            <div
-              key={`${dot.left}-${dot.top}-${index}`}
-              style={{
-                position: 'absolute',
-                left: dot.left,
-                top: dot.top,
-                width: dot.size,
-                height: dot.size,
-                transform: 'translate(-50%, -50%)',
-                borderRadius: '50%',
-                border: '2px solid rgba(0,0,0,0.8)',
-                background: `radial-gradient(circle at 50% 35%, ${dot.bg} 0 58%, rgba(255,255,255,0.94) 59% 100%)`,
-                boxShadow: '0 3px 0 rgba(0,0,0,0.2)',
-                display: 'grid',
-                placeItems: 'center',
-                backgroundColor: dot.bg,
-              }}
-            >
-              <img
-                src={dot.photo}
-                alt="person"
-                style={{
-                  width: Math.round(dot.size * 0.9),
-                  height: Math.round(dot.size * 0.9),
-                  borderRadius: '50%',
-                  objectFit: 'cover',
-                  border: '2px solid rgba(255,255,255,0.95)',
-                }}
-              />
+    <div className="modern-landing" aria-label="Landing page">
+      <div className="landing-shell">
+        <div className="landing-hero" aria-hidden="true" />
+        <div className="landing-content">
+          <div className="landing-panel">
+            <p className="landing-kicker">Location chat</p>
+            <h1>Explore what is happening around you.</h1>
+            <p className="landing-subtitle">Find real conversations at the places you already visit, then step into the room that matches your location.</p>
+
+            <div className="landing-actions">
+              <button className="landing-button primary" onClick={onEnter} type="button">
+                Enter nearby location
+              </button>
+              <button className="landing-button secondary" onClick={onOpenShepherdPark} type="button">
+                Shepherd Park
+              </button>
+              <button className="landing-button secondary" onClick={onOpenMdAndersonLibrary} type="button">
+                MD Anderson Library
+              </button>
+              <button className="landing-button secondary" onClick={onOpenAsgardGames} type="button">
+                Asgard Games
+              </button>
             </div>
-          ))}
-        </>
-      )}
-
-      {useReferenceArt && (
-        <img
-          src={referenceArtCandidates[referenceArtIndex]}
-          alt="Landing art"
-          onLoad={validateArt}
-          onError={useNextReferenceArtOrFallback}
-          style={{
-            position: 'absolute',
-            inset: 0,
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover',
-            objectPosition: 'center',
-            pointerEvents: 'none',
-            userSelect: 'none',
-          }}
-        />
-      )}
-
-      <div
-        style={{
-          position: 'absolute',
-          left: '50%',
-          top: useReferenceArt ? 'auto' : '50%',
-          bottom: useReferenceArt ? '7.5%' : 'auto',
-          transform: useReferenceArt ? 'translateX(-50%)' : 'translate(-50%, -50%)',
-          textAlign: 'center',
-          zIndex: 2,
-          width: 'min(640px, calc(100vw - 32px))',
-        }}
-      >
-        {!useReferenceArt && (
-          <>
-            <h1
-              style={{
-                margin: 0,
-                color: '#111',
-                fontSize: 'clamp(2.8rem, 6.8vw, 5rem)',
-                lineHeight: 0.95,
-                letterSpacing: '-0.04em',
-                textTransform: 'uppercase',
-                fontWeight: 900,
-                textShadow: '2px 2px 0 rgba(255,255,255,0.08)',
-                fontFamily: 'Impact, Haettenschweiler, Arial Narrow Bold, sans-serif',
-              }}
-            >
-              A Location
-              <br />
-              Based
-              <br />
-              Adventure
-            </h1>
-            <p
-              style={{
-                margin: '16px 0 22px',
-                fontSize: 'clamp(1.15rem, 2.5vw, 1.9rem)',
-                lineHeight: 1.05,
-                color: '#111',
-                fontWeight: 500,
-              }}
-            >
-              Meet your people.
-              <br />
-              In the real world.
-            </p>
-          </>
-        )}
-
-        <div style={{ display: 'flex', justifyContent: 'center', gap: 10, flexWrap: 'wrap' }}>
-          <button
-            onClick={onEnter}
-            style={{
-              padding: '12px 24px',
-              background: '#111',
-              border: '3px solid #111',
-              color: '#f6d24a',
-              fontWeight: 900,
-              cursor: 'pointer',
-              borderRadius: 999,
-              fontSize: 12,
-              textTransform: 'uppercase',
-              letterSpacing: '0.14em',
-              boxShadow: '0 5px 0 rgba(0,0,0,0.32)',
-            }}
-          >
-            Enter Map
-          </button>
-          <button
-            onClick={onOpenShepherdPark}
-            style={{
-              padding: '12px 20px',
-              background: '#0f172a',
-              border: '3px solid #0f172a',
-              color: '#bae6fd',
-              fontWeight: 900,
-              cursor: 'pointer',
-              borderRadius: 999,
-              fontSize: 11,
-              textTransform: 'uppercase',
-              letterSpacing: '0.1em',
-              boxShadow: '0 5px 0 rgba(0,0,0,0.32)',
-            }}
-          >
-            Open Shepherd Park
-          </button>
-          <button
-            onClick={onOpenMdAndersonLibrary}
-            style={{
-              padding: '12px 20px',
-              background: '#1f2937',
-              border: '3px solid #1f2937',
-              color: '#fde68a',
-              fontWeight: 900,
-              cursor: 'pointer',
-              borderRadius: 999,
-              fontSize: 11,
-              textTransform: 'uppercase',
-              letterSpacing: '0.1em',
-              boxShadow: '0 5px 0 rgba(0,0,0,0.32)',
-            }}
-          >
-            Open MD Anderson Library
-          </button>
-          <button
-            onClick={onOpenAsgardGames}
-            style={{
-              padding: '12px 20px',
-              background: '#7c2d12',
-              border: '3px solid #7c2d12',
-              color: '#ffedd5',
-              fontWeight: 900,
-              cursor: 'pointer',
-              borderRadius: 999,
-              fontSize: 11,
-              textTransform: 'uppercase',
-              letterSpacing: '0.1em',
-              boxShadow: '0 5px 0 rgba(0,0,0,0.32)',
-            }}
-          >
-            Open Asgard Games
-          </button>
+          </div>
         </div>
       </div>
     </div>
@@ -1438,33 +1267,20 @@ function App() {
   const avatarStudioOpen = isLoggedIn && editingProfile;
 
   return (
-    <div
-      style={{
-        position: 'relative',
-        width: '100vw',
-        minHeight: '100vh',
-        height: isLoggedIn && !avatarStudioOpen ? '100vh' : 'auto',
-        overflowX: 'hidden',
-        overflowY: isLoggedIn && !avatarStudioOpen ? 'hidden' : 'auto',
-        background: 'linear-gradient(180deg, #0f172a 0%, #1e293b 100%)',
-        color: '#f8fafc',
-        fontFamily: 'monospace',
-      }}
-    >
-
-      {/* GPS block toast */}
+    <div className="app-shell" style={{ overflowY: isLoggedIn && !avatarStudioOpen ? 'hidden' : 'auto' }}>
       {gpsToast && (
-        <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', zIndex: 9999, background: '#1e293b', border: '2px solid #ef4444', color: '#fca5a5', padding: '10px 20px', fontFamily: 'Courier New', fontSize: 13, maxWidth: 360, textAlign: 'center', boxShadow: '0 4px 20px #000' }}>
-          📍 {gpsToast}
-        </div>
+        <div className="toast error">📍 {gpsToast}</div>
       )}
 
-      {/* Create room name prompt */}
       {!avatarStudioOpen && creatingRoom && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', zIndex: 10001, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setCreatingRoom(false)}>
-          <div onClick={e => e.stopPropagation()} style={{ background: '#0f172a', border: '4px solid #fbbf24', padding: 28, maxWidth: 340, width: '100%', margin: 16, boxShadow: '8px 8px 0 #000', fontFamily: 'Courier New, monospace' }}>
-            <div style={{ color: '#fbbf24', fontSize: 13, textTransform: 'uppercase', letterSpacing: 2, marginBottom: 16 }}>📍 Create a Place</div>
+        <div className="create-room-modal" onClick={() => setCreatingRoom(false)}>
+          <div className="modal-card" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>📍 Create a place</h3>
+            </div>
+            <label className="field-label" htmlFor="new-room-name">Name</label>
             <input
+              id="new-room-name"
               autoFocus
               type="text"
               placeholder="Name this place…"
@@ -1472,49 +1288,55 @@ function App() {
               onChange={e => setNewRoomName(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && confirmCreateRoom()}
               maxLength={32}
-              style={{ width: '100%', boxSizing: 'border-box', background: '#000', border: '2px solid #475569', padding: '10px 12px', color: '#f8fafc', fontFamily: 'Courier New, monospace', fontSize: 14, outline: 'none', marginBottom: 14 }}
             />
-            {/* Category picker */}
-            <div style={{ fontSize: 10, color: '#64748b', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 }}>Category</div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
-              {COMMUNITY_CATEGORIES.map(cat => (
-                <button key={cat.id} onClick={() => setNewRoomCategory(cat.id)}
-                  style={{ background: newRoomCategory === cat.id ? cat.color : '#1e293b', border: `2px solid ${newRoomCategory === cat.id ? cat.color : '#334155'}`, color: '#fff', padding: '4px 10px', fontFamily: 'Courier New, monospace', fontSize: 11, cursor: 'pointer', borderRadius: 4 }}>
-                  {cat.emoji} {cat.label}
-                </button>
-              ))}
-            </div>
-            {/* Public toggle */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, padding: '10px 12px', background: '#1e293b', border: `2px solid ${newRoomPublic && !locCooldown ? '#16a34a' : '#334155'}`, cursor: locCooldown ? 'not-allowed' : 'pointer', opacity: locCooldown && !newRoomPublic ? 0.5 : 1 }} onClick={() => !locCooldown && setNewRoomPublic(p => !p)}>
-              <div style={{ width: 36, height: 20, background: newRoomPublic && !locCooldown ? '#16a34a' : '#475569', borderRadius: 10, position: 'relative', transition: 'background 0.2s' }}>
-                <div style={{ position: 'absolute', top: 2, left: newRoomPublic && !locCooldown ? 18 : 2, width: 16, height: 16, background: '#fff', borderRadius: '50%', transition: 'left 0.2s' }} />
-              </div>
-              <div>
-                <div style={{ color: newRoomPublic && !locCooldown ? '#4ade80' : '#94a3b8', fontSize: 12, fontWeight: 'bold' }}>
-                  {locCooldown ? `⏳ Cooldown — ${locCooldownHours}h remaining` : newRoomPublic ? '🌍 Community — visible to everyone' : '🔒 Private — only you'}
-                </div>
-                <div style={{ color: '#475569', fontSize: 10 }}>
-                  {locCooldown ? '1 community location per 3 days' : newRoomPublic ? "Appears on all users' maps" : 'Share via invite link to add others'}
-                </div>
+
+            <div style={{ marginTop: 18 }}>
+              <div className="field-label">Category</div>
+              <div className="chip-group">
+                {COMMUNITY_CATEGORIES.map(cat => (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    className={`chip ${newRoomCategory === cat.id ? 'active' : ''}`}
+                    onClick={() => setNewRoomCategory(cat.id)}
+                    style={{ background: newRoomCategory === cat.id ? cat.color : 'rgba(255,255,255,0.02)' }}
+                  >
+                    {cat.emoji} {cat.label}
+                  </button>
+                ))}
               </div>
             </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={confirmCreateRoom} style={{ flex: 1, padding: '10px 0', background: '#16a34a', border: '2px solid #000', boxShadow: '2px 2px 0 #000', color: '#fff', fontWeight: 'bold', fontFamily: 'Courier New, monospace', fontSize: 12, cursor: 'pointer', textTransform: 'uppercase' }}>
-                Create
-              </button>
-              <button onClick={() => setCreatingRoom(false)} style={{ padding: '10px 16px', background: 'none', border: '2px solid #334155', color: '#94a3b8', fontFamily: 'Courier New, monospace', fontSize: 12, cursor: 'pointer' }}>
+
+            <div className="toggle-box" onClick={() => !locCooldown && setNewRoomPublic(p => !p)} style={{ cursor: locCooldown ? 'not-allowed' : 'pointer', opacity: locCooldown && !newRoomPublic ? 0.55 : 1 }}>
+              <div className="location-row" style={{ alignItems: 'center' }}>
+                <div style={{ width: 40, height: 22, background: newRoomPublic && !locCooldown ? '#65f5bb' : '#475569', borderRadius: 999, position: 'relative' }}>
+                  <div style={{ position: 'absolute', top: 2, left: newRoomPublic && !locCooldown ? 20 : 2, width: 18, height: 18, background: '#fff', borderRadius: '50%' }} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ color: newRoomPublic && !locCooldown ? '#65f5bb' : '#a7bdb0', fontSize: 12, fontWeight: 600 }}>
+                    {locCooldown ? `Cooldown — ${locCooldownHours}h remaining` : newRoomPublic ? 'Community — visible to everyone' : 'Private — only you'}
+                  </div>
+                  <div style={{ color: '#7b8d85', fontSize: 11, marginTop: 2 }}>
+                    {locCooldown ? '1 community location per 3 days' : newRoomPublic ? 'Appears on all users\' maps' : 'Share a link to invite others'}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="actions">
+              <button type="button" className="secondary-button" onClick={() => setCreatingRoom(false)}>
                 Cancel
+              </button>
+              <button type="button" className="primary-button" onClick={confirmCreateRoom}>
+                Create place
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Invite copied toast */}
       {!avatarStudioOpen && inviteToast && (
-        <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', zIndex: 9999, background: '#16a34a', border: '2px solid #000', color: '#fff', padding: '10px 20px', fontFamily: 'Courier New', fontSize: 13, boxShadow: '0 4px 20px #000' }}>
-          ✓ Invite link copied!
-        </div>
+        <div className="toast success">✓ Invite link copied!</div>
       )}
 
       {!isLoggedIn && showLanding && (
@@ -1550,145 +1372,144 @@ function App() {
       )}
 
       {isLoggedIn && !avatarStudioOpen && (
-        <div style={{ height: '100%', display: 'flex', flexDirection: 'column', padding: 20, boxSizing: 'border-box', gap: 12 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #64748b', paddingBottom: 8 }}>
-            <div>
-              <div style={{ fontSize: 12, color: '#fbbf24', letterSpacing: 2, textTransform: 'uppercase' }}>Side Quest</div>
-              <h1 style={{ margin: '4px 0 0', fontSize: 24 }}>{worldTitle}</h1>
+        <>
+          <header className="top-nav glass-panel" role="banner">
+            <div className="brand" aria-label="Side Quest brand">
+              <div className="brand-mark">S</div>
+              <div>
+                <div className="brand-text">Location chat</div>
+                <div className="brand-title">{worldTitle}</div>
+              </div>
             </div>
-            <div style={{ textAlign: 'right', fontSize: 12, color: '#cbd5e1' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end' }}>
+
+            <div className="nav-meta">
+              <div className="status-pill">
+                <span className={`status-dot ${isLocating ? 'warning' : isInsideVenue ? 'mint' : 'danger'}`} aria-hidden="true" />
+                <span>{isLocating ? 'Locating' : isInsideVenue ? 'Within location' : 'Outside area'}</span>
+              </div>
+
+              <button type="button" className="secondary-button" onClick={openEditProfile} style={{ minHeight: 40, padding: '8px 12px' }}>
                 {profile?.profile?.photo && (
-                  <img src={profile.profile.photo} alt="profile" style={{ width: 24, height: 24, borderRadius: '50%', border: '1px solid #fbbf24' }} />
+                  <img src={profile.profile.photo} alt="Profile avatar" className="profile-avatar" style={{ marginRight: 8 }} />
                 )}
-                <div style={{ color: '#fbbf24', fontWeight: 'bold' }}>
-                  {profile?.mode === 'guest' ? 'Guest Traveler' : profile?.profile?.characterName || profile?.profile?.email?.split('@')[0] || 'Traveler'}
-                </div>
-                <button onClick={openEditProfile} style={{ background: 'none', border: '1px solid #334155', color: '#94a3b8', fontSize: 10, cursor: 'pointer', padding: '1px 5px', fontFamily: 'monospace' }}>
-                  edit
+                <span className="profile-name">{profile?.mode === 'guest' ? 'Guest Traveler' : profile?.profile?.characterName || profile?.profile?.email?.split('@')[0] || 'Traveler'}</span>
+              </button>
+            </div>
+          </header>
+
+          <main className="main-stage">
+            <section className="location-header glass-panel">
+              <div>
+                <p className="eyebrow">Current location</p>
+                <h2>{worldTitle}</h2>
+              </div>
+
+              <div className="location-metadata">
+                <span className="tech-label">{isLocating ? 'Scanning the land…' : isInsideVenue ? 'Inside venue' : 'Outside permitted area'}</span>
+                {error && (
+                  <button type="button" className="secondary-button" onClick={retryLocation} style={{ minHeight: 36, padding: '8px 12px' }}>
+                    Retry location
+                  </button>
+                )}
+                <button type="button" className="secondary-button" onClick={openShepherdParkDirect} style={{ minHeight: 36, padding: '8px 12px' }}>
+                  Shepherd Park
+                </button>
+                <button type="button" className="ghost-button" onClick={handleLogout} style={{ minHeight: 36, padding: '8px 12px' }}>
+                  Log out
                 </button>
               </div>
-              <button
-                type="button"
-                onClick={openEditProfile}
-                style={{ marginTop: 4, display: 'inline-flex', alignItems: 'center', gap: 6, padding: '2px 8px', border: `1px solid ${avatarComplete ? '#16a34a' : '#ef4444'}`, color: avatarComplete ? '#86efac' : '#fca5a5', background: avatarComplete ? 'rgba(20,83,45,0.35)' : 'rgba(127,29,29,0.35)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', cursor: 'pointer', fontFamily: 'monospace' }}
-                title="Open avatar settings"
-              >
-                <span>{avatarComplete ? 'Avatar Complete' : 'Avatar Incomplete'}</span>
-              </button>
-              {onboardingStepLabel && (
-                <div style={{ marginTop: 4, border: '1px solid #f59e0b', color: '#fde68a', background: 'rgba(120,53,15,0.35)', padding: '2px 8px', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                  {onboardingStepLabel}
-                </div>
-              )}
-              <div>{isLocating ? 'Scanning the land…' : isInsideVenue ? 'Within the sacred bounds' : 'Outside the marked realm'}</div>
-              {error && (
-                <div style={{ marginTop: 4, color: '#fca5a5', maxWidth: 260 }}>
-                  {error}
-                  <button
-                    type="button"
-                    onClick={retryLocation}
-                    style={{ display: 'block', marginTop: 6, background: '#7f1d1d', border: '1px solid #ef4444', color: '#fee2e2', fontSize: 10, cursor: 'pointer', padding: '4px 8px', fontFamily: 'monospace', textTransform: 'uppercase' }}
-                  >
-                    Retry Location
-                  </button>
-                </div>
-              )}
-              <button
-                onClick={openShepherdParkDirect}
-                style={{ marginTop: 4, background: '#0f172a', border: '1px solid #38bdf8', color: '#bae6fd', fontSize: 10, cursor: 'pointer', padding: '2px 6px', fontFamily: 'monospace', textTransform: 'uppercase' }}
-              >
-                Open Shepherd Park
-              </button>
-              <button onClick={handleLogout} style={{ marginTop: 4, background: 'none', border: '1px solid #334155', color: '#475569', fontSize: 10, cursor: 'pointer', padding: '2px 6px', fontFamily: 'monospace', textTransform: 'uppercase' }}>
-                Log out
-              </button>
-            </div>
-          </div>
+            </section>
 
-          <div style={{ display: 'flex', gap: 16, flex: 1, minHeight: 0 }}>
-            {activeScene === 'world' ? (
-              /* Map view fills the main area */
-              <div style={{ flex: 1, borderRadius: 12, overflow: 'hidden', border: '2px solid #334155', position: 'relative' }}>
-                <Suspense fallback={<div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', color: '#94a3b8', background: '#0f172a' }}>Loading map…</div>}>
+            <div className="map-shell">
+              {activeScene === 'world' ? (
+                <Suspense fallback={<div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', color: '#a7bdb0', background: '#0d1b17' }}>Loading map…</div>}>
                   <MapView
                     location={location}
                     rooms={allRooms.map((r) => ({ ...r, radiusMeters: r.radiusMeters || r.radius || 100 }))}
                     onEnterRoom={handleEnterRoom}
                   />
                 </Suspense>
-                {/* Create room at current GPS location */}
-                {location && !isLocating ? (
-                  <button
-                    onClick={handleCreateRoom}
-                    style={{ position: 'absolute', top: 12, left: 12, zIndex: 1000, background: '#fbbf24', border: 'none', padding: '8px 14px', fontWeight: 'bold', cursor: 'pointer', fontFamily: 'Courier New', fontSize: 12, boxShadow: '2px 2px 0 #000' }}>
-                    + Create room here
-                  </button>
-                ) : (
-                  <div style={{ position: 'absolute', top: 12, left: 12, zIndex: 1000, background: '#1e293b', border: '1px solid #475569', padding: '8px 14px', fontFamily: 'Courier New', fontSize: 11, color: '#64748b', boxShadow: '2px 2px 0 #000' }}>
-                    📍 Waiting for GPS…
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div style={{ flex: 1, border: '2px solid #334155', borderRadius: 12, overflow: 'hidden', position: 'relative' }}>
-                <Suspense fallback={<div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', color: '#94a3b8', background: '#0f172a' }}>Loading room…</div>}>
+              ) : (
+                <Suspense fallback={<div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', color: '#a7bdb0', background: '#0d1b17' }}>Loading room…</div>}>
                   <VillageCanvas room={osmRoom ? { ...osmRoom, id: osmRoom.id } : activeRoom} venueEvents={venueEvents} canManageVenue={venuePermissions.canManage} profile={profile} location={location} onLeave={() => { setActiveScene('world'); setOsmRoom(null); }} />
                 </Suspense>
-                {venuePermissions.canManage && <button
-                  type="button"
-                  onClick={openCreateEvent}
-                  style={{ position: 'absolute', top: 12, left: 12, zIndex: 1001, background: '#fbbf24', color: '#111827', border: '2px solid #111827', padding: '7px 10px', fontFamily: 'Courier New', fontSize: 11, fontWeight: 'bold', cursor: 'pointer', boxShadow: '2px 2px 0 #000' }}
-                >
-                  + Create event
-                </button>}
-                {(activeRoom?.kind === 'user-created' || activeRoom?.kind === 'community') && (activeRoom.ownerId === (profile?.profile?.email || profile?.mode || 'guest') || activeRoom.ownerId === (profile?.profile?.characterName || '')) && (
-                  <button
-                    onClick={() => handleDeleteRoom(activeRoom)}
-                    style={{ position: 'absolute', bottom: 16, left: 12, zIndex: 1000, background: '#7f1d1d', border: '1px solid #ef4444', color: '#fecaca', padding: '6px 12px', fontFamily: 'Courier New', fontSize: 11, cursor: 'pointer', boxShadow: '2px 2px 0 #000' }}>
-                    🗑 Delete room
-                  </button>
-                )}
-                {/* Invite button for user-created private rooms */}
-                {activeRoom?.kind === 'user-created' && (
-                  <button
-                    onClick={() => {
-                      const link = `${window.location.origin}${window.location.pathname}?invite=${encodeURIComponent(JSON.stringify(activeRoom))}`;
-                      try {
-                        navigator.clipboard.writeText(link).then(() => {
-                          setInviteToast(true);
-                          setTimeout(() => setInviteToast(null), 2500);
-                        }).catch(() => {
-                          prompt('Copy this invite link:', link);
-                        });
-                      } catch {
-                        prompt('Copy this invite link:', link);
-                      }
-                    }}
-                    style={{ position: 'absolute', bottom: 16, right: 12, zIndex: 1000, background: '#1e293b', border: '1px solid #fbbf24', color: '#fbbf24', padding: '6px 12px', fontFamily: 'Courier New', fontSize: 11, cursor: 'pointer', boxShadow: '2px 2px 0 #000' }}>
-                    🔗 Copy invite link
-                  </button>
-                )}
+              )}
+
+              <div className="map-overlay">
+                <div className="map-card">
+                  <h3>{activeScene === 'world' ? 'Community room' : 'Location'}</h3>
+                  <p className="room-title">{activeRoom?.name || worldTitle}</p>
+                  <div className="location-row">
+                    <span className="tech-label">{activeRoom?.kind || 'nearby'}</span>
+                    {activeScene === 'world' && (
+                      <button type="button" className="primary-button" onClick={handleCreateRoom} style={{ minHeight: 38, padding: '8px 12px' }}>
+                        {location && !isLocating ? 'Create room here' : 'Waiting for GPS'}
+                      </button>
+                    )}
+                  </div>
+                </div>
               </div>
-            )}
-          </div>
-        </div>
+
+              {activeScene !== 'world' && venuePermissions.canManage && (
+                <button type="button" className="primary-button" onClick={openCreateEvent} style={{ position: 'absolute', top: 16, left: 16, zIndex: 1001, minHeight: 36, padding: '8px 12px' }}>
+                  + Create event
+                </button>
+              )}
+
+              {activeScene === 'world' && location && !isLocating && (
+                <button type="button" className="primary-button" onClick={handleCreateRoom} style={{ position: 'absolute', top: 16, left: 16, zIndex: 1000, minHeight: 38, padding: '8px 12px' }}>
+                  + Create room here
+                </button>
+              )}
+
+              {activeScene === 'world' && (!location || isLocating) && (
+                <div style={{ position: 'absolute', top: 16, left: 16, zIndex: 1000, background: 'rgba(16, 27, 23, 0.8)', border: '1px solid var(--border)', borderRadius: 12, padding: '8px 12px', color: '#a7bdb0', fontFamily: 'DM Mono, monospace', fontSize: 11 }}>
+                  📍 Waiting for GPS…
+                </div>
+              )}
+
+              {activeScene !== 'world' && (activeRoom?.kind === 'user-created' || activeRoom?.kind === 'community') && (activeRoom.ownerId === (profile?.profile?.email || profile?.mode || 'guest') || activeRoom.ownerId === (profile?.profile?.characterName || '')) && (
+                <button type="button" className="danger-button" onClick={() => handleDeleteRoom(activeRoom)} style={{ position: 'absolute', bottom: 16, left: 16, zIndex: 1000 }}>
+                  Delete room
+                </button>
+              )}
+
+              {activeScene !== 'world' && activeRoom?.kind === 'user-created' && (
+                <button type="button" className="secondary-button" onClick={() => {
+                  const link = `${window.location.origin}${window.location.pathname}?invite=${encodeURIComponent(JSON.stringify(activeRoom))}`;
+                  try {
+                    navigator.clipboard.writeText(link).then(() => {
+                      setInviteToast(true);
+                      setTimeout(() => setInviteToast(null), 2500);
+                    }).catch(() => {
+                      prompt('Copy this invite link:', link);
+                    });
+                  } catch {
+                    prompt('Copy this invite link:', link);
+                  }
+                }} style={{ position: 'absolute', bottom: 16, right: 16, zIndex: 1000 }}>
+                  Copy invite link
+                </button>
+              )}
+            </div>
+          </main>
+        </>
       )}
 
       {creatingEvent && activeRoom && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(2,6,23,0.75)', display: 'grid', placeItems: 'center', padding: 20 }}>
-          <form onSubmit={submitCreateEvent} style={{ width: 'min(440px, 100%)', background: '#111827', border: '2px solid #fbbf24', boxShadow: '6px 6px 0 #000', padding: 18, color: '#f8fafc', fontFamily: 'Courier New, monospace' }}>
-            <h2 style={{ margin: '0 0 4px', color: '#fbbf24', fontSize: 20 }}>Create event</h2>
+          <form onSubmit={submitCreateEvent} style={{ width: 'min(440px, 100%)', background: '#111827', border: '1px solid var(--border)', borderRadius: 24, boxShadow: 'var(--shadow-lg)', padding: 18, color: '#f8fafc', fontFamily: 'Space Grotesk, sans-serif' }}>
+            <h2 style={{ margin: '0 0 4px', color: '#f2f7f3', fontSize: 20 }}>Create event</h2>
             <div style={{ marginBottom: 14, color: '#94a3b8', fontSize: 11 }}>{activeRoom.name || 'This location'}</div>
-            <label style={{ display: 'block', marginBottom: 10, fontSize: 11 }}>Title<input required maxLength={80} value={eventForm.title} onChange={(e) => setEventForm({ ...eventForm, title: e.target.value })} style={{ display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 4, padding: 8, background: '#020617', color: '#fff', border: '1px solid #475569', fontFamily: 'inherit' }} /></label>
-            <label style={{ display: 'block', marginBottom: 10, fontSize: 11 }}>What is happening?<textarea required maxLength={240} value={eventForm.description} onChange={(e) => setEventForm({ ...eventForm, description: e.target.value })} style={{ display: 'block', width: '100%', boxSizing: 'border-box', minHeight: 70, marginTop: 4, padding: 8, resize: 'vertical', background: '#020617', color: '#fff', border: '1px solid #475569', fontFamily: 'inherit' }} /></label>
+            <label style={{ display: 'block', marginBottom: 10, fontSize: 11, color: '#a7bdb0' }}>Title<input required maxLength={80} value={eventForm.title} onChange={(e) => setEventForm({ ...eventForm, title: e.target.value })} style={{ display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 4, padding: 8, background: '#020617', color: '#fff', border: '1px solid #475569', borderRadius: 10, fontFamily: 'DM Mono, monospace' }} /></label>
+            <label style={{ display: 'block', marginBottom: 10, fontSize: 11, color: '#a7bdb0' }}>What is happening?<textarea required maxLength={240} value={eventForm.description} onChange={(e) => setEventForm({ ...eventForm, description: e.target.value })} style={{ display: 'block', width: '100%', boxSizing: 'border-box', minHeight: 70, marginTop: 4, padding: 8, resize: 'vertical', background: '#020617', color: '#fff', border: '1px solid #475569', borderRadius: 10, fontFamily: 'DM Mono, monospace' }} /></label>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              <label style={{ fontSize: 11 }}>Starts<input required type="datetime-local" value={eventForm.startsAt} onChange={(e) => setEventForm({ ...eventForm, startsAt: e.target.value })} style={{ display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 4, padding: 7, background: '#020617', color: '#fff', border: '1px solid #475569', fontFamily: 'inherit' }} /></label>
-              <label style={{ fontSize: 11 }}>Ends<input required type="datetime-local" value={eventForm.endsAt} onChange={(e) => setEventForm({ ...eventForm, endsAt: e.target.value })} style={{ display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 4, padding: 7, background: '#020617', color: '#fff', border: '1px solid #475569', fontFamily: 'inherit' }} /></label>
+              <label style={{ fontSize: 11, color: '#a7bdb0' }}>Starts<input required type="datetime-local" value={eventForm.startsAt} onChange={(e) => setEventForm({ ...eventForm, startsAt: e.target.value })} style={{ display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 4, padding: 7, background: '#020617', color: '#fff', border: '1px solid #475569', borderRadius: 10, fontFamily: 'DM Mono, monospace' }} /></label>
+              <label style={{ fontSize: 11, color: '#a7bdb0' }}>Ends<input required type="datetime-local" value={eventForm.endsAt} onChange={(e) => setEventForm({ ...eventForm, endsAt: e.target.value })} style={{ display: 'block', width: '100%', boxSizing: 'border-box', marginTop: 4, padding: 7, background: '#020617', color: '#fff', border: '1px solid #475569', borderRadius: 10, fontFamily: 'DM Mono, monospace' }} /></label>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-              <button type="button" onClick={() => setCreatingEvent(false)} style={{ padding: '8px 12px', background: 'transparent', color: '#cbd5e1', border: '1px solid #475569', cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
-              <button type="submit" style={{ padding: '8px 12px', background: '#fbbf24', color: '#111827', border: '2px solid #111827', cursor: 'pointer', fontWeight: 'bold', fontFamily: 'inherit' }}>Publish event</button>
+              <button type="button" className="secondary-button" onClick={() => setCreatingEvent(false)}>Cancel</button>
+              <button type="submit" className="primary-button">Publish event</button>
             </div>
           </form>
         </div>
