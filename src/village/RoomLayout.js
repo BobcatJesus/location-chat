@@ -783,6 +783,15 @@ export class RoomLayout {
     let x = nextX;
     let y = nextY;
 
+    // If the player is already embedded in a solid (stale position, or the
+    // layout changed under them), spiral out to the nearest free spot instead
+    // of freezing them in place forever.
+    if (this.collidesWithSolid(prevX, prevY, radius)) {
+      const freed = this._nearestFreeSpot(prevX, prevY, radius);
+      if (freed) return freed;
+      return { x: prevX, y: prevY };
+    }
+
     if (this.collidesWithSolid(x, y, radius)) {
       const dx = nextX - prevX;
       const dy = nextY - prevY;
@@ -810,6 +819,19 @@ export class RoomLayout {
     }
 
     return { x, y };
+  }
+
+  _nearestFreeSpot(x, y, radius = 16, maxR = 400, step = 12) {
+    for (let r = step; r <= maxR; r += step) {
+      const n = Math.max(8, Math.floor((2 * Math.PI * r) / step));
+      for (let i = 0; i < n; i++) {
+        const a = (i / n) * Math.PI * 2;
+        const tx = x + Math.cos(a) * r;
+        const ty = y + Math.sin(a) * r;
+        if (!this.collidesWithSolid(tx, ty, radius)) return { x: tx, y: ty };
+      }
+    }
+    return null;
   }
 
   setCollisionDebug(enabled) {
