@@ -46,8 +46,6 @@ const F1_ZONES = [
 
   // Bar tables (reuse book_table rendering)
   { type: 'book_table', x: 300, y: 420, w: 170, h: 110, label: 'Table 1', interact: false, solid: true },
-  { type: 'book_table', x: 560, y: 560, w: 170, h: 110, label: 'Table 2', interact: false, solid: true },
-  { type: 'book_table', x: 900, y: 560, w: 170, h: 110, label: 'Table 3', interact: false, solid: true },
   { type: 'book_table', x: 1160, y: 420, w: 170, h: 110, label: 'Table 4', interact: false, solid: true },
 
   // Pool table sign in the west corner
