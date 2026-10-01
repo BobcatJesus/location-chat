@@ -21,6 +21,11 @@ const AVATAR_MODELS = {
     label: 'Snake',
     previewSrc: '/avatars/snake/front-step1.png',
   },
+  sheep: {
+    id: 'sheep',
+    label: 'Demon Sheep',
+    previewSrc: '/avatars/sheep/front-step1.png',
+  },
 };
 
 const BASE_AVATAR_LEGACY = {
@@ -44,6 +49,7 @@ function getAvatarModel(formData = {}) {
   if (['bunny', 'rabbit', 'bun', 'modular', 'bunny-avatar'].includes(selected)) return AVATAR_MODELS.bunny;
   if (['turtle', 'tortoise', 'turtle-avatar'].includes(selected)) return AVATAR_MODELS.turtle;
   if (['snake', 'serpent', 'snake-avatar'].includes(selected)) return AVATAR_MODELS.snake;
+  if (['sheep', 'lamb', 'ram', 'demon-sheep', 'demon sheep', 'sheep-avatar'].includes(selected)) return AVATAR_MODELS.sheep;
   return AVATAR_MODELS.bunny;
 }
 
