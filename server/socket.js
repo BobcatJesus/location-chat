@@ -1625,10 +1625,19 @@ app.delete('/api/community-locations/:id', async (req, res) => {
   }
 });
 
-app.use(express.static(path.join(__dirname, '../dist')));
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '../dist/index.html'));
-});
+import fs from 'fs';
+const distDir = path.join(__dirname, '../dist');
+if (fs.existsSync(distDir)) {
+  app.use(express.static(distDir));
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(distDir, 'index.html'));
+  });
+} else {
+  // Frontend is served via Netlify; this service is API + Socket.IO only.
+  app.get('/', (req, res) => {
+    res.json({ status: 'ok', service: 'location-chat-backend' });
+  });
+}
 
 // 4. Start Server
 const PORT = process.env.PORT || 4000;
