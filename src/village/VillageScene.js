@@ -1709,7 +1709,9 @@ export class VillageScene extends Phaser.Scene {
           gy: employee.y,
           homeX: employee.x,
           homeY: employee.y,
-          patrol: Array.isArray(employee.patrol) ? employee.patrol : [],
+          patrol: (Array.isArray(employee.patrol) ? employee.patrol : []).filter(
+            (pt) => Array.isArray(pt) && Number.isFinite(pt[0]) && Number.isFinite(pt[1])
+          ),
           target: null,
           pausedUntil: 0,
           nextTargetAt: this.time.now + 800 + Math.random() * 1600,
@@ -1745,7 +1747,8 @@ export class VillageScene extends Phaser.Scene {
       }
 
       if (!isPaused && !npc.target && this.time.now >= npc.nextTargetAt) {
-        const patrol = npc.patrol
+        const patrol = (Array.isArray(npc.patrol) ? npc.patrol : [])
+          .filter((pt) => Array.isArray(pt) && Number.isFinite(pt[0]) && Number.isFinite(pt[1]))
           .filter(([x, y]) => Math.hypot(x - npc.gx, y - npc.gy) > 24)
           .sort(() => Math.random() - 0.5);
         for (const [x, y] of patrol) {
