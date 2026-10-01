@@ -976,6 +976,7 @@ export class RoomLayout {
         if (z.interact) this.interactZones.push(z);
         break;
 
+      case 'bar_table':
       case 'book_table':
         if (isMcDonaldsLayout(this.layout)) {
           g.fillStyle(0xd62828, 1);
