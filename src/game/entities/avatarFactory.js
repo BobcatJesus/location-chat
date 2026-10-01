@@ -29,5 +29,8 @@ export function createAvatarEntity(scene, x, y, options = {}) {
   if (avatarModel === 'snake') {
     return buildAvatar(scene, x, y, options, () => import('./SnakeAvatar.js'));
   }
+  if (avatarModel === 'sheep') {
+    return buildAvatar(scene, x, y, options, () => import('./SheepAvatar.js'));
+  }
   return buildAvatar(scene, x, y, options, () => import('./ModularAvatar.js'));
 }

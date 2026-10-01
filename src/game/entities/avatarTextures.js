@@ -29,6 +29,11 @@ export const AVATAR_FRAME_KEYS = {
     back: ['snake-back-step1', 'snake-back-step2'],
     side: ['snake-side-step1', 'snake-side-step2'],
   },
+  sheep: {
+    front: ['sheep-front-step1', 'sheep-front-step2'],
+    back: ['sheep-back-step1', 'sheep-back-step2'],
+    side: ['sheep-side-step1', 'sheep-side-step2'],
+  },
 };
 
 const AVATAR_FRAME_PATHS = {
@@ -56,6 +61,11 @@ const AVATAR_FRAME_PATHS = {
     front: ['/avatars/snake/front-step1.png', '/avatars/snake/front-step2.png'],
     back: ['/avatars/snake/back-step1.png', '/avatars/snake/back-step2.png'],
     side: ['/avatars/snake/side-step1.png', '/avatars/snake/side-step2.png'],
+  },
+  sheep: {
+    front: ['/avatars/sheep/front-step1.png', '/avatars/sheep/front-step2.png'],
+    back: ['/avatars/sheep/back-step1.png', '/avatars/sheep/back-step2.png'],
+    side: ['/avatars/sheep/side-step1.png', '/avatars/sheep/side-step2.png'],
   },
 };
 

@@ -3,6 +3,7 @@ export const AVATAR_MODELS = [
   { id: 'bunny', label: 'Bunny Avatar' },
   { id: 'turtle', label: 'Turtle Avatar' },
   { id: 'snake', label: 'Snake Avatar' },
+  { id: 'sheep', label: 'Demon Sheep' },
 ];
 
 export function normalizeAvatarModel(model) {
@@ -11,6 +12,7 @@ export function normalizeAvatarModel(model) {
   if (['bunny', 'rabbit', 'bun', 'modular', 'bunny-avatar'].includes(value)) return 'bunny';
   if (['turtle', 'tortoise', 'turtle-avatar'].includes(value)) return 'turtle';
   if (['snake', 'serpent', 'snake-avatar'].includes(value)) return 'snake';
+  if (['sheep', 'lamb', 'ram', 'demon-sheep', 'demon sheep', 'sheep-avatar'].includes(value)) return 'sheep';
   if (['hoodie', 'human', 'human-chibi', 'chibi', 'male', 'female'].includes(value)) return 'bunny';
   return 'bunny';
 }
