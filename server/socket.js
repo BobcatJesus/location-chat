@@ -1127,8 +1127,20 @@ app.get('/health', (req, res) => {
 // Debug: test Inworld API directly
 app.get('/debug/inworld', async (req, res) => {
   try {
-    const { askInworldCharacter } = await import('../lib/inworld.js');
-    const reply = await askInworldCharacter('debug', 'You are a helpful assistant.', 'Say hello');
+    const { askInworldCharacter, resolveNpcCharacterProfile, deriveRelationshipState, getTimeOfDayMood, buildNpcPromptFromProfile } = await import('../lib/inworld.js');
+    // Test full NPC flow like npc_chat handler does
+    const profile = resolveNpcCharacterProfile({ npcName: 'TestNPC', layoutId: 'lolas-depot', isOutdoor: false });
+    const relationshipState = deriveRelationshipState({
+      userMessage: 'hello',
+      previousScore: 0, previousAffinity: 0.5, previousTrust: 0.5,
+      personalityProfile: profile,
+    });
+    const persona = buildNpcPromptFromProfile(profile, relationshipState, getTimeOfDayMood(new Date()), []);
+    const reply = await askInworldCharacter('test-npc', persona, 'hello', {
+      npcId: 'test-npc', roomId: 'lolas-depot',
+      playerId: 'test', playerName: 'Tester',
+      memoryFacts: [], skipFileMemory: true,
+    });
     res.json({ ok: true, reply });
   } catch (e) {
     res.json({ ok: false, error: e.message });
