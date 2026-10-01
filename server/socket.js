@@ -734,6 +734,15 @@ io.on('connection', (socket) => {
   // AI reply for VillageScene.js's static, walk-around NPCs (one-to-one, not broadcast to the room).
   socket.on('npc_chat', async ({ npcId, npcName, layoutId, isOutdoor, roomId, message, playerId, playerName, timeOfDay }) => {
     if (!npcId || !message) return;
+    // Guarantee the client always gets an answer: if anything in the chain
+    // hangs, send the graceful fallback instead of silence.
+    let settled = false;
+    const replyTimer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      socket.emit('npc_chat_reply', { npcId, error: true, timestamp: Date.now() });
+    }, 35000);
+    const done = () => { settled = true; clearTimeout(replyTimer); };
     try {
       const profile = resolveNpcCharacterProfile({ npcName, layoutId, isOutdoor });
       const relationshipState = deriveRelationshipState({
@@ -791,9 +800,13 @@ io.on('connection', (socket) => {
         facts: nextFacts,
       });
 
+      if (settled) return; // safety timer already answered
+      done();
       socket.emit('npc_chat_reply', { npcId, message: reply, timestamp: Date.now() });
     } catch (err) {
       console.error('❌ Inworld NPC chat failed:', err.message);
+      if (settled) return; // safety timer already answered
+      done();
       socket.emit('npc_chat_reply', { npcId, error: true, timestamp: Date.now() });
     }
   });
