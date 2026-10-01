@@ -619,7 +619,10 @@ export function buildAutoLayout(roomId, roomName, amenityTag, shopTag = '', room
   );
   const isShepherdPark = `${roomId || ''} ${roomName || ''}`.toLowerCase().includes('shepherd park');
   if (isShepherdPark && footprint) {
-    contentZones.push(...buildShepherdParkTrees(footprint, resolveSpawn(theme, footprint), rng));
+    const shepherdSpawn = resolveSpawn(theme, footprint);
+    const shepherdPond = buildPondZone(footprint, shepherdSpawn, '🦆 Duck Pond');
+    if (shepherdPond) contentZones.push(shepherdPond);
+    contentZones.push(...buildShepherdParkTrees(footprint, shepherdSpawn, rng, shepherdPond ? [shepherdPond] : []));
     contentZones.push(
       { type: 'employee', x: 1040, y: 1580, label: 'Morning Jogger', patrol: [[1040, 1580], [1320, 1640], [1580, 1540], [1860, 1640], [2140, 1540]] },
       { type: 'employee', x: 2380, y: 900, label: 'Park Regular', patrol: [[2380, 900], [2620, 820], [2860, 960], [2740, 1200], [2460, 1160]] },
