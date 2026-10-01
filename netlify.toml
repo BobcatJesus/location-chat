@@ -1,9 +1,9 @@
 [build]
-  command = "npm run build"
+  command = "npm run build:frontend"
   publish = "dist"
 
 [build.environment]
-  VITE_BACKEND_URL = "https://location-chat-production.up.railway.app"
+  VITE_BACKEND_URL = "https://location-chat-1.onrender.com"
 
 [[headers]]
   for = "/"
@@ -24,9 +24,3 @@
   for = "/assets/*"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
-
-    [[redirects]]
-  from = "/*"
-  to = "/index.html"
-  status = 200
-

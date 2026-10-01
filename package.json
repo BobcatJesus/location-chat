@@ -10,13 +10,13 @@
     "check:nearby": "node scripts/check-nearby.js",
     "dev:client": "vite",
     "dev:server": "node server/socket.js",
-    "build": "vite build",
     "preview": "vite preview",
     "start": "node server/socket.js",
     "auth:delete-all": "node server/scripts/delete-auth-users.js",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "build:frontend": "vite build"
   },
   "dependencies": {
     "@supabase/server": "^1.5.3",
