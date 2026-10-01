@@ -1,4 +1,4 @@
-FROM node:20-alpine
+FROM node:22-alpine
 WORKDIR /app
 COPY package*.json ./
 RUN npm install --legacy-peer-deps
@@ -7,6 +7,6 @@ COPY public/ ./public/
 COPY server/ ./server/
 COPY rooms/ ./rooms/
 COPY src/ ./src/
-RUN npm run build
+COPY lib/ ./lib/
 EXPOSE 4000
 CMD ["node", "server/socket.js"]
