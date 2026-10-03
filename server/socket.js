@@ -68,10 +68,29 @@ function buildNpcPersona({ npcName, layoutId, isOutdoor, relationshipState, time
 
 const { Pool } = pg;
 
-// Postgres for persistent decorations; falls back to in-memory if no DATABASE_URL
-const pool = process.env.DATABASE_URL
-  ? new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } })
-  : null;
+// Postgres for persistent features. Falls back to in-memory if no DATABASE_URL
+// or if the database is unreachable (probe fails). The server must never
+// crash on boot because of a dead database.
+let pool = null;
+if (process.env.DATABASE_URL) {
+  const candidate = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false },
+    connectionTimeoutMillis: 8000,
+  });
+  try {
+    await candidate.query('SELECT 1');
+    pool = candidate;
+    console.log('✅ Postgres connected');
+  } catch (err) {
+    console.warn('⚠️ Postgres unreachable — running in in-memory mode. (' + (err && err.message) + ')');
+    await candidate.end().catch(() => {});
+  }
+}
+if (pool) {
+  // Idle-client errors must never take down the process.
+  pool.on('error', (err) => console.warn('⚠️ Postgres pool error:', err && err.message));
+}
 const authService = createAuthService({ pool });
 
 async function initDb() {
@@ -1665,14 +1684,19 @@ if (fs.existsSync(distDir)) {
 // 4. Start Server
 const PORT = process.env.PORT || 4000;
 async function start() {
-  await initDb();
-  const loaded = await loadDecorations();
-  Object.assign(decorations, loaded);
-  console.log(`ᾩ1 Loaded decorations for ${Object.keys(decorations).length} room(s)`);
+  try {
+    await initDb();
+    const loaded = await loadDecorations();
+    Object.assign(decorations, loaded);
+    console.log(`Loaded decorations for ${Object.keys(decorations).length} room(s)`);
+  } catch (err) {
+    console.warn('⚠️ Database setup failed — continuing without persistence:', err && err.message);
+  }
   server.listen(PORT, () => {
     console.log(`\n===========================================`);
     console.log(`🚀 2D Spatial MVP Server is Live!`);
     console.log(`📡 Port: ${PORT}`);
+    console.log(`💾 Persistence: ${pool ? 'Postgres' : 'in-memory'}`);
     console.log(`===========================================\n`);
   });
 }
