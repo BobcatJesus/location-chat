@@ -213,7 +213,7 @@ function createDecahedronRoomFootprint(room = {}) {
   return points;
 }
 
-export default function VillageCanvas({ room, profile, onLeave, location, venueEvents: providedVenueEvents = [], canManageVenue = false }) {
+export default function VillageCanvas({ room, profile, onLeave, location, venueEvents: providedVenueEvents = [], canManageVenue = false, isModerator = false }) {
   const BASE_WIDTH = 1600;
   const BASE_HEIGHT = 900;
   const containerRef = useRef(null);
@@ -230,6 +230,7 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
   const [coinBalance, setCoinBalance] = useState(() => getCoins());
   const [showInteriorSketch, setShowInteriorSketch] = useState(false);
   const [showModQueue, setShowModQueue] = useState(false);
+  const [interactKind, setInteractKind] = useState(null);
   const [roomPopulation, setRoomPopulation] = useState(1);
   const [cameraMode, setCameraMode] = useState('wide-follow');
   const [currentFloor, setCurrentFloor] = useState(0);
@@ -246,6 +247,27 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
     const t = setInterval(() => setCoinBalance(getCoins()), 5000);
     return () => clearInterval(t);
   }, []);
+  // Poll the scene for what the interact button should do (mobile E key)
+  useEffect(() => {
+    const t = setInterval(() => {
+      try {
+        const scene = gameRef.current?.scene?.getScene('VillageScene');
+        setInteractKind(scene?.getInteractKind ? scene.getInteractKind() : null);
+      } catch { setInteractKind(null); }
+    }, 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  const triggerInteract = () => {
+    try {
+      const scene = gameRef.current?.scene?.getScene('VillageScene');
+      if (scene?.triggerInteract) {
+        scene.triggerInteract();
+        // Refresh the icon right away
+        setInteractKind(scene.getInteractKind ? scene.getInteractKind() : null);
+      }
+    } catch {}
+  };
   const [eventClock, setEventClock] = useState(() => Date.now());
   const roomId = canonicalRoomId(room);
   const venueEvents = providedVenueEvents.length
@@ -712,9 +734,13 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
         left: 12,
         zIndex: 1000,
         display: 'flex',
-        gap: 6,
-        flexWrap: 'wrap',
-        maxWidth: '70vw',
+        gap: 8,
+        flexWrap: 'nowrap',
+        overflowX: 'auto',
+        maxWidth: 'calc(100vw - 24px)',
+        paddingBottom: 4,
+        WebkitOverflowScrolling: 'touch',
+        scrollbarWidth: 'none',
       }}>
         <button
           onClick={onLeave}
@@ -722,9 +748,11 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
             background: 'rgba(0,0,0,0.55)', color: '#fff', border: 'none',
             borderRadius: 8,
             padding: '6px 14px',
-            minHeight: 0,
+            minHeight: 44,
+            display: 'flex', alignItems: 'center',
             cursor: 'pointer',
             fontSize: 14,
+            flexShrink: 0,
           }}
         >
           ← Leave
@@ -768,6 +796,7 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
             borderRadius: 8, padding: '6px 14px',
             fontSize: 14, fontWeight: 'bold',
             display: 'flex', alignItems: 'center', gap: 4,
+            minHeight: 44, flexShrink: 0,
           }}
         >
           🪙 {coinBalance}
@@ -780,10 +809,12 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
             border: '2px solid #35e0ff',
             borderRadius: 8, padding: '6px 14px',
             fontSize: 14, fontWeight: 'bold', cursor: 'pointer',
+            minHeight: 44, display: 'flex', alignItems: 'center', flexShrink: 0,
           }}
         >
           🏠 Layout
         </button>
+        {isModerator && (
         <button
           onClick={() => setShowModQueue(true)}
           title="Review pending layout submissions"
@@ -792,10 +823,12 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
             border: '2px solid #ffb02e',
             borderRadius: 8, padding: '6px 14px',
             fontSize: 14, fontWeight: 'bold', cursor: 'pointer',
+            minHeight: 44, display: 'flex', alignItems: 'center', flexShrink: 0,
           }}
         >
           📋 Review
         </button>
+        )}
       </div>
 
       {import.meta.env.DEV && (
@@ -927,6 +960,28 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
         </div>
       )}
 
+      {interactKind && (
+        <button
+          onClick={triggerInteract}
+          title={interactKind === 'ducks' ? 'Feed the ducks' : interactKind === 'shelf' ? 'Browse the shelf' : 'Open the jukebox'}
+          style={{
+            position: 'absolute',
+            left: 16,
+            bottom: 24,
+            zIndex: 1001,
+            width: 68, height: 68,
+            borderRadius: '50%',
+            background: '#ffb02e',
+            border: '3px solid #2b2b33',
+            boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+            fontSize: 30,
+            cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}
+        >
+          {interactKind === 'ducks' ? '🦆' : interactKind === 'shelf' ? '📚' : '🎵'}
+        </button>
+      )}
       <div style={{
         position: 'absolute',
         right: 12,

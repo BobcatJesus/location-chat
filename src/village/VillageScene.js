@@ -629,17 +629,7 @@ export class VillageScene extends Phaser.Scene {
       }
 
       if (key === 'e') {
-        const shelf = this._nearestShelf();
-        if (shelf) {
-          this.onOpenShelf({ shelf: shelf.label, roomId: this.roomId });
-          return;
-        }
-        const jukebox = this._nearestJukebox();
-        if (jukebox) {
-          this.onOpenJukebox({ roomId: this.roomId });
-          return;
-        }
-        this._tryFeedDucks();
+        this.triggerInteract();
         return;
       }
 
@@ -939,6 +929,29 @@ export class VillageScene extends Phaser.Scene {
   }
 
   /** Feed the ducks at the nearest pond (E key). Broadcast to the room. */
+  // Public: same logic as the E key. Called by the mobile interact button.
+  triggerInteract() {
+    const kind = this.getInteractKind();
+    if (kind === 'shelf') {
+      const shelf = this._nearestShelf();
+      if (shelf) this.onOpenShelf({ shelf: shelf.label, roomId: this.roomId });
+    } else if (kind === 'jukebox') {
+      this.onOpenJukebox({ roomId: this.roomId });
+    } else if (kind === 'ducks') {
+      this._tryFeedDucks();
+    }
+  }
+
+  // Public: what would the E key do right now? Priority: ducks > shelf > jukebox.
+  getInteractKind() {
+    if (!this.player) return null;
+    const nearPond = this.duckPond?.nearestFeedablePond(this.player.gx, this.player.gy);
+    if (nearPond && this._feedCooldownMs <= 0) return 'ducks';
+    if (this._nearestShelf()) return 'shelf';
+    if (this._nearestJukebox()) return 'jukebox';
+    return null;
+  }
+
   _nearestShelf() {
     if (!this.player || !this.roomLayout?.interactZones) return null;
     const px = this.player.gx, py = this.player.gy;
