@@ -468,6 +468,7 @@ export class VillageScene extends Phaser.Scene {
     this.load.image('lamppost', '/assets/props/lampost.png');
     this.load.image('tree-oak', '/assets/props/tree-oak.png');
     this.load.image('tree-cherry', '/assets/props/tree-cherry.png');
+    this.load.image('pond-art', '/places/pond.png');
   }
 
   create() {

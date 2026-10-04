@@ -1228,17 +1228,24 @@ export class RoomLayout {
       case 'pond': {
         const cx = x + w / 2;
         const cy = y + h / 2;
-        g.fillStyle(0x1a4971, 0.35);
-        g.fillEllipse(cx, cy + 6, w * 1.02, h * 1.05);
-        g.fillStyle(0x2b6cb0, 1);
-        g.fillEllipse(cx, cy, w, h);
-        g.fillStyle(0x63b3ed, 0.55);
-        g.fillEllipse(cx, cy, w * 0.8, h * 0.72);
-        g.lineStyle(3, 0x1a4971, 0.9);
-        g.strokeEllipse(cx, cy, w, h);
-        g.lineStyle(1.5, 0xbee3f8, 0.55);
-        g.strokeEllipse(cx, cy - h * 0.1, w * 0.5, h * 0.32);
-        g.strokeEllipse(cx + w * 0.12, cy + h * 0.14, w * 0.3, h * 0.18);
+        // Custom pond art (user-designed); falls back to ellipses if missing.
+        if (this.scene?.textures?.exists('pond-art')) {
+          const img = this.scene.add.image(cx, cy, 'pond-art');
+          img.setDisplaySize(w * 1.15, h * 1.15);
+          img.setDepth(DEPTH.GROUND + 1);
+        } else {
+          g.fillStyle(0x1a4971, 0.35);
+          g.fillEllipse(cx, cy + 6, w * 1.02, h * 1.05);
+          g.fillStyle(0x2b6cb0, 1);
+          g.fillEllipse(cx, cy, w, h);
+          g.fillStyle(0x63b3ed, 0.55);
+          g.fillEllipse(cx, cy, w * 0.8, h * 0.72);
+          g.lineStyle(3, 0x1a4971, 0.9);
+          g.strokeEllipse(cx, cy, w, h);
+          g.lineStyle(1.5, 0xbee3f8, 0.55);
+          g.strokeEllipse(cx, cy - h * 0.1, w * 0.5, h * 0.32);
+          g.strokeEllipse(cx + w * 0.12, cy + h * 0.14, w * 0.3, h * 0.18);
+        }
         if (z.label) this._lbl(cx, y - 10, z.label, LABEL_STYLE, 0.5, 1);
         break;
       }
