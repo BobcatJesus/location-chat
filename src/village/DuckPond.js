@@ -57,8 +57,13 @@ function distToPondEdge(pond, x, y) {
   return Math.hypot(dx, dy);
 }
 
-// A simple, readable duck drawn with vector shapes (faces right by default).
+// Duck body: custom art if loaded, otherwise vector shapes (faces right by default).
 function makeDuckBody(scene) {
+  if (scene?.textures?.exists('duck-art')) {
+    const img = scene.add.image(0, 0, 'duck-art');
+    img.setDisplaySize(44, 37);
+    return img;
+  }
   const g = scene.add.graphics();
   g.fillStyle(0xf6d56b, 1);          // body
   g.fillEllipse(0, 0, 30, 20);
