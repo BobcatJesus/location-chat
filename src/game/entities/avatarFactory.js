@@ -35,5 +35,8 @@ export function createAvatarEntity(scene, x, y, options = {}) {
   if (avatarModel === 'wisp') {
     return buildAvatar(scene, x, y, options, () => import('./WispAvatar.js'));
   }
+  if (avatarModel === 'bat') {
+    return buildAvatar(scene, x, y, options, () => import('./BatAvatar.js'));
+  }
   return buildAvatar(scene, x, y, options, () => import('./ModularAvatar.js'));
 }

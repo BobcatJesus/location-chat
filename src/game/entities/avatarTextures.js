@@ -39,6 +39,11 @@ export const AVATAR_FRAME_KEYS = {
     back: ['wisp-back-step1', 'wisp-back-step2'],
     side: ['wisp-side-step1', 'wisp-side-step2'],
   },
+  bat: {
+    front: ['bat-front-step1', 'bat-front-step2'],
+    back: ['bat-back-step1', 'bat-back-step2'],
+    side: ['bat-side-step1', 'bat-side-step2'],
+  },
 };
 
 const AVATAR_FRAME_PATHS = {
@@ -76,6 +81,11 @@ const AVATAR_FRAME_PATHS = {
     front: ['/avatars/wisp/front-step1.png', '/avatars/wisp/front-step2.png'],
     back: ['/avatars/wisp/back-step1.png', '/avatars/wisp/back-step2.png'],
     side: ['/avatars/wisp/side-step1.png', '/avatars/wisp/side-step2.png'],
+  },
+  bat: {
+    front: ['/avatars/bat/front-step1.png', '/avatars/bat/front-step2.png'],
+    back: ['/avatars/bat/back-step1.png', '/avatars/bat/back-step2.png'],
+    side: ['/avatars/bat/side-step1.png', '/avatars/bat/side-step2.png'],
   },
 };
 
