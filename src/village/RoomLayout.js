@@ -1330,6 +1330,22 @@ export class RoomLayout {
   }
 
   _drawShelf(x, y, w, h, label) {
+    // Custom shelf art (user-designed): mix front-view and 3/4 per shelf,
+    // picked deterministically from position so redraws are stable.
+    const tex = this.scene?.textures;
+    const frontOk = tex?.exists('shelf-front');
+    const q34Ok = tex?.exists('shelf-34');
+    if (frontOk || q34Ok) {
+      const key = (frontOk && q34Ok)
+        ? ((((Math.round(x) * 7 + Math.round(y) * 13) % 2) + 2) % 2 === 0 ? 'shelf-34' : 'shelf-front')
+        : (frontOk ? 'shelf-front' : 'shelf-34');
+      const srcImg = tex.get(key).getSourceImage();
+      const img = this.scene.add.image(x + w / 2, y + h / 2, key);
+      img.setScale(Math.min(w / srcImg.width, h / srcImg.height));
+      img.setDepth(DEPTH.GROUND + 1);
+      if (label) this._lbl(x + w / 2, y - 14, `BOOKS - ${label}`, { ...SIGN_STYLE, fontSize: '9px' }, 0.5, 1);
+      return;
+    }
     const g = this.gfx;
     const horizontal = w >= h;
     const frame = Math.max(7, Math.min(12, Math.round(Math.min(w, h) * 0.22)));

@@ -471,6 +471,8 @@ export class VillageScene extends Phaser.Scene {
     this.load.image('pond-art', '/places/pond.png');
     this.load.image('duck-art', '/places/duck-swim.png');
     this.load.image('duck-stand-art', '/places/duck-stand.png');
+    this.load.image('shelf-front', '/places/shelf-front.png');
+    this.load.image('shelf-34', '/places/shelf-34.png');
   }
 
   create() {
