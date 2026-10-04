@@ -21,6 +21,7 @@ const SEEK_SPEED = 110;    // px/sec when chasing food
 const FEED_RANGE = 150;    // px from the pond's edge the player must be within
 const PELLET_BITES = 3;    // bites before a crumb is gone
 const EAT_PAUSE_MS = 450;
+const SHORE_DUCKS_PER_POND = 2;  // standing ducks that waddle the shoreline
 
 function pondCenter(pond) {
   return { x: pond.x + pond.w / 2, y: pond.y + pond.h / 2 };
@@ -36,6 +37,16 @@ function randomPointInPond(pond) {
   const a = Math.random() * Math.PI * 2;
   const r = Math.sqrt(Math.random()); // uniform over the disc
   return { x: c.x + Math.cos(a) * rx * r, y: c.y + Math.sin(a) * ry * r };
+}
+
+function randomShorePoint(pond) {
+  const c = pondCenter(pond);
+  const { rx, ry } = pondRadii(pond);
+  const a = Math.random() * Math.PI * 2;
+  const ring = 1.12 + Math.random() * 0.25; // just outside the water
+  const x = Math.min(Math.max(c.x + Math.cos(a) * rx * ring, pond.x + 12), pond.x + pond.w - 12);
+  const y = Math.min(Math.max(c.y + Math.sin(a) * ry * ring, pond.y + 12), pond.y + pond.h - 12);
+  return { x, y };
 }
 
 function clampPointToPond(pond, x, y) {
@@ -99,7 +110,32 @@ export class DuckPond {
       for (let i = 0; i < n; i++) this._spawnDuck(pond);
       budget -= n;
       if (budget <= 0) break;
+      for (let i = 0; i < SHORE_DUCKS_PER_POND; i++) this._spawnShoreDuck(pond);
     }
+  }
+
+  _spawnShoreDuck(pond) {
+    const scene = this.scene;
+    const p = randomShorePoint(pond);
+    let body;
+    if (scene?.textures?.exists('duck-stand-art')) {
+      body = scene.add.image(0, 0, 'duck-stand-art');
+      body.setDisplaySize(40, 34);
+      if (Math.random() < 0.5) body.setFlipX(true); // face either way
+    } else {
+      body = makeDuckBody(scene);
+    }
+    const container = scene.add.container(p.x, p.y, [body]);
+    container.setDepth(DEPTH.ACTOR_MIN + Math.round(p.y));
+    const t = randomShorePoint(pond);
+    this.ducks.push({
+      container, pond,
+      x: p.x, y: p.y,
+      tx: t.x, ty: t.y,
+      state: 'wander', shore: true,
+      idleMs: 500 + Math.random() * 1500,
+      eatMs: 0, pellet: null,
+    });
   }
 
   _spawnDuck(pond) {
@@ -156,9 +192,9 @@ export class DuckPond {
     circle.setDepth(DEPTH.ACTOR_MIN + Math.round(pos.y) + 1);
     circle.setStrokeStyle(1.5, 0x5d3a17, 1);
     this.pellets.push({ x: pos.x, y: pos.y, bites: PELLET_BITES, circle, pond });
-    // Ducks on this pond notice the splash.
+    // Swimming ducks on this pond notice the splash (shore ducks stay put).
     for (const duck of this.ducks) {
-      if (duck.pond === pond && duck.state === 'wander') {
+      if (duck.pond === pond && duck.state === 'wander' && !duck.shore) {
         duck.state = 'seek';
         duck.pellet = this.pellets[this.pellets.length - 1];
       }
@@ -198,8 +234,11 @@ export class DuckPond {
         continue;
       }
 
-      let speed = WANDER_SPEED;
-      if (duck.state === 'seek' && duck.pellet && duck.pellet.bites > 0) {
+      let speed = duck.shore ? WANDER_SPEED * 0.45 : WANDER_SPEED;
+      if (duck.shore) {
+        // Shore ducks amble along the waterline; they don't chase crumbs.
+        if (duck.state === 'seek') { duck.state = 'wander'; duck.pellet = null; }
+      } else if (duck.state === 'seek' && duck.pellet && duck.pellet.bites > 0) {
         duck.tx = duck.pellet.x;
         duck.ty = duck.pellet.y;
         speed = SEEK_SPEED;
@@ -228,7 +267,7 @@ export class DuckPond {
       if (dist < 8) {
         if (duck.state === 'wander') {
           duck.idleMs = 800 + Math.random() * 2600;
-          const t = randomPointInPond(duck.pond);
+          const t = duck.shore ? randomShorePoint(duck.pond) : randomPointInPond(duck.pond);
           duck.tx = t.x;
           duck.ty = t.y;
         }
