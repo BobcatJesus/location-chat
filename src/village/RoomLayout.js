@@ -1231,7 +1231,7 @@ export class RoomLayout {
         // Custom pond art (user-designed); falls back to ellipses if missing.
         if (this.scene?.textures?.exists('pond-art')) {
           const img = this.scene.add.image(cx, cy, 'pond-art');
-          img.setDisplaySize(w * 1.15, h * 1.15);
+          img.setDisplaySize(w * 0.8, h * 0.8);
           img.setDepth(DEPTH.GROUND + 1);
         } else {
           g.fillStyle(0x1a4971, 0.35);
