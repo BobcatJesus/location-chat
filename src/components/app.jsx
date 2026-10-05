@@ -1079,7 +1079,7 @@ function App() {
     }
     const actorId = profile?.profile?.email || profile?.mode || 'guest';
     let cancelled = false;
-    fetch(`${SOCKET_SERVER_URL}/api/venue-permissions?roomId=${encodeURIComponent(activeRoom.id)}&actorId=${encodeURIComponent(actorId)}`)
+    fetch(`${SOCKET_SERVER_URL}/api/venue-permissions?roomId=${encodeURIComponent(activeRoom.id)}&actorId=${encodeURIComponent(actorId)}`, { cache: 'no-store' })
       .then((response) => response.ok ? response.json() : { canManage: false })
       .then((permissions) => { if (!cancelled) setVenuePermissions(permissions || { canManage: false }); })
       .catch(() => { if (!cancelled) setVenuePermissions({ canManage: false }); });
@@ -1655,7 +1655,7 @@ function App() {
             ) : (
               <div style={{ flex: 1, border: '2px solid #334155', borderRadius: 12, overflow: 'hidden', position: 'relative' }}>
                 <Suspense fallback={<div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', color: '#94a3b8', background: '#0f172a' }}>Loading room…</div>}>
-                  <VillageCanvas room={osmRoom ? { ...osmRoom, id: osmRoom.id } : activeRoom} venueEvents={venueEvents} canManageVenue={venuePermissions.canManage} profile={profile} location={location} onLeave={() => { setActiveScene('world'); setOsmRoom(null); }} />
+                  <VillageCanvas room={osmRoom ? { ...osmRoom, id: osmRoom.id } : activeRoom} venueEvents={venueEvents} canManageVenue={venuePermissions.canManage} isModerator={venuePermissions.isModerator} profile={profile} location={location} onLeave={() => { setActiveScene('world'); setOsmRoom(null); }} />
                 </Suspense>
                 {venuePermissions.canManage && <button
                   type="button"
