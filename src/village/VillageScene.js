@@ -603,7 +603,7 @@ export class VillageScene extends Phaser.Scene {
 
     // Input
     this.cursors = this.input.keyboard?.createCursorKeys();
-    this.wasd = this.input.keyboard?.addKeys('W,A,S,D');
+    this.wasd = this.input.keyboard?.addKeys('W,A,S,D', false);
     this._isTypingContext = (event) => {
       if (window.__chatInputFocused) return true;
       const target = event?.target;
