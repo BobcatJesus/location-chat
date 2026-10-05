@@ -1,4 +1,5 @@
 import { DEPTH } from './depth.js';
+import { FURNITURE_CATALOG } from './furnitureCatalog.js';
 
 export class RoomEditor {
   constructor(scene) {
@@ -17,27 +18,7 @@ export class RoomEditor {
     this.previewStrokeAlpha = 0.95;
     this.previewLabelAlpha = 0.95;
     this.previewOutlineDash = null;
-    this.zoneTypes = [
-      { name: 'prop_table_round',    css: '#8b4513', label: 'Table' },
-      { name: 'prop_chair_wooden',   css: '#a0522d', label: 'Chair' },
-      { name: 'prop_plant_potted',   css: '#228b22', label: 'Plant' },
-      { name: 'prop_bookshelf',      css: '#6b4c2a', label: 'Bookshelf' },
-      { name: 'prop_lamp_floor',     css: '#d4a017', label: 'Floor Lamp' },
-      { name: 'prop_jukebox',        css: '#c0392b', label: 'Jukebox' },
-      { name: 'prop_trash_can',      css: '#888888', label: 'Trash Can' },
-      { name: 'prop_coffee_cup',     css: '#4a2c0a', label: 'Coffee Cup' },
-      { name: 'prop_books_stack',    css: '#2e86ab', label: 'Books' },
-      { name: 'prop_candle',         css: '#f5c842', label: 'Candle' },
-      { name: 'prop_rug_rolled',     css: '#c8a96e', label: 'Rug' },
-      { name: 'prop_portrait_framed',css: '#7d6b4a', label: 'Portrait' },
-      { name: 'bookshelf_border_h',  css: '#7c4a1d', label: 'Bookshelf Wall', w: 220, h: 34, frameKey: 'prop_bookshelf', renderAsZone: 'shelf' },
-      { name: 'bookshelf_border_v',  css: '#7c4a1d', label: 'Tall Shelf Wall', w: 34, h: 220, frameKey: 'prop_bookshelf', renderAsZone: 'shelf' },
-      { name: 'restroom_block',      css: '#64748b', label: 'Restroom', w: 150, h: 120, frameKey: 'prop_portrait_framed', renderAsZone: 'bathroom' },
-      { name: 'service_counter_h',   css: '#8b6a50', label: 'Counter', w: 240, h: 42, frameKey: 'prop_table_round', renderAsZone: 'counter' },
-      { name: 'coffee_bar_h',        css: '#0f6b4f', label: 'Coffee Bar', w: 260, h: 54, frameKey: 'prop_table_round', renderAsZone: 'cafe_counter' },
-      { name: 'plant_border_h',      css: '#166534', label: 'Plant Border', w: 200, h: 44, frameKey: 'prop_plant_potted', renderAsZone: 'planter_border' },
-      { name: 'plant_border_v',      css: '#166534', label: 'Tall Plant Border', w: 44, h: 200, frameKey: 'prop_plant_potted', renderAsZone: 'planter_border' },
-    ];
+    this.zoneTypes = FURNITURE_CATALOG;
     this._zoneTypeConfig = new Map(this.zoneTypes.map((zoneType) => [zoneType.name, zoneType]));
     this.editGraphics = scene.add.graphics().setDepth(DEPTH.UI - 1).setVisible(false);
     this.panel = null;

@@ -9,6 +9,35 @@ const CELL = 18;
 const APPROVAL_BONUS = 5;
 
 function LayoutPreview({ layout }) {
+  // v2: freehand polygon + normalized furniture
+  if (layout.version === 2) {
+    const shape = layout.roomShape || [];
+    const items = layout.furniture || [];
+    const d = shape.length >= 3
+      ? 'M ' + shape.map((p) => `${p.x * 1000} ${p.y * 700}`).join(' L ') + ' Z'
+      : '';
+    return (
+      <svg viewBox="0 0 1000 700" width={360}
+        style={{ border: '2px solid #3a3348', borderRadius: 4, background: '#0d0a14' }}>
+        {d && <path d={d} fill="rgba(255,176,46,0.10)" stroke="#ffb02e" strokeWidth={6} />}
+        {items.map((f, i) => {
+          const x = f.x * 1000, y = f.y * 700, w = f.w * 1000, h = f.h * 700;
+          return (
+            <g key={i} transform={`rotate(${f.rotation || 0} ${x + w / 2} ${y + h / 2})`}>
+              <rect x={x} y={y} width={w} height={h} rx={10}
+                fill="#8b5a2b" fillOpacity={0.55} stroke="#fff" strokeWidth={2} />
+              <text x={x + w / 2} y={y + h / 2} textAnchor="middle"
+                dominantBaseline="middle" fontSize={28}>
+                {f.label ? f.label.split(' ')[0] : '🪑'}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+    );
+  }
+
+  // v1: grid format (legacy)
   const { gridW, gridH, walls, furniture } = layout;
   const wallSet = new Set((walls || []).map((w) => `${w.x},${w.y}`));
 
@@ -133,7 +162,7 @@ export default function ModQueuePanel({ onClose }) {
                 <div>
                   <div style={{ fontWeight: 700, fontSize: 14 }}>{item.roomName || item.roomId}</div>
                   <div style={{ fontSize: 11, color: '#8a8296' }}>
-                    {item.roomId} · {item.walls?.length || 0} walls · {item.furniture?.length || 0} items ·{' '}
+                    {item.roomId} · {item.version === 2 ? 'freehand' : `${item.walls?.length || 0} walls`} · {item.furniture?.length || 0} items ·{' '}
                     {item.submittedAt ? new Date(item.submittedAt).toLocaleString() : 'unknown time'}
                   </div>
                 </div>
