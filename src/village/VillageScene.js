@@ -604,6 +604,8 @@ export class VillageScene extends Phaser.Scene {
     // Input
     this.cursors = this.input.keyboard?.createCursorKeys();
     this.wasd = this.input.keyboard?.addKeys('W,A,S,D', false);
+    // Don't let Phaser swallow spacebar/arrows in text fields — we gate movement ourselves.
+    try { this.input.keyboard?.removeCapture('SPACE,UP,DOWN,LEFT,RIGHT'); } catch {}
     this._isTypingContext = (event) => {
       if (window.__chatInputFocused) return true;
       const target = event?.target;
