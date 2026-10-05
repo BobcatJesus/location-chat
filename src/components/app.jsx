@@ -492,7 +492,7 @@ function RetroLandingPage({ onEnter, onOpenShepherdPark, onOpenMdAndersonLibrary
               boxShadow: '0 5px 0 rgba(0,0,0,0.32)',
             }}
           >
-            Old Faithful
+            Lola's Depot
           </button>
         </div>
       </div>
