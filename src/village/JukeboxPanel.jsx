@@ -218,13 +218,18 @@ export default function JukeboxPanel({ roomId, onClose, getSocket }) {
           border: '2px solid #35e0ff', borderRadius: 8,
         }}
       />
-      <div style={{ fontSize: 11, letterSpacing: '0.15em', color: '#ff3da6', marginBottom: 8, marginTop: 4 }}>
-        ▶ YOUTUBE LINK <span style={{ color: '#8a8296', letterSpacing: 0 }}>(plays for everyone in the room)</span>
+      <div style={{ fontSize: 11, letterSpacing: '0.15em', color: '#ff3da6', marginBottom: 4, marginTop: 4 }}>
+        ▶ YOUTUBE LINK
+      </div>
+      <div style={{ fontSize: 11, color: '#8a8296', marginBottom: 8, lineHeight: 1.5 }}>
+        Paste any YouTube video link — it'll play for <b style={{ color: '#cfc6b4' }}>everyone in the room</b> when
+        its turn comes up. Works with youtube.com, youtu.be, and Shorts links.
+        Videos that block embedding get skipped automatically.
       </div>
       <input
         value={youtubeUrl}
         onChange={(e) => setYoutubeUrl(e.target.value)}
-        placeholder="Paste a YouTube link…"
+        placeholder="e.g. https://www.youtube.com/watch?v=dQw4w9WgXcQ"
         maxLength={200}
         style={{
           width: '100%', padding: '8px 10px', marginBottom: 10,
