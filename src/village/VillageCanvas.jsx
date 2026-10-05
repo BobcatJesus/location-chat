@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { fetchApprovedLayout, approvedToLayout } from './approvedLayout.js';
 import Phaser from 'phaser';
 import { VillageScene } from './VillageScene.js';
 import ShelfPanel from './ShelfPanel.jsx';
@@ -232,6 +233,7 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
   const [coinBalance, setCoinBalance] = useState(() => getCoins());
   const [showInteriorSketch, setShowInteriorSketch] = useState(false);
   const [showModQueue, setShowModQueue] = useState(false);
+  const [approvedLayout, setApprovedLayout] = useState(null);
   const [interactKind, setInteractKind] = useState(null);
   const [roomPopulation, setRoomPopulation] = useState(1);
   const [cameraMode, setCameraMode] = useState('wide-follow');
@@ -471,6 +473,24 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
     setCameraMode(preferredCameraMode);
   }, [roomSignature]);
 
+  // Fetch the room's approved user-designed layout (if any).
+  useEffect(() => {
+    let cancelled = false;
+    setApprovedLayout(null);
+    if (!roomId) return undefined;
+    fetchApprovedLayout(roomId)
+      .then((rec) => {
+        if (cancelled || !rec) return;
+        const layout = approvedToLayout(rec, roomId, normalizedRoom?.name);
+        if (layout) {
+          console.log('[VillageCanvas] using approved layout for', roomId);
+          setApprovedLayout(layout);
+        }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [roomId]);
+
   useEffect(() => {
     setEventClock(Date.now());
     const timer = setInterval(() => setEventClock(Date.now()), 60000);
@@ -492,13 +512,14 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
     const el = containerRef.current;
     // Dev-mode remounts can leave stale canvases behind; reset container before creating a game.
     el.innerHTML = '';
-    const explicitLayout = forceLibraryLayout
-      ? library
-      : forceBookstoreLayout
-        ? bookstore
-        : (outdoorMode || shouldForceMultiLevelScaffold
-          ? buildAutoLayout(roomId, normalizedRoom?.name || '', normalizedRoom?.amenity || '', normalizedRoom?.shop || '', roomFootprint || null, normalizedRoom)
-          : null);
+    const explicitLayout = approvedLayout
+      || (forceLibraryLayout
+        ? library
+        : forceBookstoreLayout
+          ? bookstore
+          : (outdoorMode || shouldForceMultiLevelScaffold
+            ? buildAutoLayout(roomId, normalizedRoom?.name || '', normalizedRoom?.amenity || '', normalizedRoom?.shop || '', roomFootprint || null, normalizedRoom)
+            : null));
 
     VillageScene._boot = {
       roomId,
@@ -585,7 +606,7 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
       setTotalFloors(1);
       setStairScaffoldActive(false);
     };
-  }, [roomSignature, roomId, outdoorMode, forceBookstoreLayout, forceLibraryLayout, preferredCameraMode, shouldForceMultiLevelScaffold]);
+  }, [roomSignature, roomId, outdoorMode, forceBookstoreLayout, forceLibraryLayout, preferredCameraMode, shouldForceMultiLevelScaffold, approvedLayout]);
 
   const toggleEditor = () => {
     const scene = gameRef.current?.scene?.getScene('VillageScene');

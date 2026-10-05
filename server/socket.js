@@ -613,6 +613,23 @@ async function listPendingLayoutSubmissions() {
   return memoryLayoutSubmissions.filter((r) => r.status === 'pending');
 }
 
+async function getApprovedLayout(roomId) {
+  if (pool) {
+    const { rows } = await pool.query(
+      `SELECT id, room_id AS "roomId", room_name AS "roomName", data AS "layout",
+              reviewed_at AS "reviewedAt", reviewed_by AS "reviewedBy"
+       FROM layout_submissions WHERE room_id = $1 AND status = 'approved'
+       ORDER BY reviewed_at DESC LIMIT 1`,
+      [String(roomId || '')]
+    );
+    return rows[0] || null;
+  }
+  const approved = memoryLayoutSubmissions
+    .filter((r) => r.roomId === String(roomId || '') && r.status === 'approved')
+    .sort((a, b) => new Date(b.reviewedAt || 0) - new Date(a.reviewedAt || 0));
+  return approved[0] || null;
+}
+
 async function reviewLayoutSubmission(id, approve, reviewer) {
   const status = approve ? 'approved' : 'rejected';
   if (pool) {
@@ -1241,6 +1258,17 @@ app.post('/api/layout-submissions/:id/reject', async (req, res) => {
   } catch (err) {
     console.warn('layout reject failed:', err && err.message);
     res.status(500).json({ error: 'Could not reject.' });
+  }
+});
+
+app.get('/api/room-layout/:roomId', async (req, res) => {
+  try {
+    const rec = await getApprovedLayout(req.params.roomId);
+    if (!rec) return res.status(404).json({ error: 'No approved layout for this room.' });
+    res.json({ ok: true, ...rec });
+  } catch (err) {
+    console.warn('approved layout fetch failed:', err && err.message);
+    res.status(500).json({ error: 'Could not load approved layout.' });
   }
 });
 

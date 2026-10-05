@@ -1275,6 +1275,19 @@ export class RoomLayout {
       case 'employee':
         // Rendered by VillageScene as an NPC sprite placeholder
         break;
+
+      case 'user_furniture': {
+        // User-designed furniture without a native zone type: colored block + label.
+        const css = z.css || '#9aa3b2';
+        const m = String(css).trim().match(/^#([0-9a-fA-F]{6})$/);
+        const fill = m ? parseInt(m[1], 16) : 0x9aa3b2;
+        g.fillStyle(fill, 0.92);
+        g.fillRect(x, y, w, h);
+        g.lineStyle(2, 0x2b2b33, 0.85);
+        g.strokeRect(x, y, w, h);
+        if (z.label) this._lbl(x + w / 2, y + h / 2, z.label, { ...SIGN_STYLE, backgroundColor: undefined, color: '#2b2b33' }, 0.5, 0.5);
+        break;
+      }
     }
   }
 
