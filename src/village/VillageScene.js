@@ -1621,10 +1621,12 @@ export class VillageScene extends Phaser.Scene {
     const step = (SPEED * delta) / 1000;
     let dx = 0, dy = 0;
 
-    const kbL = this.cursors?.left.isDown  || this.wasd?.A.isDown;
-    const kbR = this.cursors?.right.isDown || this.wasd?.D.isDown;
-    const kbU = this.cursors?.up.isDown    || this.wasd?.W.isDown;
-    const kbD = this.cursors?.down.isDown  || this.wasd?.S.isDown;
+    // Don't move while typing in a form field (book titles, chat, etc.).
+    const typing = this._isTypingContext?.();
+    const kbL = !typing && (this.cursors?.left.isDown  || this.wasd?.A.isDown);
+    const kbR = !typing && (this.cursors?.right.isDown || this.wasd?.D.isDown);
+    const kbU = !typing && (this.cursors?.up.isDown    || this.wasd?.W.isDown);
+    const kbD = !typing && (this.cursors?.down.isDown  || this.wasd?.S.isDown);
 
     if (kbL || kbR || kbU || kbD) {
       this.target = null;
