@@ -20,6 +20,34 @@ const WANDER_SPEED = 30;   // px/sec
 const SEEK_SPEED = 110;    // px/sec when chasing food
 const FEED_RANGE = 150;    // px from the pond's edge the player must be within
 const PELLET_BITES = 3;    // bites before a crumb is gone
+const PET_COOLDOWN_MS = 5000; // per-duck petting cooldown
+const PET_COIN_REWARD = 1;
+
+/** Synthesized quack via Web Audio — no asset needed. */
+function playQuack() {
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    const ctx = playQuack._ctx || (playQuack._ctx = new AC());
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+    const t0 = ctx.currentTime;
+    // Two descending blips = quack-ish
+    for (let i = 0; i < 2; i++) {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sawtooth';
+      const start = t0 + i * 0.12;
+      osc.frequency.setValueAtTime(420 - i * 60, start);
+      osc.frequency.exponentialRampToValueAtTime(180, start + 0.1);
+      gain.gain.setValueAtTime(0.0001, start);
+      gain.gain.exponentialRampToValueAtTime(0.25, start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.11);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(start);
+      osc.stop(start + 0.13);
+    }
+  } catch {}
+}
 const EAT_PAUSE_MS = 450;
 const SHORE_DUCKS_PER_POND = 2;  // standing ducks that waddle the shoreline
 
@@ -127,15 +155,20 @@ export class DuckPond {
     }
     const container = scene.add.container(p.x, p.y, [body]);
     container.setDepth(DEPTH.ACTOR_MIN + Math.round(p.y));
+    container.setSize(48, 40);
+    container.setInteractive({ useHandCursor: true });
     const t = randomShorePoint(pond);
-    this.ducks.push({
+    const duckRef = {
       container, pond,
       x: p.x, y: p.y,
       tx: t.x, ty: t.y,
       state: 'wander', shore: true,
       idleMs: 500 + Math.random() * 1500,
       eatMs: 0, pellet: null,
-    });
+      petCooldown: 0,
+    };
+    container.on('pointerdown', () => this.petDuck(duckRef));
+    this.ducks.push(duckRef);
   }
 
   _spawnDuck(pond) {
@@ -144,16 +177,53 @@ export class DuckPond {
     const body = makeDuckBody(scene);
     const container = scene.add.container(p.x, p.y, [body]);
     container.setDepth(DEPTH.ACTOR_MIN + Math.round(p.y));
-    const target = randomPointInPond(pond);
-    this.ducks.push({
+    container.setSize(48, 40);
+    container.setInteractive({ useHandCursor: true });
+    const duckRef = {
       container, pond,
       x: p.x, y: p.y,
-      tx: target.x, ty: target.y,
+      tx: 0, ty: 0,
       state: 'wander',
       idleMs: 0,
       eatMs: 0,
       pellet: null,
+      petCooldown: 0,
+    };
+    const target = randomPointInPond(pond);
+    duckRef.tx = target.x; duckRef.ty = target.y;
+    container.on('pointerdown', () => this.petDuck(duckRef));
+    this.ducks.push(duckRef);
+  }
+
+  /** Pet a duck: happy hop + quack + heart + 1 coin (per-duck cooldown). */
+  petDuck(duck) {
+    if (!duck || !duck.container || !duck.container.active) return;
+    const now = Date.now();
+    if (duck.petCooldown && now < duck.petCooldown) return;
+    duck.petCooldown = now + PET_COOLDOWN_MS;
+    playQuack();
+    // Happy hop.
+    this.scene.tweens.add({
+      targets: duck.container,
+      y: duck.y - 14,
+      duration: 150,
+      yoyo: true,
+      ease: 'Quad.easeOut',
     });
+    // Floating heart.
+    try {
+      const heart = this.scene.add.text(duck.x, duck.y - 30, '\u2764\uFE0F', { fontSize: '22px' });
+      heart.setDepth(DEPTH.ACTOR_MIN + 500);
+      this.scene.tweens.add({
+        targets: heart, y: duck.y - 62, alpha: 0,
+        duration: 900, ease: 'Quad.easeOut',
+        onComplete: () => heart.destroy(),
+      });
+    } catch {}
+    // 1 coin, credited locally.
+    try {
+      import('./CoinWallet.js').then((m) => m.earnCoins(PET_COIN_REWARD, 'duck-pet')).catch(() => {});
+    } catch {}
   }
 
   /** Pond zone whose edge is within FEED_RANGE of (x, y), or null. */
