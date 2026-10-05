@@ -152,7 +152,7 @@ export default function JukeboxPanel({ roomId, onClose, getSocket }) {
   );
 
   const queueEl = (
-    <div style={{ flex: 1, overflowY: 'auto', padding: '10px 16px' }}>
+    <div style={{ padding: '10px 16px' }}>
       <div style={{ fontSize: 11, letterSpacing: '0.15em', color: '#35e0ff', marginBottom: 8 }}>📻 UP NEXT</div>
       {queue.length === 0 && (
         <div style={{ fontSize: 13, color: '#8a8296' }}>Nothing queued yet.</div>
@@ -324,23 +324,25 @@ export default function JukeboxPanel({ roomId, onClose, getSocket }) {
           ✕
         </button>
       </div>
-      {nowPlayingEl}
-      {view === 'queue' ? queueEl : null}
-      {view === 'queue' ? localTracksEl : null}
-      {view === 'queue' ? (
-        <div style={{ padding: '10px 16px 14px' }}>
-          <button
-            onClick={() => setView('add')}
-            style={{
-              width: '100%', padding: '8px', fontSize: 13, cursor: 'pointer',
-              background: '#35e0ff', border: 'none', color: '#14101e',
-              borderRadius: 8, fontWeight: 700, fontFamily: 'inherit',
-            }}
-          >
-            ➕ Request a song
-          </button>
-        </div>
-      ) : addEl}
+      <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
+        {nowPlayingEl}
+        {view === 'queue' ? queueEl : null}
+        {view === 'queue' ? localTracksEl : null}
+        {view === 'queue' ? (
+          <div style={{ padding: '10px 16px 14px' }}>
+            <button
+              onClick={() => setView('add')}
+              style={{
+                width: '100%', padding: '8px', fontSize: 13, cursor: 'pointer',
+                background: '#35e0ff', border: 'none', color: '#14101e',
+                borderRadius: 8, fontWeight: 700, fontFamily: 'inherit',
+              }}
+            >
+              ➕ Request a song
+            </button>
+          </div>
+        ) : addEl}
+      </div>
     </div>
   );
 }
