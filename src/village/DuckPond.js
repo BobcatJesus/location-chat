@@ -202,14 +202,8 @@ export class DuckPond {
     if (duck.petCooldown && now < duck.petCooldown) return;
     duck.petCooldown = now + PET_COOLDOWN_MS;
     playQuack();
-    // Happy hop.
-    this.scene.tweens.add({
-      targets: duck.container,
-      y: duck.y - 14,
-      duration: 150,
-      yoyo: true,
-      ease: 'Quad.easeOut',
-    });
+    // Happy hop: timer-driven so the wander loop doesn't override it.
+    duck.hopMs = 320;
     // Floating heart.
     try {
       const heart = this.scene.add.text(duck.x, duck.y - 30, '\u2764\uFE0F', { fontSize: '22px' });
@@ -350,6 +344,11 @@ export class DuckPond {
       // Face travel direction (duck art faces right).
       if (Math.abs(dx) > 2) duck.container.setScale(dx < 0 ? -1 : 1, 1);
       duck.container.setPosition(duck.x, duck.y);
+      if (duck.hopMs > 0) {
+        duck.hopMs -= delta;
+        const t = Math.max(0, duck.hopMs) / 320; // 1 -> 0
+        duck.container.y -= Math.sin(t * Math.PI) * 16;
+      }
       duck.container.setDepth(DEPTH.ACTOR_MIN + Math.round(duck.y));
     }
 
