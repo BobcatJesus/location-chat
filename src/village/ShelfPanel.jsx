@@ -13,15 +13,23 @@ export default function ShelfPanel({ roomId, shelf, onClose, getSocket }) {
   const [loaded, setLoaded] = useState(false);
   const shelfRef = useRef(shelf);
   shelfRef.current = shelf;
+  const getSocketRef = useRef(getSocket);
+  getSocketRef.current = getSocket;
+  const shelfKeyRef = useRef(shelf);
 
   useEffect(() => {
-    const socket = getSocket?.();
+    const socket = getSocketRef.current?.();
     if (!socket) return;
-    setBooks([]);
-    setLoaded(false);
-    setView('list');
-    setSelected(null);
-    setError('');
+    const shelfChanged = shelfKeyRef.current !== shelf;
+    shelfKeyRef.current = shelf;
+    // Only reset the view when switching shelves, not on parent re-renders.
+    if (shelfChanged) {
+      setBooks([]);
+      setLoaded(false);
+      setView('list');
+      setSelected(null);
+      setError('');
+    }
 
     const onShelfBooks = ({ shelf: s, books: list }) => {
       if (s !== shelfRef.current) return;
@@ -49,7 +57,7 @@ export default function ShelfPanel({ roomId, shelf, onClose, getSocket }) {
       socket.off('book_added', onBookAdded);
       socket.off('book_error', onBookError);
     };
-  }, [roomId, shelf, getSocket]);
+  }, [roomId, shelf]);
 
   const submitBook = (e) => {
     e.preventDefault();
