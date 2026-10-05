@@ -10,6 +10,7 @@ import { Prop, PROP_DEFS } from './Prop.js';
 import { createAvatarEntity, preloadAvatarTextures } from '../game/entities/avatarFactory';
 import { jukeboxAudio } from './JukeboxAudio.js';
 import { playYouTube, stopYouTube, setYouTubeVolume, getYouTubeVideoId } from './YouTubePlayer.js';
+import { HalloweenMode } from './HalloweenMode.js';
 import { normalizeAvatarModel } from '../game/entities/avatarModels';
 import { isOutdoorLocation } from './outdoorRoomDetection.js';
 
@@ -548,6 +549,9 @@ export class VillageScene extends Phaser.Scene {
     // Duck pond interaction (procedural: any pond zone gets ducks + feeding)
     this.duckPond = new DuckPond(this);
     this.duckPond.refresh();
+    // Seasonal: pumpkins, bats, spooky tint in October.
+    this.halloween = new HalloweenMode(this);
+    this.halloween.start();
     this._feedCooldownMs = 0;
     this.feedPrompt = this.add.text(0, 0, '🦆 Feed the ducks [E]', {
       fontSize: '15px',
@@ -1734,6 +1738,7 @@ export class VillageScene extends Phaser.Scene {
     // Duck pond: tick ducks, show feed prompt near ponds, decay feed cooldown.
     this._feedCooldownMs = Math.max(0, (this._feedCooldownMs || 0) - delta);
     this.duckPond?.update(delta);
+    this.halloween?.update(delta);
     const nearPond = this.duckPond?.nearestFeedablePond(this.player.gx, this.player.gy);
     if (nearPond && this._feedCooldownMs <= 0) {
       this.feedPrompt.setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
@@ -1951,6 +1956,8 @@ export class VillageScene extends Phaser.Scene {
     this.remotePlayers.clear();
     this.duckPond?.destroy();
     this.duckPond = null;
+    this.halloween?.destroy();
+    this.halloween = null;
     this.feedPrompt?.destroy();
     this.shelfPrompt?.destroy();
     this.jukeboxPrompt?.destroy();
