@@ -812,7 +812,7 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
             minHeight: 44, display: 'flex', alignItems: 'center', flexShrink: 0,
           }}
         >
-          🏠 Layout
+          🏠 Build layout
         </button>
         {isModerator && (
         <button
