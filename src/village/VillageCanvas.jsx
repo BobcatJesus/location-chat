@@ -14,6 +14,8 @@ import { getDistanceMeters } from '../geo';
 import { ROOMS } from '../../rooms/rooms.js';
 import { getVenueEvents } from '../../lib/venueEvents.js';
 
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'https://location-chat-production.up.railway.app';
+
 const LIVE_OAK_PARK_CENTER = { lat: 29.754535, lng: -95.409365 };
 const LIVE_OAK_OSM_WAY_ID = '392274785';
 const LIVE_OAK_PARK_FOOTPRINT = [
@@ -642,19 +644,36 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
         />
       )}
       {showModQueue && (
-        <ModQueuePanel onClose={() => setShowModQueue(false)} />
+        <ModQueuePanel
+          onClose={() => setShowModQueue(false)}
+          actorId={profile?.profile?.email || profile?.mode || 'guest'}
+        />
       )}
       {showInteriorSketch && (
         <InteriorSketchModal
           roomName={room?.name || roomId}
           onClose={() => setShowInteriorSketch(false)}
           onSubmit={(layout) => {
-            try {
-              const k = 'location-chat-pending-layouts';
-              const pending = JSON.parse(localStorage.getItem(k) || '[]');
-              pending.push({ ...layout, roomId, submittedAt: new Date().toISOString(), status: 'pending' });
-              localStorage.setItem(k, JSON.stringify(pending));
-            } catch {}
+            const payload = {
+              roomId,
+              roomName: room?.name || roomId,
+              submitter: profile?.profile?.email || profile?.mode || 'guest',
+              submitterName: profile?.profile?.characterName || profile?.profile?.firstName || 'Someone',
+              layout,
+            };
+            fetch(`${BACKEND_URL}/api/layout-submissions`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload),
+            }).catch(() => {
+              // Offline fallback: stash locally so nothing is lost.
+              try {
+                const k = 'location-chat-pending-layouts';
+                const pending = JSON.parse(localStorage.getItem(k) || '[]');
+                pending.push({ ...layout, ...payload, submittedAt: new Date().toISOString(), status: 'pending' });
+                localStorage.setItem(k, JSON.stringify(pending));
+              } catch {}
+            });
             setShowInteriorSketch(false);
           }}
         />

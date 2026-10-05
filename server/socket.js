@@ -223,6 +223,22 @@ async function initDb() {
   }
   const { rows: savedEvents } = await pool.query('SELECT id, room_id AS "roomId", title, description, starts_at AS "startsAt", ends_at AS "endsAt", activity_level AS "activityLevel", mood, creator FROM venue_events WHERE ends_at > NOW()');
   savedEvents.forEach((event) => addVenueEvent(event));
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS layout_submissions (
+      id TEXT PRIMARY KEY,
+      room_id TEXT NOT NULL,
+      room_name TEXT DEFAULT '',
+      submitter TEXT DEFAULT '',
+      submitter_name TEXT DEFAULT '',
+      data JSONB NOT NULL,
+      status TEXT DEFAULT 'pending',
+      submitted_at TIMESTAMPTZ DEFAULT NOW(),
+      reviewed_at TIMESTAMPTZ,
+      reviewed_by TEXT DEFAULT ''
+    )
+  `);
+  await pool.query('CREATE INDEX IF NOT EXISTS layout_submissions_status ON layout_submissions (status)');
+  console.log('✅ Postgres layout_submissions table ready');
   await authService.init();
 }
 
@@ -553,6 +569,71 @@ const moderatorEmails = new Set(
     .map((email) => email.trim().toLowerCase())
     .filter(Boolean)
 );
+if (moderatorEmails.size > 0) {
+  console.log(`🛡️ Global moderators configured: ${moderatorEmails.size} account(s)`);
+}
+
+// Layout submissions: Postgres when available, in-memory fallback.
+const memoryLayoutSubmissions = [];
+
+async function createLayoutSubmission({ roomId, roomName, submitter, submitterName, layout }) {
+  const id = `layout-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const record = {
+    id,
+    roomId: String(roomId || ''),
+    roomName: String(roomName || ''),
+    submitter: String(submitter || ''),
+    submitterName: String(submitterName || ''),
+    layout,
+    status: 'pending',
+    submittedAt: new Date().toISOString(),
+    reviewedAt: null,
+    reviewedBy: null,
+  };
+  if (pool) {
+    await pool.query(
+      'INSERT INTO layout_submissions (id, room_id, room_name, submitter, submitter_name, data, status) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+      [id, record.roomId, record.roomName, record.submitter, record.submitterName, JSON.stringify(layout), 'pending']
+    );
+  } else {
+    memoryLayoutSubmissions.push(record);
+  }
+  return record;
+}
+
+async function listPendingLayoutSubmissions() {
+  if (pool) {
+    const { rows } = await pool.query(
+      `SELECT id, room_id AS "roomId", room_name AS "roomName", submitter, submitter_name AS "submitterName",
+              data AS "layout", status, submitted_at AS "submittedAt"
+       FROM layout_submissions WHERE status = 'pending' ORDER BY submitted_at ASC`
+    );
+    return rows;
+  }
+  return memoryLayoutSubmissions.filter((r) => r.status === 'pending');
+}
+
+async function reviewLayoutSubmission(id, approve, reviewer) {
+  const status = approve ? 'approved' : 'rejected';
+  if (pool) {
+    const { rows } = await pool.query(
+      `UPDATE layout_submissions SET status = $2, reviewed_at = NOW(), reviewed_by = $3
+       WHERE id = $1 AND status = 'pending' RETURNING id, room_id AS "roomId", data AS "layout", submitter, submitter_name AS "submitterName"`,
+      [id, status, String(reviewer || '')]
+    );
+    return rows[0] || null;
+  }
+  const rec = memoryLayoutSubmissions.find((r) => r.id === id && r.status === 'pending');
+  if (!rec) return null;
+  rec.status = status;
+  rec.reviewedAt = new Date().toISOString();
+  rec.reviewedBy = String(reviewer || '');
+  return rec;
+}
+
+function isGlobalModerator(actorId) {
+  return moderatorEmails.has(normalizeActorId(actorId));
+}
 
 function normalizeActorId(value) {
   return String(value || '').trim().toLowerCase();
@@ -1105,6 +1186,62 @@ app.get('/api/venue-permissions', (req, res) => {
   const roomId = String(req.query.roomId || '');
   const actorId = String(req.query.actorId || '');
   res.json(getVenuePermissions(roomId, actorId));
+});
+
+// Layout submissions — builders submit, global moderators review.
+app.post('/api/layout-submissions', async (req, res) => {
+  try {
+    const { roomId, roomName, submitter, submitterName, layout } = req.body || {};
+    if (!roomId || !layout || typeof layout !== 'object') {
+      return res.status(400).json({ error: 'roomId and layout are required.' });
+    }
+    const record = await createLayoutSubmission({ roomId, roomName, submitter, submitterName, layout });
+    console.log(`📐 Layout submitted for ${record.roomId} by ${record.submitterName || record.submitter || 'unknown'}`);
+    res.status(201).json({ ok: true, id: record.id });
+  } catch (err) {
+    console.warn('layout submission failed:', err && err.message);
+    res.status(500).json({ error: 'Could not save submission.' });
+  }
+});
+
+app.get('/api/layout-submissions', async (req, res) => {
+  try {
+    const actorId = String(req.query.actorId || '');
+    if (!isGlobalModerator(actorId)) return res.status(403).json({ error: 'Moderators only.' });
+    const items = await listPendingLayoutSubmissions();
+    res.json({ ok: true, items });
+  } catch (err) {
+    console.warn('layout queue fetch failed:', err && err.message);
+    res.status(500).json({ error: 'Could not load queue.' });
+  }
+});
+
+app.post('/api/layout-submissions/:id/approve', async (req, res) => {
+  try {
+    const actorId = String((req.body && req.body.actorId) || req.query.actorId || '');
+    if (!isGlobalModerator(actorId)) return res.status(403).json({ error: 'Moderators only.' });
+    const rec = await reviewLayoutSubmission(req.params.id, true, actorId);
+    if (!rec) return res.status(404).json({ error: 'Submission not found or already reviewed.' });
+    console.log(`✅ Layout approved for ${rec.roomId} by ${actorId}`);
+    res.json({ ok: true, submission: rec });
+  } catch (err) {
+    console.warn('layout approve failed:', err && err.message);
+    res.status(500).json({ error: 'Could not approve.' });
+  }
+});
+
+app.post('/api/layout-submissions/:id/reject', async (req, res) => {
+  try {
+    const actorId = String((req.body && req.body.actorId) || req.query.actorId || '');
+    if (!isGlobalModerator(actorId)) return res.status(403).json({ error: 'Moderators only.' });
+    const rec = await reviewLayoutSubmission(req.params.id, false, actorId);
+    if (!rec) return res.status(404).json({ error: 'Submission not found or already reviewed.' });
+    console.log(`❌ Layout rejected for ${rec.roomId} by ${actorId}`);
+    res.json({ ok: true, submission: rec });
+  } catch (err) {
+    console.warn('layout reject failed:', err && err.message);
+    res.status(500).json({ error: 'Could not reject.' });
+  }
 });
 
 app.post('/api/venue-events', async (req, res) => {
