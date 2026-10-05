@@ -774,6 +774,19 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
           {editorActive ? 'Done' : (outdoorMode ? 'Outdoor Edit' : 'Edit')}
         </button>
         <button
+          onClick={() => setShowInteriorSketch(true)}
+          title="Sketch the interior layout of this place"
+          style={{
+            background: 'rgba(0,0,0,0.55)', color: '#35e0ff',
+            border: '2px solid #35e0ff',
+            borderRadius: 8, padding: '6px 14px',
+            fontSize: 14, fontWeight: 'bold', cursor: 'pointer',
+            minHeight: 44, display: 'flex', alignItems: 'center', flexShrink: 0,
+          }}
+        >
+          🏠 Build layout
+        </button>
+        <button
           onClick={toggleZoom}
           style={{
             background: 'rgba(0,0,0,0.55)',
@@ -801,19 +814,6 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
         >
           🪙 {coinBalance}
         </div>
-        <button
-          onClick={() => setShowInteriorSketch(true)}
-          title="Sketch the interior layout of this place"
-          style={{
-            background: 'rgba(0,0,0,0.55)', color: '#35e0ff',
-            border: '2px solid #35e0ff',
-            borderRadius: 8, padding: '6px 14px',
-            fontSize: 14, fontWeight: 'bold', cursor: 'pointer',
-            minHeight: 44, display: 'flex', alignItems: 'center', flexShrink: 0,
-          }}
-        >
-          🏠 Build layout
-        </button>
         {isModerator && (
         <button
           onClick={() => setShowModQueue(true)}
