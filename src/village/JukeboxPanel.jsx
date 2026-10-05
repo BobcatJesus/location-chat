@@ -18,14 +18,23 @@ export default function JukeboxPanel({ roomId, onClose, getSocket }) {
   const roomRef = useRef(roomId);
   roomRef.current = roomId;
 
+  const getSocketRef = useRef(getSocket);
+  getSocketRef.current = getSocket;
+  const roomIdRef = useRef(roomId);
+
   useEffect(() => {
-    const socket = getSocket?.();
+    const socket = getSocketRef.current?.();
     if (!socket) return;
-    setNowPlaying(null);
-    setQueue([]);
-    setLoaded(false);
-    setView('queue');
-    setError('');
+    const roomChanged = roomIdRef.current !== roomId;
+    roomIdRef.current = roomId;
+    // Only reset the form view when switching rooms, not on parent re-renders.
+    if (roomChanged) {
+      setNowPlaying(null);
+      setQueue([]);
+      setLoaded(false);
+      setView('queue');
+      setError('');
+    }
 
     const onJukeboxState = ({ nowPlaying: np, queue: q }) => {
       setNowPlaying(np || null);
@@ -195,7 +204,30 @@ export default function JukeboxPanel({ roomId, onClose, getSocket }) {
 
   const addEl = (
     <form onSubmit={submitSong} style={{ padding: '14px 16px', borderTop: '2px solid #ffb02e' }}>
-      <div style={{ fontSize: 11, letterSpacing: '0.15em', color: '#35e0ff', marginBottom: 8 }}>➕ REQUEST A SONG</div>
+      <div style={{ fontSize: 11, letterSpacing: '0.15em', color: '#ff3da6', marginBottom: 4 }}>▶ PLAY YOUTUBE</div>
+      <div style={{ fontSize: 11, color: '#8a8296', marginBottom: 8, lineHeight: 1.5 }}>
+        Paste any YouTube link — it'll play for <b style={{ color: '#cfc6b4' }}>everyone in the room</b> when
+        its turn comes up. Works with youtube.com, youtu.be, and Shorts links.
+        Videos that block embedding get skipped automatically.
+      </div>
+      <input
+        value={youtubeUrl}
+        onChange={(e) => setYoutubeUrl(e.target.value)}
+        placeholder="e.g. https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+        maxLength={200}
+        style={{
+          width: '100%', padding: '8px 10px', marginBottom: 10,
+          boxSizing: 'border-box',
+          fontSize: 14, fontFamily: 'inherit', background: '#1e1830', color: '#f4f1e6',
+          border: '2px solid #ff3da6', borderRadius: 8,
+        }}
+      />
+      <div style={{ fontSize: 11, letterSpacing: '0.15em', color: '#35e0ff', marginBottom: 8, marginTop: 6 }}>
+        ➕ OR REQUEST A SONG TITLE
+      </div>
+      <div style={{ fontSize: 11, color: '#8a8296', marginBottom: 8, lineHeight: 1.5 }}>
+        Just a wishlist — title requests don't play audio.
+      </div>
       <input
         value={title}
         onChange={(e) => setTitle(e.target.value)}
@@ -213,29 +245,9 @@ export default function JukeboxPanel({ roomId, onClose, getSocket }) {
         placeholder="Artist (optional)"
         maxLength={120}
         style={{
-          width: '100%', boxSizing: 'border-box', padding: '8px 10px', marginBottom: 8,
+          width: '100%', boxSizing: 'border-box', padding: '8px 10px', marginBottom: 10,
           fontSize: 14, fontFamily: 'inherit', background: '#1e1830', color: '#f4f1e6',
           border: '2px solid #35e0ff', borderRadius: 8,
-        }}
-      />
-      <div style={{ fontSize: 11, letterSpacing: '0.15em', color: '#ff3da6', marginBottom: 4, marginTop: 4 }}>
-        ▶ YOUTUBE LINK
-      </div>
-      <div style={{ fontSize: 11, color: '#8a8296', marginBottom: 8, lineHeight: 1.5 }}>
-        Paste any YouTube video link — it'll play for <b style={{ color: '#cfc6b4' }}>everyone in the room</b> when
-        its turn comes up. Works with youtube.com, youtu.be, and Shorts links.
-        Videos that block embedding get skipped automatically.
-      </div>
-      <input
-        value={youtubeUrl}
-        onChange={(e) => setYoutubeUrl(e.target.value)}
-        placeholder="e.g. https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-        maxLength={200}
-        style={{
-          width: '100%', padding: '8px 10px', marginBottom: 10,
-          boxSizing: 'border-box',
-          fontSize: 14, fontFamily: 'inherit', background: '#1e1830', color: '#f4f1e6',
-          border: '2px solid #ff3da6', borderRadius: 8,
         }}
       />
       {error && <div style={{ fontSize: 12, color: '#ff3da6', marginBottom: 8 }}>{error}</div>}
