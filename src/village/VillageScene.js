@@ -9,6 +9,7 @@ import { OutdoorEditor } from './OutdoorEditor.js';
 import { Prop, PROP_DEFS } from './Prop.js';
 import { createAvatarEntity, preloadAvatarTextures } from '../game/entities/avatarFactory';
 import { jukeboxAudio } from './JukeboxAudio.js';
+import { playYouTube, stopYouTube, setYouTubeVolume, getYouTubeVideoId } from './YouTubePlayer.js';
 import { normalizeAvatarModel } from '../game/entities/avatarModels';
 import { isOutdoorLocation } from './outdoorRoomDetection.js';
 
@@ -986,6 +987,31 @@ export class VillageScene extends Phaser.Scene {
     return best ? { label: best.label } : null;
   }
 
+  _syncYouTubeJukebox(nowPlaying) {
+    const vid = nowPlaying?.youtubeVideoId || null;
+    const songId = nowPlaying?.id || null;
+    this._ytSongId = songId;
+    if (vid) {
+      if (getYouTubeVideoId() === vid) return; // already playing
+      jukeboxAudio.pause(); // local house tracks yield to YouTube
+      playYouTube(vid, {
+        onEnded: (endedVid) => {
+          if (this.socket?.connected && this._ytSongId) {
+            this.socket.emit('youtube_ended', { roomId: this.roomId, songId: this._ytSongId });
+          }
+        },
+        onError: () => {
+          // Embed blocked: skip it so the queue doesn't stall.
+          if (this.socket?.connected && this._ytSongId) {
+            this.socket.emit('youtube_ended', { roomId: this.roomId, songId: this._ytSongId });
+          }
+        },
+      });
+    } else {
+      stopYouTube();
+    }
+  }
+
   _updateJukeboxAudio() {
     if (!this.player || !this.roomLayout?.interactZones) {
       jukeboxAudio.pause();
@@ -1000,9 +1026,16 @@ export class VillageScene extends Phaser.Scene {
       if (d < bestD) { bestD = d; best = { x: jx, y: jy }; }
     }
     if (best) {
-      jukeboxAudio.updateProximity(this.player.gx, this.player.gy, best.x, best.y);
+      const audible = jukeboxAudio.updateProximity(this.player.gx, this.player.gy, best.x, best.y);
+      // Mirror proximity volume onto the YouTube player when it's active.
+      if (getYouTubeVideoId()) {
+        const dist = Math.hypot(this.player.gx - best.x, this.player.gy - best.y);
+        const vol = dist <= 250 ? 0.8 : Math.max(0.05, 0.8 * (1 - (dist - 250) / 450));
+        setYouTubeVolume(audible ? vol : 0);
+      }
     } else {
       jukeboxAudio.pause();
+      if (getYouTubeVideoId()) setYouTubeVolume(0);
     }
   }
 
@@ -1060,6 +1093,7 @@ export class VillageScene extends Phaser.Scene {
       });
       socket.emit('get_room_state', { roomId: this.roomId });
       socket.emit('get_room_decorations', { roomId: this.roomId });
+      socket.emit('get_jukebox', { roomId: this.roomId });
       const now = Date.now();
       this._lastPresenceSyncAt = now;
       this._lastDecorSyncAt = now;
@@ -1212,6 +1246,11 @@ export class VillageScene extends Phaser.Scene {
     // Remote player fed the ducks: mirror the feeding frenzy locally.
     socket.on('duck_fed', ({ x, y } = {}) => {
       this.duckPond?.feed(x, y, true);
+    });
+
+    // Room-wide YouTube jukebox: play the server's now-playing video for everyone.
+    socket.on('jukebox_state', ({ nowPlaying } = {}) => {
+      this._syncYouTubeJukebox(nowPlaying);
     });
 
     // AI-backed NPC reply from the Inworld Router (server/socket.js `send_message` handler).
@@ -1916,6 +1955,7 @@ export class VillageScene extends Phaser.Scene {
     this.shelfPrompt?.destroy();
     this.jukeboxPrompt?.destroy();
     jukeboxAudio.stop();
+    try { stopYouTube(); } catch {}
     if (this.ghosts) { for (const [, g] of this.ghosts) { try { g.avatar.destroy(); } catch {} } this.ghosts.clear(); }
     this.staticNpcs?.forEach((npc) => npc.destroy?.());
     this.staticNpcs = [];

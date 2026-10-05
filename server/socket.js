@@ -346,6 +346,13 @@ async function loadShelfBooks(roomId) {
 // state: { queue: [ { id, title, artist, votes, addedBy, addedByName, votedBy:Set, createdAt } ],
 //          nowPlaying: { ...song, startedAt, skipVotes:Set } | null, timer: NodeTimeout|null }
 const jukeboxRooms = {};
+// Matches youtube.com/watch?v=, youtu.be/, youtube.com/embed/, youtube.com/shorts/
+const YOUTUBE_ID_RE = /(?:youtube\.com\/(?:watch\?[^#]*v=|embed\/|shorts\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/;
+function extractYouTubeId(url) {
+  if (!url || typeof url !== 'string') return null;
+  const m = url.match(YOUTUBE_ID_RE);
+  return m ? m[1] : null;
+}
 const jukeboxLoaded = new Set();
 const SONG_MS = 3 * 60 * 1000; // simulated track length
 const SKIP_VOTES_NEEDED = 2;
@@ -370,6 +377,7 @@ function publicJukeboxState(roomId, userId) {
         addedByName: st.nowPlaying.addedByName,
         startedAt: st.nowPlaying.startedAt,
         skipVotes: st.nowPlaying.skipVotes ? st.nowPlaying.skipVotes.size : 0,
+        youtubeVideoId: st.nowPlaying.youtubeVideoId || null,
       }
     : null;
   const queue = st.queue.map((s) => ({
@@ -379,6 +387,7 @@ function publicJukeboxState(roomId, userId) {
     votes: s.votes,
     addedByName: s.addedByName,
     voted: userId ? s.votedBy.has(userId) : false,
+    youtubeVideoId: s.youtubeVideoId || null,
   }));
   return { nowPlaying, queue };
 }
@@ -441,7 +450,8 @@ function advanceJukebox(roomId) {
   markSongPlayed(next.id);
   st.nowPlaying = { ...next, votedBy: undefined, startedAt: Date.now(), skipVotes: new Set() };
   broadcastJukebox(roomId);
-  st.timer = setTimeout(() => advanceJukebox(roomId), SONG_MS);
+  const waitMs = next.youtubeVideoId ? 10 * 60 * 1000 : SONG_MS;
+  st.timer = setTimeout(() => advanceJukebox(roomId), waitMs);
   if (st.timer.unref) st.timer.unref();
 }
 
@@ -923,7 +933,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('add_song', async ({ roomId, title, artist }) => {
+  socket.on('add_song', async ({ roomId, title, artist, youtubeUrl }) => {
     if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
     const userId = socketUserMap[socket.id] || socket.id;
     const rate = checkRateLimit(userId);
@@ -931,10 +941,15 @@ io.on('connection', (socket) => {
       socket.emit('song_error', { message: 'Whoa, slow down — try again in a bit.' });
       return;
     }
+    const youtubeVideoId = extractYouTubeId(youtubeUrl);
     const cleanTitle = String(title || '').trim().slice(0, 120);
     const cleanArtist = String(artist || '').trim().slice(0, 120);
-    if (!cleanTitle) {
-      socket.emit('song_error', { message: 'A song needs at least a title.' });
+    if (!cleanTitle && !youtubeVideoId) {
+      socket.emit('song_error', { message: 'A song needs at least a title or a YouTube link.' });
+      return;
+    }
+    if (youtubeUrl && !youtubeVideoId) {
+      socket.emit('song_error', { message: "That doesn't look like a YouTube link." });
       return;
     }
     const st = await loadJukebox(roomId);
@@ -947,6 +962,7 @@ io.on('connection', (socket) => {
       addedByName: rooms[roomId][socket.id]?.name || 'Someone',
       votedBy: new Set(),
       createdAt: Date.now(),
+      youtubeVideoId: youtubeVideoId || null,
     };
     st.queue.push(song);
     await saveJukeboxSong(roomId, song);
@@ -956,6 +972,14 @@ io.on('connection', (socket) => {
       broadcastJukebox(roomId);
     }
     socket.emit('song_added', { roomId, song: { id: song.id, title: song.title, artist: song.artist } });
+  });
+
+  socket.on('youtube_ended', ({ roomId, songId }) => {
+    if (!roomId || !rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const st = jukeboxRooms[roomId];
+    if (st && st.nowPlaying && st.nowPlaying.id === songId) {
+      advanceJukebox(roomId);
+    }
   });
 
   socket.on('vote_song', async ({ roomId, songId }) => {

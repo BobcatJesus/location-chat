@@ -12,6 +12,7 @@ export default function JukeboxPanel({ roomId, onClose, getSocket }) {
   const [view, setView] = useState('queue'); // queue | add
   const [title, setTitle] = useState('');
   const [artist, setArtist] = useState('');
+  const [youtubeUrl, setYoutubeUrl] = useState('');
   const [error, setError] = useState('');
   const [loaded, setLoaded] = useState(false);
   const roomRef = useRef(roomId);
@@ -35,6 +36,7 @@ export default function JukeboxPanel({ roomId, onClose, getSocket }) {
       setView('queue');
       setTitle('');
       setArtist('');
+      setYoutubeUrl('');
     };
     const onSongError = ({ message }) => setError(message || 'Could not add that song.');
 
@@ -67,11 +69,12 @@ export default function JukeboxPanel({ roomId, onClose, getSocket }) {
       return;
     }
     const t = title.trim();
-    if (!t) {
-      setError('Give the song a title.');
+    const yt = youtubeUrl.trim();
+    if (!t && !yt) {
+      setError('Give the song a title or paste a YouTube link.');
       return;
     }
-    socket.emit('add_song', { roomId, title: t, artist: artist.trim() });
+    socket.emit('add_song', { roomId, title: t, artist: artist.trim(), youtubeUrl: yt || undefined });
   };
 
   const vote = (songId) => {
@@ -121,7 +124,7 @@ export default function JukeboxPanel({ roomId, onClose, getSocket }) {
       <div style={{ fontSize: 11, letterSpacing: '0.15em', color: '#35e0ff', marginBottom: 6 }}>🎵 NOW PLAYING</div>
       {nowPlaying ? (
         <>
-          <div style={{ fontSize: 17, fontWeight: 700, color: '#ffb02e' }}>{nowPlaying.title}</div>
+          <div style={{ fontSize: 17, fontWeight: 700, color: '#ffb02e' }}>{nowPlaying.youtubeVideoId ? '▶ ' : ''}{nowPlaying.title}</div>
           {nowPlaying.artist && <div style={{ fontSize: 13, color: '#cfc6b4' }}>{nowPlaying.artist}</div>}
           <div style={{ fontSize: 11, color: '#8a8296', marginTop: 6 }}>
             added by {nowPlaying.addedByName || 'someone'}
@@ -165,7 +168,7 @@ export default function JukeboxPanel({ roomId, onClose, getSocket }) {
           <span style={{ fontSize: 12, color: '#8a8296', minWidth: 22 }}>#{i + 1}</span>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {song.title}
+              {song.youtubeVideoId ? '▶ ' : ''}{song.title}
             </div>
             {song.artist && (
               <div style={{ fontSize: 11, color: '#8a8296', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -210,9 +213,24 @@ export default function JukeboxPanel({ roomId, onClose, getSocket }) {
         placeholder="Artist (optional)"
         maxLength={120}
         style={{
-          width: '100%', boxSizing: 'border-box', padding: '8px 10px', marginBottom: 10,
+          width: '100%', boxSizing: 'border-box', padding: '8px 10px', marginBottom: 8,
           fontSize: 14, fontFamily: 'inherit', background: '#1e1830', color: '#f4f1e6',
           border: '2px solid #35e0ff', borderRadius: 8,
+        }}
+      />
+      <div style={{ fontSize: 11, letterSpacing: '0.15em', color: '#ff3da6', marginBottom: 8, marginTop: 4 }}>
+        ▶ YOUTUBE LINK <span style={{ color: '#8a8296', letterSpacing: 0 }}>(plays for everyone in the room)</span>
+      </div>
+      <input
+        value={youtubeUrl}
+        onChange={(e) => setYoutubeUrl(e.target.value)}
+        placeholder="Paste a YouTube link…"
+        maxLength={200}
+        style={{
+          width: '100%', padding: '8px 10px', marginBottom: 10,
+          boxSizing: 'border-box',
+          fontSize: 14, fontFamily: 'inherit', background: '#1e1830', color: '#f4f1e6',
+          border: '2px solid #ff3da6', borderRadius: 8,
         }}
       />
       {error && <div style={{ fontSize: 12, color: '#ff3da6', marginBottom: 8 }}>{error}</div>}
