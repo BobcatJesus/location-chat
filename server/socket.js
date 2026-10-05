@@ -347,7 +347,7 @@ async function loadShelfBooks(roomId) {
 //          nowPlaying: { ...song, startedAt, skipVotes:Set } | null, timer: NodeTimeout|null }
 const jukeboxRooms = {};
 // Matches youtube.com/watch?v=, youtu.be/, youtube.com/embed/, youtube.com/shorts/
-const YOUTUBE_ID_RE = /(?:youtube\.com\/(?:watch\?[^#]*v=|embed\/|shorts\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/;
+const YOUTUBE_ID_RE = /(?:(?:www\.|music\.)?youtube\.com\/(?:watch\?[^#]*v=|embed\/|shorts\/|v\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/;
 function extractYouTubeId(url) {
   if (!url || typeof url !== 'string') return null;
   const m = url.match(YOUTUBE_ID_RE);
