@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { jukeboxAudio } from './JukeboxAudio.js';
-import { getCoins, spendCoins, JUKEBOX_QUEUE_JUMP_COST } from './CoinWallet.js';
+import { getCoins, spendCoins, JUKEBOX_QUEUE_JUMP_COST, JUKEBOX_YOUTUBE_REQUEST_COST } from './CoinWallet.js';
 
 // JukeboxPanel — see what's playing on the bar jukebox, vote songs up the
 // queue, request a song, or vote to skip the current track. Talk to the
@@ -21,6 +21,8 @@ export default function JukeboxPanel({ roomId, onClose, getSocket }) {
   const getSocketRef = useRef(getSocket);
   getSocketRef.current = getSocket;
   const roomIdRef = useRef(roomId);
+  // A YouTube request is charged only once the server confirms it was added.
+  const pendingYouTubeChargeRef = useRef(false);
 
   useEffect(() => {
     const socket = getSocketRef.current?.();
@@ -34,6 +36,7 @@ export default function JukeboxPanel({ roomId, onClose, getSocket }) {
       setLoaded(false);
       setView('queue');
       setError('');
+      pendingYouTubeChargeRef.current = false;
     }
 
     const onJukeboxState = ({ nowPlaying: np, queue: q }) => {
@@ -42,12 +45,19 @@ export default function JukeboxPanel({ roomId, onClose, getSocket }) {
       setLoaded(true);
     };
     const onSongAdded = () => {
+      if (pendingYouTubeChargeRef.current) {
+        pendingYouTubeChargeRef.current = false;
+        if (spendCoins(JUKEBOX_YOUTUBE_REQUEST_COST)) setCoins(getCoins());
+      }
       setView('queue');
       setTitle('');
       setArtist('');
       setYoutubeUrl('');
     };
-    const onSongError = ({ message }) => setError(message || 'Could not add that song.');
+    const onSongError = ({ message }) => {
+      pendingYouTubeChargeRef.current = false;
+      setError(message || 'Could not add that song.');
+    };
 
     socket.on('jukebox_state', onJukeboxState);
     socket.on('song_added', onSongAdded);
@@ -82,6 +92,15 @@ export default function JukeboxPanel({ roomId, onClose, getSocket }) {
     if (!t && !yt) {
       setError('Give the song a title or paste a YouTube link.');
       return;
+    }
+    if (yt) {
+      if (getCoins() < JUKEBOX_YOUTUBE_REQUEST_COST) {
+        setError(`Not enough coins — a YouTube request costs ${JUKEBOX_YOUTUBE_REQUEST_COST} 🪙.`);
+        return;
+      }
+      pendingYouTubeChargeRef.current = true;
+    } else {
+      pendingYouTubeChargeRef.current = false;
     }
     socket.emit('add_song', { roomId, title: t, artist: artist.trim(), youtubeUrl: yt || undefined });
   };
@@ -209,6 +228,7 @@ export default function JukeboxPanel({ roomId, onClose, getSocket }) {
         Paste any YouTube link — it'll play for <b style={{ color: '#cfc6b4' }}>everyone in the room</b> when
         its turn comes up. Works with youtube.com, youtu.be, and Shorts links.
         Videos that block embedding get skipped automatically.
+        Costs <b style={{ color: '#ffb02e' }}>{JUKEBOX_YOUTUBE_REQUEST_COST} 🪙</b> per request, charged only when the song is added.
       </div>
       <input
         value={youtubeUrl}

@@ -185,6 +185,7 @@ async function initDb() {
     )
   `);
   await pool.query('CREATE INDEX IF NOT EXISTS jukebox_songs_room_played ON jukebox_songs (room_id, played)');
+  await pool.query('ALTER TABLE jukebox_songs ADD COLUMN IF NOT EXISTS youtube_video_id TEXT');
   // Seed the Lola's Depot jukebox with a few house classics.
   const jukeboxSeeds = [
     { id: 'seed-juke-1', room_id: 'lolas-depot', title: 'Ring of Fire', artist: 'Johnny Cash' },
@@ -399,7 +400,7 @@ async function loadJukebox(roomId) {
   if (!pool) return st;
   try {
     const { rows } = await pool.query(
-      'SELECT id, title, artist, votes, added_by AS "addedBy", added_by_name AS "addedByName", created_at AS "createdAt" FROM jukebox_songs WHERE room_id = $1 AND played = FALSE ORDER BY votes DESC, created_at ASC',
+      'SELECT id, title, artist, votes, added_by AS "addedBy", added_by_name AS "addedByName", created_at AS "createdAt", youtube_video_id AS "youtubeVideoId" FROM jukebox_songs WHERE room_id = $1 AND played = FALSE ORDER BY votes DESC, created_at ASC',
       [roomId]
     );
     st.queue = rows.map((r) => ({ ...r, votedBy: new Set(), createdAt: new Date(r.createdAt).getTime() || Date.now() }));
@@ -412,8 +413,8 @@ async function loadJukebox(roomId) {
 async function saveJukeboxSong(roomId, song) {
   if (!pool) return;
   await pool.query(
-    'INSERT INTO jukebox_songs (id, room_id, title, artist, votes, played, added_by, added_by_name) VALUES ($1,$2,$3,$4,$5,FALSE,$6,$7) ON CONFLICT (id) DO UPDATE SET votes=$5',
-    [song.id, roomId, song.title, song.artist, song.votes, song.addedBy, song.addedByName]
+    'INSERT INTO jukebox_songs (id, room_id, title, artist, votes, played, added_by, added_by_name, youtube_video_id) VALUES ($1,$2,$3,$4,$5,FALSE,$6,$7,$8) ON CONFLICT (id) DO UPDATE SET votes=$5, youtube_video_id=$8',
+    [song.id, roomId, song.title, song.artist, song.votes, song.addedBy, song.addedByName, song.youtubeVideoId || null]
   );
 }
 
