@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { getCoins, spendCoins, JUKEBOX_YOUTUBE_REQUEST_COST } from './CoinWallet.js';
+import { isYouTubeBlocked } from './YouTubePlayer.js';
 
 // JukeboxPanel — YouTube is the jukebox. Paste a link and it plays for the
 // whole room (3 coins, charged when the song is added). Below: what's
@@ -15,6 +16,7 @@ export default function JukeboxPanel({ roomId, onClose, getSocket }) {
   const [error, setError] = useState('');
   const [loaded, setLoaded] = useState(false);
   const [coins, setCoins] = useState(() => getCoins());
+  const [ytBlocked, setYtBlocked] = useState(false);
   const roomRef = useRef(roomId);
   roomRef.current = roomId;
 
@@ -71,6 +73,14 @@ export default function JukeboxPanel({ roomId, onClose, getSocket }) {
       socket.off('song_error', onSongError);
     };
   }, [roomId, getSocket]);
+
+  // Poll the player's autoplay-block state so the panel can tell the
+  // user exactly how to unstick the music ("tap anywhere") instead of
+  // sitting there claiming a song is playing in silence.
+  useEffect(() => {
+    const id = setInterval(() => setYtBlocked(isYouTubeBlocked()), 1000);
+    return () => clearInterval(id);
+  }, []);
 
   const submitSong = (e) => {
     e.preventDefault();
@@ -146,6 +156,14 @@ export default function JukeboxPanel({ roomId, onClose, getSocket }) {
               ? ` · ${nowPlaying.skipVotes} skip vote${nowPlaying.skipVotes === 1 ? '' : 's'}`
               : ''}
           </div>
+          {nowPlaying.youtubeVideoId && ytBlocked && (
+            <div style={{
+              marginTop: 10, padding: '8px 10px', fontSize: 12, lineHeight: 1.5,
+              background: '#3a0f24', border: '2px solid #ff3da6', borderRadius: 8, color: '#ffd7ec',
+            }}>
+              🔇 Your browser is holding this song hostage — <b>tap or click anywhere in the game</b> and it'll start.
+            </div>
+          )}
           <button
             onClick={skip}
             style={{

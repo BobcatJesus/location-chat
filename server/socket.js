@@ -994,7 +994,9 @@ io.on('connection', (socket) => {
     };
     st.queue.push(song);
     await saveJukeboxSong(roomId, song);
-    if (!st.nowPlaying) {
+    if (!st.nowPlaying || st.nowPlaying.id === DEFAULT_JUKEBOX_SONG.id) {
+      // Nothing playing — or only the house song, which always yields
+      // the moment someone picks a song of their own.
       advanceJukebox(roomId);
     } else {
       broadcastJukebox(roomId);

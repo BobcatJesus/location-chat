@@ -6,14 +6,17 @@
 //    silently dropped by many browsers, especially on mobile. Every call is
 //    gated on readiness, and a video requested early is loaded the moment
 //    the player is actually ready.
-//  - Browsers block programmatic playback with sound until the user has
-//    interacted with the page. If a play attempt stalls (the state never
-//    reaches PLAYING/BUFFERING), the player is marked "blocked" and playback
-//    is retried on the next real user gesture (tap / click / keypress)
-//    instead of sitting silent for the whole song — and instead of skipping
-//    the song for the whole room when only this device is blocked.
+//  - Browsers block programmatic playback WITH SOUND until the user has
+//    interacted with the page, but muted playback is always allowed. So a
+//    song starts muted when the browser hasn't seen a gesture yet, and the
+//    first tap / click / keypress unmutes it. If even that stalls, the
+//    player is marked "blocked" (the panel tells the user to tap) and
+//    every following gesture retries — a blocked device never skips the
+//    song for the whole room.
 //  - Embed errors (owner disabled embedding, video removed, ...) arrive via
 //    onError and DO skip the song: those fail for every viewer equally.
+//    A failed API load reports through the same path so the queue moves on
+//    instead of pretending a song is playing.
 
 let apiPromise = null;
 let player = null;
@@ -60,6 +63,23 @@ function loadApi() {
   return apiPromise;
 }
 
+function safeState() {
+  try { return player?.getPlayerState?.(); } catch { return null; }
+}
+
+function safeMuted() {
+  try { return !!player?.isMuted?.(); } catch { return false; }
+}
+
+// "Audible" = actually playing, and not stuck muted while the user is
+// close enough to expect sound.
+function isAudible() {
+  const st = safeState();
+  if (st !== 1 && st !== 3) return false; // not playing / buffering
+  if (safeMuted() && desiredVolume != null && desiredVolume > 0) return false;
+  return true;
+}
+
 function stopWatchdog() {
   if (watchdog) { clearInterval(watchdog); watchdog = null; }
 }
@@ -69,14 +89,13 @@ function startWatchdog() {
   let checks = 0;
   watchdog = setInterval(() => {
     checks += 1;
-    let state = null;
-    try { state = player?.getPlayerState?.(); } catch {}
-    if (state === 1 || state === 3) { // playing or buffering: healthy
+    if (isAudible()) {
       blocked = false;
       stopWatchdog();
+      disarmGestureUnlock();
       return;
     }
-    if (checks >= 10) { // ~5s with no playback: assume an autoplay block
+    if (checks >= 10) { // ~5s without audible playback
       blocked = true;
       stopWatchdog();
       armGestureUnlock();
@@ -84,26 +103,55 @@ function startWatchdog() {
   }, 500);
 }
 
+function unlock() {
+  if (!player || !currentVideoId) return;
+  const st = safeState();
+  if ((st === 1 || st === 3) && safeMuted()) {
+    // Playing silently: this gesture is our permission to make noise.
+    try { player.unMute(); } catch {}
+    if (desiredVolume != null) { try { player.setVolume(desiredVolume); } catch {} }
+  } else if (st !== 1 && st !== 3) {
+    // Not playing at all: muted playback is always allowed — start there,
+    // and the next gesture (or this one, checked just after) unmutes.
+    try { player.mute(); } catch {}
+    try { player.playVideo(); } catch {}
+  }
+  setTimeout(() => {
+    if (isAudible()) {
+      blocked = false;
+      disarmGestureUnlock();
+    } else if (currentVideoId) {
+      blocked = true;
+      startWatchdog();
+    }
+  }, 700);
+}
+
 function armGestureUnlock() {
   if (gestureArmed || typeof window === 'undefined') return;
   gestureArmed = true;
-  const unlock = () => {
-    window.removeEventListener('pointerdown', unlock);
-    window.removeEventListener('keydown', unlock);
-    gestureArmed = false;
-    if (player && currentVideoId) {
-      if (desiredVolume != null) { try { player.setVolume(desiredVolume); } catch {} }
-      try { player.playVideo(); } catch {}
-      startWatchdog();
-    }
-  };
   window.addEventListener('pointerdown', unlock);
   window.addEventListener('keydown', unlock);
+}
+
+function disarmGestureUnlock() {
+  if (!gestureArmed || typeof window === 'undefined') return;
+  gestureArmed = false;
+  window.removeEventListener('pointerdown', unlock);
+  window.removeEventListener('keydown', unlock);
 }
 
 function loadNow(videoId) {
   currentVideoId = videoId;
   blocked = false;
+  // If this browser hasn't seen a user gesture yet, sound-first playback
+  // will be refused — start muted (always allowed) and let the first
+  // gesture unmute. If the user already interacted, go straight for sound.
+  const hasGestured = typeof navigator !== 'undefined'
+    && navigator.userActivation
+    ? navigator.userActivation.hasBeenActive
+    : true;
+  if (!hasGestured) { try { player.mute(); } catch {} }
   try { player.loadVideoById(videoId); } catch {}
   startWatchdog();
 }
@@ -154,10 +202,18 @@ function ensurePlayer(YT) {
  * callbacks: { onEnded(videoId), onError(videoId) }
  */
 export async function playYouTube(videoId, callbacks = {}) {
-  if (!videoId || apiFailed) return false;
+  if (!videoId) return false;
   endedCallback = callbacks.onEnded || null;
   errorCallback = callbacks.onError || null;
   currentVideoId = videoId;
+  if (apiFailed) {
+    // Report it like an embed error so the room's queue moves on
+    // instead of sitting on a song this device can never play.
+    if (typeof errorCallback === 'function') {
+      try { errorCallback(videoId); } catch {}
+    }
+    return false;
+  }
   if (player && playerReady) {
     loadNow(videoId);
     return true;
@@ -182,6 +238,7 @@ export async function playYouTube(videoId, callbacks = {}) {
 
 export function stopYouTube() {
   stopWatchdog();
+  disarmGestureUnlock();
   blocked = false;
   pendingVideoId = null;
   try { player?.stopVideo(); } catch {}
@@ -209,7 +266,7 @@ export function isYouTubePlaying() {
 }
 
 // True when this device is stuck behind the browser's autoplay rules and
-// is waiting for the player's next tap/click/keypress to start the audio.
+// needs a tap/click/keypress before the music can be heard.
 export function isYouTubeBlocked() {
   return blocked;
 }
