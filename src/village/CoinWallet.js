@@ -63,5 +63,4 @@ export function awardNewPlaceVisit(placeId) {
 }
 
 // Jukebox pricing
-export const JUKEBOX_QUEUE_JUMP_COST = 3;
 export const JUKEBOX_YOUTUBE_REQUEST_COST = 3;

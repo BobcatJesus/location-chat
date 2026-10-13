@@ -356,6 +356,18 @@ function extractYouTubeId(url) {
 }
 const jukeboxLoaded = new Set();
 const SONG_MS = 3 * 60 * 1000; // simulated track length
+
+// The house song: plays in every room before anyone has picked a song,
+// and again whenever the queue runs dry. Songs users pick always go
+// ahead of it — the moment one is queued, it plays next.
+const DEFAULT_JUKEBOX_SONG = {
+  id: 'default-time-is-running-out',
+  title: 'Time Is Running Out',
+  artist: 'Muse',
+  youtubeVideoId: 'O2IuJPh6h_A',
+  addedByName: 'Side Quest',
+  votes: 0,
+};
 const SKIP_VOTES_NEEDED = 2;
 
 function jukeboxState(roomId) {
@@ -403,7 +415,11 @@ async function loadJukebox(roomId) {
       'SELECT id, title, artist, votes, added_by AS "addedBy", added_by_name AS "addedByName", created_at AS "createdAt", youtube_video_id AS "youtubeVideoId" FROM jukebox_songs WHERE room_id = $1 AND played = FALSE ORDER BY votes DESC, created_at ASC',
       [roomId]
     );
-    st.queue = rows.map((r) => ({ ...r, votedBy: new Set(), createdAt: new Date(r.createdAt).getTime() || Date.now() }));
+    // Legacy title-only seed rows never actually play — keep them out of
+    // the live queue so they can't block the house song or user picks.
+    st.queue = rows
+      .filter((r) => r.youtubeVideoId || !String(r.id).startsWith('seed-'))
+      .map((r) => ({ ...r, votedBy: new Set(), createdAt: new Date(r.createdAt).getTime() || Date.now() }));
   } catch (e) {
     console.error('loadJukebox failed:', e.message);
   }
@@ -441,14 +457,25 @@ function advanceJukebox(roomId) {
     clearTimeout(st.timer);
     st.timer = null;
   }
-  sortJukeboxQueue(st.queue);
-  const next = st.queue.shift();
-  if (!next) {
-    st.nowPlaying = null;
-    broadcastJukebox(roomId);
-    return;
+  // If the house song just ended almost immediately, it is probably
+  // embed-blocked — don't spin it in a loop; sit out a cooldown instead.
+  const prev = st.nowPlaying;
+  if (prev && prev.id === DEFAULT_JUKEBOX_SONG.id && Date.now() - (prev.startedAt || 0) < 20000) {
+    st.defaultCooldownUntil = Date.now() + 5 * 60 * 1000;
   }
-  markSongPlayed(next.id);
+  sortJukeboxQueue(st.queue);
+  let next = st.queue.shift();
+  if (!next) {
+    if (st.defaultCooldownUntil && Date.now() < st.defaultCooldownUntil) {
+      st.nowPlaying = null;
+      broadcastJukebox(roomId);
+      return;
+    }
+    // Queue is dry: the house song takes the stage.
+    next = { ...DEFAULT_JUKEBOX_SONG, addedBy: 'house', votedBy: new Set(), createdAt: Date.now() };
+  } else {
+    markSongPlayed(next.id);
+  }
   st.nowPlaying = { ...next, votedBy: undefined, startedAt: Date.now(), skipVotes: new Set() };
   broadcastJukebox(roomId);
   const waitMs = next.youtubeVideoId ? 10 * 60 * 1000 : SONG_MS;
@@ -926,7 +953,7 @@ io.on('connection', (socket) => {
   socket.on('get_jukebox', async ({ roomId }) => {
     if (!roomId || !rooms[roomId]) return;
     const st = await loadJukebox(roomId);
-    if (!st.nowPlaying && st.queue.length > 0) {
+    if (!st.nowPlaying) {
       advanceJukebox(roomId);
     } else {
       const userId = socketUserMap[socket.id] || socket.id;
@@ -1003,13 +1030,20 @@ io.on('connection', (socket) => {
     const st = jukeboxRooms[roomId];
     if (!st || !st.nowPlaying) return;
     const np = st.nowPlaying;
+    // Skipping the house song benches it for a while — otherwise it
+    // would just restart itself the moment it's skipped.
+    const benchDefault = () => {
+      if (np.id === DEFAULT_JUKEBOX_SONG.id) st.defaultCooldownUntil = Date.now() + 5 * 60 * 1000;
+    };
     // The person who queued it can skip it outright.
     if (np.addedBy === userId) {
+      benchDefault();
       advanceJukebox(roomId);
       return;
     }
     np.skipVotes.add(userId);
     if (np.skipVotes.size >= SKIP_VOTES_NEEDED) {
+      benchDefault();
       advanceJukebox(roomId);
     } else {
       broadcastJukebox(roomId);

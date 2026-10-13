@@ -8,7 +8,6 @@ import { RoomEditor } from './RoomEditor.js';
 import { OutdoorEditor } from './OutdoorEditor.js';
 import { Prop, PROP_DEFS } from './Prop.js';
 import { createAvatarEntity, preloadAvatarTextures } from '../game/entities/avatarFactory';
-import { jukeboxAudio } from './JukeboxAudio.js';
 import { playYouTube, stopYouTube, setYouTubeVolume, getYouTubeVideoId } from './YouTubePlayer.js';
 import { HalloweenMode } from './HalloweenMode.js';
 import { normalizeAvatarModel } from '../game/entities/avatarModels';
@@ -997,9 +996,9 @@ export class VillageScene extends Phaser.Scene {
     const vid = nowPlaying?.youtubeVideoId || null;
     const songId = nowPlaying?.id || null;
     this._ytSongId = songId;
+    this._ytWantedVid = vid;
     if (vid) {
       if (getYouTubeVideoId() === vid) return; // already playing
-      jukeboxAudio.pause(); // local house tracks yield to YouTube
       playYouTube(vid, {
         onEnded: (endedVid) => {
           if (this.socket?.connected && this._ytSongId) {
@@ -1019,8 +1018,11 @@ export class VillageScene extends Phaser.Scene {
   }
 
   _updateJukeboxAudio() {
+    // YouTube is the only jukebox audio — this just fades it with
+    // distance to the nearest jukebox (full volume close, silent far).
+    if (!this._ytWantedVid) return;
     if (!this.player || !this.roomLayout?.interactZones) {
-      jukeboxAudio.pause();
+      setYouTubeVolume(0);
       return;
     }
     let best = null, bestD = Infinity;
@@ -1032,16 +1034,11 @@ export class VillageScene extends Phaser.Scene {
       if (d < bestD) { bestD = d; best = { x: jx, y: jy }; }
     }
     if (best) {
-      const audible = jukeboxAudio.updateProximity(this.player.gx, this.player.gy, best.x, best.y);
-      // Mirror proximity volume onto the YouTube player when it's active.
-      if (getYouTubeVideoId()) {
-        const dist = Math.hypot(this.player.gx - best.x, this.player.gy - best.y);
-        const vol = dist <= 250 ? 0.8 : Math.max(0.05, 0.8 * (1 - (dist - 250) / 450));
-        setYouTubeVolume(audible ? vol : 0);
-      }
+      const dist = Math.hypot(this.player.gx - best.x, this.player.gy - best.y);
+      const vol = dist <= 250 ? 0.8 : Math.max(0.05, 0.8 * (1 - (dist - 250) / 450));
+      setYouTubeVolume(dist <= 700 ? vol : 0);
     } else {
-      jukeboxAudio.pause();
-      if (getYouTubeVideoId()) setYouTubeVolume(0);
+      setYouTubeVolume(0);
     }
   }
 
@@ -1965,7 +1962,6 @@ export class VillageScene extends Phaser.Scene {
     this.feedPrompt?.destroy();
     this.shelfPrompt?.destroy();
     this.jukeboxPrompt?.destroy();
-    jukeboxAudio.stop();
     try { stopYouTube(); } catch {}
     if (this.ghosts) { for (const [, g] of this.ghosts) { try { g.avatar.destroy(); } catch {} } this.ghosts.clear(); }
     this.staticNpcs?.forEach((npc) => npc.destroy?.());
