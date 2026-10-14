@@ -24,7 +24,7 @@ export class HalloweenMode {
     this._placePumpkins();
     this._placeWebs();
     this.batTimer = 5000 + Math.random() * 5000;
-    this.ghostTimer = 20000 + Math.random() * 15000;
+    this.ghostTimer = 10000 + Math.random() * 8000;
   }
 
   _roomSize() {
@@ -35,16 +35,27 @@ export class HalloweenMode {
   _placePumpkins() {
     try {
       const { W, H } = this._roomSize();
+      // Twice as many pumpkins as the original two.
       const spots = [
         { x: W * 0.08, y: H * 0.85 },
         { x: W * 0.92, y: H * 0.82 },
+        { x: W * 0.30, y: H * 0.90 },
+        { x: W * 0.66, y: H * 0.88 },
       ];
+      // His jack-o'-lantern art, noticeably bigger than the old 40px emoji
+      // (the visible pumpkin grows by about half) while staying well under
+      // avatar height (64-76 world units). Emoji stays as a fallback.
+      const PUMPKIN_SIZE = 48;
+      const useArt = this.scene.textures?.exists('sq-jackolantern');
       for (const s of spots) {
-        const p = this.scene.add.text(s.x, s.y, '🎃', { fontSize: '40px' });
+        const p = useArt
+          ? this.scene.add.image(s.x, s.y, 'sq-jackolantern')
+          : this.scene.add.text(s.x, s.y, '🎃', { fontSize: '40px' });
+        if (useArt) p.setDisplaySize(PUMPKIN_SIZE, PUMPKIN_SIZE);
         p.setOrigin(0.5, 1);
         p.setDepth(DEPTH.ACTOR_MIN + Math.round(s.y));
         this.scene.tweens.add({
-          targets: p, alpha: 0.7, duration: 900 + Math.random() * 600,
+          targets: p, alpha: 0.8, duration: 900 + Math.random() * 600,
           yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
         });
         this.decor.push(p);
@@ -108,7 +119,12 @@ export class HalloweenMode {
       const startX = fromLeft ? cx - viewW / 2 - 80 : cx + viewW / 2 + 80;
       const endX = fromLeft ? cx + viewW / 2 + 80 : cx - viewW / 2 - 80;
       const y = cy + (Math.random() - 0.5) * viewH * 0.3;
-      const ghost = this.scene.add.text(startX, y, '👻', { fontSize: '34px' });
+      // His ghost art when it's loaded; the emoji is the fallback.
+      const useArt = this.scene.textures?.exists('sq-ghost');
+      const ghost = useArt
+        ? this.scene.add.image(startX, y, 'sq-ghost')
+        : this.scene.add.text(startX, y, '👻', { fontSize: '34px' });
+      if (useArt) ghost.setDisplaySize(56, 56);
       ghost.setDepth(DEPTH.OVERHEAD + 40);
       ghost.setAlpha(0);
       const scene = this.scene;
@@ -134,7 +150,7 @@ export class HalloweenMode {
     this.ghostTimer -= delta;
     if (this.ghostTimer <= 0) {
       this._spawnGhost();
-      this.ghostTimer = 45000 + Math.random() * 30000; // rare treat
+      this.ghostTimer = 22000 + Math.random() * 15000; // about twice as often as the original rare treat
     }
   }
 
