@@ -29,7 +29,7 @@ export class HalloweenMode {
     // the colony: a swarm crosses the sky shortly after you arrive.
     if (this.scene.isOutdoorLocation) {
       this.scene.time.delayedCall(700, () => {
-        if (this.active) this._spawnBatSwarm();
+        if (this.active) this._spawnMistSwarm();
       });
     }
   }
@@ -88,26 +88,40 @@ export class HalloweenMode {
     } catch {}
   }
 
-  _spawnBatSwarm() {
-    // The whole colony at once: 14-20 bats, one shared direction, but each
-    // with its own size, altitude, speed, and wobble so it reads as a swarm
-    // and not a formation. Staggered launches over about two seconds.
+  _spawnMistSwarm() {
+    // His mist artwork IS the swarm: a bank of bat-filled fog that crosses
+    // the sky when you arrive somewhere outdoors. Same crossing movement
+    // the old emoji swarm had — his art instead of emoji.
     if (!this.scene.isOutdoorLocation) return;
-    const fromLeft = Math.random() < 0.5;
-    const count = 14 + Math.floor(Math.random() * 7);
-    for (let i = 0; i < count; i++) {
-      const delay = i * (90 + Math.random() * 90);
-      this.scene.time.delayedCall(delay, () => {
-        if (!this.active) return;
-        this._spawnBat({
-          fromLeft,
-          fontSize: 20 + Math.random() * 14,
-          duration: 6000 + Math.random() * 4000,
-          yBand: 0.14 + Math.random() * 0.3,
-          wobble: 14 + Math.random() * 18,
-        });
+    if (!this.scene.textures?.exists('sq-batmist')) return;
+    try {
+      const cam = this.scene.cameras.main;
+      const viewW = cam.width / cam.zoom;
+      const viewH = cam.height / cam.zoom;
+      const cx = cam.scrollX + viewW / 2;
+      const cy = cam.scrollY + viewH / 2;
+      const fromLeft = Math.random() < 0.5;
+      const dispW = viewW * 1.25;
+      const dispH = dispW * (683 / 1024);
+      const startX = fromLeft ? cx - viewW / 2 - dispW / 2 : cx + viewW / 2 + dispW / 2;
+      const endX = fromLeft ? cx + viewW / 2 + dispW / 2 : cx - viewW / 2 - dispW / 2;
+      const baseY = cy - viewH * 0.08;
+      const mist = this.scene.add.image(startX, baseY, 'sq-batmist');
+      mist.setDisplaySize(dispW, dispH);
+      mist.setDepth(DEPTH.OVERHEAD + 50);
+      if (!fromLeft) mist.setFlipX(true);
+      mist.setAlpha(0);
+      const scene = this.scene;
+      scene.tweens.add({
+        targets: mist, alpha: 0.9, duration: 2200, yoyo: true, hold: 6400,
+        ease: 'Sine.easeInOut',
       });
-    }
+      scene.tweens.add({
+        targets: mist, x: endX, duration: 11000, ease: 'Linear',
+        onUpdate: () => { mist.y = baseY + Math.sin(scene.time.now / 600) * 10; },
+        onComplete: () => mist.destroy(),
+      });
+    } catch {}
   }
 
   _spawnBat(opts = {}) {
