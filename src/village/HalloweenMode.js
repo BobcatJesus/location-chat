@@ -25,6 +25,13 @@ export class HalloweenMode {
     this._placeWebs();
     this.batTimer = 5000 + Math.random() * 5000;
     this.ghostTimer = 10000 + Math.random() * 8000;
+    // Walking into an outdoor place (Shepherd Park and friends) kicks up
+    // the colony: a swarm crosses the sky shortly after you arrive.
+    if (this.scene.isOutdoorLocation) {
+      this.scene.time.delayedCall(700, () => {
+        if (this.active) this._spawnBatSwarm();
+      });
+    }
   }
 
   _roomSize() {
@@ -81,7 +88,29 @@ export class HalloweenMode {
     } catch {}
   }
 
-  _spawnBat() {
+  _spawnBatSwarm() {
+    // The whole colony at once: 14-20 bats, one shared direction, but each
+    // with its own size, altitude, speed, and wobble so it reads as a swarm
+    // and not a formation. Staggered launches over about two seconds.
+    if (!this.scene.isOutdoorLocation) return;
+    const fromLeft = Math.random() < 0.5;
+    const count = 14 + Math.floor(Math.random() * 7);
+    for (let i = 0; i < count; i++) {
+      const delay = i * (90 + Math.random() * 90);
+      this.scene.time.delayedCall(delay, () => {
+        if (!this.active) return;
+        this._spawnBat({
+          fromLeft,
+          fontSize: 20 + Math.random() * 14,
+          duration: 6000 + Math.random() * 4000,
+          yBand: 0.14 + Math.random() * 0.3,
+          wobble: 14 + Math.random() * 18,
+        });
+      });
+    }
+  }
+
+  _spawnBat(opts = {}) {
     // Bats only outdoors (parks).
     if (!this.scene.isOutdoorLocation) return;
     try {
@@ -90,19 +119,21 @@ export class HalloweenMode {
       const viewH = cam.height / cam.zoom;
       const cx = cam.scrollX + viewW / 2;
       const cy = cam.scrollY + viewH / 2;
-      const fromLeft = Math.random() < 0.5;
+      const fromLeft = opts.fromLeft ?? Math.random() < 0.5;
       const startX = fromLeft ? cx - viewW / 2 - 60 : cx + viewW / 2 + 60;
       const endX = fromLeft ? cx + viewW / 2 + 60 : cx - viewW / 2 - 60;
-      const y = cy - viewH * 0.32 + (Math.random() - 0.5) * viewH * 0.2;
-      const bat = this.scene.add.text(startX, y, '🦇', { fontSize: '28px' });
+      const yBand = opts.yBand ?? 0.32;
+      const y = cy - viewH * yBand + (Math.random() - 0.5) * viewH * 0.2;
+      const bat = this.scene.add.text(startX, y, '🦇', { fontSize: `${Math.round(opts.fontSize ?? 28)}px` });
       bat.setDepth(DEPTH.OVERHEAD + 50);
       bat.setAlpha(0.9);
       if (!fromLeft) bat.setFlipX(true);
-      const dur = 7000 + Math.random() * 4000;
+      const dur = opts.duration ?? 7000 + Math.random() * 4000;
+      const wobble = opts.wobble ?? 24;
       const scene = this.scene;
       scene.tweens.add({
         targets: bat, x: endX, duration: dur, ease: 'Linear',
-        onUpdate: () => { bat.y = y + Math.sin(scene.time.now / 180) * 24; },
+        onUpdate: () => { bat.y = y + Math.sin(scene.time.now / 180) * wobble; },
         onComplete: () => bat.destroy(),
       });
     } catch {}
