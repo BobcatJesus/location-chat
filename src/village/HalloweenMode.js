@@ -121,6 +121,49 @@ export class HalloweenMode {
         onUpdate: () => { mist.y = baseY + Math.sin(scene.time.now / 600) * 10; },
         onComplete: () => mist.destroy(),
       });
+      // The colony rides with the bank: dark silhouettes in the same style
+      // as his mist art, two wing poses swapping fast so they flap. This is
+      // what makes the passing shade read as a bat swarm, not weather.
+      const hasBats = this.scene.textures?.exists('sq-bat-up') && this.scene.textures?.exists('sq-bat-flat');
+      if (hasBats) {
+        const count = 14 + Math.floor(Math.random() * 5);
+        for (let i = 0; i < count; i++) {
+          this.scene.time.delayedCall(Math.random() * 2200, () => {
+            if (this.active) this._spawnMistBat({ fromLeft, viewW, viewH, cx, cy });
+          });
+        }
+      }
+    } catch {}
+  }
+
+  _spawnMistBat({ fromLeft, viewW, viewH, cx, cy }) {
+    try {
+      const scene = this.scene;
+      const w = 24 + Math.random() * 16;
+      const startX = fromLeft ? cx - viewW / 2 - 50 : cx + viewW / 2 + 50;
+      const endX = fromLeft ? cx + viewW / 2 + 50 : cx - viewW / 2 - 50;
+      const y = cy - viewH * (0.05 + Math.random() * 0.33);
+      const phase = Math.random() * Math.PI * 2;
+      const wobble = 10 + Math.random() * 12;
+      const bat = scene.add.image(startX, y, Math.random() < 0.5 ? 'sq-bat-up' : 'sq-bat-flat');
+      bat.setDisplaySize(w, w * (260 / 480));
+      bat.setDepth(DEPTH.OVERHEAD + 60);
+      bat.setAlpha(0.92);
+      if (!fromLeft) bat.setFlipX(true);
+      let up = bat.texture.key === 'sq-bat-up';
+      const flap = scene.time.addEvent({
+        delay: 100 + Math.random() * 45,
+        loop: true,
+        callback: () => {
+          up = !up;
+          bat.setTexture(up ? 'sq-bat-up' : 'sq-bat-flat');
+        },
+      });
+      scene.tweens.add({
+        targets: bat, x: endX, duration: 10200 + Math.random() * 1800, ease: 'Linear',
+        onUpdate: () => { bat.y = y + Math.sin(scene.time.now / 170 + phase) * wobble; },
+        onComplete: () => { flap.remove(false); bat.destroy(); },
+      });
     } catch {}
   }
 

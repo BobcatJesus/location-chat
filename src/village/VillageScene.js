@@ -477,6 +477,8 @@ export class VillageScene extends Phaser.Scene {
     this.load.image('sq-jackolantern', '/assets/sprites/halloween/jackolantern.png');
     this.load.image('sq-ghost', '/assets/sprites/halloween/ghost.png');
     this.load.image('sq-batmist', '/assets/sprites/halloween/bat-mist.png');
+    this.load.image('sq-bat-up', '/assets/sprites/halloween/bat-up.png');
+    this.load.image('sq-bat-flat', '/assets/sprites/halloween/bat-flat.png');
   }
 
   create() {
