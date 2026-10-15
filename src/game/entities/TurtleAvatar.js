@@ -6,7 +6,7 @@ export default class TurtleAvatar extends SpriteAvatarBase {
     super(scene, x, y, {
       ...options,
       frameKeys: AVATAR_FRAME_KEYS.turtle,
-      targetHeight: 60,
+      targetHeight: 43,
       shadowColor: 0x3d3438,
     });
   }

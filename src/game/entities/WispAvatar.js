@@ -6,7 +6,7 @@ export default class WispAvatar extends SpriteAvatarBase {
     super(scene, x, y, {
       ...options,
       frameKeys: AVATAR_FRAME_KEYS.wisp,
-      targetHeight: 64,
+      targetHeight: 40,
       shadowColor: 0x6b5566,
     });
   }

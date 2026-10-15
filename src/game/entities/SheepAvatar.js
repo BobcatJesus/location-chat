@@ -6,7 +6,7 @@ export default class SheepAvatar extends SpriteAvatarBase {
     super(scene, x, y, {
       ...options,
       frameKeys: AVATAR_FRAME_KEYS.sheep,
-      targetHeight: 64,
+      targetHeight: 43,
       shadowColor: 0x6b5566,
     });
   }

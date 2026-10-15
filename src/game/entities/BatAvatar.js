@@ -6,7 +6,7 @@ export default class BatAvatar extends SpriteAvatarBase {
     super(scene, x, y, {
       ...options,
       frameKeys: AVATAR_FRAME_KEYS.bat,
-      targetHeight: 64,
+      targetHeight: 51,
       shadowColor: 0x5a4a5e,
     });
   }
