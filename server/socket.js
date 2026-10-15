@@ -910,6 +910,16 @@ io.on('connection', (socket) => {
     socket.to(roomId).emit('duck_fed', { x: cx, y: cy });
   });
 
+  // BUY DRINK (bar counter treat — buyer pays from their local wallet;
+  // the room just sees the toast, rate-limited like duck feeding)
+  socket.on('buy_drink', ({ roomId } = {}) => {
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const userId = socketUserMap[socket.id] || socket.id;
+    const rate = checkRateLimit(userId);
+    if (!rate.allowed) return;
+    socket.to(roomId).emit('player_drank', { socketId: socket.id });
+  });
+
   // SHELF BOOKS (library: browse a shelf, read book cards, add books)
   socket.on('get_shelf_books', async ({ roomId, shelf }) => {
     if (!roomId || !shelf) return;

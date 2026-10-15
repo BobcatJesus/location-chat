@@ -266,7 +266,71 @@ export default class SpriteAvatarBase extends Phaser.GameObjects.Container {
     tryCreatePhoto(texKey);
   }
 
+  // Bar treat: raise a mug to the face, tip back, take a few sips.
+  // Purely cosmetic — the scene handles coins and broadcasting.
+  playDrink() {
+    if (this._drinking || !this.scene?.add || !this._sprite) return;
+    this._drinking = true;
+    const scene = this.scene;
+    const sprite = this._sprite;
+
+    // How much of the sprite frame the character art actually fills —
+    // the mug has to meet the drawn face, not the frame's top edge.
+    const FILL = { demon: 0.62, bunny: 0.72, turtle: 0.92, snake: 0.92, sheep: 0.92, wisp: 1.0, bat: 0.78, hoodie: 0.9, male: 0.9 };
+    const key = String(this._frameKeys?.front?.[0] || '');
+    const model = key.split('-')[0];
+    const fill = FILL[model] ?? 0.85;
+    const faceY = -Math.round(this._targetHeight * fill * 0.8);
+    const handX = this._dir === 'side' ? (this._facingLeft ? -11 : 11) : 6;
+    const handY = Math.round(faceY * 0.45);
+
+    const mug = scene.add.text(handX, handY, '\u{1F37A}', { fontSize: '15px' })
+      .setOrigin(0.5, 1)
+      .setAlpha(0);
+    this.add(mug);
+    this._drinkMug = mug;
+
+    const alive = () => this._drinking && mug.active && sprite.active;
+    const steps = [
+      { targets: mug, props: { alpha: 1 }, dur: 160 },                                        // mug appears in hand
+      { targets: mug, props: { x: handX * 0.6, y: faceY }, dur: 340 },                        // raise to the face
+      { targets: sprite, props: { angle: -7 }, dur: 300 },                                   // tip back
+      { targets: mug, props: { y: faceY + 3 }, dur: 180, yoyo: true, repeat: 2 },             // sips
+      { targets: sprite, props: { angle: 0 }, dur: 260 },                                     // straighten up
+      { targets: mug, props: { x: handX, y: handY, alpha: 0 }, dur: 300 },                    // lower + fade
+    ];
+    const run = (i) => {
+      if (!alive()) { this._endDrink(); return; }
+      if (i >= steps.length) { this._endDrink(); return; }
+      const st = steps[i];
+      scene.tweens.add({
+        targets: st.targets,
+        ...st.props,
+        duration: st.dur,
+        yoyo: Boolean(st.yoyo),
+        repeat: st.repeat || 0,
+        ease: 'Sine.easeInOut',
+        onComplete: () => run(i + 1),
+      });
+    };
+    run(0);
+  }
+
+  _endDrink() {
+    if (this._drinkMug) {
+      try { this.scene?.tweens?.killTweensOf(this._drinkMug); } catch {}
+      this._drinkMug.destroy();
+      this._drinkMug = null;
+    }
+    if (this._sprite) {
+      try { this.scene?.tweens?.killTweensOf(this._sprite); } catch {}
+      if (this._sprite.active) this._sprite.angle = 0;
+    }
+    this._drinking = false;
+  }
+
   destroy(fromScene) {
+    this._endDrink();
     this._label?.destroy();
     this._photoRing?.destroy();
     this._photo?.destroy();

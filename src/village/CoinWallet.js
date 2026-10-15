@@ -64,3 +64,6 @@ export function awardNewPlaceVisit(placeId) {
 
 // Jukebox pricing
 export const JUKEBOX_YOUTUBE_REQUEST_COST = 3;
+
+// Bar pricing
+export const BAR_DRINK_COST = 2;

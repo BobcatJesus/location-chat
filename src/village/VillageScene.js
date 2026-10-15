@@ -580,6 +580,16 @@ export class VillageScene extends Phaser.Scene {
       padding: { x: 8, y: 4 },
     }).setOrigin(0.5, 1).setDepth(DEPTH.UI).setAlpha(0);
 
+    // Bar counter interaction (buy a drink, 2 coins)
+    this._drinkCooldownMs = 0;
+    this._drinkBrokeUntil = 0;
+    this.drinkPrompt = this.add.text(0, 0, '🍺 Buy a drink · 2 coins [E]', {
+      fontSize: '15px',
+      color: '#7c2d12',
+      backgroundColor: 'rgba(255,255,255,0.85)',
+      padding: { x: 8, y: 4 },
+    }).setOrigin(0.5, 1).setDepth(DEPTH.UI).setAlpha(0);
+
     // Escalator debounce flag
     this._escalatorCooldown = 0;
 
@@ -955,6 +965,8 @@ export class VillageScene extends Phaser.Scene {
       this.onOpenJukebox({ roomId: this.roomId });
     } else if (kind === 'ducks') {
       this._tryFeedDucks();
+    } else if (kind === 'bar') {
+      this._tryBuyDrink();
     }
   }
 
@@ -965,6 +977,7 @@ export class VillageScene extends Phaser.Scene {
     if (nearPond && this._feedCooldownMs <= 0) return 'ducks';
     if (this._nearestShelf()) return 'shelf';
     if (this._nearestJukebox()) return 'jukebox';
+    if (this._nearestBar()) return 'bar';
     return null;
   }
 
@@ -995,6 +1008,41 @@ export class VillageScene extends Phaser.Scene {
       if (d < bestD) { bestD = d; best = z; }
     }
     return best ? { label: best.label } : null;
+  }
+
+  _nearestBar() {
+    if (!this.player || !this.roomLayout?.interactZones) return null;
+    const px = this.player.gx, py = this.player.gy;
+    let best = null, bestD = 110;
+    for (const z of this.roomLayout.interactZones) {
+      if (z.type !== 'counter') continue;
+      if (!/bar/i.test(z.label || '')) continue;
+      const cx = Math.max(z.x, Math.min(px, z.x + (z.w || 0)));
+      const cy = Math.max(z.y, Math.min(py, z.y + (z.h || 0)));
+      const d = Math.hypot(px - cx, py - cy);
+      if (d < bestD) { bestD = d; best = z; }
+    }
+    return best ? { label: best.label } : null;
+  }
+
+  // Buy a drink at the bar counter: spend coins from the local wallet,
+  // play the drinking animation, and let the room see it too.
+  async _tryBuyDrink() {
+    if (this._drinkCooldownMs > 0) return;
+    const avatar = this.player?.avatar;
+    if (!avatar || typeof avatar.playDrink !== 'function') return;
+    try {
+      const wallet = await import('./CoinWallet.js');
+      if (!wallet.spendCoins(wallet.BAR_DRINK_COST)) {
+        this._drinkBrokeUntil = this.time.now + 1300;
+        return;
+      }
+    } catch {
+      return;
+    }
+    this._drinkCooldownMs = 3000;
+    avatar.playDrink();
+    this.socket?.emit('buy_drink', { roomId: this.roomId });
   }
 
   _syncYouTubeJukebox(nowPlaying) {
@@ -1254,6 +1302,11 @@ export class VillageScene extends Phaser.Scene {
     // Remote player fed the ducks: mirror the feeding frenzy locally.
     socket.on('duck_fed', ({ x, y } = {}) => {
       this.duckPond?.feed(x, y, true);
+    });
+
+    // Remote player bought a drink at the bar: play their toast locally.
+    socket.on('player_drank', ({ socketId } = {}) => {
+      this.remotePlayers.get(socketId)?.avatar?.playDrink?.();
     });
 
     // Room-wide YouTube jukebox: play the server's now-playing video for everyone.
@@ -1743,6 +1796,7 @@ export class VillageScene extends Phaser.Scene {
 
     // Duck pond: tick ducks, show feed prompt near ponds, decay feed cooldown.
     this._feedCooldownMs = Math.max(0, (this._feedCooldownMs || 0) - delta);
+    this._drinkCooldownMs = Math.max(0, (this._drinkCooldownMs || 0) - delta);
     this.duckPond?.update(delta);
     this.halloween?.update(delta);
     const nearPond = this.duckPond?.nearestFeedablePond(this.player.gx, this.player.gy);
@@ -1767,6 +1821,17 @@ export class VillageScene extends Phaser.Scene {
       this.jukeboxPrompt.setText('🎵 Jukebox [E]').setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
     } else {
       this.jukeboxPrompt.setAlpha(0);
+    }
+
+    // Bar counter: prompt near the bar (other prompts take priority);
+    // a failed buy flashes a "need coins" note instead.
+    const nearBar = this._nearestBar();
+    if (this._drinkBrokeUntil > this.time.now && nearBar) {
+      this.drinkPrompt.setText('🍺 Need 2 coins!').setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
+    } else if (nearBar && !nearPond && !nearShelf && !nearJukebox) {
+      this.drinkPrompt.setText('🍺 Buy a drink · 2 coins [E]').setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
+    } else {
+      this.drinkPrompt.setAlpha(0);
     }
     this._updateJukeboxAudio();
 
@@ -1967,6 +2032,7 @@ export class VillageScene extends Phaser.Scene {
     this.feedPrompt?.destroy();
     this.shelfPrompt?.destroy();
     this.jukeboxPrompt?.destroy();
+    this.drinkPrompt?.destroy();
     try { stopYouTube(); } catch {}
     if (this.ghosts) { for (const [, g] of this.ghosts) { try { g.avatar.destroy(); } catch {} } this.ghosts.clear(); }
     this.staticNpcs?.forEach((npc) => npc.destroy?.());
