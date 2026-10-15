@@ -94,8 +94,15 @@ export default class SpriteAvatarBase extends Phaser.GameObjects.Container {
   }
 
   _getPhotoYOffset() {
-    const scale = this._getVisualScale();
-    return 66 + (scale - 1) * 30;
+    // Stack the photo clear ABOVE the name label (which sits above the head):
+    // derive the offset from the label position + this photo's own radius,
+    // so the disc can never sink onto the label or the avatar's head at
+    // any zoom scale or photo size.
+    const photoRadius = Math.max(PHOTO_BASE_RADIUS, Math.round(this._getPhotoSize() / 2));
+    const labelHalfHeight = 10; // 10px font + padding, approx
+    const ringMargin = 3;
+    const gap = 5;
+    return this._getLabelYOffset() + labelHalfHeight + ringMargin + gap + photoRadius;
   }
 
   _getPhotoSize() {
