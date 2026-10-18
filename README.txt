@@ -1,42 +1,47 @@
-SIDE QUEST — BARTENDER SERVICE v1
-Replaces the automatic bar buy: drinks are ordered from the bartender.
+SIDE QUEST — BARTENDER SERVICE v2 (supersedes v1)
+Drinks are ordered from the bartender, who asks what you want.
 
-WHAT CHANGES
-- At the bar counter the prompt now reads "Order a drink · 2 coins [E]".
-- Pressing E places an ORDER (no charge yet). The bartender leaves his
-  patrol, walks the counter to you, pours (~1 sec), and hands it over —
-  your drink animation plays and 2 coins are charged AT THE HAND-OFF.
-- Orders queue first-come-first-served (max 4 waiting). Everyone in the
-  room sees the same serves, in the same order.
-- Wander more than a few steps from the bar before he finishes and the
-  order fizzles: no drink, no charge ("You wandered off — no charge").
-- While your order is in flight the prompt reads "Coming right up…".
-- Bars with a counter but NO bartender NPC keep the old instant buy.
-- The bartender's Inworld dialogue AI is untouched — serving is a
-  scripted movement task layered beside it, not inside it.
+HOW IT PLAYS
+- At the counter: "Order a drink · 2 coins [E]".
+- Press E and the bartender asks — his bubble says "What'll ya have?"
+  and a picker line appears: [1] Lone Star  [2] Lager  [3] IPA
+  [4] Stout  [5] Surprise me. Press a number, or Enter for your usual
+  (starred), or Esc to cancel. Walking away closes the picker.
+- Your pick is remembered on this device: next time it's starred as
+  your usual, so Enter alone reorders it.
+- Orders queue first-come-first-served (max 4). He walks the counter
+  to you, pours (~1 sec), and calls it out in a bubble — "One Lone
+  Star" — as your drink animation plays. Coins (2) charge at the
+  hand-off, never before. Every screen in the room sees the same serves.
+- Wander off mid-serve: no drink, no charge ("You wandered off").
+- "Surprise me" picks a random tap at order time; his call-out names
+  what he chose.
+- All beers are mechanically the same drink (by design — the name is
+  the fiction). The bartender's Inworld chat is completely untouched;
+  asking/serving is a scripted layer beside it.
+- Bars with a counter but no bartender NPC keep the old instant buy.
+- Picking by number is desktop-only in this version; on mobile, tap
+  the interact button to open the picker and tap it again to take
+  your usual.
 
-FILES (extract over the repo root, same as other kits)
-- src/village/VillageScene.js        (ordering, queue, serve sequence)
-- server/socket.js                   (order_drink relay)
-- src/village/CoinWallet.js          (unchanged, included for completeness)
-- src/game/entities/SpriteAvatarBase.js (unchanged drink animation carrier)
+FILES (extract over the repo root)
+- src/village/VillageScene.js, server/socket.js (order relay w/ beer)
+- src/village/CoinWallet.js, src/game/entities/SpriteAvatarBase.js
+  (unchanged carriers from the bar-drink kit)
 
-DEPLOY ORDER — IMPORTANT
-This kit takes the place of the bar-drink kit in the deploy order
-(avatar-size -> THIS -> wallet-per-profile -> photo-above-head -> gator).
-- If you have NOT deployed the jukebox title fix: use server/socket.js.
-- If you HAVE deployed the jukebox title fix (or do it later):
-  use server/socket.with-title-fix.js INSTEAD — copy it over
-  server/socket.js. Never deploy the old title-fix kit's socket after
-  this kit; it would erase the bartender order relay.
+DEPLOY ORDER — takes the bar-drink kit's place (slot 2):
+avatar-size -> THIS -> wallet -> photo -> gator.
+- Title fix NOT deployed on main: use server/socket.js as-is.
+- socket.with-title-fix.js is only for a future where the jukebox
+  title fix is deployed; ignore it tonight (delete after extracting
+  so it isn't committed).
 
 AFTER DEPLOY, CHECK IN LOLA'S DEPOT
-1. Walk to the counter: prompt says "Order a drink · 2 coins [E]".
-2. Press E with 2+ coins: balance unchanged until the bartender
-   reaches you and pours; then -2 and your mug animation plays.
-3. Order with 0-1 coins: "Need 2 coins!" flash, no order placed.
-4. Order, then walk across the room: no charge, "wandered off" note.
-5. On a second screen/account in the same room: the serve is visible
-   there too, and the drinker's toast plays on that screen.
-6. Talk to the bartender (NPC chat) before/after a serve: dialogue
-   behaves exactly as before.
+1. Counter prompt reads "Order a drink · 2 coins [E]".
+2. E: bubble "What'll ya have?" + picker line. Press 1: order placed.
+3. Balance unchanged until he pours and calls "One Lone Star" —
+   then -2 and your mug animation plays.
+4. Next order: Lone Star is starred; Enter alone reorders it.
+5. Order then walk across the room: no charge.
+6. Second screen in the room sees the serve + call-out bubble.
+7. Chat with the bartender: Inworld banter unchanged.

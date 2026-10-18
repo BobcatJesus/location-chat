@@ -914,9 +914,10 @@ io.on('connection', (socket) => {
   // the room just sees the toast, rate-limited like duck feeding)
   // A player ordered a drink at the bar: everyone else's bartender
   // queues the serve so the whole room sees it happen in order.
-  socket.on('order_drink', ({ roomId } = {}) => {
+  socket.on('order_drink', ({ roomId, beer } = {}) => {
     if (!roomId) return;
-    socket.to(roomId).emit('drink_ordered', { socketId: socket.id });
+    const label = typeof beer === 'string' && beer.length > 0 && beer.length <= 40 ? beer : undefined;
+    socket.to(roomId).emit('drink_ordered', { socketId: socket.id, beer: label });
   });
 
   socket.on('buy_drink', ({ roomId } = {}) => {

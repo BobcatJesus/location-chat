@@ -62,6 +62,18 @@ const SOCKET_SERVER_URL = import.meta.env.VITE_BACKEND_URL ||
 const SPEED = 180;
 const TICK_MS = 50; // position broadcast interval
 const PROXIMITY_RADIUS = 150;
+
+// The bartender's taps. Mechanically every beer is the same drink; the
+// name is the fiction, and the fiction is the point. 'surprise' resolves
+// to a random real tap when the order is placed.
+const BEER_MENU = [
+  { id: 'lonestar', label: 'Lone Star' },
+  { id: 'lager', label: 'Lager' },
+  { id: 'ipa', label: 'IPA' },
+  { id: 'stout', label: 'Stout' },
+  { id: 'surprise', label: 'Surprise me' },
+];
+const LAST_BEER_KEY = 'sidequest:lastBeer';
 const DECOR_SYNC_MS = 8000;
 const PRESENCE_SYNC_MS = 4000;
 const DECOR_SYNC_HEALTHY_MS = 30000;
@@ -585,10 +597,30 @@ export class VillageScene extends Phaser.Scene {
     this._drinkBrokeUntil = 0;
     this._drinkMissedUntil = 0;
     this._drinkQueue = [];
+    this._beerMenuOpen = false;
+    this._serveBubbleNpc = null;
+    this._serveBubbleText = '';
+    this._serveBubbleUntil = 0;
     this.drinkPrompt = this.add.text(0, 0, '🍺 Order a drink · 2 coins [E]', {
       fontSize: '15px',
       color: '#7c2d12',
       backgroundColor: 'rgba(255,255,255,0.85)',
+      padding: { x: 8, y: 4 },
+    }).setOrigin(0.5, 1).setDepth(DEPTH.UI).setAlpha(0);
+
+    // Beer-picker line, shown above the player while ordering.
+    this.beerMenuPrompt = this.add.text(0, 0, '', {
+      fontSize: '15px',
+      color: '#7c2d12',
+      backgroundColor: 'rgba(255,255,255,0.92)',
+      padding: { x: 8, y: 4 },
+    }).setOrigin(0.5, 1).setDepth(DEPTH.UI).setAlpha(0);
+
+    // Speech bubble over the bartender ("What'll ya have?", "One Lone Star").
+    this.bartenderBubble = this.add.text(0, 0, '', {
+      fontSize: '14px',
+      color: '#1f2937',
+      backgroundColor: 'rgba(255,255,255,0.95)',
       padding: { x: 8, y: 4 },
     }).setOrigin(0.5, 1).setDepth(DEPTH.UI).setAlpha(0);
 
@@ -653,6 +685,23 @@ export class VillageScene extends Phaser.Scene {
 
       if (e.code === FOOTPRINT_DEBUG_KEY_CODE) {
         this.toggleFootprintDebug();
+        return;
+      }
+
+      // Beer menu is open: digits pick, Enter/E takes the usual, Esc cancels.
+      if (this._beerMenuOpen) {
+        if (key >= '1' && key <= String(BEER_MENU.length)) {
+          this._chooseBeer(Number(key) - 1);
+          return;
+        }
+        if (key === 'enter' || key === 'e') {
+          this._chooseBeer(this._usualBeerIndex());
+          return;
+        }
+        if (key === 'escape') {
+          this._beerMenuOpen = false;
+          return;
+        }
         return;
       }
 
@@ -1031,6 +1080,12 @@ export class VillageScene extends Phaser.Scene {
   // coins are charged when the drink is handed over, not when ordered.
   // Rooms with a bar counter but no bartender keep the old instant buy.
   async _tryBuyDrink() {
+    // Interact pressed while the picker is open (the mobile button has
+    // no number keys): take the usual.
+    if (this._beerMenuOpen) {
+      this._chooseBeer(this._usualBeerIndex());
+      return;
+    }
     if (this._drinkCooldownMs > 0) return;
     const avatar = this.player?.avatar;
     if (!avatar || typeof avatar.playDrink !== 'function') return;
@@ -1056,11 +1111,38 @@ export class VillageScene extends Phaser.Scene {
       return;
     }
     const myId = this.socket?.id || '__local__';
-    if (this._drinkQueue.includes(myId)) return;
+    if (this._drinkQueue.some((entry) => entry.socketId === myId)) return;
     if (this.staticNpcs.some((npc) => npc.serve?.socketId === myId)) return;
+    // The bartender asks what you want; the picker opens (see _chooseBeer).
     this._drinkCooldownMs = 1200;
-    this._enqueueDrinkOrder(myId);
-    this.socket?.emit('order_drink', { roomId: this.roomId });
+    this._beerMenuOpen = true;
+  }
+
+  // Index of the player's remembered usual in BEER_MENU (0 if none yet).
+  _usualBeerIndex() {
+    try {
+      const last = window.localStorage.getItem(LAST_BEER_KEY);
+      const idx = BEER_MENU.findIndex((b) => b.id === last);
+      return idx >= 0 ? idx : 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  // A beer was picked from the menu: remember it as the usual, queue the
+  // order under its name, and tell the room so every bartender serves in
+  // the same order with the same beer on the tray.
+  _chooseBeer(index) {
+    this._beerMenuOpen = false;
+    let beer = BEER_MENU[index] || BEER_MENU[0];
+    if (beer.id === 'surprise') {
+      const taps = BEER_MENU.filter((b) => b.id !== 'surprise');
+      beer = taps[Math.floor(Math.random() * taps.length)];
+    }
+    try { window.localStorage.setItem(LAST_BEER_KEY, beer.id); } catch { /* private mode */ }
+    const myId = this.socket?.id || '__local__';
+    this._enqueueDrinkOrder(myId, beer.label);
+    this.socket?.emit('order_drink', { roomId: this.roomId, beer: beer.label });
   }
 
   // The room's bartender: an employee NPC whose label says so.
@@ -1068,12 +1150,13 @@ export class VillageScene extends Phaser.Scene {
     return this.staticNpcs?.find((npc) => /bartender/i.test(npc.name || '')) || null;
   }
 
-  _enqueueDrinkOrder(socketId) {
+  _enqueueDrinkOrder(socketId, beer) {
     if (!socketId) return;
-    if (this._drinkQueue.includes(socketId)) return;
+    if (this._drinkQueue.some((entry) => entry.socketId === socketId)) return;
     if (this.staticNpcs?.some((npc) => npc.serve?.socketId === socketId)) return;
     if (this._drinkQueue.length >= 4) return;
-    this._drinkQueue.push(socketId);
+    const label = typeof beer === 'string' && beer.length > 0 && beer.length <= 40 ? beer : 'Beer';
+    this._drinkQueue.push({ socketId, beer: label });
     this._pumpDrinkQueue();
   }
 
@@ -1084,10 +1167,10 @@ export class VillageScene extends Phaser.Scene {
       (npc) => /bartender/i.test(npc.name || '') && !npc.serve
     );
     if (!bartender) return;
-    const socketId = this._drinkQueue.shift();
-    const spot = this._serveSpotFor(bartender, socketId);
+    const entry = this._drinkQueue.shift();
+    const spot = this._serveSpotFor(bartender, entry.socketId);
     bartender.target = null;
-    bartender.serve = { socketId, phase: 'toSpot', spotX: spot.x, spotY: spot.y, pourUntil: 0 };
+    bartender.serve = { socketId: entry.socketId, beer: entry.beer, phase: 'toSpot', spotX: spot.x, spotY: spot.y, pourUntil: 0 };
   }
 
   // Where the bartender stands to serve: on his own line (homeY), at the
@@ -1199,6 +1282,9 @@ export class VillageScene extends Phaser.Scene {
         .then((wallet) => { wallet.spendCoins(wallet.BAR_DRINK_COST); })
         .catch(() => {});
     }
+    this._serveBubbleNpc = npc;
+    this._serveBubbleText = `One ${serve.beer || 'Beer'} 🍺`;
+    this._serveBubbleUntil = this.time.now + 1900;
     actor.avatar.playDrink();
   }
 
@@ -1467,8 +1553,8 @@ export class VillageScene extends Phaser.Scene {
     });
 
     // A player ordered a drink: the bartender serves it, in order.
-    socket.on('drink_ordered', ({ socketId } = {}) => {
-      this._enqueueDrinkOrder(socketId);
+    socket.on('drink_ordered', ({ socketId, beer } = {}) => {
+      this._enqueueDrinkOrder(socketId, beer);
     });
 
     // Room-wide YouTube jukebox: play the server's now-playing video for everyone.
@@ -1991,7 +2077,7 @@ export class VillageScene extends Phaser.Scene {
     // "coming right up".
     const nearBar = this._nearestBar();
     const myId = this.socket?.id || '__local__';
-    const myOrderActive = this._drinkQueue.includes(myId)
+    const myOrderActive = this._drinkQueue.some((entry) => entry.socketId === myId)
       || this.staticNpcs.some((npc) => npc.serve?.socketId === myId);
     if (this._drinkBrokeUntil > this.time.now && nearBar) {
       this.drinkPrompt.setText('🍺 Need 2 coins!').setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
@@ -2003,6 +2089,31 @@ export class VillageScene extends Phaser.Scene {
       this.drinkPrompt.setText(this._bartenderNpc() ? '🍺 Order a drink · 2 coins [E]' : '🍺 Buy a drink · 2 coins [E]').setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
     } else {
       this.drinkPrompt.setAlpha(0);
+    }
+
+    // Beer picker: visible while the bartender waits for your choice.
+    // Walking away from the bar closes it, unchosen.
+    if (this._beerMenuOpen && !nearBar) this._beerMenuOpen = false;
+    if (this._beerMenuOpen) {
+      const usualIdx = this._usualBeerIndex();
+      const items = BEER_MENU.map((b, i) => `[${i + 1}] ${b.label}${i === usualIdx ? ' ★' : ''}`).join('  ');
+      this.beerMenuPrompt
+        .setText(`What'll ya have?  ${items}   (Enter = the usual, Esc = cancel)`)
+        .setPosition(this.player.gx, this.player.gy - 84)
+        .setAlpha(1);
+    } else {
+      this.beerMenuPrompt.setAlpha(0);
+    }
+
+    // Bartender speech bubble: the question while you pick, the call-out
+    // ("One Lone Star") for a breath after each hand-off.
+    const bartender = this._bartenderNpc();
+    if (bartender && this._beerMenuOpen) {
+      this.bartenderBubble.setText("What'll ya have?").setPosition(bartender.gx, bartender.gy - 78).setAlpha(1);
+    } else if (this._serveBubbleNpc && this.time.now < this._serveBubbleUntil) {
+      this.bartenderBubble.setText(this._serveBubbleText).setPosition(this._serveBubbleNpc.gx, this._serveBubbleNpc.gy - 78).setAlpha(1);
+    } else {
+      this.bartenderBubble.setAlpha(0);
     }
     this._updateJukeboxAudio();
 
@@ -2218,6 +2329,8 @@ export class VillageScene extends Phaser.Scene {
     this.shelfPrompt?.destroy();
     this.jukeboxPrompt?.destroy();
     this.drinkPrompt?.destroy();
+    this.beerMenuPrompt?.destroy();
+    this.bartenderBubble?.destroy();
     try { stopYouTube(); } catch {}
     if (this.ghosts) { for (const [, g] of this.ghosts) { try { g.avatar.destroy(); } catch {} } this.ghosts.clear(); }
     this.staticNpcs?.forEach((npc) => npc.destroy?.());
