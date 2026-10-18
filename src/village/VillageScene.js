@@ -82,7 +82,7 @@ const LAST_BEER_KEY = 'sidequest:lastBeer';
 const AFFIRM_FIRST_WORDS = new Set(['yes', 'yeah', 'yep', 'yup', 'sure', 'ok', 'okay', 'please', 'absolutely', 'definitely', 'alright']);
 const AFFIRM_PHRASES = new Set(['the usual', 'my usual', 'sounds good', 'hit me', 'same again', 'one more', 'do it']);
 const BEER_REQUEST = /\b(can i get|could i get|can i have|could i have|give me|get me|let me get|let me have|gimme|pour me|i'll have|ill have|i'll take|ill take|i want|i need|i'd like|id like)\b/;
-const WHAT_HAVE_RE = /(what\s+(do|dou|d)\s*(you|u)\s*(have|got)|what'?s on tap|whatcha got|what you (have|got)|what (beers|drinks) (do|you|u))/;
+const WHAT_HAVE_RE = /(what\s+(do|dou|d)\s*(you|u)\s*(have|got)|what'?s on tap|whatcha got|what you (have|got)|what (beers|drinks) (do|you|u)|\bmenu\b|\bthirsty\b|what.*\b(serve|serving|pour|pouring)\b)/;
 const DECOR_SYNC_MS = 8000;
 const PRESENCE_SYNC_MS = 4000;
 const DECOR_SYNC_HEALTHY_MS = 30000;
@@ -1168,6 +1168,15 @@ export class VillageScene extends Phaser.Scene {
       this._serveBubbleNpc = npc;
       this._serveBubbleText = `One ${label} — coming right up`;
       this._serveBubbleUntil = this.time.now + 2400;
+      this.onChatMessage({
+        senderName: npc.name || 'Bartender',
+        message: `One ${label} — coming right up.`,
+        isSelf: false,
+        distance: Math.round(Math.hypot(this.player.gx - npc.gx, this.player.gy - npc.gy)),
+        timestamp: Date.now(),
+        channel: 'npc',
+        npcId: npc.id,
+      });
     }
   }
 
@@ -1311,6 +1320,17 @@ export class VillageScene extends Phaser.Scene {
     this._serveBubbleNpc = npc;
     this._serveBubbleText = `One ${serve.beer || 'Beer'} 🍺`;
     this._serveBubbleUntil = this.time.now + 1900;
+    if (isMine) {
+      this.onChatMessage({
+        senderName: npc.name || 'Bartender',
+        message: `*hands you the ${serve.beer || 'beer'}*`,
+        isSelf: false,
+        distance: Math.round(Math.hypot(this.player.gx - npc.gx, this.player.gy - npc.gy)),
+        timestamp: Date.now(),
+        channel: 'npc',
+        npcId: npc.id,
+      });
+    }
     actor.avatar.playDrink();
   }
 
@@ -1666,7 +1686,8 @@ export class VillageScene extends Phaser.Scene {
           const line = (arr) => arr.map((b) => b.label).join(' · ');
           this._serveBubbleNpc = npc;
           this._serveBubbleText = `On tap:\n${line(taps.slice(0, half))}\n${line(taps.slice(half))} — just name one`;
-          this._serveBubbleUntil = this.time.now + 6000;
+          this._serveBubbleUntil = this.time.now + 9000;
+          this._convoArmUntil = this.time.now + 60000;
         }
         const wasArmed = this.time.now < this._convoArmUntil;
         this._maybeConversationalOrder(text, npc, wasArmed);

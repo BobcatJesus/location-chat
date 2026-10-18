@@ -21,6 +21,9 @@
       },
       {
         "fact": "Traveler is talking about this."
+      },
+      {
+        "fact": "Traveler is talking about you."
       }
     ]
   }
