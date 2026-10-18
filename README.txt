@@ -1,24 +1,33 @@
-SIDE QUEST — BARTENDER SERVICE v3.1 (on top of v3)
-The beer types move INTO the conversation.
+SIDE QUEST — BARTENDER SERVICE v4 (on top of v3.1)
+Buying a beer at a staffed bar is now TOTALLY conversational.
+VillageScene.js only; the server is unchanged from v3.1.
 
-- The taps are now HIS bar's list everywhere: Lone Star, IPA,
-  Ultra, Voodoo Ranger (+ Surprise me). Picker, call-out bubbles,
-  and chat ordering all use them. ("lager"/"stout" are gone; a
-  stored v2 usual of lager/stout simply falls back to Lone Star.)
-- The bartender now KNOWS his taps: both server personas (Lola's
-  room persona + every static bartender) carry the line "On tap you
-  serve exactly four beers: Lone Star, IPA, Michelob Ultra, and
-  Voodoo Ranger — when someone asks what you have, name those."
-  His wording stays his own; the facts are now true.
-- Ask him "what do you have" / "what's on tap" / "what've you got"
-  in NPC chat at the bar: the picker opens on your screen as the
-  actionable list while he answers in character.
+GONE at staffed bars
+- The "press E, get a picker" flow: no E action, no menu line, no
+  number keys. (The E prompt at the counter now reads "Talk to the
+  bartender to order · 2 coins" — a signpost, not a button.)
+- Unstaffed bars keep the old instant [E] buy, untouched.
 
-FILES: src/village/VillageScene.js + server/socket.js (Railway gets
-the persona change on the same push).
+THE CONVERSATION IS THE REGISTER (all already in v3/v3.1, now the
+only way at a staffed bar)
+- Walk up to him (within ~170px) and talk in NPC chat.
+- "what do you have" -> he answers from his tap knowledge (v3.1).
+- Name a tap (lonestar / ipa / ultra / voodoo) -> ordered.
+- "i'll have a beer" / "can i get a beer" -> your usual.
+- "surprise me" -> a random tap (new in v4).
+- After he speaks, a short "sure" / "yes" / "the usual" within the
+  45-second conversation window -> your usual.
+- His scripted bubble confirms ("One Lone Star — coming right up"),
+  he walks, pours, calls it out; coins charge at the hand-off.
+- NEW: order while broke and his bubble answers instead: "Tab's
+  closed till you scare up some coins, friend."
+- Ordering by name also updates your remembered usual now.
 
 CHECKS IN LOLA'S
-1. Picker shows the four new taps.
-2. Chat "what do you have": picker opens; his reply names real taps.
-3. Chat "a voodoo" (or reply to him "voodoo"): Voodoo Ranger served.
-4. E-flow, proximity gate, usual memory: unchanged from v3.
+1. E at the counter: nothing happens; prompt says talk to him.
+2. Chat: "what do you have" -> he lists Lone Star / IPA / Ultra /
+   Voodoo Ranger in his own words.
+3. Reply "lonestar" (or "sure" after he asks) -> confirm bubble,
+   serve, call-out, -2 at the hand-off.
+4. Far end of the bar: hint prompt; chat order attempts do nothing
+   until you're within reach of him.

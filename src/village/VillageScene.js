@@ -79,7 +79,6 @@ const LAST_BEER_KEY = 'sidequest:lastBeer';
 const AFFIRM_FIRST_WORDS = new Set(['yes', 'yeah', 'yep', 'yup', 'sure', 'ok', 'okay', 'please', 'absolutely', 'definitely', 'alright']);
 const AFFIRM_PHRASES = new Set(['the usual', 'my usual', 'sounds good', 'hit me', 'same again', 'one more', 'do it']);
 const BEER_REQUEST = /\b(can i get|could i get|give me|get me|i'll have|ill have|i want|i'd like|id like)\b/;
-const WHAT_HAVE_RE = /\b(what do you (have|got)|what('s| is) on tap|whats on tap|what've you got|what have you got|what beers)\b/;
 const DECOR_SYNC_MS = 8000;
 const PRESENCE_SYNC_MS = 4000;
 const DECOR_SYNC_HEALTHY_MS = 30000;
@@ -603,7 +602,6 @@ export class VillageScene extends Phaser.Scene {
     this._drinkBrokeUntil = 0;
     this._drinkMissedUntil = 0;
     this._drinkQueue = [];
-    this._beerMenuOpen = false;
     this._convoArmUntil = 0;
     this._serveBubbleNpc = null;
     this._serveBubbleText = '';
@@ -612,14 +610,6 @@ export class VillageScene extends Phaser.Scene {
       fontSize: '15px',
       color: '#7c2d12',
       backgroundColor: 'rgba(255,255,255,0.85)',
-      padding: { x: 8, y: 4 },
-    }).setOrigin(0.5, 1).setDepth(DEPTH.UI).setAlpha(0);
-
-    // Beer-picker line, shown above the player while ordering.
-    this.beerMenuPrompt = this.add.text(0, 0, '', {
-      fontSize: '15px',
-      color: '#7c2d12',
-      backgroundColor: 'rgba(255,255,255,0.92)',
       padding: { x: 8, y: 4 },
     }).setOrigin(0.5, 1).setDepth(DEPTH.UI).setAlpha(0);
 
@@ -692,23 +682,6 @@ export class VillageScene extends Phaser.Scene {
 
       if (e.code === FOOTPRINT_DEBUG_KEY_CODE) {
         this.toggleFootprintDebug();
-        return;
-      }
-
-      // Beer menu is open: digits pick, Enter/E takes the usual, Esc cancels.
-      if (this._beerMenuOpen) {
-        if (key >= '1' && key <= String(BEER_MENU.length)) {
-          this._chooseBeer(Number(key) - 1);
-          return;
-        }
-        if (key === 'enter' || key === 'e') {
-          this._chooseBeer(this._usualBeerIndex());
-          return;
-        }
-        if (key === 'escape') {
-          this._beerMenuOpen = false;
-          return;
-        }
         return;
       }
 
@@ -1087,15 +1060,12 @@ export class VillageScene extends Phaser.Scene {
   // coins are charged when the drink is handed over, not when ordered.
   // Rooms with a bar counter but no bartender keep the old instant buy.
   async _tryBuyDrink() {
-    // Interact pressed while the picker is open (the mobile button has
-    // no number keys): take the usual.
-    if (this._beerMenuOpen) {
-      this._chooseBeer(this._usualBeerIndex());
-      return;
-    }
     if (this._drinkCooldownMs > 0) return;
     const avatar = this.player?.avatar;
     if (!avatar || typeof avatar.playDrink !== 'function') return;
+    // Staffed bar: buying a drink lives entirely in conversation with
+    // the bartender (see _maybeConversationalOrder). E does nothing.
+    if (this._bartenderNpc()) return;
     let wallet;
     try {
       wallet = await import('./CoinWallet.js');
@@ -1106,26 +1076,14 @@ export class VillageScene extends Phaser.Scene {
       this._drinkBrokeUntil = this.time.now + 1300;
       return;
     }
-    if (!this._bartenderNpc()) {
-      // No bartender on shift here: instant buy, as before.
-      if (!wallet.spendCoins(wallet.BAR_DRINK_COST)) {
-        this._drinkBrokeUntil = this.time.now + 1300;
-        return;
-      }
-      this._drinkCooldownMs = 3000;
-      avatar.playDrink();
-      this.socket?.emit('buy_drink', { roomId: this.roomId });
+    // No bartender on shift here: instant buy, as before.
+    if (!wallet.spendCoins(wallet.BAR_DRINK_COST)) {
+      this._drinkBrokeUntil = this.time.now + 1300;
       return;
     }
-    // Ordering happens close to the bartender, not anywhere at the bar.
-    const bartender = this._bartenderNpc();
-    if (bartender && Math.hypot(this.player.gx - bartender.gx, this.player.gy - bartender.gy) > 170) return;
-    const myId = this.socket?.id || '__local__';
-    if (this._drinkQueue.some((entry) => entry.socketId === myId)) return;
-    if (this.staticNpcs.some((npc) => npc.serve?.socketId === myId)) return;
-    // The bartender asks what you want; the picker opens (see _chooseBeer).
-    this._drinkCooldownMs = 1200;
-    this._beerMenuOpen = true;
+    this._drinkCooldownMs = 3000;
+    avatar.playDrink();
+    this.socket?.emit('buy_drink', { roomId: this.roomId });
   }
 
   // Index of the player's remembered usual in BEER_MENU (0 if none yet).
@@ -1139,28 +1097,18 @@ export class VillageScene extends Phaser.Scene {
     }
   }
 
-  // A beer was picked from the menu: remember it as the usual, queue the
-  // order under its name, and tell the room so every bartender serves in
-  // the same order with the same beer on the tray.
-  _chooseBeer(index) {
-    this._beerMenuOpen = false;
-    let beer = BEER_MENU[index] || BEER_MENU[0];
-    if (beer.id === 'surprise') {
-      const taps = BEER_MENU.filter((b) => b.id !== 'surprise');
-      beer = taps[Math.floor(Math.random() * taps.length)];
-    }
-    try { window.localStorage.setItem(LAST_BEER_KEY, beer.id); } catch { /* private mode */ }
-    this._placeDrinkOrder(beer.label);
-  }
-
-  // Queue an order for the local player and tell the room. Shared by the
-  // picker and by conversational ordering. Returns false when an order
-  // is already outstanding or the queue is full.
+  // Queue an order for the local player and tell the room. Ordering a
+  // beer also makes it the remembered usual. Returns false when an
+  // order is already outstanding or the queue is full.
   _placeDrinkOrder(beerLabel) {
     const myId = this.socket?.id || '__local__';
     if (this._drinkQueue.some((entry) => entry.socketId === myId)) return false;
     if (this.staticNpcs.some((npc) => npc.serve?.socketId === myId)) return false;
     if (this._drinkQueue.length >= 4) return false;
+    const tap = BEER_MENU.find((b) => b.label === beerLabel);
+    if (tap) {
+      try { window.localStorage.setItem(LAST_BEER_KEY, tap.id); } catch { /* private mode */ }
+    }
     this._enqueueDrinkOrder(myId, beerLabel);
     this.socket?.emit('order_drink', { roomId: this.roomId, beer: beerLabel });
     return true;
@@ -1180,7 +1128,6 @@ export class VillageScene extends Phaser.Scene {
   _maybeConversationalOrder(message, npc, wasArmed) {
     if (!npc?.isBartender || !this.player) return;
     if (Math.hypot(this.player.gx - npc.gx, this.player.gy - npc.gy) > 170) return;
-    if (this.walletMod && this.walletMod.getCoins() < this.walletMod.BAR_DRINK_COST) return;
     const norm = String(message || '').toLowerCase().replace(/[.!?,]+$/, '').trim();
     if (!norm) return;
     let label = null;
@@ -1188,6 +1135,10 @@ export class VillageScene extends Phaser.Scene {
     else if (/\bipa\b/.test(norm)) label = 'IPA';
     else if (/\bultra\b/.test(norm)) label = 'Ultra';
     else if (/\bvoodoo\b/.test(norm)) label = 'Voodoo Ranger';
+    else if (/\bsurprise\b/.test(norm)) {
+      const taps = BEER_MENU.filter((b) => b.id !== 'surprise');
+      label = taps[Math.floor(Math.random() * taps.length)].label;
+    }
     else if (BEER_REQUEST.test(norm) && /\bbeer\b/.test(norm)) label = BEER_MENU[this._usualBeerIndex()].label;
     else if (wasArmed) {
       const words = norm.split(/\s+/);
@@ -1196,6 +1147,12 @@ export class VillageScene extends Phaser.Scene {
       }
     }
     if (!label) return;
+    if (this.walletMod && this.walletMod.getCoins() < this.walletMod.BAR_DRINK_COST) {
+      this._serveBubbleNpc = npc;
+      this._serveBubbleText = "Tab's closed till you scare up some coins, friend";
+      this._serveBubbleUntil = this.time.now + 2600;
+      return;
+    }
     if (this._placeDrinkOrder(label)) {
       this._serveBubbleNpc = npc;
       this._serveBubbleText = `One ${label} — coming right up`;
@@ -1690,17 +1647,6 @@ export class VillageScene extends Phaser.Scene {
         npc.pausedUntil = this.time.now + 15000;
       }
       if (npc?.isBartender) {
-        // "What do you have?" — he answers in chat from his tap
-        // knowledge, and the picker opens here as the actionable list.
-        const normText = text.toLowerCase().replace(/[.!?,]+$/, '').trim();
-        if (WHAT_HAVE_RE.test(normText)
-          && Math.hypot(this.player.gx - npc.gx, this.player.gy - npc.gy) <= 170) {
-          if (this.walletMod && this.walletMod.getCoins() < this.walletMod.BAR_DRINK_COST) {
-            this._drinkBrokeUntil = this.time.now + 1500;
-          } else {
-            this._beerMenuOpen = true;
-          }
-        }
         const wasArmed = this.time.now < this._convoArmUntil;
         this._maybeConversationalOrder(text, npc, wasArmed);
         this._convoArmUntil = this.time.now + 45000;
@@ -2168,32 +2114,17 @@ export class VillageScene extends Phaser.Scene {
     } else if (nearBar && myOrderActive) {
       this.drinkPrompt.setText('🍺 Coming right up…').setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
     } else if (canOrder && !nearPond && !nearShelf && !nearJukebox) {
-      this.drinkPrompt.setText(bartender ? '🍺 Order a drink · 2 coins [E]' : '🍺 Buy a drink · 2 coins [E]').setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
+      this.drinkPrompt.setText(bartender ? '🍺 Talk to the bartender to order · 2 coins' : '🍺 Buy a drink · 2 coins [E]').setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
     } else if (nearBar && bartender && !nearBartender && !myOrderActive && !nearPond && !nearShelf && !nearJukebox) {
       this.drinkPrompt.setText('🍺 Get closer to the bartender to order').setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
     } else {
       this.drinkPrompt.setAlpha(0);
     }
 
-    // Beer picker: visible while the bartender waits for your choice.
-    // Walking away from the bar closes it, unchosen.
-    if (this._beerMenuOpen && !canOrder) this._beerMenuOpen = false;
-    if (this._beerMenuOpen) {
-      const usualIdx = this._usualBeerIndex();
-      const items = BEER_MENU.map((b, i) => `[${i + 1}] ${b.label}${i === usualIdx ? ' ★' : ''}`).join('  ');
-      this.beerMenuPrompt
-        .setText(`What'll ya have?  ${items}   (Enter = the usual, Esc = cancel)`)
-        .setPosition(this.player.gx, this.player.gy - 84)
-        .setAlpha(1);
-    } else {
-      this.beerMenuPrompt.setAlpha(0);
-    }
 
     // Bartender speech bubble: the question while you pick, the call-out
     // ("One Lone Star") for a breath after each hand-off.
-    if (bartender && this._beerMenuOpen) {
-      this.bartenderBubble.setText("What'll ya have?").setPosition(bartender.gx, bartender.gy - 78).setAlpha(1);
-    } else if (this._serveBubbleNpc && this.time.now < this._serveBubbleUntil) {
+    if (this._serveBubbleNpc && this.time.now < this._serveBubbleUntil) {
       this.bartenderBubble.setText(this._serveBubbleText).setPosition(this._serveBubbleNpc.gx, this._serveBubbleNpc.gy - 78).setAlpha(1);
     } else {
       this.bartenderBubble.setAlpha(0);
@@ -2412,7 +2343,6 @@ export class VillageScene extends Phaser.Scene {
     this.shelfPrompt?.destroy();
     this.jukeboxPrompt?.destroy();
     this.drinkPrompt?.destroy();
-    this.beerMenuPrompt?.destroy();
     this.bartenderBubble?.destroy();
     try { stopYouTube(); } catch {}
     if (this.ghosts) { for (const [, g] of this.ghosts) { try { g.avatar.destroy(); } catch {} } this.ghosts.clear(); }
