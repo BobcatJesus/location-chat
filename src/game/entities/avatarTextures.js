@@ -44,6 +44,11 @@ export const AVATAR_FRAME_KEYS = {
     back: ['bat-back-step1', 'bat-back-step2'],
     side: ['bat-side-step1', 'bat-side-step2'],
   },
+  gator: {
+    front: ['gator-front-step1', 'gator-front-step2'],
+    back: ['gator-back-step1', 'gator-back-step2'],
+    side: ['gator-side-step1', 'gator-side-step2'],
+  },
 };
 
 const AVATAR_FRAME_PATHS = {
@@ -86,6 +91,11 @@ const AVATAR_FRAME_PATHS = {
     front: ['/avatars/bat/front-step1.png', '/avatars/bat/front-step2.png'],
     back: ['/avatars/bat/back-step1.png', '/avatars/bat/back-step2.png'],
     side: ['/avatars/bat/side-step1.png', '/avatars/bat/side-step2.png'],
+  },
+  gator: {
+    front: ['/avatars/gator/front-step1.png', '/avatars/gator/front-step2.png'],
+    back: ['/avatars/gator/back-step1.png', '/avatars/gator/back-step2.png'],
+    side: ['/avatars/gator/side-step1.png', '/avatars/gator/side-step2.png'],
   },
 };
 

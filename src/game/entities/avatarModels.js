@@ -10,6 +10,7 @@ export const AVATAR_MODELS = [
   { id: 'sheep', label: 'Demon Sheep', previewSrc: '/avatars/sheep/front-step1.png' },
   { id: 'wisp', label: 'Wisp', previewSrc: '/avatars/wisp/front-step1.png' },
   { id: 'bat', label: 'Bat', previewSrc: '/avatars/bat/front-step1.png' },
+  { id: 'gator', label: 'Gator', previewSrc: '/avatars/gator/front-step1.png' },
 ];
 
 export const AVATAR_MODEL_MAP = Object.fromEntries(AVATAR_MODELS.map((m) => [m.id, m]));
@@ -23,6 +24,7 @@ export function normalizeAvatarModel(model) {
   if (['sheep', 'lamb', 'ram', 'demon-sheep', 'demon sheep', 'sheep-avatar'].includes(value)) return 'sheep';
   if (['wisp', 'ghost', 'imp', 'wisp-avatar', 'ghost-chibi'].includes(value)) return 'wisp';
   if (['bat', 'bat-avatar', 'flitter'].includes(value)) return 'bat';
+  if (['gator', 'alligator', 'croc', 'crocodile', 'gator-avatar'].includes(value)) return 'gator';
   if (['hoodie', 'human', 'human-chibi', 'chibi', 'male', 'female'].includes(value)) return 'bunny';
   return 'bunny';
 }
