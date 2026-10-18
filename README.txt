@@ -1,33 +1,27 @@
-SIDE QUEST — BARTENDER SERVICE v4 (on top of v3.1)
-Buying a beer at a staffed bar is now TOTALLY conversational.
-VillageScene.js only; the server is unchanged from v3.1.
+SIDE QUEST — BARTENDER v4.1 (on top of v4)
+Bigger board, wider ear.
 
-GONE at staffed bars
-- The "press E, get a picker" flow: no E action, no menu line, no
-  number keys. (The E prompt at the counter now reads "Talk to the
-  bartender to order · 2 coins" — a signpost, not a button.)
-- Unstaffed bars keep the old instant [E] buy, untouched.
+THE BOARD (everywhere — picker data, his chat knowledge, parser)
+Lone Star · Lager · IPA · Voodoo Ranger · Ultra · Cider · Stout
+(+ "surprise me"). His persona line now lists all seven, so "what
+do you have" gets a real answer in his own words.
 
-THE CONVERSATION IS THE REGISTER (all already in v3/v3.1, now the
-only way at a staffed bar)
-- Walk up to him (within ~170px) and talk in NPC chat.
-- "what do you have" -> he answers from his tap knowledge (v3.1).
-- Name a tap (lonestar / ipa / ultra / voodoo) -> ordered.
-- "i'll have a beer" / "can i get a beer" -> your usual.
-- "surprise me" -> a random tap (new in v4).
-- After he speaks, a short "sure" / "yes" / "the usual" within the
-  45-second conversation window -> your usual.
-- His scripted bubble confirms ("One Lone Star — coming right up"),
-  he walks, pours, calls it out; coins charge at the hand-off.
-- NEW: order while broke and his bubble answers instead: "Tab's
-  closed till you scare up some coins, friend."
-- Ordering by name also updates your remembered usual now.
+WIDER EAR (why your words may have missed before)
+- Requests: "can i have", "let me get", "gimme one", "pour me a
+  beer", "i'll take a drink" and friends now count, not just
+  "can i get a beer".
+- A short bare mention ("a beer please", "beer") at the bar is an
+  order for your usual.
+- Reply-shaped phrases ("the usual", "sounds good", "same again")
+  work even as your first line — they only make sense as answers.
+  Bare "yes"/"sure" still need him to have spoken first (or you to
+  have messaged him once), so a stray yes can't spend coins.
+- "michelob" = Ultra, "eastciders"/"cider" = Cider.
 
-CHECKS IN LOLA'S
-1. E at the counter: nothing happens; prompt says talk to him.
-2. Chat: "what do you have" -> he lists Lone Star / IPA / Ultra /
-   Voodoo Ranger in his own words.
-3. Reply "lonestar" (or "sure" after he asks) -> confirm bubble,
-   serve, call-out, -2 at the hand-off.
-4. Far end of the bar: hint prompt; chat order attempts do nothing
-   until you're within reach of him.
+FILES: src/village/VillageScene.js + server/socket.js.
+
+TRY THESE LINES AT LOLA'S
+- "what do you have" -> he lists the seven.
+- "let me get a voodoo" -> Voodoo Ranger, served.
+- "a beer please" -> your usual, served.
+- after he asks what you want: "sure" -> your usual, served.

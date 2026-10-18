@@ -9,5 +9,19 @@
         "fact": "good is the player."
       }
     ]
+  },
+  "lolas-depot::0::0:guest": {
+    "playerName": "Traveler",
+    "facts": [
+      {
+        "fact": "Traveler is talking about the current conversation."
+      },
+      {
+        "fact": "Traveler is talking about crazy this week, or a sweeter one if you want something easier."
+      },
+      {
+        "fact": "Traveler is talking about this."
+      }
+    ]
   }
 }
