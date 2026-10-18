@@ -68,9 +68,9 @@ const PROXIMITY_RADIUS = 150;
 // to a random real tap when the order is placed.
 const BEER_MENU = [
   { id: 'lonestar', label: 'Lone Star' },
-  { id: 'lager', label: 'Lager' },
   { id: 'ipa', label: 'IPA' },
-  { id: 'stout', label: 'Stout' },
+  { id: 'ultra', label: 'Ultra' },
+  { id: 'voodoo', label: 'Voodoo Ranger' },
   { id: 'surprise', label: 'Surprise me' },
 ];
 const LAST_BEER_KEY = 'sidequest:lastBeer';
@@ -79,6 +79,7 @@ const LAST_BEER_KEY = 'sidequest:lastBeer';
 const AFFIRM_FIRST_WORDS = new Set(['yes', 'yeah', 'yep', 'yup', 'sure', 'ok', 'okay', 'please', 'absolutely', 'definitely', 'alright']);
 const AFFIRM_PHRASES = new Set(['the usual', 'my usual', 'sounds good', 'hit me', 'same again', 'one more', 'do it']);
 const BEER_REQUEST = /\b(can i get|could i get|give me|get me|i'll have|ill have|i want|i'd like|id like)\b/;
+const WHAT_HAVE_RE = /\b(what do you (have|got)|what('s| is) on tap|whats on tap|what've you got|what have you got|what beers)\b/;
 const DECOR_SYNC_MS = 8000;
 const PRESENCE_SYNC_MS = 4000;
 const DECOR_SYNC_HEALTHY_MS = 30000;
@@ -1185,8 +1186,8 @@ export class VillageScene extends Phaser.Scene {
     let label = null;
     if (/\blone\s?star\b/.test(norm)) label = 'Lone Star';
     else if (/\bipa\b/.test(norm)) label = 'IPA';
-    else if (/\bstout\b/.test(norm)) label = 'Stout';
-    else if (/\blager\b/.test(norm)) label = 'Lager';
+    else if (/\bultra\b/.test(norm)) label = 'Ultra';
+    else if (/\bvoodoo\b/.test(norm)) label = 'Voodoo Ranger';
     else if (BEER_REQUEST.test(norm) && /\bbeer\b/.test(norm)) label = BEER_MENU[this._usualBeerIndex()].label;
     else if (wasArmed) {
       const words = norm.split(/\s+/);
@@ -1689,6 +1690,17 @@ export class VillageScene extends Phaser.Scene {
         npc.pausedUntil = this.time.now + 15000;
       }
       if (npc?.isBartender) {
+        // "What do you have?" — he answers in chat from his tap
+        // knowledge, and the picker opens here as the actionable list.
+        const normText = text.toLowerCase().replace(/[.!?,]+$/, '').trim();
+        if (WHAT_HAVE_RE.test(normText)
+          && Math.hypot(this.player.gx - npc.gx, this.player.gy - npc.gy) <= 170) {
+          if (this.walletMod && this.walletMod.getCoins() < this.walletMod.BAR_DRINK_COST) {
+            this._drinkBrokeUntil = this.time.now + 1500;
+          } else {
+            this._beerMenuOpen = true;
+          }
+        }
         const wasArmed = this.time.now < this._convoArmUntil;
         this._maybeConversationalOrder(text, npc, wasArmed);
         this._convoArmUntil = this.time.now + 45000;
