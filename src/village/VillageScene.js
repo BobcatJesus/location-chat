@@ -607,6 +607,8 @@ export class VillageScene extends Phaser.Scene {
     this._drinkMissedUntil = 0;
     this._drinkQueue = [];
     this._convoArmUntil = 0;
+    this._drinkCard = null;
+    this._drinkCardUntil = 0;
     this._serveBubbleNpc = null;
     this._serveBubbleText = '';
     this._serveBubbleUntil = 0;
@@ -722,6 +724,14 @@ export class VillageScene extends Phaser.Scene {
     this.tapDot = this.add.circle(0, 0, 6, 0xffffff, 0).setDepth(DEPTH.OVERHEAD);
     this.input.on('pointerdown', (ptr) => {
       if (this.roomEditor?.isActive) return; // editor handles its own clicks
+      const bt = this._bartenderNpc();
+      if (bt
+        && Math.hypot(ptr.worldX - bt.gx, ptr.worldY - bt.gy) < 46
+        && Math.hypot(this.player.gx - bt.gx, this.player.gy - bt.gy) <= 170) {
+        this._openDrinkCard();
+        this.target = null;
+        return;
+      }
       const target = this.roomLayout?.clampPointToRoom(ptr.worldX, ptr.worldY, 20)
         || { x: Phaser.Math.Clamp(ptr.worldX, 20, W * 4 - 20), y: Phaser.Math.Clamp(ptr.worldY, 60, H * 4 - 10) };
       this.target = target;
@@ -1067,9 +1077,13 @@ export class VillageScene extends Phaser.Scene {
     if (this._drinkCooldownMs > 0) return;
     const avatar = this.player?.avatar;
     if (!avatar || typeof avatar.playDrink !== 'function') return;
-    // Staffed bar: buying a drink lives entirely in conversation with
-    // the bartender (see _maybeConversationalOrder). E does nothing.
-    if (this._bartenderNpc()) return;
+    // Staffed bar: E asks the bartender, and HE presents the options
+    // (the drink card). No card from down the bar — walk up to him.
+    const btNpc = this._bartenderNpc();
+    if (btNpc) {
+      if (Math.hypot(this.player.gx - btNpc.gx, this.player.gy - btNpc.gy) <= 170) this._openDrinkCard();
+      return;
+    }
     let wallet;
     try {
       wallet = await import('./CoinWallet.js');
@@ -1099,6 +1113,82 @@ export class VillageScene extends Phaser.Scene {
     } catch {
       return 0;
     }
+  }
+
+  // THE DRINK CARD: the bartender presents the options himself — a
+  // floating card at his shoulder, his question as its header, one
+  // tappable row per drink. Pick a row: he says "here you go" (at the
+  // hand-off bubble), you pay, you drink. This is the transaction,
+  // presented inside the conversation with him — no free-text
+  // guessing required (chat ordering still works as a side door).
+  _buildDrinkCard() {
+    const rowH = 21;
+    const headerH = 24;
+    const W = 176;
+    const H = headerH + BEER_MENU.length * rowH + 8;
+    const c = this.add.container(0, 0).setDepth(DEPTH.UI + 5).setVisible(false);
+    const bg = this.add.rectangle(0, 0, W, H, 0x1f2937, 0.94).setOrigin(0.5, 1);
+    bg.setStrokeStyle(1, 0xf59e0b, 0.9);
+    c.add(bg);
+    const header = this.add.text(0, -H + 4, "What'll ya have?", {
+      fontSize: '13px', color: '#fbbf24', fontStyle: 'bold',
+    }).setOrigin(0.5, 0);
+    c.add(header);
+    BEER_MENU.forEach((beer, i) => {
+      const y = -H + headerH + i * rowH + 2;
+      const label = beer.id === 'surprise' ? '🎲 Surprise me' : `${beer.label} · 2🪙`;
+      const t = this.add.text(0, y, label, {
+        fontSize: '13px', color: '#f9fafb',
+        backgroundColor: 'rgba(255,255,255,0.08)',
+        padding: { x: 6, y: 2 },
+      }).setOrigin(0.5, 0);
+      t.setInteractive({ useHandCursor: true });
+      t.on('pointerdown', () => { this._orderFromCard(beer); this.target = null; });
+      c.add(t);
+    });
+    this._drinkCard = c;
+  }
+
+  _openDrinkCard() {
+    const bt = this._bartenderNpc();
+    if (!bt) return;
+    if (!this._drinkCard) this._buildDrinkCard();
+    this._drinkCard.setPosition(bt.gx, bt.gy - 60).setVisible(true);
+    this._drinkCardUntil = this.time.now + 25000;
+  }
+
+  _orderFromCard(beer) {
+    this._drinkCard?.setVisible(false);
+    const bt = this._bartenderNpc();
+    if (!bt) return;
+    let pick = beer;
+    if (pick.id === 'surprise') {
+      const taps = BEER_MENU.filter((b) => b.id !== 'surprise');
+      pick = taps[Math.floor(Math.random() * taps.length)];
+    }
+    if (this.walletMod && this.walletMod.getCoins() < this.walletMod.BAR_DRINK_COST) {
+      this._serveBubbleNpc = bt;
+      this._serveBubbleText = "Tab's closed till you scare up some coins, friend";
+      this._serveBubbleUntil = this.time.now + 2600;
+      return;
+    }
+    if (this._placeDrinkOrder(pick.label)) this._announceOrder(bt, pick.label);
+  }
+
+  // The order speaks: his bubble + a line in the chat, together.
+  _announceOrder(npc, label) {
+    this._serveBubbleNpc = npc;
+    this._serveBubbleText = `One ${label} — coming right up`;
+    this._serveBubbleUntil = this.time.now + 2400;
+    this.onChatMessage({
+      senderName: npc.name || 'Bartender',
+      message: `One ${label} — coming right up.`,
+      isSelf: false,
+      distance: Math.round(Math.hypot(this.player.gx - npc.gx, this.player.gy - npc.gy)),
+      timestamp: Date.now(),
+      channel: 'npc',
+      npcId: npc.id,
+    });
   }
 
   // Queue an order for the local player and tell the room. Ordering a
@@ -1164,20 +1254,7 @@ export class VillageScene extends Phaser.Scene {
       this._serveBubbleUntil = this.time.now + 2600;
       return;
     }
-    if (this._placeDrinkOrder(label)) {
-      this._serveBubbleNpc = npc;
-      this._serveBubbleText = `One ${label} — coming right up`;
-      this._serveBubbleUntil = this.time.now + 2400;
-      this.onChatMessage({
-        senderName: npc.name || 'Bartender',
-        message: `One ${label} — coming right up.`,
-        isSelf: false,
-        distance: Math.round(Math.hypot(this.player.gx - npc.gx, this.player.gy - npc.gy)),
-        timestamp: Date.now(),
-        channel: 'npc',
-        npcId: npc.id,
-      });
-    }
+    if (this._placeDrinkOrder(label)) this._announceOrder(npc, label);
   }
 
   // The room's bartender: an employee NPC whose label says so.
@@ -1318,7 +1395,7 @@ export class VillageScene extends Phaser.Scene {
         .catch(() => {});
     }
     this._serveBubbleNpc = npc;
-    this._serveBubbleText = `One ${serve.beer || 'Beer'} 🍺`;
+    this._serveBubbleText = 'Here you go 🍺';
     this._serveBubbleUntil = this.time.now + 1900;
     if (isMine) {
       this.onChatMessage({
@@ -1681,12 +1758,7 @@ export class VillageScene extends Phaser.Scene {
         const normText = text.toLowerCase().replace(/[.!?,]+$/, '').trim();
         if (WHAT_HAVE_RE.test(normText)
           && Math.hypot(this.player.gx - npc.gx, this.player.gy - npc.gy) <= 170) {
-          const taps = BEER_MENU.filter((b) => b.id !== 'surprise');
-          const half = Math.ceil(taps.length / 2);
-          const line = (arr) => arr.map((b) => b.label).join(' · ');
-          this._serveBubbleNpc = npc;
-          this._serveBubbleText = `On tap:\n${line(taps.slice(0, half))}\n${line(taps.slice(half))} — just name one`;
-          this._serveBubbleUntil = this.time.now + 9000;
+          this._openDrinkCard();
           this._convoArmUntil = this.time.now + 60000;
         }
         const wasArmed = this.time.now < this._convoArmUntil;
@@ -2171,6 +2243,17 @@ export class VillageScene extends Phaser.Scene {
     } else {
       this.bartenderBubble.setAlpha(0);
     }
+
+    // Drink card: rides at the bartender's shoulder while it's open;
+    // closes on timeout or when you walk off.
+    if (this._drinkCard?.visible) {
+      if (this.time.now > this._drinkCardUntil || !bartender
+        || Math.hypot(this.player.gx - bartender.gx, this.player.gy - bartender.gy) > 200) {
+        this._drinkCard.setVisible(false);
+      } else {
+        this._drinkCard.setPosition(bartender.gx, bartender.gy - 60);
+      }
+    }
     this._updateJukeboxAudio();
 
     // Escalator check
@@ -2386,6 +2469,7 @@ export class VillageScene extends Phaser.Scene {
     this.jukeboxPrompt?.destroy();
     this.drinkPrompt?.destroy();
     this.bartenderBubble?.destroy();
+    this._drinkCard?.destroy();
     try { stopYouTube(); } catch {}
     if (this.ghosts) { for (const [, g] of this.ghosts) { try { g.avatar.destroy(); } catch {} } this.ghosts.clear(); }
     this.staticNpcs?.forEach((npc) => npc.destroy?.());

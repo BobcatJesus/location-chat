@@ -1,13 +1,24 @@
 {
-    "md-anderson-library::0::0:guest": {
-        "playerName": "Traveler",
-        "facts": [
-            {
-                "fact": "Traveler is talking about the current conversation."
-            },
-            {
-                "fact": "good is the player."
-            }
-        ]
-    }
+  "md-anderson-library::0::0:guest": {
+    "playerName": "Traveler",
+    "facts": [
+      {
+        "fact": "Traveler is talking about the current conversation."
+      },
+      {
+        "fact": "good is the player."
+      }
+    ]
+  },
+  "lolas-depot::0::0:guest": {
+    "playerName": "Traveler",
+    "facts": [
+      {
+        "fact": "Traveler is talking about the current conversation."
+      },
+      {
+        "fact": "Traveler is talking about that pale ale, and holler if you want another round later."
+      }
+    ]
+  }
 }
