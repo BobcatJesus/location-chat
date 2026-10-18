@@ -1,47 +1,36 @@
-SIDE QUEST — BARTENDER SERVICE v2 (supersedes v1)
-Drinks are ordered from the bartender, who asks what you want.
+SIDE QUEST — BARTENDER SERVICE v3 (on top of v2, already live)
+Two changes, both in src/village/VillageScene.js. The server file is
+unchanged from v2 — nothing to do on Railway beyond the normal push.
 
-HOW IT PLAYS
-- At the counter: "Order a drink · 2 coins [E]".
-- Press E and the bartender asks — his bubble says "What'll ya have?"
-  and a picker line appears: [1] Lone Star  [2] Lager  [3] IPA
-  [4] Stout  [5] Surprise me. Press a number, or Enter for your usual
-  (starred), or Esc to cancel. Walking away closes the picker.
-- Your pick is remembered on this device: next time it's starred as
-  your usual, so Enter alone reorders it.
-- Orders queue first-come-first-served (max 4). He walks the counter
-  to you, pours (~1 sec), and calls it out in a bubble — "One Lone
-  Star" — as your drink animation plays. Coins (2) charge at the
-  hand-off, never before. Every screen in the room sees the same serves.
-- Wander off mid-serve: no drink, no charge ("You wandered off").
-- "Surprise me" picks a random tap at order time; his call-out names
-  what he chose.
-- All beers are mechanically the same drink (by design — the name is
-  the fiction). The bartender's Inworld chat is completely untouched;
-  asking/serving is a scripted layer beside it.
-- Bars with a counter but no bartender NPC keep the old instant buy.
-- Picking by number is desktop-only in this version; on mobile, tap
-  the interact button to open the picker and tap it again to take
-  your usual.
+1) ORDER AT THE BARTENDER, NOT THE BAR
+- At a staffed bar, the order prompt (and the E key, and the picker)
+  only works within reach of the bartender himself (~170px), wherever
+  he's standing. Down the bar, the prompt reads "Get closer to the
+  bartender to order" instead. Unstaffed bars still use the counter
+  zone, exactly as before.
 
-FILES (extract over the repo root)
-- src/village/VillageScene.js, server/socket.js (order relay w/ beer)
-- src/village/CoinWallet.js, src/game/entities/SpriteAvatarBase.js
-  (unchanged carriers from the bar-drink kit)
+2) ORDER IN CONVERSATION
+Talk to him (NPC chat) while standing at the bar. Your own words can
+be the order — his AI lines are never parsed or touched:
+- Name a tap: "lonestar", "an ipa", "stout", "lager" -> that beer.
+- Ask plainly: "i'll have a beer", "can i get a beer", "give me a
+  beer" -> your usual.
+- Answer him: after he replies, a short "sure" / "yes" / "yeah" /
+  "the usual" (45-second window, re-armed by each of his replies and
+  each message you send him) -> your usual.
+On a conversational order his scripted bubble confirms: "One Lone
+Star — coming right up", then the normal serve runs. Charges still
+land at the hand-off; wandering off still cancels free. A stray
+"yes" can't order unless you're at the bar, mid-conversation with
+him, and it starts your (short) message.
 
-DEPLOY ORDER — takes the bar-drink kit's place (slot 2):
-avatar-size -> THIS -> wallet -> photo -> gator.
-- Title fix NOT deployed on main: use server/socket.js as-is.
-- socket.with-title-fix.js is only for a future where the jukebox
-  title fix is deployed; ignore it tonight (delete after extracting
-  so it isn't committed).
+DEPLOY: extract over the repo root, git pull --rebase, add, commit,
+push — frontend only in effect (Netlify), Railway rebuilds the same
+socket as v2.
 
-AFTER DEPLOY, CHECK IN LOLA'S DEPOT
-1. Counter prompt reads "Order a drink · 2 coins [E]".
-2. E: bubble "What'll ya have?" + picker line. Press 1: order placed.
-3. Balance unchanged until he pours and calls "One Lone Star" —
-   then -2 and your mug animation plays.
-4. Next order: Lone Star is starred; Enter alone reorders it.
-5. Order then walk across the room: no charge.
-6. Second screen in the room sees the serve + call-out bubble.
-7. Chat with the bartender: Inworld banter unchanged.
+CHECKS IN LOLA'S
+1. Stand at the far end of the bar: hint prompt, no order on E.
+2. Walk up to him: order prompt appears; E + picker still work.
+3. Chat: "can i get a beer" -> bubble confirms, he serves your usual.
+4. Chat until he asks what you want; reply "sure" -> same serve.
+5. Say "yes" to a nearby player (not in NPC chat): nothing happens.
