@@ -1,0 +1,67 @@
+{
+  "rules": {
+    "businesses": {
+      "$businessId": {
+        ".read": "auth != null",
+        "accuracy": {
+          ".write": "auth != null"
+        },
+        "address": {
+          ".write": "auth != null"
+        },
+        "businessName": {
+          ".write": "auth != null"
+        },
+        "claimedAt": {
+          ".write": "auth != null"
+        },
+        "claimedBy": {
+          ".write": "auth != null"
+        },
+        "createdAt": {
+          ".write": "auth != null"
+        },
+        "id": {
+          ".write": "auth != null"
+        },
+        "lat": {
+          ".write": "auth != null"
+        },
+        "lng": {
+          ".write": "auth != null"
+        },
+        "name": {
+          ".write": "auth != null"
+        },
+        "patronRequests": {
+          ".write": "auth != null"
+        },
+        "records": {
+          ".write": "auth != null"
+        },
+        "signals": {
+          ".write": "auth != null"
+        },
+        "source": {
+          ".write": "auth != null"
+        },
+        "staffSetup": {
+          ".read": "auth != null",
+          "administratorAccount": {
+            ".write": "auth != null && ((!data.exists() && newData.child('ownerUid').val() == auth.uid) || data.child('ownerUid').val() == auth.uid)"
+          },
+          "dispatchSettings": {
+            ".write": "auth != null && data.parent().child('administratorAccount').child('ownerUid').val() == auth.uid"
+          },
+          "roster": {
+            ".write": "auth != null && data.parent().child('administratorAccount').child('ownerUid').val() == auth.uid"
+          }
+        },
+        "venueType": {
+          ".write": "auth != null"
+        }
+      },
+      ".read": "auth != null"
+    }
+  }
+}

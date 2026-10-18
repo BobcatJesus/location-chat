@@ -283,7 +283,7 @@ export default class SpriteAvatarBase extends Phaser.GameObjects.Container {
 
     // How much of the sprite frame the character art actually fills —
     // the mug has to meet the drawn face, not the frame's top edge.
-    const FILL = { demon: 0.62, bunny: 0.72, turtle: 0.92, snake: 0.92, sheep: 0.92, wisp: 1.0, bat: 0.78, hoodie: 0.9, male: 0.9 };
+    const FILL = { demon: 0.62, bunny: 0.72, turtle: 0.92, snake: 0.92, sheep: 0.92, wisp: 1.0, bat: 0.78, gator: 0.95, hoodie: 0.9, male: 0.9 };
     const key = String(this._frameKeys?.front?.[0] || '');
     const model = key.split('-')[0];
     const fill = FILL[model] ?? 0.85;

@@ -912,6 +912,13 @@ io.on('connection', (socket) => {
 
   // BUY DRINK (bar counter treat — buyer pays from their local wallet;
   // the room just sees the toast, rate-limited like duck feeding)
+  // A player ordered a drink at the bar: everyone else's bartender
+  // queues the serve so the whole room sees it happen in order.
+  socket.on('order_drink', ({ roomId } = {}) => {
+    if (!roomId) return;
+    socket.to(roomId).emit('drink_ordered', { socketId: socket.id });
+  });
+
   socket.on('buy_drink', ({ roomId } = {}) => {
     if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
     const userId = socketUserMap[socket.id] || socket.id;

@@ -580,10 +580,12 @@ export class VillageScene extends Phaser.Scene {
       padding: { x: 8, y: 4 },
     }).setOrigin(0.5, 1).setDepth(DEPTH.UI).setAlpha(0);
 
-    // Bar counter interaction (buy a drink, 2 coins)
+    // Bar counter interaction (order a drink, 2 coins — the bartender serves it)
     this._drinkCooldownMs = 0;
     this._drinkBrokeUntil = 0;
-    this.drinkPrompt = this.add.text(0, 0, '🍺 Buy a drink · 2 coins [E]', {
+    this._drinkMissedUntil = 0;
+    this._drinkQueue = [];
+    this.drinkPrompt = this.add.text(0, 0, '🍺 Order a drink · 2 coins [E]', {
       fontSize: '15px',
       color: '#7c2d12',
       backgroundColor: 'rgba(255,255,255,0.85)',
@@ -1025,24 +1027,179 @@ export class VillageScene extends Phaser.Scene {
     return best ? { label: best.label } : null;
   }
 
-  // Buy a drink at the bar counter: spend coins from the local wallet,
-  // play the drinking animation, and let the room see it too.
+  // Order a drink at the bar counter. The bartender NPC serves it:
+  // coins are charged when the drink is handed over, not when ordered.
+  // Rooms with a bar counter but no bartender keep the old instant buy.
   async _tryBuyDrink() {
     if (this._drinkCooldownMs > 0) return;
     const avatar = this.player?.avatar;
     if (!avatar || typeof avatar.playDrink !== 'function') return;
+    let wallet;
     try {
-      const wallet = await import('./CoinWallet.js');
+      wallet = await import('./CoinWallet.js');
+    } catch {
+      return;
+    }
+    if (wallet.getCoins() < wallet.BAR_DRINK_COST) {
+      this._drinkBrokeUntil = this.time.now + 1300;
+      return;
+    }
+    if (!this._bartenderNpc()) {
+      // No bartender on shift here: instant buy, as before.
       if (!wallet.spendCoins(wallet.BAR_DRINK_COST)) {
         this._drinkBrokeUntil = this.time.now + 1300;
         return;
       }
-    } catch {
+      this._drinkCooldownMs = 3000;
+      avatar.playDrink();
+      this.socket?.emit('buy_drink', { roomId: this.roomId });
       return;
     }
-    this._drinkCooldownMs = 3000;
-    avatar.playDrink();
-    this.socket?.emit('buy_drink', { roomId: this.roomId });
+    const myId = this.socket?.id || '__local__';
+    if (this._drinkQueue.includes(myId)) return;
+    if (this.staticNpcs.some((npc) => npc.serve?.socketId === myId)) return;
+    this._drinkCooldownMs = 1200;
+    this._enqueueDrinkOrder(myId);
+    this.socket?.emit('order_drink', { roomId: this.roomId });
+  }
+
+  // The room's bartender: an employee NPC whose label says so.
+  _bartenderNpc() {
+    return this.staticNpcs?.find((npc) => /bartender/i.test(npc.name || '')) || null;
+  }
+
+  _enqueueDrinkOrder(socketId) {
+    if (!socketId) return;
+    if (this._drinkQueue.includes(socketId)) return;
+    if (this.staticNpcs?.some((npc) => npc.serve?.socketId === socketId)) return;
+    if (this._drinkQueue.length >= 4) return;
+    this._drinkQueue.push(socketId);
+    this._pumpDrinkQueue();
+  }
+
+  // Hand queued orders to idle bartenders, first come first served.
+  _pumpDrinkQueue() {
+    if (!this._drinkQueue?.length || !this.staticNpcs?.length) return;
+    const bartender = this.staticNpcs.find(
+      (npc) => /bartender/i.test(npc.name || '') && !npc.serve
+    );
+    if (!bartender) return;
+    const socketId = this._drinkQueue.shift();
+    const spot = this._serveSpotFor(bartender, socketId);
+    bartender.target = null;
+    bartender.serve = { socketId, phase: 'toSpot', spotX: spot.x, spotY: spot.y, pourUntil: 0 };
+  }
+
+  // Where the bartender stands to serve: on his own line (homeY), at the
+  // x nearest the customer, clamped to the counter's span.
+  _serveSpotFor(bartender, socketId) {
+    const actor = socketId === (this.socket?.id || '__local__') || socketId === '__local__'
+      ? this.player
+      : this.remotePlayers.get(socketId);
+    const zone = this._nearestBarZone();
+    let x = bartender.homeX;
+    if (actor && Number.isFinite(actor.gx)) x = actor.gx;
+    if (zone) x = Math.max(zone.x + 30, Math.min(x, zone.x + (zone.w || 0) - 30));
+    const y = bartender.homeY;
+    if (this.roomLayout?.isPointInsideRoom(x, y, 20) && !this.roomLayout?.collidesWithSolid(x, y, 18)) {
+      return { x, y };
+    }
+    return { x: bartender.homeX, y };
+  }
+
+  _nearestBarZone() {
+    if (!this.roomLayout?.interactZones) return null;
+    for (const z of this.roomLayout.interactZones) {
+      if (z.type === 'counter' && /bar/i.test(z.label || '')) return z;
+    }
+    return null;
+  }
+
+  // Step an NPC through a drink serve. Returns whether it moved.
+  // Runs instead of patrol while npc.serve is set; the Inworld dialogue
+  // side of the NPC is not touched by any of this.
+  _stepNpcServe(npc, delta) {
+    const serve = npc.serve;
+    const stepToward = (tx, ty, speedFactor) => {
+      const dx = tx - npc.gx;
+      const dy = ty - npc.gy;
+      const distance = Math.hypot(dx, dy);
+      if (distance < 5) return { arrived: true, moving: false };
+      const step = Math.min(distance, (SPEED * speedFactor * delta) / 1000);
+      const nextX = npc.gx + (dx / distance) * step;
+      const nextY = npc.gy + (dy / distance) * step;
+      const resolved = this.roomLayout?.resolveAgainstSolids(npc.gx, npc.gy, nextX, nextY, 16);
+      const rx = resolved?.x ?? nextX;
+      const ry = resolved?.y ?? nextY;
+      if (Math.hypot(rx - npc.gx, ry - npc.gy) < 1) return { arrived: true, moving: false };
+      npc.gx = rx;
+      npc.gy = ry;
+      if (Math.abs(dy) >= Math.abs(dx)) npc.direction = dy > 0 ? 'front' : 'back';
+      else { npc.direction = 'side'; npc.facingLeft = dx < 0; }
+      return { arrived: false, moving: true };
+    };
+
+    if (serve.phase === 'toSpot') {
+      const r = stepToward(serve.spotX, serve.spotY, 0.55);
+      if (r.arrived) {
+        serve.phase = 'pour';
+        serve.pourUntil = this.time.now + 1100;
+        // Face the customer across the counter.
+        const actor = serve.socketId === (this.socket?.id || '__local__') || serve.socketId === '__local__'
+          ? this.player
+          : this.remotePlayers.get(serve.socketId);
+        if (actor && Number.isFinite(actor.gx)) {
+          const pdx = actor.gx - npc.gx;
+          const pdy = actor.gy - npc.gy;
+          if (Math.abs(pdy) >= Math.abs(pdx)) npc.direction = pdy > 0 ? 'front' : 'back';
+          else { npc.direction = 'side'; npc.facingLeft = pdx < 0; }
+        }
+      }
+      return r.moving;
+    }
+
+    if (serve.phase === 'pour') {
+      if (this.time.now < serve.pourUntil) return false;
+      this._finishServe(npc);
+      serve.phase = 'return';
+      return false;
+    }
+
+    // 'return': walk back home, then take the next order in the queue.
+    const r = stepToward(npc.homeX, npc.homeY, 0.45);
+    if (r.arrived) {
+      npc.serve = null;
+      this._pumpDrinkQueue();
+    }
+    return r.moving;
+  }
+
+  // The hand-off moment: if the customer is still at the bar, they get
+  // their drink (and the local customer pays now). If they wandered off,
+  // no drink, no charge.
+  _finishServe(npc) {
+    const serve = npc.serve;
+    if (!serve) return;
+    const isMine = serve.socketId === '__local__' || serve.socketId === this.socket?.id;
+    const actor = isMine ? this.player : this.remotePlayers.get(serve.socketId);
+    if (!actor?.avatar || typeof actor.avatar.playDrink !== 'function') return;
+    const zone = this._nearestBarZone();
+    let nearBar = true;
+    if (zone && Number.isFinite(actor.gx)) {
+      const cx = Math.max(zone.x, Math.min(actor.gx, zone.x + (zone.w || 0)));
+      const cy = Math.max(zone.y, Math.min(actor.gy, zone.y + (zone.h || 0)));
+      nearBar = Math.hypot(actor.gx - cx, actor.gy - cy) <= 170;
+    }
+    if (!nearBar) {
+      if (isMine) this._drinkMissedUntil = this.time.now + 1600;
+      return;
+    }
+    if (isMine) {
+      import('./CoinWallet.js')
+        .then((wallet) => { wallet.spendCoins(wallet.BAR_DRINK_COST); })
+        .catch(() => {});
+    }
+    actor.avatar.playDrink();
   }
 
   _syncYouTubeJukebox(nowPlaying) {
@@ -1307,6 +1464,11 @@ export class VillageScene extends Phaser.Scene {
     // Remote player bought a drink at the bar: play their toast locally.
     socket.on('player_drank', ({ socketId } = {}) => {
       this.remotePlayers.get(socketId)?.avatar?.playDrink?.();
+    });
+
+    // A player ordered a drink: the bartender serves it, in order.
+    socket.on('drink_ordered', ({ socketId } = {}) => {
+      this._enqueueDrinkOrder(socketId);
     });
 
     // Room-wide YouTube jukebox: play the server's now-playing video for everyone.
@@ -1824,12 +1986,21 @@ export class VillageScene extends Phaser.Scene {
     }
 
     // Bar counter: prompt near the bar (other prompts take priority);
-    // a failed buy flashes a "need coins" note instead.
+    // a failed order flashes a "need coins" note instead, a wandered-off
+    // customer gets a "no charge" note, and an order in flight shows as
+    // "coming right up".
     const nearBar = this._nearestBar();
+    const myId = this.socket?.id || '__local__';
+    const myOrderActive = this._drinkQueue.includes(myId)
+      || this.staticNpcs.some((npc) => npc.serve?.socketId === myId);
     if (this._drinkBrokeUntil > this.time.now && nearBar) {
       this.drinkPrompt.setText('🍺 Need 2 coins!').setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
+    } else if (this._drinkMissedUntil > this.time.now && nearBar) {
+      this.drinkPrompt.setText('🍺 You wandered off — no charge').setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
+    } else if (nearBar && myOrderActive) {
+      this.drinkPrompt.setText('🍺 Coming right up…').setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
     } else if (nearBar && !nearPond && !nearShelf && !nearJukebox) {
-      this.drinkPrompt.setText('🍺 Buy a drink · 2 coins [E]').setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
+      this.drinkPrompt.setText(this._bartenderNpc() ? '🍺 Order a drink · 2 coins [E]' : '🍺 Buy a drink · 2 coins [E]').setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
     } else {
       this.drinkPrompt.setAlpha(0);
     }
@@ -1929,8 +2100,22 @@ export class VillageScene extends Phaser.Scene {
   }
 
   _updateStaticNpcs(delta) {
+    this._pumpDrinkQueue();
     this.staticNpcs.forEach((npc) => {
       if (!npc.avatar || npc.avatar.active === false) return;
+
+      // Bartender mid-serve: the serve task drives this NPC until it
+      // completes (patrol and proximity-pause stand aside, dialogue AI
+      // is unaffected — it never drove movement).
+      if (npc.serve) {
+        const serveMoving = this._stepNpcServe(npc, delta);
+        npc.avatar.setPosition(npc.gx, npc.gy);
+        npc.avatar.setDepth(DEPTH.ACTOR_MIN + Math.round(npc.gy));
+        npc.avatar.setMovementState({ moving: serveMoving, direction: npc.direction, facingLeft: npc.facingLeft });
+        npc.avatar.tick(delta);
+        npc.avatar.syncLabel?.();
+        return;
+      }
 
       const distToPlayer = (this.player && Number.isFinite(this.player.gx) && Number.isFinite(this.player.gy))
         ? Math.hypot(this.player.gx - npc.gx, this.player.gy - npc.gy)
