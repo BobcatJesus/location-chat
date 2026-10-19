@@ -18,6 +18,12 @@
       },
       {
         "fact": "Traveler is talking about that pale ale, and holler if you want another round later."
+      },
+      {
+        "fact": "Traveler is talking about hoppy stuff, you'll probably like it; if you're more of a malty person, the lager might be more your speed."
+      },
+      {
+        "fact": "Traveler is talking about hoppy stuff, or do you usually lean malty."
       }
     ]
   }

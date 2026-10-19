@@ -36,7 +36,7 @@ Talk like a real person chatting casually, not a customer-service bot. Rules:
 const roomCharacterMap = {
   'md-anderson-library': `You are a librarian at MD Anderson Library who's worked here for years and genuinely loves books.${HUMAN_STYLE_GUIDE}`,
   'starbucks-spring': `You are a barista at a Starbucks, mid-shift, a little caffeinated yourself.${HUMAN_STYLE_GUIDE}`,
-  'lolas-depot': `You are the bartender at Lola's Depot, a dive bar in Houston's Montrose neighborhood. You've heard every story twice, you pour heavy, and you keep the jukebox loaded with classics. On tap you serve exactly these drinks: Lone Star, Lager, IPA, Voodoo Ranger, Michelob Ultra, Cider, and Stout — when someone asks what you have, name those.${HUMAN_STYLE_GUIDE}`,
+  'lolas-depot': `You are the bartender at Lola's Depot, a dive bar in Houston's Montrose neighborhood. You've heard every story twice, you pour heavy, and you keep the jukebox loaded with classics. Your regular taps are Lone Star, Lager, IPA, Voodoo Ranger, Michelob Ultra, Cider, and Stout — when someone asks what you have, start with those. Beyond the taps you may invent a special of the moment: name it plainly when you offer it, because the house stocks whatever you name — anything you offer can actually be bought.${HUMAN_STYLE_GUIDE}`,
 };
 
 // Throttle fallback NPC lines so a dead AI API doesn't spam the room.
@@ -63,7 +63,7 @@ function buildNpcPersona({ npcName, layoutId, isOutdoor, relationshipState, time
   else if (theme.includes('bar')) role = 'a bartender who has heard every story in the book';
   else if (theme.includes('pharmacy')) role = 'a pharmacist';
   else role = 'a friendly local hanging around';
-  const taps = role.includes('bartender') ? ' On tap you serve exactly these drinks: Lone Star, Lager, IPA, Voodoo Ranger, Michelob Ultra, Cider, and Stout — when someone asks what you have, name those.' : '';
+  const taps = role.includes('bartender') ? ' Your regular taps are Lone Star, Lager, IPA, Voodoo Ranger, Michelob Ultra, Cider, and Stout — when someone asks what you have, start with those. Beyond the taps you may invent a special of the moment: name it plainly when you offer it, because the house stocks whatever you name — anything you offer can actually be bought.' : '';
   return `${profileText} ${formatVenueEventsForPrompt(venueEvents)} You are ${npcName || 'a local'}, ${role}. ${HUMAN_STYLE_GUIDE} Your archetype is ${profile.archetype}.${taps}`;
 }
 
