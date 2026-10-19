@@ -291,7 +291,7 @@ export default class SpriteAvatarBase extends Phaser.GameObjects.Container {
     const handX = this._dir === 'side' ? (this._facingLeft ? -11 : 11) : 6;
     const handY = Math.round(faceY * 0.45);
 
-    const mug = scene.add.text(handX, handY, '\u{1F37A}', { fontSize: '15px' })
+    const mug = scene.add.text(handX, handY, '\u{1F37A}', { fontSize: '22px' })
       .setOrigin(0.5, 1)
       .setAlpha(0);
     this.add(mug);

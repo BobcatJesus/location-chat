@@ -614,6 +614,7 @@ export class VillageScene extends Phaser.Scene {
     this._serveBubbleText = '';
     this._serveBubbleUntil = 0;
     this._drinkAnimUntil = 0;
+    this._serveBubbleFrom = 0;
     this.drinkPrompt = this.add.text(0, 0, '🍺 Order a drink · 2 coins [E]', {
       fontSize: '15px',
       color: '#7c2d12',
@@ -1177,6 +1178,7 @@ export class VillageScene extends Phaser.Scene {
       this._serveBubbleNpc = bt;
       this._serveBubbleText = "Tab's closed till you scare up some coins, friend";
       this._serveBubbleUntil = this.time.now + 2600;
+      this._serveBubbleFrom = 0;
       return;
     }
     if (this._placeDrinkOrder(pick.label)) this._announceOrder(bt, pick.label);
@@ -1187,6 +1189,7 @@ export class VillageScene extends Phaser.Scene {
     this._serveBubbleNpc = npc;
     this._serveBubbleText = `One ${label} — coming right up`;
     this._serveBubbleUntil = this.time.now + 2400;
+    this._serveBubbleFrom = 0;
     this.onChatMessage({
       senderName: npc.name || 'Bartender',
       message: `One ${label} — coming right up.`,
@@ -1259,6 +1262,7 @@ export class VillageScene extends Phaser.Scene {
       this._serveBubbleNpc = npc;
       this._serveBubbleText = "Tab's closed till you scare up some coins, friend";
       this._serveBubbleUntil = this.time.now + 2600;
+      this._serveBubbleFrom = 0;
       return;
     }
     if (this._placeDrinkOrder(label)) this._announceOrder(npc, label);
@@ -1403,7 +1407,9 @@ export class VillageScene extends Phaser.Scene {
     }
     this._serveBubbleNpc = npc;
     this._serveBubbleText = 'Here you go 🍺';
-    this._serveBubbleUntil = this.time.now + 1900;
+    // Said as the mug comes down — not over the drink itself.
+    this._serveBubbleFrom = this.time.now + 2300;
+    this._serveBubbleUntil = this.time.now + 3900;
     if (isMine) {
       this.onChatMessage({
         senderName: npc.name || 'Bartender',
@@ -2249,7 +2255,7 @@ export class VillageScene extends Phaser.Scene {
 
     // Bartender speech bubble: the question while you pick, the call-out
     // ("One Lone Star") for a breath after each hand-off.
-    if (this._serveBubbleNpc && this.time.now < this._serveBubbleUntil) {
+    if (this._serveBubbleNpc && this.time.now >= (this._serveBubbleFrom || 0) && this.time.now < this._serveBubbleUntil) {
       this.bartenderBubble.setText(this._serveBubbleText).setPosition(this._serveBubbleNpc.gx, this._serveBubbleNpc.gy - 104).setAlpha(1);
     } else {
       this.bartenderBubble.setAlpha(0);

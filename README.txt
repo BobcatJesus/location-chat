@@ -1,16 +1,14 @@
-SIDE QUEST — BARTENDER v7.1: CLEAR THE STAGE (VillageScene only)
+SIDE QUEST — BARTENDER v7.2: TIMING + A BIGGER BEER
 
-The serve/drink moment was buried under four text elements at
-once: both name tags, the order prompt, and the speech bubble —
-all floating in the exact band where the mug rises to the face.
+Two refinements on v7.1 (he tested it: mostly worked):
 
-Fix, while YOUR drink is being poured and drunk (~2.6s):
-- Your name tag and the bartender's hide, then come back.
-- The order prompt hides (the Coming right up state is gone —
-  the bubble already says it).
-- The bartender's speech bubble rides higher (gy-104), so
-  "Here you go" floats above the action instead of on it.
-Everything else is v7 (card only) — this file is cumulative.
+1. "Here you go" no longer talks over the drink. The bubble was
+   still landing on the mug because the bartender stands a
+   counter-depth above you — raising it was not enough. Now the
+   line is DELAYED: it appears at +2.3s, as the mug comes down,
+   and stays 1.6s. The pour and the sips play on a clear stage;
+   he still says it, every time.
+2. The beer mug is bigger: 15px -> 22px, so the raise / tip /
+   sips actually read at a glance.
 
-If v7 is not pushed yet: extract v7 first, then this, one commit.
-Otherwise extract this alone and push. Hard-refresh after deploy.
+Cumulative with v7/v7.1. Extract over the repo root and push.
