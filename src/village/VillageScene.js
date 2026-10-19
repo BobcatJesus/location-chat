@@ -82,22 +82,6 @@ const LAST_BEER_KEY = 'sidequest:lastBeer';
 const AFFIRM_FIRST_WORDS = new Set(['yes', 'yeah', 'yep', 'yup', 'sure', 'ok', 'okay', 'please', 'absolutely', 'definitely', 'alright']);
 const AFFIRM_PHRASES = new Set(['the usual', 'my usual', 'sounds good', 'hit me', 'same again', 'one more', 'do it']);
 const BEER_REQUEST = /\b(can i get|could i get|can i have|could i have|give me|get me|let me get|let me have|gimme|pour me|i'll have|ill have|i'll take|ill take|i want|i need|i'd like|id like)\b/;
-// Drinks the bartender might invent in banter. The board (BEER_MENU)
-// is the base stock; anything he names from this wider world becomes
-// a live SPECIAL — on the card, orderable by name — because if he
-// says it's there, it needs to be there for purchase.
-const SPECIAL_NOUNS = [
-  'pale ale', 'brown ale', 'cream ale', 'amber ale', 'irish red', 'helles',
-  'porter', 'saison', 'pilsner', 'pilsener', 'kolsch', 'altbier', 'dunkel',
-  'bock', 'doppelbock', 'dubbel', 'tripel', 'quadrupel', 'gose', 'lambic',
-  'witbier', 'hefeweizen', 'weizen', 'shandy', 'radler', 'michelada', 'mead',
-  'whiskey', 'whisky', 'bourbon', 'scotch', 'rye', 'gin', 'vodka', 'rum',
-  'tequila', 'mezcal', 'brandy', 'cognac', 'wine', 'merlot', 'cabernet',
-  'chardonnay', 'pinot', 'prosecco', 'champagne', 'margarita', 'mojito',
-  'mule', 'spritz', 'sake', 'ale',
-];
-const SPECIAL_RE = new RegExp('\\b(' + SPECIAL_NOUNS.join('|') + ')\\b', 'i');
-const MENU_NOUNS = new Set(['lone star', 'lager', 'ipa', 'voodoo ranger', 'ultra', 'cider', 'stout']);
 
 const WHAT_HAVE_RE = /(what\s+(do|dou|d)\s*(you|u)\s*(have|got)|what'?s on tap|whatcha got|what you (have|got)|what (beers|drinks) (do|you|u)|\bmenu\b|\bthirsty\b|what.*\b(serve|serving|pour|pouring)\b)/;
 const DECOR_SYNC_MS = 8000;
@@ -626,10 +610,10 @@ export class VillageScene extends Phaser.Scene {
     this._convoArmUntil = 0;
     this._drinkCard = null;
     this._drinkCardUntil = 0;
-    this._specials = [];
     this._serveBubbleNpc = null;
     this._serveBubbleText = '';
     this._serveBubbleUntil = 0;
+    this._drinkAnimUntil = 0;
     this.drinkPrompt = this.add.text(0, 0, '🍺 Order a drink · 2 coins [E]', {
       fontSize: '15px',
       color: '#7c2d12',
@@ -1118,6 +1102,7 @@ export class VillageScene extends Phaser.Scene {
       return;
     }
     this._drinkCooldownMs = 3000;
+    this._drinkAnimUntil = this.time.now + 2600;
     avatar.playDrink();
     this.socket?.emit('buy_drink', { roomId: this.roomId });
   }
@@ -1139,42 +1124,8 @@ export class VillageScene extends Phaser.Scene {
   // hand-off bubble), you pay, you drink. This is the transaction,
   // presented inside the conversation with him — no free-text
   // guessing required (chat ordering still works as a side door).
-  // Read the bartender's line for drinks he invented that aren't on
-  // the board, and stock them as specials (10 minutes, max 3). A
-  // negation nearby ("out of porter") keeps it off the card.
-  _harvestSpecials(replyText) {
-    const text = String(replyText || '').toLowerCase();
-    const found = [];
-    const re = new RegExp(SPECIAL_RE.source, 'gi');
-    let m;
-    while ((m = re.exec(text)) !== null) {
-      const noun = m[1].toLowerCase();
-      if (MENU_NOUNS.has(noun)) continue;
-      const before = text.slice(Math.max(0, m.index - 14), m.index);
-      if (/(out of|sold out of|no more)\s*$/.test(before)) continue;
-      if (!found.includes(noun)) found.push(noun);
-    }
-    if (found.length === 0) return;
-    const until = this.time.now + 10 * 60 * 1000;
-    for (const noun of found) {
-      const label = noun.replace(/\b\w/g, (ch) => ch.toUpperCase());
-      this._specials = this._specials.filter((sp) => sp.noun !== noun);
-      this._specials.unshift({ noun, label, until });
-    }
-    this._specials = this._specials.slice(0, 3);
-  }
-
-  _freshSpecials() {
-    const now = this.time.now;
-    this._specials = this._specials.filter((sp) => sp.until > now);
-    return this._specials;
-  }
-
   _buildDrinkCard() {
-    const rows = [
-      ...this._freshSpecials().map((sp) => ({ id: `special:${sp.noun}`, label: sp.label, special: true })),
-      ...BEER_MENU,
-    ];
+    const rows = [...BEER_MENU];
     const rowH = 21;
     const headerH = 24;
     const W = 176;
@@ -1189,8 +1140,7 @@ export class VillageScene extends Phaser.Scene {
     c.add(header);
     rows.forEach((beer, i) => {
       const y = -H + headerH + i * rowH + 2;
-      const label = beer.special ? `⭐ ${beer.label} · 2🪙`
-        : beer.id === 'surprise' ? '🎲 Surprise me' : `${beer.label} · 2🪙`;
+      const label = beer.id === 'surprise' ? '🎲 Surprise me' : `${beer.label} · 2🪙`;
       const t = this.add.text(0, y, label, {
         fontSize: '13px', color: '#f9fafb',
         backgroundColor: 'rgba(255,255,255,0.08)',
@@ -1206,7 +1156,7 @@ export class VillageScene extends Phaser.Scene {
   _openDrinkCard() {
     const bt = this._bartenderNpc();
     if (!bt) return;
-    // Rebuilt per open so fresh specials are on it.
+    // Rebuilt per open.
     this._drinkCard?.destroy();
     this._drinkCard = null;
     this._buildDrinkCard();
@@ -1219,16 +1169,6 @@ export class VillageScene extends Phaser.Scene {
     const bt = this._bartenderNpc();
     if (!bt) return;
     let pick = beer;
-    if (pick.special) {
-      if (this.walletMod && this.walletMod.getCoins() < this.walletMod.BAR_DRINK_COST) {
-        this._serveBubbleNpc = bt;
-        this._serveBubbleText = "Tab's closed till you scare up some coins, friend";
-        this._serveBubbleUntil = this.time.now + 2600;
-        return;
-      }
-      if (this._placeDrinkOrder(pick.label)) this._announceOrder(bt, pick.label);
-      return;
-    }
     if (pick.id === 'surprise') {
       const taps = BEER_MENU.filter((b) => b.id !== 'surprise');
       pick = taps[Math.floor(Math.random() * taps.length)];
@@ -1292,10 +1232,6 @@ export class VillageScene extends Phaser.Scene {
     const norm = String(message || '').toLowerCase().replace(/[.!?,]+$/, '').trim();
     if (!norm) return;
     let label = null;
-    const specials = this._freshSpecials();
-    for (const sp of specials) {
-      if (new RegExp('\\b' + sp.noun + '\\b').test(norm)) { label = sp.label; break; }
-    }
     if (!label && /\blone\s?star\b/.test(norm)) label = 'Lone Star';
     else if (!label && /\bvoodoo\b/.test(norm)) label = 'Voodoo Ranger';
     else if (!label && /\bipa\b/.test(norm)) label = 'IPA';
@@ -1315,7 +1251,7 @@ export class VillageScene extends Phaser.Scene {
       // yes/sure still need the armed conversation window.
       const words = norm.split(/\s+/);
       if (words.length <= 5 && (AFFIRM_PHRASES.has(norm) || (wasArmed && AFFIRM_FIRST_WORDS.has(words[0])))) {
-        label = specials.length > 0 ? specials[0].label : BEER_MENU[this._usualBeerIndex()].label;
+        label = BEER_MENU[this._usualBeerIndex()].label;
       }
     }
     if (!label) return;
@@ -1479,6 +1415,7 @@ export class VillageScene extends Phaser.Scene {
         npcId: npc.id,
       });
     }
+    if (isMine) this._drinkAnimUntil = this.time.now + 2600;
     actor.avatar.playDrink();
   }
 
@@ -1759,9 +1696,6 @@ export class VillageScene extends Phaser.Scene {
     // AI-backed NPC reply from the Inworld Router (server/socket.js `send_message` handler).
     socket.on('npc_reply', (payload) => {
       if (!payload?.message) return;
-      // The room-persona bartender speaks here; his inventions stock
-      // as specials just like the walk-around bartender's do.
-      if (this._bartenderNpc()) this._harvestSpecials(payload.message);
       this.onChatMessage({
         senderName: 'NPC',
         message: payload.message,
@@ -1778,7 +1712,6 @@ export class VillageScene extends Phaser.Scene {
       const npcEntry = this.staticNpcs.find((entry) => entry.id === npcId);
       if (npcEntry?.isBartender) {
         this._convoArmUntil = this.time.now + 45000;
-        if (reply) this._harvestSpecials(reply);
       }
       const distance = npcEntry
         ? Math.hypot(this.player.gx - npcEntry.gx, this.player.gy - npcEntry.gy)
@@ -2302,8 +2235,9 @@ export class VillageScene extends Phaser.Scene {
       this.drinkPrompt.setText('🍺 Need 2 coins!').setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
     } else if (this._drinkMissedUntil > this.time.now && nearBar) {
       this.drinkPrompt.setText('🍺 You wandered off — no charge').setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
-    } else if (nearBar && myOrderActive) {
-      this.drinkPrompt.setText('🍺 Coming right up…').setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
+    } else if (nearBar && (myOrderActive || this.time.now < (this._drinkAnimUntil || 0))) {
+      // Your drink is being poured / drunk: no prompt over the mug.
+      this.drinkPrompt.setAlpha(0);
     } else if (canOrder && !nearPond && !nearShelf && !nearJukebox) {
       this.drinkPrompt.setText(bartender ? '🍺 Talk to the bartender to order · 2 coins' : '🍺 Buy a drink · 2 coins [E]').setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
     } else if (nearBar && bartender && !nearBartender && !myOrderActive && !nearPond && !nearShelf && !nearJukebox) {
@@ -2316,10 +2250,16 @@ export class VillageScene extends Phaser.Scene {
     // Bartender speech bubble: the question while you pick, the call-out
     // ("One Lone Star") for a breath after each hand-off.
     if (this._serveBubbleNpc && this.time.now < this._serveBubbleUntil) {
-      this.bartenderBubble.setText(this._serveBubbleText).setPosition(this._serveBubbleNpc.gx, this._serveBubbleNpc.gy - 78).setAlpha(1);
+      this.bartenderBubble.setText(this._serveBubbleText).setPosition(this._serveBubbleNpc.gx, this._serveBubbleNpc.gy - 104).setAlpha(1);
     } else {
       this.bartenderBubble.setAlpha(0);
     }
+
+    // Clear the stage while your drink is poured and drunk: your
+    // name tag and the bartender's hide so nothing sits on the mug.
+    const stageClear = myOrderActive || this.time.now < (this._drinkAnimUntil || 0);
+    if (this.player?.avatar?._label) this.player.avatar._label.setVisible(!stageClear);
+    if (bartender?.avatar?._label) bartender.avatar._label.setVisible(!stageClear);
 
     // Drink card: rides at the bartender's shoulder while it's open;
     // closes on timeout or when you walk off.
