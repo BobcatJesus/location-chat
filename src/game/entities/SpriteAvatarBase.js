@@ -52,6 +52,8 @@ export default class SpriteAvatarBase extends Phaser.GameObjects.Container {
     this._drunkClock = 0;
     this._drunkPhase = Math.random() * Math.PI * 2;
     this._hiccupIn = 3000 + Math.random() * 4000;
+    this._stumbleIn = 3000 + Math.random() * 3000;
+    this._stumblePulse = 0;
     this._stepFrame = 0;
     this._bodyScale = BODY_TYPE_SCALE[bodyType] || BODY_TYPE_SCALE.standard;
 
@@ -160,21 +162,37 @@ export default class SpriteAvatarBase extends Phaser.GameObjects.Container {
     this._sprite.y = bob;
 
     if (this._drunkLevel > 0.01 && !this._drinking) {
+      // Staged performance — buzzed / tipsy / drunk must READ at a
+      // glance, across the room: lean amplitude, stumble pulses,
+      // a weaving walk, and floaters, all stepped up per stage.
       this._drunkClock += delta;
       const t = this._drunkClock / 1000;
-      const sway = Math.sin(t * 1.7 + this._drunkPhase) * 4.2 * this._drunkLevel;
-      const stumble = Math.pow(Math.max(0, Math.sin(t * 0.43 + this._drunkPhase * 2)), 6) * 5 * this._drunkLevel;
-      this._sprite.angle = sway + stumble;
-      this._sprite.y += Math.sin(t * 3.4 + this._drunkPhase) * 0.5 * this._drunkLevel;
-      if (this._drunkLevel >= 0.5) {
+      const lvl = this._drunkLevel;
+      const stage = lvl > 0.66 ? 2 : lvl > 0.34 ? 1 : 0;
+      const amp = [3.5, 8, 13][stage];
+      const speed = [1.5, 1.8, 2.2][stage];
+      this._stumbleIn -= delta;
+      if (stage >= 1 && this._stumbleIn <= 0) {
+        this._stumbleIn = stage === 2 ? 3500 + Math.random() * 3500 : 5000 + Math.random() * 4000;
+        this._stumblePulse = (stage === 2 ? 10 : 6) * (Math.random() < 0.5 ? -1 : 1);
+      }
+      this._stumblePulse *= Math.exp(-delta / 300);
+      if (Math.abs(this._stumblePulse) < 0.05) this._stumblePulse = 0;
+      const sway = Math.sin(t * speed + this._drunkPhase) * amp;
+      const drift = Math.sin(t * 0.43 + this._drunkPhase * 2) * amp * 0.35;
+      this._sprite.angle = sway + drift + this._stumblePulse;
+      this._sprite.y += Math.sin(t * speed * 2 + this._drunkPhase) * (0.3 + lvl * 0.9);
+      this._sprite.x = this._moving ? Math.sin(t * 2.1 + this._drunkPhase) * 2.2 * lvl : 0;
+      if (stage >= 1) {
         this._hiccupIn -= delta;
         if (this._hiccupIn <= 0) {
-          this._hiccupIn = 4000 + Math.random() * 5000;
-          this._spawnHiccup();
+          this._hiccupIn = stage === 2 ? 3000 + Math.random() * 3000 : 4500 + Math.random() * 4500;
+          this._spawnFloater(stage === 2 && Math.random() < 0.5 ? '💫' : '*hic*');
         }
       }
-    } else if (!this._drinking && this._sprite.angle !== 0) {
+    } else if (!this._drinking && (this._sprite.angle !== 0 || this._sprite.x !== 0)) {
       this._sprite.angle = 0;
+      this._sprite.x = 0;
     }
     this._shadow.scaleX = this._moving ? (this._stepFrame ? 0.96 : 1) : 1;
   }
@@ -308,11 +326,11 @@ export default class SpriteAvatarBase extends Phaser.GameObjects.Container {
     if (this._drunkLevel === 0 && !this._drinking && this._sprite) this._sprite.angle = 0;
   }
 
-  _spawnHiccup() {
+  _spawnFloater(str) {
     const scene = this.scene;
     if (!scene?.add || !this._sprite?.active) return;
-    const t = scene.add.text(this.x + (Math.random() * 16 - 8), this.y - this._getLabelYOffset() - 6, '*hic*', {
-      fontSize: '10px', color: '#fda4af', fontFamily: 'Courier New, monospace',
+    const t = scene.add.text(this.x + (Math.random() * 16 - 8), this.y - this._getLabelYOffset() - 6, str, {
+      fontSize: str === '💫' ? '12px' : '10px', color: '#fda4af', fontFamily: 'Courier New, monospace',
     }).setOrigin(0.5, 1).setDepth(this.depth + 12).setAlpha(0.95);
     scene.tweens.add({
       targets: t, y: t.y - 14, alpha: 0, duration: 950, ease: 'Sine.easeOut',

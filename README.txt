@@ -1,18 +1,24 @@
-SIDE QUEST — DRUNKENNESS v2: THE CUTOFF + WATER
+SIDE QUEST — DRUNKENNESS v3: MAKE IT READ ACROSS THE ROOM
 
-THE CUTOFF (in _placeDrinkOrder, the choke point every order —
-card or chat — passes through): at buzz >= 0.6 (about two fresh
-drinks) an alcohol order is refused. No queue, no charge. His
-bubble: "You've had enough, friend — water's free."
-Water is exempt from the gate.
+v1/v2 swayed at ~4 degrees — about 3px of head movement on a
+40px avatar. Invisible. The performance is now STAGED, and the
+stages line up with the drink count and the cutoff:
 
-WATER: a permanent last row on the card ("Water · free"),
-also orderable in chat ("water"). No coin check, no charge,
-never becomes your usual. He serves it like any drink — walk,
-pour ("Here you go" with a droplet) — and at hand-off it
-REMOVES 0.55 of buzz instead of adding: the sway visibly
-settles as the mug comes down. One water re-opens the taps;
-two waters sober you from the cap. Waiting works too (~4 min).
+  BUZZED  (after 1 drink)      lean 3.5 deg, gentle bob
+  TIPSY   (decaying / between) sway 8 deg, stumble pulses,
+                               *hic* floaters, weaving walk
+  DRUNK   (after 2 drinks)     sway 13 deg + drift, 10 deg
+                               stumble lurches, knee-bob,
+                               hiccups and sparkles floaters
 
-Includes drunkenness v1 + bartender v7.3. Both files
-cumulative. Extract over the repo root and push.
+The CUTOFF now triggers at the DRUNK stage itself (>= 0.66):
+he refuses you when the whole room can SEE you are drunk.
+Water still takes 0.55 off — you visibly sober down through
+the stages as you drink it.
+
+Still 100% in SpriteAvatarBase: every avatar, made or unmade,
+performs all three stages with zero per-model wiring. Remote
+players perform on your screen from your local buzz ledger,
+and you perform on theirs.
+
+Cumulative with bartender v7.3 + drunk v1/v2. Extract, push.

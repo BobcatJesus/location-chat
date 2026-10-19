@@ -1214,7 +1214,7 @@ export class VillageScene extends Phaser.Scene {
     if (this._drinkQueue.length >= 4) return false;
     // The cutoff: substantially drunk and asking for alcohol, he
     // won't serve you. Water always gets through — it's the way back.
-    if (beerLabel !== 'Water' && this._buzzLevel(myId) >= 0.6) {
+    if (beerLabel !== 'Water' && this._buzzLevel(myId) >= 0.66) {
       const bt = this._bartenderNpc();
       if (bt) {
         this._serveBubbleNpc = bt;
