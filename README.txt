@@ -1,24 +1,18 @@
-SIDE QUEST — DRUNKENNESS ANIMATION v1
+SIDE QUEST — DRUNKENNESS v2: THE CUTOFF + WATER
 
-WHERE IT LIVES: SpriteAvatarBase, right next to playDrink. That
-is the shared base every avatar is built on — demon, bunny,
-gator, and every avatar drawn in the future inherits the drunk
-performance automatically. Zero per-model wiring: the sway
-rotates the whole sprite around its foot pivot, so there is no
-face position or fill table to extend for new models.
+THE CUTOFF (in _placeDrinkOrder, the choke point every order —
+card or chat — passes through): at buzz >= 0.6 (about two fresh
+drinks) an alcohol order is refused. No queue, no charge. His
+bubble: "You've had enough, friend — water's free."
+Water is exempt from the gate.
 
-THE PERFORMANCE (setDrunkenness, 0 sober -> 1 wobbly):
-- a slow lean/sway from the feet, plus an occasional stumble
-- a faint extra bob; hiccups (*hic* floaters) at level >= 0.5
-- pauses politely while playDrink owns the sprite
+WATER: a permanent last row on the card ("Water · free"),
+also orderable in chat ("water"). No coin check, no charge,
+never becomes your usual. He serves it like any drink — walk,
+pour ("Here you go" with a droplet) — and at hand-off it
+REMOVES 0.55 of buzz instead of adding: the sway visibly
+settles as the mug comes down. One water re-opens the taps;
+two waters sober you from the cap. Waiting works too (~4 min).
 
-THE BUZZ (VillageScene): each finished drink adds ~1/3 of the
-meter and it drains over ~4 minutes. Applies to you AND to any
-player you watch drink (player_drank relay). Bartender exempt —
-a professional.
-
-NOT INCLUDED (still his call from the original pitch): the
-bartender cutting you off at the cap, and free water that
-sobers you faster. This kit is the animation + meter only.
-
-Cumulative with bartender v7.3. Extract over repo root, push.
+Includes drunkenness v1 + bartender v7.3. Both files
+cumulative. Extract over the repo root and push.

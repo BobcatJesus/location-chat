@@ -1128,7 +1128,7 @@ export class VillageScene extends Phaser.Scene {
   // presented inside the conversation with him — no free-text
   // guessing required (chat ordering still works as a side door).
   _buildDrinkCard() {
-    const rows = [...BEER_MENU];
+    const rows = [...BEER_MENU, { id: 'water', label: 'Water' }];
     const rowH = 21;
     const headerH = 24;
     const W = 176;
@@ -1143,7 +1143,8 @@ export class VillageScene extends Phaser.Scene {
     c.add(header);
     rows.forEach((beer, i) => {
       const y = -H + headerH + i * rowH + 2;
-      const label = beer.id === 'surprise' ? '🎲 Surprise me' : `${beer.label} · 2🪙`;
+      const label = beer.id === 'surprise' ? '🎲 Surprise me'
+        : beer.id === 'water' ? '💧 Water · free' : `${beer.label} · 2🪙`;
       const t = this.add.text(0, y, label, {
         fontSize: '13px', color: '#f9fafb',
         backgroundColor: 'rgba(255,255,255,0.08)',
@@ -1176,7 +1177,7 @@ export class VillageScene extends Phaser.Scene {
       const taps = BEER_MENU.filter((b) => b.id !== 'surprise');
       pick = taps[Math.floor(Math.random() * taps.length)];
     }
-    if (this.walletMod && this.walletMod.getCoins() < this.walletMod.BAR_DRINK_COST) {
+    if (pick.id !== 'water' && this.walletMod && this.walletMod.getCoins() < this.walletMod.BAR_DRINK_COST) {
       this._serveBubbleNpc = bt;
       this._serveBubbleText = "Tab's closed till you scare up some coins, friend";
       this._serveBubbleUntil = this.time.now + 2600;
@@ -1211,6 +1212,18 @@ export class VillageScene extends Phaser.Scene {
     if (this._drinkQueue.some((entry) => entry.socketId === myId)) return false;
     if (this.staticNpcs.some((npc) => npc.serve?.socketId === myId)) return false;
     if (this._drinkQueue.length >= 4) return false;
+    // The cutoff: substantially drunk and asking for alcohol, he
+    // won't serve you. Water always gets through — it's the way back.
+    if (beerLabel !== 'Water' && this._buzzLevel(myId) >= 0.6) {
+      const bt = this._bartenderNpc();
+      if (bt) {
+        this._serveBubbleNpc = bt;
+        this._serveBubbleText = "You've had enough, friend — water's free 💧";
+        this._serveBubbleFrom = 0;
+        this._serveBubbleUntil = this.time.now + 3200;
+      }
+      return false;
+    }
     const tap = BEER_MENU.find((b) => b.label === beerLabel);
     if (tap) {
       try { window.localStorage.setItem(LAST_BEER_KEY, tap.id); } catch { /* private mode */ }
@@ -1244,6 +1257,7 @@ export class VillageScene extends Phaser.Scene {
     else if (!label && /\bcider\b|\beastciders\b/.test(norm)) label = 'Cider';
     else if (!label && /\blager\b/.test(norm)) label = 'Lager';
     else if (!label && /\bstout\b/.test(norm)) label = 'Stout';
+    else if (!label && /\bwater\b/.test(norm)) label = 'Water';
     else if (!label && /\bsurprise\b/.test(norm)) {
       const taps = BEER_MENU.filter((b) => b.id !== 'surprise');
       label = taps[Math.floor(Math.random() * taps.length)].label;
@@ -1354,7 +1368,7 @@ export class VillageScene extends Phaser.Scene {
         serve.pourUntil = this.time.now + 1100;
         // His line lands with the pour — before the mug ever rises.
         this._serveBubbleNpc = npc;
-        this._serveBubbleText = 'Here you go 🍺';
+        this._serveBubbleText = serve.beer === 'Water' ? 'Here you go 💧' : 'Here you go 🍺';
         this._serveBubbleFrom = 0;
         this._serveBubbleUntil = serve.pourUntil + 250;
         // Face the customer across the counter.
@@ -1399,6 +1413,12 @@ export class VillageScene extends Phaser.Scene {
     this._buzz.set(id, { level: Math.min(1, eff + 0.34), at: this.time.now });
   }
 
+  _soberBuzz(id, amount) {
+    if (!id) return;
+    const eff = this._buzzLevel(id);
+    this._buzz.set(id, { level: Math.max(0, eff - amount), at: this.time.now });
+  }
+
   _buzzLevel(id) {
     const cur = this._buzz.get(id);
     if (!cur) return 0;
@@ -1422,7 +1442,7 @@ export class VillageScene extends Phaser.Scene {
       if (isMine) this._drinkMissedUntil = this.time.now + 1600;
       return;
     }
-    if (isMine) {
+    if (isMine && serve.beer !== 'Water') {
       import('./CoinWallet.js')
         .then((wallet) => { wallet.spendCoins(wallet.BAR_DRINK_COST); })
         .catch(() => {});
@@ -1438,7 +1458,8 @@ export class VillageScene extends Phaser.Scene {
         npcId: npc.id,
       });
     }
-    this._raiseBuzz(serve.socketId);
+    if (serve.beer === 'Water') this._soberBuzz(serve.socketId, 0.55);
+    else this._raiseBuzz(serve.socketId);
     if (isMine) this._drinkAnimUntil = this.time.now + 2600;
     actor.avatar.playDrink();
   }
