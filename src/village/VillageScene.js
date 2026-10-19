@@ -615,6 +615,7 @@ export class VillageScene extends Phaser.Scene {
     this._serveBubbleUntil = 0;
     this._drinkAnimUntil = 0;
     this._serveBubbleFrom = 0;
+    this._buzz = new Map();
     this.drinkPrompt = this.add.text(0, 0, '🍺 Order a drink · 2 coins [E]', {
       fontSize: '15px',
       color: '#7c2d12',
@@ -1104,6 +1105,7 @@ export class VillageScene extends Phaser.Scene {
     }
     this._drinkCooldownMs = 3000;
     this._drinkAnimUntil = this.time.now + 2600;
+    this._raiseBuzz(this.socket?.id || '__local__');
     avatar.playDrink();
     this.socket?.emit('buy_drink', { roomId: this.roomId });
   }
@@ -1388,6 +1390,21 @@ export class VillageScene extends Phaser.Scene {
   // The hand-off moment: if the customer is still at the bar, they get
   // their drink (and the local customer pays now). If they wandered off,
   // no drink, no charge.
+  // Buzz bookkeeping: each finished drink adds ~a third of the
+  // meter; the meter drains linearly (full-to-sober in ~4 min).
+  // The avatars perform whatever level this returns.
+  _raiseBuzz(id) {
+    if (!id) return;
+    const eff = this._buzzLevel(id);
+    this._buzz.set(id, { level: Math.min(1, eff + 0.34), at: this.time.now });
+  }
+
+  _buzzLevel(id) {
+    const cur = this._buzz.get(id);
+    if (!cur) return 0;
+    return Math.max(0, cur.level - (this.time.now - cur.at) / 240000);
+  }
+
   _finishServe(npc) {
     const serve = npc.serve;
     if (!serve) return;
@@ -1421,6 +1438,7 @@ export class VillageScene extends Phaser.Scene {
         npcId: npc.id,
       });
     }
+    this._raiseBuzz(serve.socketId);
     if (isMine) this._drinkAnimUntil = this.time.now + 2600;
     actor.avatar.playDrink();
   }
@@ -1686,6 +1704,7 @@ export class VillageScene extends Phaser.Scene {
 
     // Remote player bought a drink at the bar: play their toast locally.
     socket.on('player_drank', ({ socketId } = {}) => {
+      this._raiseBuzz(socketId);
       this.remotePlayers.get(socketId)?.avatar?.playDrink?.();
     });
 
@@ -2266,6 +2285,14 @@ export class VillageScene extends Phaser.Scene {
     const stageClear = myOrderActive || this.time.now < (this._drinkAnimUntil || 0);
     if (this.player?.avatar?._label) this.player.avatar._label.setVisible(!stageClear);
     if (bartender?.avatar?._label) bartender.avatar._label.setVisible(!stageClear);
+
+    // Buzz performance: I sway, and so does everyone I can see drink.
+    if (this.player?.avatar?.setDrunkenness) {
+      this.player.avatar.setDrunkenness(this._buzzLevel(this.socket?.id || '__local__'));
+    }
+    this.remotePlayers.forEach((rp, sid) => {
+      rp?.avatar?.setDrunkenness?.(this._buzzLevel(sid));
+    });
 
     // Drink card: rides at the bartender's shoulder while it's open;
     // closes on timeout or when you walk off.

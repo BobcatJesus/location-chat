@@ -1,10 +1,24 @@
-SIDE QUEST — BARTENDER v7.3: HERE YOU GO, AT THE POUR
+SIDE QUEST — DRUNKENNESS ANIMATION v1
 
-His ruling: the line after the drink makes no sense — before the
-animation or delete it. It is now BEFORE: the moment he starts
-the pour he says "Here you go" and the bubble lives for the
-1.1s pour (+250ms), dying right as your mug rises. Nothing is
-said at hand-off; the drink plays on a clear stage.
+WHERE IT LIVES: SpriteAvatarBase, right next to playDrink. That
+is the shared base every avatar is built on — demon, bunny,
+gator, and every avatar drawn in the future inherits the drunk
+performance automatically. Zero per-model wiring: the sway
+rotates the whole sprite around its foot pivot, so there is no
+face position or fill table to extend for new models.
 
-Includes everything from v7, v7.1, v7.2 (card only, clear
-stage, 22px mug). Both files cumulative — extract and push.
+THE PERFORMANCE (setDrunkenness, 0 sober -> 1 wobbly):
+- a slow lean/sway from the feet, plus an occasional stumble
+- a faint extra bob; hiccups (*hic* floaters) at level >= 0.5
+- pauses politely while playDrink owns the sprite
+
+THE BUZZ (VillageScene): each finished drink adds ~1/3 of the
+meter and it drains over ~4 minutes. Applies to you AND to any
+player you watch drink (player_drank relay). Bartender exempt —
+a professional.
+
+NOT INCLUDED (still his call from the original pitch): the
+bartender cutting you off at the cap, and free water that
+sobers you faster. This kit is the animation + meter only.
+
+Cumulative with bartender v7.3. Extract over repo root, push.

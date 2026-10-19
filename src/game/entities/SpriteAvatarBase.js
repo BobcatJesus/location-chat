@@ -46,6 +46,12 @@ export default class SpriteAvatarBase extends Phaser.GameObjects.Container {
     this._moving = false;
     this._facingLeft = false;
     this._stepAccum = Math.random() * 120;
+    // Drunkenness lives in the base class — like playDrink — so
+    // every avatar model inherits it with zero per-model wiring.
+    this._drunkLevel = 0;
+    this._drunkClock = 0;
+    this._drunkPhase = Math.random() * Math.PI * 2;
+    this._hiccupIn = 3000 + Math.random() * 4000;
     this._stepFrame = 0;
     this._bodyScale = BODY_TYPE_SCALE[bodyType] || BODY_TYPE_SCALE.standard;
 
@@ -152,6 +158,24 @@ export default class SpriteAvatarBase extends Phaser.GameObjects.Container {
 
     const bob = this._moving ? (this._stepFrame ? -1.1 : -0.3) : -0.2;
     this._sprite.y = bob;
+
+    if (this._drunkLevel > 0.01 && !this._drinking) {
+      this._drunkClock += delta;
+      const t = this._drunkClock / 1000;
+      const sway = Math.sin(t * 1.7 + this._drunkPhase) * 4.2 * this._drunkLevel;
+      const stumble = Math.pow(Math.max(0, Math.sin(t * 0.43 + this._drunkPhase * 2)), 6) * 5 * this._drunkLevel;
+      this._sprite.angle = sway + stumble;
+      this._sprite.y += Math.sin(t * 3.4 + this._drunkPhase) * 0.5 * this._drunkLevel;
+      if (this._drunkLevel >= 0.5) {
+        this._hiccupIn -= delta;
+        if (this._hiccupIn <= 0) {
+          this._hiccupIn = 4000 + Math.random() * 5000;
+          this._spawnHiccup();
+        }
+      }
+    } else if (!this._drinking && this._sprite.angle !== 0) {
+      this._sprite.angle = 0;
+    }
     this._shadow.scaleX = this._moving ? (this._stepFrame ? 0.96 : 1) : 1;
   }
 
@@ -271,6 +295,29 @@ export default class SpriteAvatarBase extends Phaser.GameObjects.Container {
     }
     if (!scene.load.isLoading()) scene.load.start();
     tryCreatePhoto(texKey);
+  }
+
+  // Drunkenness, 0 (sober) to 1 (fully wobbly). The scene owns the
+  // buzz math — drinks in, time out — the avatar owns the
+  // performance: a lean from the feet, an occasional stumble, and
+  // hiccups once it's a real buzz. No per-model setup: the sway
+  // rotates the whole sprite around its foot pivot, so future
+  // avatars are drunk-capable the moment they extend this class.
+  setDrunkenness(level) {
+    this._drunkLevel = Math.max(0, Math.min(1, Number(level) || 0));
+    if (this._drunkLevel === 0 && !this._drinking && this._sprite) this._sprite.angle = 0;
+  }
+
+  _spawnHiccup() {
+    const scene = this.scene;
+    if (!scene?.add || !this._sprite?.active) return;
+    const t = scene.add.text(this.x + (Math.random() * 16 - 8), this.y - this._getLabelYOffset() - 6, '*hic*', {
+      fontSize: '10px', color: '#fda4af', fontFamily: 'Courier New, monospace',
+    }).setOrigin(0.5, 1).setDepth(this.depth + 12).setAlpha(0.95);
+    scene.tweens.add({
+      targets: t, y: t.y - 14, alpha: 0, duration: 950, ease: 'Sine.easeOut',
+      onComplete: () => t.destroy(),
+    });
   }
 
   // Bar treat: raise a mug to the face, tip back, take a few sips.
