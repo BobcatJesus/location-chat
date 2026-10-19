@@ -54,6 +54,8 @@ export default class SpriteAvatarBase extends Phaser.GameObjects.Container {
     this._hiccupIn = 3000 + Math.random() * 4000;
     this._stumbleIn = 3000 + Math.random() * 3000;
     this._stumblePulse = 0;
+    this._stumbleX = 0;
+    this._stars = null;
     this._stepFrame = 0;
     this._bodyScale = BODY_TYPE_SCALE[bodyType] || BODY_TYPE_SCALE.standard;
 
@@ -161,6 +163,7 @@ export default class SpriteAvatarBase extends Phaser.GameObjects.Container {
     const bob = this._moving ? (this._stepFrame ? -1.1 : -0.3) : -0.2;
     this._sprite.y = bob;
 
+    if (this._stars && (this._drunkLevel <= 0.66 || this._drinking)) for (const st of this._stars) st.setVisible(false);
     if (this._drunkLevel > 0.01 && !this._drinking) {
       // Staged performance — buzzed / tipsy / drunk must READ at a
       // glance, across the room: lean amplitude, stumble pulses,
@@ -175,14 +178,20 @@ export default class SpriteAvatarBase extends Phaser.GameObjects.Container {
       if (stage >= 1 && this._stumbleIn <= 0) {
         this._stumbleIn = stage === 2 ? 3500 + Math.random() * 3500 : 5000 + Math.random() * 4000;
         this._stumblePulse = (stage === 2 ? 10 : 6) * (Math.random() < 0.5 ? -1 : 1);
+        if (this._moving) this._stumbleX = Math.sign(this._stumblePulse) * (stage === 2 ? 6 : 4);
       }
       this._stumblePulse *= Math.exp(-delta / 300);
+      this._stumbleX *= Math.exp(-delta / 300);
       if (Math.abs(this._stumblePulse) < 0.05) this._stumblePulse = 0;
       const sway = Math.sin(t * speed + this._drunkPhase) * amp;
       const drift = Math.sin(t * 0.43 + this._drunkPhase * 2) * amp * 0.35;
       this._sprite.angle = sway + drift + this._stumblePulse;
       this._sprite.y += Math.sin(t * speed * 2 + this._drunkPhase) * (0.3 + lvl * 0.9);
-      this._sprite.x = this._moving ? Math.sin(t * 2.1 + this._drunkPhase) * 2.2 * lvl : 0;
+      const weave = this._moving ? Math.sin(t * 2.1 + this._drunkPhase) * [0, 4, 7][stage] : 0;
+      this._sprite.x = weave + this._stumbleX;
+      if (this._moving && stage >= 1) this._sprite.angle += Math.sin(t * 2.1 + this._drunkPhase) * (stage === 2 ? 4 : 2);
+      if (stage === 2) this._updateStars(t);
+      else if (this._stars) for (const st of this._stars) st.setVisible(false);
       if (stage >= 1) {
         this._hiccupIn -= delta;
         if (this._hiccupIn <= 0) {
@@ -193,6 +202,7 @@ export default class SpriteAvatarBase extends Phaser.GameObjects.Container {
     } else if (!this._drinking && (this._sprite.angle !== 0 || this._sprite.x !== 0)) {
       this._sprite.angle = 0;
       this._sprite.x = 0;
+      if (this._stars) for (const st of this._stars) st.setVisible(false);
     }
     this._shadow.scaleX = this._moving ? (this._stepFrame ? 0.96 : 1) : 1;
   }
@@ -324,6 +334,25 @@ export default class SpriteAvatarBase extends Phaser.GameObjects.Container {
   setDrunkenness(level) {
     this._drunkLevel = Math.max(0, Math.min(1, Number(level) || 0));
     if (this._drunkLevel === 0 && !this._drinking && this._sprite) this._sprite.angle = 0;
+  }
+
+  // Full drunk: three gold stars circling the head — the universal
+  // cartoon sign, readable from anywhere in the room.
+  _updateStars(t) {
+    if (!this._stars) {
+      this._stars = [];
+      for (let i = 0; i < 3; i++) {
+        const st = this.scene.add.text(0, 0, '★', { fontSize: '11px', color: '#fbbf24' }).setOrigin(0.5);
+        this.add(st);
+        this._stars.push(st);
+      }
+    }
+    const cy = -this._targetHeight - 5;
+    this._stars.forEach((st, i) => {
+      const a = t * 2.4 + (i * Math.PI * 2) / 3;
+      st.setPosition(Math.cos(a) * 14, cy + Math.sin(a) * 5);
+      st.setVisible(true);
+    });
   }
 
   _spawnFloater(str) {

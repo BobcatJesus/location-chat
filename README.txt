@@ -1,24 +1,16 @@
-SIDE QUEST — DRUNKENNESS v3: MAKE IT READ ACROSS THE ROOM
+SIDE QUEST — DRUNKENNESS v4: STARS + THE STAGGERING WALK
 
-v1/v2 swayed at ~4 degrees — about 3px of head movement on a
-40px avatar. Invisible. The performance is now STAGED, and the
-stages line up with the drink count and the cutoff:
+One file: SpriteAvatarBase.js (still the shared base — every
+avatar, made or unmade, gets all of this for free).
 
-  BUZZED  (after 1 drink)      lean 3.5 deg, gentle bob
-  TIPSY   (decaying / between) sway 8 deg, stumble pulses,
-                               *hic* floaters, weaving walk
-  DRUNK   (after 2 drinks)     sway 13 deg + drift, 10 deg
-                               stumble lurches, knee-bob,
-                               hiccups and sparkles floaters
+FULL DRUNK now wears the universal sign: three gold stars
+circling the head in a flat orbit, on while you are at the
+drunk stage, off the moment you drop to tipsy or take a drink.
 
-The CUTOFF now triggers at the DRUNK stage itself (>= 0.66):
-he refuses you when the whole room can SEE you are drunk.
-Water still takes 0.55 off — you visibly sober down through
-the stages as you drink it.
+MOVING is where it shows most, as ordered:
+- the walk WEAVES: 4px side-to-side at tipsy, 7px at drunk,
+  with the body leaning into each stagger step
+- stumble pulses while walking also SHOVE you sideways
+  (6px at drunk), decaying like a real lost step
 
-Still 100% in SpriteAvatarBase: every avatar, made or unmade,
-performs all three stages with zero per-model wiring. Remote
-players perform on your screen from your local buzz ledger,
-and you perform on theirs.
-
-Cumulative with bartender v7.3 + drunk v1/v2. Extract, push.
+Extract over the repo root and push.
