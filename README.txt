@@ -1,14 +1,10 @@
-SIDE QUEST — BARTENDER v7.2: TIMING + A BIGGER BEER
+SIDE QUEST — BARTENDER v7.3: HERE YOU GO, AT THE POUR
 
-Two refinements on v7.1 (he tested it: mostly worked):
+His ruling: the line after the drink makes no sense — before the
+animation or delete it. It is now BEFORE: the moment he starts
+the pour he says "Here you go" and the bubble lives for the
+1.1s pour (+250ms), dying right as your mug rises. Nothing is
+said at hand-off; the drink plays on a clear stage.
 
-1. "Here you go" no longer talks over the drink. The bubble was
-   still landing on the mug because the bartender stands a
-   counter-depth above you — raising it was not enough. Now the
-   line is DELAYED: it appears at +2.3s, as the mug comes down,
-   and stays 1.6s. The pour and the sips play on a clear stage;
-   he still says it, every time.
-2. The beer mug is bigger: 15px -> 22px, so the raise / tip /
-   sips actually read at a glance.
-
-Cumulative with v7/v7.1. Extract over the repo root and push.
+Includes everything from v7, v7.1, v7.2 (card only, clear
+stage, 22px mug). Both files cumulative — extract and push.

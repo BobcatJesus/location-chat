@@ -1350,6 +1350,11 @@ export class VillageScene extends Phaser.Scene {
       if (r.arrived) {
         serve.phase = 'pour';
         serve.pourUntil = this.time.now + 1100;
+        // His line lands with the pour — before the mug ever rises.
+        this._serveBubbleNpc = npc;
+        this._serveBubbleText = 'Here you go 🍺';
+        this._serveBubbleFrom = 0;
+        this._serveBubbleUntil = serve.pourUntil + 250;
         // Face the customer across the counter.
         const actor = serve.socketId === (this.socket?.id || '__local__') || serve.socketId === '__local__'
           ? this.player
@@ -1405,11 +1410,6 @@ export class VillageScene extends Phaser.Scene {
         .then((wallet) => { wallet.spendCoins(wallet.BAR_DRINK_COST); })
         .catch(() => {});
     }
-    this._serveBubbleNpc = npc;
-    this._serveBubbleText = 'Here you go 🍺';
-    // Said as the mug comes down — not over the drink itself.
-    this._serveBubbleFrom = this.time.now + 2300;
-    this._serveBubbleUntil = this.time.now + 3900;
     if (isMine) {
       this.onChatMessage({
         senderName: npc.name || 'Bartender',
