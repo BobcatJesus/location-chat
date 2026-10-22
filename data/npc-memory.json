@@ -26,5 +26,19 @@
         "fact": "Traveler is talking about hoppy stuff, or do you usually lean malty."
       }
     ]
+  },
+  "asgard-games::0::1:guest": {
+    "playerName": "Traveler",
+    "facts": [
+      {
+        "fact": "Traveler is talking about the current conversation."
+      },
+      {
+        "fact": "Traveler is talking about the tabletop side there's a pokémon tcg corner too."
+      },
+      {
+        "fact": "not sure about a Pok is the player."
+      }
+    ]
   }
 }

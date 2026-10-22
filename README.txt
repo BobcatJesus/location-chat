@@ -1,32 +1,29 @@
-Side Quest - Jack-o'-lantern lighting v1
-=========================================
-Clicking a jack-o'-lantern lights it — for everyone in the room.
+Side Quest - Jack-o'-lantern lighting v10 (placement oracle)
+==============================================================
+Status: lighting itself works (walk up + [E], or click). The last
+open bug was PLACEMENT in Asgard on the user's clone: pumpkins
+kept landing below the room's slanted front edge, outside the
+built area, even though the same code placed them inside on a
+clean copy - the clone's boundary data/helpers evidently differ
+from the reference build, so helper-dependent snaps silently
+no-oped.
 
-WHAT CHANGED
-- src/village/HalloweenMode.js: pumpkins now start unlit (cool dark tint
-  over the art, which is drawn glowing). Click one and the tint clears
-  with a little pop, a warm candlelight halo fades in behind it and
-  flickers (fast shimmer + slow swell). Click state is tracked per
-  pumpkin; pumpkins are indexed 0-3 by their fixed spots.
-- src/village/VillageScene.js: on join, asks the server for the room's
-  lit pumpkins (get_pumpkins) and routes pumpkin_lit / pumpkin_state
-  events into HalloweenMode.
-- server/socket.js: keeps a per-room Set of lit pumpkin indices in
-  memory. light_pumpkin is membership-checked and rate-limited like
-  feed_ducks; get_pumpkins answers with the current lit set so late
-  joiners see pumpkins already lit. Lit state resets when the server
-  restarts (it's seasonal decor, not data).
+v10 placement uses an ORACLE LADDER for "is this spot inside?":
+  1. the running build's OWN RoomLayout.isPointInsideRoom
+     (its test agrees with its rendering by construction);
+  2. point-in-polygon on tolerantly parsed boundary points
+     ({points|vertices|path}, {x,y} or [x,y] shapes);
+  3. accept-as-is when no oracle exists.
+A failing spot walks toward the room center until accepted;
+failing that, a spread of lower-room fallback spots is tried.
+On entry, a toast reports the verdicts:
+  "4 pumpkins placed - inside check: check marks"
 
-TEST ON LOCALHOST
-1. Extract this zip into the clone (overwrites the 3 files).
-2. RESTART npm run dev (Ctrl+C, run it again) - the server file changed,
-   and server changes do not hot-reload.
-3. Open http://localhost:5173/, walk into a room: the four pumpkins sit
-   dim. Click one - it should pop into full glowing color with a
-   flickering halo.
-4. Open a second window (another browser or incognito) in the same
-   room: the pumpkin you lit is already lit there, and lighting another
-   one in either window lights it in both.
+Also includes everything prior: walk-up [E] prompt + click paths,
+dark unlit texture + bright swap + halo, per-room server sync.
 
-DEPLOY (after local test passes)
-Same PowerShell block as always: git add -A, commit, pull --rebase, push.
+Files: src/village/HalloweenMode.js, src/village/VillageScene.js,
+server/socket.js (full files, cumulative).
+
+TEST: extract, RESTART npm run dev, refresh localhost:5173,
+enter Asgard, screenshot the toast + room and send it.

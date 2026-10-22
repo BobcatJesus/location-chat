@@ -23,6 +23,53 @@ export class HalloweenMode {
     this.active = true;
     this._placePumpkins();
     this._placeWebs();
+    // Pumpkin clicks are ALSO caught at scene level (distance check on
+    // world coords — the same pattern the bartender's click-to-talk
+    // uses). Per-object pointerdown proved unreliable indoors, where
+    // pumpkins sat unresponsive while outdoor ones worked; the scene
+    // handler receives every click the tap-to-move system sees.
+    this._scenePointerDown = (pointer) => {
+      if (!this.active) return;
+      const wx = pointer?.worldX, wy = pointer?.worldY;
+      if (!Number.isFinite(wx) || !Number.isFinite(wy)) return;
+      // Phaser-native hit test first: immune to any coordinate math.
+      try {
+        const hits = this.scene.input.hitTestPointer(pointer) || [];
+        const hitEntry = (this.pumpkins || []).find((e) => !e.lit && hits.includes(e.img));
+        if (hitEntry) { this._onPumpkinClicked(hitEntry); return; }
+      } catch {}
+      for (const entry of this.pumpkins || []) {
+        if (entry.lit) continue;
+        // Pumpkin origin is bottom-center; aim at its body center.
+        const cx = entry.img.x, cy = entry.img.y - 22;
+        if (Math.hypot(wx - cx, wy - cy) <= 44) {
+          this._onPumpkinClicked(entry);
+          return;
+        }
+      }
+    };
+    try { this.scene.input.on('pointerdown', this._scenePointerDown); } catch {}
+    // PRIMARY interaction — the game's house pattern (ducks, shelves,
+    // jukebox): walk close and a prompt offers [E]. Clicks above stay
+    // as a bonus, but proximity + E rides the most-tested loop in the
+    // game and does not depend on canvas click routing at all.
+    try {
+      this.pumpkinPrompt = this.scene.add.text(0, 0, '🎃 Light the jack-o\'-lantern [E]', {
+        fontSize: '15px',
+        color: '#451a03',
+        backgroundColor: 'rgba(255,237,213,0.92)',
+        padding: { x: 8, y: 4 },
+      }).setOrigin(0.5, 1).setDepth(DEPTH.UI).setAlpha(0);
+      this.decor.push(this.pumpkinPrompt);
+    } catch {}
+    this._onPumpkinKey = (ev) => {
+      if (!this.active) return;
+      if ((ev.key || '').toLowerCase() !== 'e') return;
+      const t = ev.target;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      if (this._nearPumpkin) this._onPumpkinClicked(this._nearPumpkin);
+    };
+    try { window.addEventListener('keydown', this._onPumpkinKey); } catch {}
     this.batTimer = 5000 + Math.random() * 5000;
     this.ghostTimer = 10000 + Math.random() * 8000;
     // Walking into an outdoor place (Shepherd Park and friends) kicks up
@@ -37,6 +84,17 @@ export class HalloweenMode {
   _roomSize() {
     const layout = this.scene.layout;
     return { W: layout?.width || 1600, H: layout?.height || 900 };
+  }
+
+  _roomBounds() {
+    // The venue's actual built area (walls/floor), which can be much
+    // smaller than the whole layout rectangle — decor belongs inside it.
+    try {
+      const b = this.scene.roomLayout?.getBoundaryBounds?.();
+      if (b && b.w > 80 && b.h > 80) return b;
+    } catch {}
+    const { W, H } = this._roomSize();
+    return { x: 0, y: 0, w: W, h: H };
   }
 
   _ensureGlowTexture() {
@@ -59,22 +117,172 @@ export class HalloweenMode {
     } catch { return false; }
   }
 
+  _ensureDarkTexture() {
+    // A pixel-darkened copy of the jack-o'-lantern art for the unlit
+    // state. Drawn once on a canvas texture: the art with a deep
+    // blue-grey wash laid only over its opaque pixels (source-atop),
+    // twice for strength. Returns true when the texture is ready.
+    try {
+      if (this.scene.textures?.exists('sq-jackolantern-dark')) return true;
+      if (!this.scene.textures?.exists('sq-jackolantern')) return false;
+      const src = this.scene.textures.get('sq-jackolantern').getSourceImage();
+      const w = src?.naturalWidth || src?.width || 96;
+      const h = src?.naturalHeight || src?.height || 96;
+      const canvas = this.scene.textures.createCanvas('sq-jackolantern-dark', w, h);
+      if (!canvas) return false;
+      const ctx = canvas.getContext();
+      ctx.drawImage(src, 0, 0);
+      ctx.globalCompositeOperation = 'source-atop';
+      ctx.fillStyle = 'rgba(28,32,48,0.85)';
+      ctx.fillRect(0, 0, w, h);
+      ctx.fillRect(0, 0, w, h);
+      canvas.refresh();
+      return true;
+    } catch { return false; }
+  }
+
+  _polyPoints() {
+    // The room's boundary geometry, parsed TOLERANTLY: point lists
+    // have lived under several keys ({points, vertices, path}) and in
+    // several shapes ({x,y} objects or [x,y] arrays) across builds,
+    // and a strict parser silently returning null is exactly how
+    // earlier placement fixes failed on the user's clone. Returns
+    // polygon points (rects become 4 corners), or null.
+    try {
+      const b = this.scene.roomLayout?.roomBoundary;
+      if (!b) return null;
+      const rawList = [b.points, b.vertices, b.path, b.polygon, b].find((v) => Array.isArray(v) && v.length >= 3);
+      if (rawList) {
+        const pts = rawList.map((p) => Array.isArray(p)
+          ? { x: Number(p[0]), y: Number(p[1]) }
+          : { x: Number(p?.x ?? p?.px), y: Number(p?.y ?? p?.py) });
+        if (pts.every((p) => Number.isFinite(p.x) && Number.isFinite(p.y))) return pts;
+      }
+      if (Number.isFinite(b.x) && Number.isFinite(b.w) && Number.isFinite(b.h)) {
+        return [
+          { x: b.x, y: b.y }, { x: b.x + b.w, y: b.y },
+          { x: b.x + b.w, y: b.y + b.h }, { x: b.x, y: b.y + b.h },
+        ];
+      }
+    } catch {}
+    return null;
+  }
+
+  _inPoly(x, y, pts) {
+    let inside = false;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      const xi = pts[i].x, yi = pts[i].y, xj = pts[j].x, yj = pts[j].y;
+      if (((yi > y) !== (yj > y)) && (x < ((xj - xi) * (y - yi)) / (yj - yi) + xi)) inside = !inside;
+    }
+    return inside;
+  }
+
+  _edgeDist(x, y, pts) {
+    let min = Infinity;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      const ax = pts[j].x, ay = pts[j].y, bx = pts[i].x, by = pts[i].y;
+      const abx = bx - ax, aby = by - ay;
+      const lenSq = abx * abx + aby * aby || 1;
+      const t = Math.max(0, Math.min(1, ((x - ax) * abx + (y - ay) * aby) / lenSq));
+      min = Math.min(min, Math.hypot(x - (ax + abx * t), y - (ay + aby * t)));
+    }
+    return min;
+  }
+
+  _snapIntoRoom(pt, placed) {
+    // Venue boundaries are POLYGONS and the bounds rect is only their
+    // bounding box — box fractions land outside the real floor on
+    // angled rooms (Asgard: every pumpkin below the slanted front
+    // edge). The inside test is an ORACLE LADDER, most-trusted first:
+    //   1. the room layout's OWN isPointInsideRoom — whatever data
+    //      format the running build uses, its own test agrees with
+    //      its own rendering by construction;
+    //   2. my own point-in-polygon on tolerantly parsed points;
+    //   3. no oracle — accept the spot (older builds).
+    // A spot that fails walks toward the room center until the
+    // oracle accepts it; failing that, a spread of fallback spots
+    // across the room's lower half is tried in order. Pumpkins keep
+    // ~80px separation where the room allows it.
+    const layout = this.scene.roomLayout;
+    const pts = this._polyPoints();
+    const inside = (x, y) => {
+      try {
+        if (typeof layout?.isPointInsideRoom === 'function') {
+          return !!layout.isPointInsideRoom(x, y, 14);
+        }
+      } catch {}
+      if (pts) return this._inPoly(x, y, pts) && this._edgeDist(x, y, pts) >= 14;
+      return true;
+    };
+    const separated = (x, y, min) => !(placed || []).some((q) => Math.hypot(q.x - x, q.y - y) < min);
+    if (inside(pt.x, pt.y) && separated(pt.x, pt.y, 80)) return pt;
+
+    const b = this._roomBounds();
+    const cx = pts ? pts.reduce((a, p) => a + p.x, 0) / pts.length : b.x + b.w / 2;
+    const cy = pts ? pts.reduce((a, p) => a + p.y, 0) / pts.length : b.y + b.h / 2;
+
+    // Walk the original spot toward the center until accepted.
+    const distC = Math.hypot(cx - pt.x, cy - pt.y) || 1;
+    for (let step = 8; step <= distC; step += 8) {
+      const x = pt.x + ((cx - pt.x) * step) / distC;
+      const y = pt.y + ((cy - pt.y) * step) / distC;
+      if (inside(x, y) && separated(x, y, 80)) return { x, y };
+    }
+    // Fallback spread across the room's lower-middle area.
+    const fractions = [
+      [0.5, 0.82], [0.3, 0.78], [0.7, 0.78], [0.5, 0.66],
+      [0.22, 0.68], [0.78, 0.68], [0.38, 0.58], [0.62, 0.58], [0.5, 0.5],
+    ];
+    for (const minSep of [80, 40, 0]) {
+      for (const [fx, fy] of fractions) {
+        const x = b.x + b.w * fx, y = b.y + b.h * fy;
+        if (inside(x, y) && separated(x, y, minSep)) return { x, y };
+      }
+    }
+    if (inside(cx, cy)) return { x: cx, y: cy };
+    return pt;
+  }
+
   _placePumpkins() {
     try {
-      const { W, H } = this._roomSize();
-      // Twice as many pumpkins as the original two.
-      const spots = [
-        { x: W * 0.08, y: H * 0.85 },
-        { x: W * 0.92, y: H * 0.82 },
-        { x: W * 0.30, y: H * 0.90 },
-        { x: W * 0.66, y: H * 0.88 },
+      const b = this._roomBounds();
+      // Twice as many pumpkins as the original two — spread across the
+      // floor near the venue's bottom edge, then snapped INSIDE the
+      // room's actual boundary polygon (see _snapIntoRoom).
+      const rawSpots = [
+        { x: b.x + b.w * 0.10, y: b.y + b.h * 0.88 },
+        { x: b.x + b.w * 0.90, y: b.y + b.h * 0.85 },
+        { x: b.x + b.w * 0.32, y: b.y + b.h * 0.93 },
+        { x: b.x + b.w * 0.68, y: b.y + b.h * 0.91 },
       ];
+      const placedPts = [];
+      const spots = rawSpots.map((pt) => {
+        const snapped = this._snapIntoRoom(pt, placedPts);
+        placedPts.push(snapped);
+        return snapped;
+      });
+      // Placement report as an in-game toast (DOM — always visible):
+      // how the running build's own inside test judges each spot.
+      try {
+        const layout = this.scene.roomLayout;
+        const flags = spots.map((s) => {
+          try {
+            if (typeof layout?.isPointInsideRoom === 'function') {
+              return layout.isPointInsideRoom(s.x, s.y, 0) ? '✓' : '✗';
+            }
+          } catch {}
+          return '?';
+        });
+        this.scene.onSystemNotice?.(`🎃 ${spots.length} pumpkins placed · inside check: ${flags.join(' ')}`);
+      } catch {}
+
       // His jack-o'-lantern art, noticeably bigger than the old 40px emoji
       // (the visible pumpkin grows by about half) while staying well under
       // avatar height (64-76 world units). Emoji stays as a fallback.
       const PUMPKIN_SIZE = 48;
       const useArt = this.scene.textures?.exists('sq-jackolantern');
       const hasGlow = this._ensureGlowTexture();
+      const hasDark = useArt && this._ensureDarkTexture();
       this.pumpkins = [];
       spots.forEach((s, index) => {
         const depth = DEPTH.ACTOR_MIN + Math.round(s.y);
@@ -88,16 +296,17 @@ export class HalloweenMode {
           this.decor.push(glow);
         }
         const p = useArt
-          ? this.scene.add.image(s.x, s.y, 'sq-jackolantern')
+          ? this.scene.add.image(s.x, s.y, hasDark ? 'sq-jackolantern-dark' : 'sq-jackolantern')
           : this.scene.add.text(s.x, s.y, '🎃', { fontSize: '40px' });
         if (useArt) p.setDisplaySize(PUMPKIN_SIZE, PUMPKIN_SIZE);
         p.setOrigin(0.5, 1);
         p.setDepth(depth);
-        // The art is drawn already glowing, so an unlit pumpkin wears a
-        // cool dark tint — candle not lit yet. Lighting clears the tint
-        // and fades the halo in. Clicking a pumpkin lights it, for
-        // everyone in the room (server keeps the lit set per room).
-        p.setTint(0x62687c);
+        // Unlit = the darkened-texture copy of the art (candle not lit
+        // yet); sprite tint did not visibly render on these images in
+        // this Phaser build, so the dark state is baked into pixels.
+        // Lighting swaps back to the bright art and fades the halo in.
+        // Clicking a pumpkin lights it, for everyone in the room
+        // (server keeps the lit set).
         const entry = { index, img: p, glow, lit: false };
         p.setInteractive({ useHandCursor: true });
         p.on('pointerdown', () => this._onPumpkinClicked(entry));
@@ -123,7 +332,8 @@ export class HalloweenMode {
     entry.lit = true;
     const { img, glow } = entry;
     try {
-      img.clearTint();
+      // Swap the darkened art for the original bright art.
+      if (img.type === 'Image') img.setTexture('sq-jackolantern');
       // A little pop as the candle catches.
       const sx = img.scaleX, sy = img.scaleY;
       this.scene.tweens.add({
@@ -153,13 +363,16 @@ export class HalloweenMode {
 
   _placeWebs() {
     try {
-      const { W, H } = this._roomSize();
-      // Spider webs tucked in upper corners.
+      const b = this._roomBounds();
+      // Spider webs tucked in the upper corners of the built area.
       const spots = [
-        { x: W * 0.03, y: H * 0.04 },
-        { x: W * 0.97, y: H * 0.06 },
+        { x: b.x + b.w * 0.04, y: b.y + b.h * 0.03 },
+        { x: b.x + b.w * 0.96, y: b.y + b.h * 0.05 },
       ];
-      for (const s of spots) {
+      for (const raw of spots) {
+        // Same polygon caveat as the pumpkins: clamp into the room.
+        let s = raw;
+        try { s = this.scene.roomLayout?.clampPointToRoom(raw.x, raw.y, 8) || raw; } catch {}
         const w = this.scene.add.text(s.x, s.y, '🕸️', { fontSize: '36px' });
         w.setOrigin(0.5, 0);
         w.setDepth(DEPTH.OVERHEAD);
@@ -311,6 +524,26 @@ export class HalloweenMode {
 
   update(delta) {
     if (!this.active) return;
+    // Pumpkin proximity prompt ([E] interaction): nearest unlit
+    // pumpkin within reach of the player shows the prompt, same as
+    // the duck/shelf/jukebox prompts elsewhere in the scene.
+    try {
+      const player = this.scene.player;
+      this._nearPumpkin = null;
+      if (player && this.pumpkinPrompt) {
+        let bestD = 80;
+        for (const e of this.pumpkins || []) {
+          if (e.lit) continue;
+          const d = Math.hypot(player.gx - e.img.x, player.gy - (e.img.y - 20));
+          if (d < bestD) { bestD = d; this._nearPumpkin = e; }
+        }
+        if (this._nearPumpkin) {
+          this.pumpkinPrompt.setPosition(player.gx, player.gy - 60).setAlpha(1);
+        } else {
+          this.pumpkinPrompt.setAlpha(0);
+        }
+      }
+    } catch {}
     this.batTimer -= delta;
     if (this.batTimer <= 0) {
       this._spawnBat();
@@ -325,7 +558,17 @@ export class HalloweenMode {
 
   destroy() {
     this.active = false;
+    if (this._scenePointerDown) {
+      try { this.scene.input.off('pointerdown', this._scenePointerDown); } catch {}
+      this._scenePointerDown = null;
+    }
+    if (this._onPumpkinKey) {
+      try { window.removeEventListener('keydown', this._onPumpkinKey); } catch {}
+      this._onPumpkinKey = null;
+    }
     for (const d of this.decor) { try { d.destroy(); } catch {} }
     this.decor = [];
+    this.pumpkins = [];
+    this._nearPumpkin = null;
   }
 }
