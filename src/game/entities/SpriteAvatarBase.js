@@ -417,6 +417,78 @@ export default class SpriteAvatarBase extends Phaser.GameObjects.Container {
     run(0);
   }
 
+  // Water gets its OWN animation — not the beer toast with a
+  // different label. A small clear glass (drawn, pale blue), a
+  // shallow tip instead of the deep mug tip-back, quick gulps,
+  // and droplet sparkles at the end: refreshment, not a toast.
+  // Same contract as playDrink — cosmetic only, same cleanup.
+  playWaterDrink() {
+    if (this._drinking || !this.scene?.add || !this._sprite) return;
+    this._drinking = true;
+    const scene = this.scene;
+    const sprite = this._sprite;
+
+    const FILL = { demon: 0.62, bunny: 0.72, turtle: 0.92, snake: 0.92, sheep: 0.92, wisp: 1.0, bat: 0.78, gator: 0.95, hoodie: 0.9, male: 0.9 };
+    const key = String(this._frameKeys?.front?.[0] || '');
+    const model = key.split('-')[0];
+    const fill = FILL[model] ?? 0.85;
+    const faceY = -Math.round(this._targetHeight * fill * 0.8);
+    const handX = this._dir === 'side' ? (this._facingLeft ? -11 : 11) : 6;
+    const handY = Math.round(faceY * 0.45);
+
+    // The glass: a little trapezoid tumbler, drawn around its
+    // bottom-center so it tweens exactly like the mug does.
+    const glass = scene.add.graphics();
+    glass.fillStyle(0xdbeafe, 0.16);
+    glass.fillPoints([{ x: -5.5, y: -13 }, { x: 5.5, y: -13 }, { x: 4, y: 0 }, { x: -4, y: 0 }], true);
+    glass.fillStyle(0x38bdf8, 0.45);
+    glass.fillPoints([{ x: -4.9, y: -8 }, { x: 4.9, y: -8 }, { x: 4, y: 0 }, { x: -4, y: 0 }], true);
+    glass.lineStyle(1, 0xbae6fd, 0.95);
+    glass.strokePoints([{ x: -5.5, y: -13 }, { x: 5.5, y: -13 }, { x: 4, y: 0 }, { x: -4, y: 0 }], true);
+    glass.setPosition(handX, handY).setAlpha(0);
+    this.add(glass);
+    this._drinkMug = glass; // same cleanup slot as the mug
+
+    const sparkle = () => {
+      if (!sprite.active) return;
+      [-11, 11].forEach((dx) => {
+        const d = scene.add.text(this.x + dx, this.y - this._getLabelYOffset() - 2, '💧', {
+          fontSize: '9px',
+        }).setOrigin(0.5, 1).setDepth(this.depth + 12).setAlpha(0.9);
+        scene.tweens.add({
+          targets: d, y: d.y - 9, alpha: 0, duration: 650, ease: 'Sine.easeOut',
+          onComplete: () => d.destroy(),
+        });
+      });
+    };
+
+    const alive = () => this._drinking && glass.active && sprite.active;
+    const steps = [
+      { targets: glass, props: { alpha: 1 }, dur: 140 },                                        // glass appears in hand
+      { targets: glass, props: { x: handX * 0.6, y: faceY }, dur: 260 },                        // raise to the face
+      { targets: sprite, props: { angle: -3 }, dur: 200 },                                      // shallow tip — water stays upright
+      { targets: glass, props: { y: faceY + 2 }, dur: 110, yoyo: true, repeat: 3 },             // quick gulps
+      { targets: sprite, props: { angle: 0 }, dur: 200 },                                       // straighten up
+      { targets: glass, props: { x: handX, y: handY, alpha: 0 }, dur: 240, pre: sparkle },      // lower + fade, droplets
+    ];
+    const run = (i) => {
+      if (!alive()) { this._endDrink(); return; }
+      if (i >= steps.length) { this._endDrink(); return; }
+      const st = steps[i];
+      if (st.pre) st.pre();
+      scene.tweens.add({
+        targets: st.targets,
+        ...st.props,
+        duration: st.dur,
+        yoyo: Boolean(st.yoyo),
+        repeat: st.repeat || 0,
+        ease: 'Sine.easeInOut',
+        onComplete: () => run(i + 1),
+      });
+    };
+    run(0);
+  }
+
   _endDrink() {
     if (this._drinkMug) {
       try { this.scene?.tweens?.killTweensOf(this._drinkMug); } catch {}

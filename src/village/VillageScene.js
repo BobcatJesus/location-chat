@@ -1460,8 +1460,15 @@ export class VillageScene extends Phaser.Scene {
     }
     if (serve.beer === 'Water') this._soberBuzz(serve.socketId, 0.55);
     else this._raiseBuzz(serve.socketId);
-    if (isMine) this._drinkAnimUntil = this.time.now + 2600;
-    actor.avatar.playDrink();
+    if (serve.beer === 'Water') {
+      if (isMine) this._drinkAnimUntil = this.time.now + 1900;
+      // Water has its own animation — a clear glass, quick gulps.
+      if (typeof actor.avatar.playWaterDrink === 'function') actor.avatar.playWaterDrink();
+      else actor.avatar.playDrink();
+    } else {
+      if (isMine) this._drinkAnimUntil = this.time.now + 2600;
+      actor.avatar.playDrink();
+    }
   }
 
   _syncYouTubeJukebox(nowPlaying) {
