@@ -1576,6 +1576,7 @@ export class VillageScene extends Phaser.Scene {
       socket.emit('get_room_state', { roomId: this.roomId });
       socket.emit('get_room_decorations', { roomId: this.roomId });
       socket.emit('get_jukebox', { roomId: this.roomId });
+      socket.emit('get_pumpkins', { roomId: this.roomId });
       const now = Date.now();
       this._lastPresenceSyncAt = now;
       this._lastDecorSyncAt = now;
@@ -1728,6 +1729,16 @@ export class VillageScene extends Phaser.Scene {
     // Remote player fed the ducks: mirror the feeding frenzy locally.
     socket.on('duck_fed', ({ x, y } = {}) => {
       this.duckPond?.feed(x, y, true);
+    });
+
+    // Somebody lit a jack-o'-lantern in this room: light ours too.
+    socket.on('pumpkin_lit', ({ index } = {}) => {
+      this.halloween?.setPumpkinLit(index);
+    });
+
+    // The room's already-lit pumpkins, sent when we join.
+    socket.on('pumpkin_state', ({ lit } = {}) => {
+      this.halloween?.applyPumpkinState(lit || []);
     });
 
     // Remote player bought a drink at the bar: play their toast locally.

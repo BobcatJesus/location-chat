@@ -39,6 +39,26 @@ export class HalloweenMode {
     return { W: layout?.width || 1600, H: layout?.height || 900 };
   }
 
+  _ensureGlowTexture() {
+    // Soft radial halo drawn once on a canvas texture — the candlelight
+    // pool that appears behind a pumpkin when somebody lights it.
+    try {
+      if (this.scene.textures?.exists('sq-pumpkin-glow')) return true;
+      const size = 128;
+      const canvas = this.scene.textures.createCanvas('sq-pumpkin-glow', size, size);
+      if (!canvas) return false;
+      const ctx = canvas.getContext();
+      const g = ctx.createRadialGradient(size / 2, size / 2, 4, size / 2, size / 2, size / 2);
+      g.addColorStop(0, 'rgba(255,170,60,0.85)');
+      g.addColorStop(0.4, 'rgba(255,120,30,0.38)');
+      g.addColorStop(1, 'rgba(255,100,20,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, size, size);
+      canvas.refresh();
+      return true;
+    } catch { return false; }
+  }
+
   _placePumpkins() {
     try {
       const { W, H } = this._roomSize();
@@ -54,20 +74,81 @@ export class HalloweenMode {
       // avatar height (64-76 world units). Emoji stays as a fallback.
       const PUMPKIN_SIZE = 48;
       const useArt = this.scene.textures?.exists('sq-jackolantern');
-      for (const s of spots) {
+      const hasGlow = this._ensureGlowTexture();
+      this.pumpkins = [];
+      spots.forEach((s, index) => {
+        const depth = DEPTH.ACTOR_MIN + Math.round(s.y);
+        let glow = null;
+        if (hasGlow) {
+          glow = this.scene.add.image(s.x, s.y - PUMPKIN_SIZE * 0.45, 'sq-pumpkin-glow');
+          glow.setDisplaySize(120, 120);
+          glow.setDepth(depth - 1);
+          glow.setAlpha(0);
+          glow.setBlendMode('ADD');
+          this.decor.push(glow);
+        }
         const p = useArt
           ? this.scene.add.image(s.x, s.y, 'sq-jackolantern')
           : this.scene.add.text(s.x, s.y, '🎃', { fontSize: '40px' });
         if (useArt) p.setDisplaySize(PUMPKIN_SIZE, PUMPKIN_SIZE);
         p.setOrigin(0.5, 1);
-        p.setDepth(DEPTH.ACTOR_MIN + Math.round(s.y));
+        p.setDepth(depth);
+        // The art is drawn already glowing, so an unlit pumpkin wears a
+        // cool dark tint — candle not lit yet. Lighting clears the tint
+        // and fades the halo in. Clicking a pumpkin lights it, for
+        // everyone in the room (server keeps the lit set per room).
+        p.setTint(0x62687c);
+        const entry = { index, img: p, glow, lit: false };
+        p.setInteractive({ useHandCursor: true });
+        p.on('pointerdown', () => this._onPumpkinClicked(entry));
+        this.decor.push(p);
+        this.pumpkins.push(entry);
+      });
+    } catch {}
+  }
+
+  _onPumpkinClicked(entry) {
+    if (!entry || entry.lit) return;
+    // Light it locally right away (snappy even on a slow connection);
+    // the server broadcast re-applies it, which is a no-op by then.
+    this.setPumpkinLit(entry.index);
+    try {
+      this.scene.socket?.emit('light_pumpkin', { roomId: this.scene.roomId, index: entry.index });
+    } catch {}
+  }
+
+  setPumpkinLit(index) {
+    const entry = (this.pumpkins || []).find((e) => e.index === index);
+    if (!entry || entry.lit) return;
+    entry.lit = true;
+    const { img, glow } = entry;
+    try {
+      img.clearTint();
+      // A little pop as the candle catches.
+      const sx = img.scaleX, sy = img.scaleY;
+      this.scene.tweens.add({
+        targets: img, scaleX: sx * 1.15, scaleY: sy * 1.15,
+        duration: 130, yoyo: true, ease: 'Sine.easeOut',
+      });
+      if (glow) {
+        this.scene.tweens.add({ targets: glow, alpha: 0.85, duration: 350, ease: 'Sine.easeOut' });
+        // Candle flicker: a fast shimmer over a slow breathing swell.
         this.scene.tweens.add({
-          targets: p, alpha: 0.8, duration: 900 + Math.random() * 600,
+          targets: glow, alpha: 0.62, duration: 110, delay: 380,
           yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
         });
-        this.decor.push(p);
+        const gs = glow.scaleX;
+        this.scene.tweens.add({
+          targets: glow, scaleX: gs * 1.07, scaleY: gs * 1.07,
+          duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
+        });
       }
     } catch {}
+  }
+
+  applyPumpkinState(lit) {
+    if (!Array.isArray(lit)) return;
+    for (const idx of lit) this.setPumpkinLit(idx);
   }
 
   _placeWebs() {

@@ -1,22 +1,32 @@
-SIDE QUEST — WATER ANIMATION v5
+Side Quest - Jack-o'-lantern lighting v1
+=========================================
+Clicking a jack-o'-lantern lights it — for everyone in the room.
 
-His catch: drinking water reused the beer animation. Water now
-has its own, in the same shared base class as everything else
-(SpriteAvatarBase) — every avatar gets it for free.
+WHAT CHANGED
+- src/village/HalloweenMode.js: pumpkins now start unlit (cool dark tint
+  over the art, which is drawn glowing). Click one and the tint clears
+  with a little pop, a warm candlelight halo fades in behind it and
+  flickers (fast shimmer + slow swell). Click state is tracked per
+  pumpkin; pumpkins are indexed 0-3 by their fixed spots.
+- src/village/VillageScene.js: on join, asks the server for the room's
+  lit pumpkins (get_pumpkins) and routes pumpkin_lit / pumpkin_state
+  events into HalloweenMode.
+- server/socket.js: keeps a per-room Set of lit pumpkin indices in
+  memory. light_pumpkin is membership-checked and rate-limited like
+  feed_ducks; get_pumpkins answers with the current lit set so late
+  joiners see pumpkins already lit. Lit state resets when the server
+  restarts (it's seasonal decor, not data).
 
-WHAT WATER LOOKS LIKE NOW:
-- a small CLEAR GLASS (drawn, pale blue) instead of the beer mug
-- a shallow tip (-3 degrees) instead of the deep mug tip-back —
-  water drinkers stay upright
-- quick gulps instead of slow sips (~1.5s total, beer is ~1.9s)
-- two little droplet sparkles beside the head as you finish
-- the buzz still drops by the same 0.55 at hand-off; nothing
-  about ordering, the cutoff, or the bartender changes
+TEST ON LOCALHOST
+1. Extract this zip into the clone (overwrites the 3 files).
+2. RESTART npm run dev (Ctrl+C, run it again) - the server file changed,
+   and server changes do not hot-reload.
+3. Open http://localhost:5173/, walk into a room: the four pumpkins sit
+   dim. Click one - it should pop into full glowing color with a
+   flickering halo.
+4. Open a second window (another browser or incognito) in the same
+   room: the pumpkin you lit is already lit there, and lighting another
+   one in either window lights it in both.
 
-Files: src/game/entities/SpriteAvatarBase.js (new
-playWaterDrink beside playDrink, same cleanup) and
-src/village/VillageScene.js (the serve hand-off now picks the
-water animation when the drink is Water — for you and for
-anyone you watch get served).
-
-Extract over the repo root and push.
+DEPLOY (after local test passes)
+Same PowerShell block as always: git add -A, commit, pull --rebase, push.

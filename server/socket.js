@@ -36,7 +36,7 @@ Talk like a real person chatting casually, not a customer-service bot. Rules:
 const roomCharacterMap = {
   'md-anderson-library': `You are a librarian at MD Anderson Library who's worked here for years and genuinely loves books.${HUMAN_STYLE_GUIDE}`,
   'starbucks-spring': `You are a barista at a Starbucks, mid-shift, a little caffeinated yourself.${HUMAN_STYLE_GUIDE}`,
-  'lolas-depot': `You are the bartender at Lola's Depot, a dive bar in Houston's Montrose neighborhood. You've heard every story twice, you pour heavy, and you keep the jukebox loaded with classics. Your regular taps are Lone Star, Lager, IPA, Voodoo Ranger, Michelob Ultra, Cider, and Stout — when someone asks what you have, start with those. Beyond the taps you may invent a special of the moment: name it plainly when you offer it, because the house stocks whatever you name — anything you offer can actually be bought.${HUMAN_STYLE_GUIDE}`,
+  'lolas-depot': `You are the bartender at Lola's Depot, a dive bar in Houston's Montrose neighborhood. You've heard every story twice, you pour heavy, and you keep the jukebox loaded with classics. Your regular taps are Lone Star, Lager, IPA, Voodoo Ranger, Michelob Ultra, Cider, and Stout — when someone asks what you have, start with those. Those taps are ALL you serve: if someone asks for any other drink, do not offer it and do not say you will fetch it — good-naturedly steer them to what is on tap.${HUMAN_STYLE_GUIDE}`,
 };
 
 // Throttle fallback NPC lines so a dead AI API doesn't spam the room.
@@ -63,7 +63,7 @@ function buildNpcPersona({ npcName, layoutId, isOutdoor, relationshipState, time
   else if (theme.includes('bar')) role = 'a bartender who has heard every story in the book';
   else if (theme.includes('pharmacy')) role = 'a pharmacist';
   else role = 'a friendly local hanging around';
-  const taps = role.includes('bartender') ? ' Your regular taps are Lone Star, Lager, IPA, Voodoo Ranger, Michelob Ultra, Cider, and Stout — when someone asks what you have, start with those. Beyond the taps you may invent a special of the moment: name it plainly when you offer it, because the house stocks whatever you name — anything you offer can actually be bought.' : '';
+  const taps = role.includes('bartender') ? ' Your regular taps are Lone Star, Lager, IPA, Voodoo Ranger, Michelob Ultra, Cider, and Stout — when someone asks what you have, start with those. Those taps are ALL you serve: if someone asks for any other drink, do not offer it and do not say you will fetch it — good-naturedly steer them to what is on tap.' : '';
   return `${profileText} ${formatVenueEventsForPrompt(venueEvents)} You are ${npcName || 'a local'}, ${role}. ${HUMAN_STYLE_GUIDE} Your archetype is ${profile.archetype}.${taps}`;
 }
 
@@ -348,6 +348,8 @@ async function loadShelfBooks(roomId) {
 // state: { queue: [ { id, title, artist, votes, addedBy, addedByName, votedBy:Set, createdAt } ],
 //          nowPlaying: { ...song, startedAt, skipVotes:Set } | null, timer: NodeTimeout|null }
 const jukeboxRooms = {};
+// Jack-o'-lanterns: per-room set of lit pumpkin indices (Halloween decor).
+const pumpkinLit = {};
 // Matches youtube.com/watch?v=, youtu.be/, youtube.com/embed/, youtube.com/shorts/
 const YOUTUBE_ID_RE = /(?:(?:www\.|music\.)?youtube\.com\/(?:watch\?[^#]*v=|embed\/|shorts\/|v\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/;
 function extractYouTubeId(url) {
@@ -909,6 +911,28 @@ io.on('connection', (socket) => {
     const cx = Math.max(-5000, Math.min(10000, Math.round(px)));
     const cy = Math.max(-5000, Math.min(10000, Math.round(py)));
     socket.to(roomId).emit('duck_fed', { x: cx, y: cy });
+  });
+
+  // LIGHT A JACK-O'-LANTERN (shared Halloween decor — clicking a pumpkin
+  // lights it for everyone in the room; the lit set is kept per room in
+  // memory and handed to anyone who joins later)
+  socket.on('light_pumpkin', ({ roomId, index } = {}) => {
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const userId = socketUserMap[socket.id] || socket.id;
+    const rate = checkRateLimit(userId);
+    if (!rate.allowed) return;
+    const idx = Number(index);
+    if (!Number.isInteger(idx) || idx < 0 || idx > 3) return;
+    if (!pumpkinLit[roomId]) pumpkinLit[roomId] = new Set();
+    if (pumpkinLit[roomId].has(idx)) return;
+    pumpkinLit[roomId].add(idx);
+    io.to(roomId).emit('pumpkin_lit', { index: idx, by: socket.id });
+  });
+
+  socket.on('get_pumpkins', ({ roomId } = {}) => {
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const lit = pumpkinLit[roomId] ? [...pumpkinLit[roomId]] : [];
+    socket.emit('pumpkin_state', { lit });
   });
 
   // BUY DRINK (bar counter treat — buyer pays from their local wallet;
