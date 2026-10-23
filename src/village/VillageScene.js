@@ -10,6 +10,7 @@ import { Prop, PROP_DEFS } from './Prop.js';
 import { createAvatarEntity, preloadAvatarTextures } from '../game/entities/avatarFactory';
 import { playYouTube, stopYouTube, setYouTubeVolume, getYouTubeVideoId } from './YouTubePlayer.js';
 import { HalloweenMode } from './HalloweenMode.js';
+import { DayNightMode } from './DayNightMode.js';
 import { normalizeAvatarModel } from '../game/entities/avatarModels';
 import { isOutdoorLocation } from './outdoorRoomDetection.js';
 
@@ -578,6 +579,10 @@ export class VillageScene extends Phaser.Scene {
     // Seasonal: pumpkins, bats, spooky tint in October.
     this.halloween = new HalloweenMode(this);
     this.halloween.start();
+    // Day/night grade + lamppost glows — outdoor venues only; the
+    // module itself no-ops indoors (see DayNightMode.js).
+    this.dayNight = new DayNightMode(this);
+    this.dayNight.start();
     this._feedCooldownMs = 0;
     this.feedPrompt = this.add.text(0, 0, '🦆 Feed the ducks [E]', {
       fontSize: '15px',
@@ -1577,6 +1582,7 @@ export class VillageScene extends Phaser.Scene {
       socket.emit('get_room_decorations', { roomId: this.roomId });
       socket.emit('get_jukebox', { roomId: this.roomId });
       socket.emit('get_pumpkins', { roomId: this.roomId });
+      socket.emit('get_time_phase', {});
       const now = Date.now();
       this._lastPresenceSyncAt = now;
       this._lastDecorSyncAt = now;
@@ -1739,6 +1745,12 @@ export class VillageScene extends Phaser.Scene {
     // The room's already-lit pumpkins, sent when we join.
     socket.on('pumpkin_state', ({ lit } = {}) => {
       this.halloween?.applyPumpkinState(lit || []);
+    });
+
+    // The server's canonical day/night phase (outdoor venues render
+    // it; the module ignores it indoors).
+    socket.on('time_phase', (payload = {}) => {
+      this.dayNight?.applyPhase(payload);
     });
 
     // Remote player bought a drink at the bar: play their toast locally.
@@ -2256,6 +2268,7 @@ export class VillageScene extends Phaser.Scene {
     this._drinkCooldownMs = Math.max(0, (this._drinkCooldownMs || 0) - delta);
     this.duckPond?.update(delta);
     this.halloween?.update(delta);
+    this.dayNight?.update(delta);
     const nearPond = this.duckPond?.nearestFeedablePond(this.player.gx, this.player.gy);
     if (nearPond && this._feedCooldownMs <= 0) {
       this.feedPrompt.setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
@@ -2553,6 +2566,8 @@ export class VillageScene extends Phaser.Scene {
     this.duckPond = null;
     this.halloween?.destroy();
     this.halloween = null;
+    this.dayNight?.destroy();
+    this.dayNight = null;
     this.feedPrompt?.destroy();
     this.shelfPrompt?.destroy();
     this.jukeboxPrompt?.destroy();

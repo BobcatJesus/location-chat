@@ -769,6 +769,32 @@ function broadcastRoomCounts() {
   io.emit('room_counts', counts);
 }
 
+// DAY/NIGHT PHASE (outdoor venues): the server owns the canonical
+// sky so everyone in a place agrees on it. The curve mirrors the
+// client's DayNightMode.js exactly: America/Chicago wall-clock, dawn
+// ramp 05:30-07:30, dusk ramp 17:30-19:30, night darkness capped at
+// 0.36. Broadcast to everyone once a minute; clients ease toward it.
+function currentTimePhase(date = new Date()) {
+  const NIGHT = 0.36;
+  let mins = null;
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Chicago', hour12: false, hour: '2-digit', minute: '2-digit',
+    }).formatToParts(date);
+    const get = (t) => Number(parts.find((p) => p.type === t)?.value || 0);
+    mins = (get('hour') % 24) * 60 + get('minute');
+  } catch { /* fall through to server-local time */ }
+  if (!Number.isFinite(mins)) mins = date.getHours() * 60 + date.getMinutes();
+  if (mins < 330) return { phase: 'night', darkness: NIGHT };
+  if (mins < 450) return { phase: 'dawn', darkness: NIGHT * (1 - (mins - 330) / 120) };
+  if (mins < 1050) return { phase: 'day', darkness: 0 };
+  if (mins < 1170) return { phase: 'dusk', darkness: NIGHT * ((mins - 1050) / 120) };
+  return { phase: 'night', darkness: NIGHT };
+}
+setInterval(() => {
+  try { io.emit('time_phase', currentTimePhase()); } catch {}
+}, 60000);
+
 // 2. Real-Time Socket Event Handlers
 io.on('connection', (socket) => {
   console.log(`⚡ Client connected: ${socket.id}`);
@@ -933,6 +959,12 @@ io.on('connection', (socket) => {
     if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
     const lit = pumpkinLit[roomId] ? [...pumpkinLit[roomId]] : [];
     socket.emit('pumpkin_state', { lit });
+  });
+
+  // DAY/NIGHT: answer with the canonical phase (see currentTimePhase
+  // above). Clients also get it via the per-minute broadcast.
+  socket.on('get_time_phase', () => {
+    socket.emit('time_phase', currentTimePhase());
   });
 
   // BUY DRINK (bar counter treat — buyer pays from their local wallet;
