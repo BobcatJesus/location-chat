@@ -217,12 +217,18 @@ export default function InteriorSketchModal({ roomName, onSubmit, onClose }) {
   const furnRef = useRef([]);
   furnRef.current = furniture;
 
-  // --- straight-line drawing ------------------------------------------------------
+  // --- straight-line / curved drawing -------------------------------------------
   const switchTool = useCallback((next) => {
     setTool(next);
-    setLinePoints(null);
+    // Straight and curved lines share the same tapped points — switching
+    // between them keeps the points and just changes how they connect.
+    // Switching to any other tool discards the unfinished line.
+    const bothPointTools = (tool === 'line' || tool === 'curve') && (next === 'line' || next === 'curve');
+    if (!bothPointTools) {
+      setLinePoints(null);
+    }
     setLinePreview(null);
-  }, []);
+  }, [tool]);
 
   const finishLine = useCallback((pts) => {
     if (!pts || pts.length < 3) {
