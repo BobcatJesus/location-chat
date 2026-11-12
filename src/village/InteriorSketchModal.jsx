@@ -551,7 +551,7 @@ export default function InteriorSketchModal({ roomName, onSubmit, onClose }) {
               <g>
                 {tool === 'curve' ? (
                   <path
-                    d={smoothPath(linePreview ? [...linePoints, linePreview] : linePoints, true)}
+                    d={smoothPath(linePreview ? [...linePoints, linePreview] : linePoints)}
                     fill="none" stroke={THEME.liveStroke} strokeWidth={4}
                     strokeLinecap="round" strokeLinejoin="round" opacity={0.9}
                   />
