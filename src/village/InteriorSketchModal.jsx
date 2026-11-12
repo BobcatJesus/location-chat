@@ -74,11 +74,35 @@ function snapTo45(from, to) {
   return { x: from.x + Math.cos(snapped) * len, y: from.y + Math.sin(snapped) * len };
 }
 
-// Sample a smooth (Catmull-Rom, same math as smoothPath) closed curve
-// through `points` into many small straight segments. The room is stored
-// as a plain point list, so a curve only survives saving if it is baked
-// into dense points on commit — otherwise the saved outline would just
-// be straight lines between the tapped points.
+// Smooth open-curve path through `points`, with a loose bend (1/3 of the
+// gap between points instead of smoothPath's tight 1/6). Used only for
+// the curved-lines preview, so it can actually stretch and bulge.
+function smoothCurvePath(points) {
+  if (points.length < 2) return '';
+  if (points.length === 2) {
+    return `M ${points[0].x} ${points[0].y} L ${points[1].x} ${points[1].y}`;
+  }
+  const pts = [points[0], ...points];
+  let d = `M ${pts[0].x} ${pts[0].y}`;
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = pts[i === 0 ? 0 : i - 1];
+    const p1 = pts[i];
+    const p2 = pts[i + 1];
+    const p3 = pts[i + 2] || p2;
+    const c1x = p1.x + (p2.x - p0.x) / 3;
+    const c1y = p1.y + (p2.y - p0.y) / 3;
+    const c2x = p2.x - (p3.x - p1.x) / 3;
+    const c2y = p2.y - (p3.y - p1.y) / 3;
+    d += ` C ${c1x} ${c1y}, ${c2x} ${c2y}, ${p2.x} ${p2.y}`;
+  }
+  return d;
+}
+
+// Sample a smooth (Catmull-Rom, loose 1/3 bend to match smoothCurvePath)
+// closed curve through `points` into many small straight segments. The
+// room is stored as a plain point list, so a curve only survives saving
+// if it is baked into dense points on commit — otherwise the saved
+// outline would just be straight lines between the tapped points.
 function sampleSmoothCurve(points, perSegment = 10) {
   if (points.length < 3) return points;
   const n = points.length;
@@ -88,10 +112,10 @@ function sampleSmoothCurve(points, perSegment = 10) {
     const p1 = points[i];
     const p2 = points[(i + 1) % n];
     const p3 = points[(i + 2) % n];
-    const c1x = p1.x + (p2.x - p0.x) / 6;
-    const c1y = p1.y + (p2.y - p0.y) / 6;
-    const c2x = p2.x - (p3.x - p1.x) / 6;
-    const c2y = p2.y - (p3.y - p1.y) / 6;
+    const c1x = p1.x + (p2.x - p0.x) / 3;
+    const c1y = p1.y + (p2.y - p0.y) / 3;
+    const c2x = p2.x - (p3.x - p1.x) / 3;
+    const c2y = p2.y - (p3.y - p1.y) / 3;
     for (let s = 0; s < perSegment; s++) {
       const t = s / perSegment;
       const mt = 1 - t;
@@ -551,7 +575,7 @@ export default function InteriorSketchModal({ roomName, onSubmit, onClose }) {
               <g>
                 {tool === 'curve' ? (
                   <path
-                    d={smoothPath(linePreview ? [...linePoints, linePreview] : linePoints)}
+                    d={smoothCurvePath(linePreview ? [...linePoints, linePreview] : linePoints)}
                     fill="none" stroke={THEME.liveStroke} strokeWidth={4}
                     strokeLinecap="round" strokeLinejoin="round" opacity={0.9}
                   />
