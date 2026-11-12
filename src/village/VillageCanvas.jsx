@@ -709,7 +709,7 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
       {showEditHint && (
         <div style={{
           position: 'absolute',
-          top: 56,
+          top: 116,
           left: '50%',
           transform: 'translateX(-50%)',
           zIndex: 1001,
@@ -729,7 +729,7 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
       {systemNotice && (
         <div style={{
           position: 'absolute',
-          top: showEditHint ? 52 : 12,
+          top: 116,
           left: '50%',
           transform: 'translateX(-50%)',
           zIndex: 1002,
@@ -748,7 +748,7 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
       {featuredEvent && (
         <div style={{
           position: 'absolute',
-          top: 58,
+          top: 116,
           left: 12,
           zIndex: 1000,
           width: 'min(320px, calc(100vw - 24px))',
@@ -772,15 +772,13 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
         position: 'absolute',
         top: 12,
         left: 12,
+        right: 116,
         zIndex: 1000,
         display: 'flex',
         gap: 8,
-        flexWrap: 'nowrap',
-        overflowX: 'auto',
-        maxWidth: 'calc(100vw - 24px)',
+        flexWrap: 'wrap',
+        alignItems: 'center',
         paddingBottom: 4,
-        WebkitOverflowScrolling: 'touch',
-        scrollbarWidth: 'none',
       }}>
         <button
           onClick={onLeave}
@@ -793,6 +791,7 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
             cursor: 'pointer',
             fontSize: 14,
             flexShrink: 0,
+            whiteSpace: 'nowrap',
           }}
         >
           ← Leave
@@ -805,10 +804,13 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
             border: 'none',
             borderRadius: 8,
             padding: '6px 14px',
-            minHeight: 0,
+            minHeight: 44,
+            display: 'flex', alignItems: 'center',
             cursor: 'pointer',
             fontSize: 14,
             fontWeight: 'bold',
+            flexShrink: 0,
+            whiteSpace: 'nowrap',
           }}
         >
           {editorActive ? 'Done' : (outdoorMode ? 'Outdoor Edit' : 'Edit')}
@@ -822,6 +824,7 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
             borderRadius: 8, padding: '6px 14px',
             fontSize: 14, fontWeight: 'bold', cursor: 'pointer',
             minHeight: 44, display: 'flex', alignItems: 'center', flexShrink: 0,
+            whiteSpace: 'nowrap',
           }}
         >
           🏠 Build layout
@@ -834,10 +837,13 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
             border: 'none',
             borderRadius: 8,
             padding: '6px 14px',
-            minHeight: 0,
+            minHeight: 44,
+            display: 'flex', alignItems: 'center',
             cursor: 'pointer',
             fontSize: 14,
             fontWeight: 'bold',
+            flexShrink: 0,
+            whiteSpace: 'nowrap',
           }}
         >
           Zoom: {zoomLabel}
@@ -896,22 +902,6 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
           </button>
         </div>
       )}
-
-      <div style={{
-        position: 'absolute',
-        top: 52,
-        left: 12,
-        zIndex: 1000,
-        background: '#0f172acc',
-        border: '1px solid #334155',
-        borderRadius: 6,
-        padding: '5px 8px',
-        color: '#cbd5e1',
-        fontFamily: 'Courier New, monospace',
-        fontSize: 11,
-      }}>
-        Press ~ to toggle {outdoorMode ? 'Outdoor Edit Mode' : 'Edit Mode'}
-      </div>
 
       <div style={{
         position: 'absolute',
