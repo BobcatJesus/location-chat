@@ -62,6 +62,18 @@ function polygonPath(points) {
   return 'M ' + points.map((p) => `${p.x} ${p.y}`).join(' L ') + ' Z';
 }
 
+// Snap a straight-line segment to the nearest 45° angle from its start point,
+// so walls come out horizontal, vertical, or diagonal instead of wobbly.
+function snapTo45(from, to) {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const len = Math.hypot(dx, dy);
+  if (len < 10) return to;
+  const angle = Math.atan2(dy, dx);
+  const snapped = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
+  return { x: from.x + Math.cos(snapped) * len, y: from.y + Math.sin(snapped) * len };
+}
+
 function pointInPolygon(pt, poly) {
   let inside = false;
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
@@ -78,9 +90,11 @@ function pointInPolygon(pt, poly) {
 // --- component ---------------------------------------------------------------
 
 export default function InteriorSketchModal({ roomName, onSubmit, onClose }) {
-  const [tool, setTool] = useState('draw'); // draw | furniture | select
+  const [tool, setTool] = useState('draw'); // draw | line | furniture | select
   const [roomShape, setRoomShape] = useState(null);
   const [stroke, setStroke] = useState(null);
+  const [linePoints, setLinePoints] = useState(null); // straight-line mode: clicked corners
+  const [linePreview, setLinePreview] = useState(null);
   const [furniture, setFurniture] = useState([]);
   const [catalogType, setCatalogType] = useState(FURNITURE_CATALOG[0].name);
   const [selectedId, setSelectedId] = useState(null);
@@ -173,10 +187,40 @@ export default function InteriorSketchModal({ roomName, onSubmit, onClose }) {
   const furnRef = useRef([]);
   furnRef.current = furniture;
 
+  // --- straight-line drawing ------------------------------------------------------
+  const switchTool = useCallback((next) => {
+    setTool(next);
+    setLinePoints(null);
+    setLinePreview(null);
+  }, []);
+
+  const finishLine = useCallback((pts) => {
+    if (!pts || pts.length < 3) {
+      setError('Straight lines need at least 3 corners — tap 3+ points, then Done.');
+      return;
+    }
+    commit(pts.map((p) => ({ ...p })), furnRef.current);
+    setLinePoints(null);
+    setLinePreview(null);
+    setError('');
+  }, [commit]);
+
   // --- canvas pointer ------------------------------------------------------------
   const onCanvasDown = useCallback((e) => {
     if (e.target !== svgRef.current && !e.target.dataset.canvas) return;
     const pt = toSvg(e);
+    if (tool === 'line') {
+      const prev = linePoints || [];
+      if (prev.length >= 3 && Math.hypot(pt.x - prev[0].x, pt.y - prev[0].y) < CLOSE_SNAP) {
+        finishLine(prev);
+        return;
+      }
+      const snapped = prev.length ? snapTo45(prev[prev.length - 1], pt) : pt;
+      setLinePoints([...prev, snapped]);
+      setLinePreview(null);
+      setError('');
+      return;
+    }
     if (tool === 'draw') {
       drawingRef.current = true;
       strokeRef.current = [pt];
@@ -200,9 +244,14 @@ export default function InteriorSketchModal({ roomName, onSubmit, onClose }) {
       setSelectedId(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tool, catalogType, roomShape, toSvg, commit]);
+  }, [tool, catalogType, roomShape, toSvg, commit, linePoints, finishLine]);
 
   const onCanvasMove = useCallback((e) => {
+    if (tool === 'line' && linePoints && linePoints.length) {
+      const pt = toSvg(e);
+      setLinePreview(snapTo45(linePoints[linePoints.length - 1], pt));
+      return;
+    }
     if (!drawingRef.current) return;
     const pt = toSvg(e);
     const prev = strokeRef.current || [];
@@ -211,7 +260,7 @@ export default function InteriorSketchModal({ roomName, onSubmit, onClose }) {
     const next = [...prev, pt];
     strokeRef.current = next;
     setStroke(next);
-  }, [toSvg]);
+  }, [toSvg, tool, linePoints]);
 
   // --- furniture drag --------------------------------------------------------------
   const onItemDown = useCallback((e, item) => {
@@ -348,7 +397,7 @@ export default function InteriorSketchModal({ roomName, onSubmit, onClose }) {
               ✏️ Room Designer{roomName ? ` — ${roomName}` : ''}
             </div>
             <div style={{ fontSize: 11, color: THEME.muted, marginTop: 2 }}>
-              Draw the space freehand, then furnish it. What you draw is what gets built.
+              Draw the space freehand, or with straight lines — then furnish it. What you draw is what gets built.
             </div>
           </div>
           <button onClick={onClose}
@@ -363,9 +412,14 @@ export default function InteriorSketchModal({ roomName, onSubmit, onClose }) {
           alignItems: 'center', borderBottom: '1px solid rgba(255,176,46,0.18)',
           background: THEME.panel,
         }}>
-          {btn(tool === 'draw', THEME.gold, THEME.gold, '✏️ Draw room', () => setTool('draw'))}
-          {btn(tool === 'furniture', THEME.cyan, THEME.cyan, '🪑 Furniture', () => setTool('furniture'))}
-          {btn(tool === 'select', THEME.pink, THEME.pink, '👆 Select / move', () => setTool('select'))}
+          {btn(tool === 'draw', THEME.gold, THEME.gold, '✏️ Draw room', () => switchTool('draw'))}
+          {btn(tool === 'line', THEME.gold, THEME.gold, '📏 Straight lines', () => switchTool('line'))}
+          {btn(tool === 'furniture', THEME.cyan, THEME.cyan, '🪑 Furniture', () => switchTool('furniture'))}
+          {btn(tool === 'select', THEME.pink, THEME.pink, '👆 Select / move', () => switchTool('select'))}
+          {tool === 'line' && linePoints && linePoints.length >= 3 &&
+            btn(false, null, THEME.gold, '✅ Done', () => finishLine(linePoints))}
+          {tool === 'line' && linePoints && linePoints.length > 0 &&
+            btn(false, null, THEME.muted, '✕ Cancel', () => { setLinePoints(null); setLinePreview(null); })}
           <div style={{ width: 1, alignSelf: 'stretch', background: 'rgba(255,255,255,0.12)', margin: '2px 4px' }} />
           {btn(false, null, THEME.muted, '↩ Undo', undo, !canUndo)}
           {btn(false, null, THEME.muted, '↪ Redo', redo, !canRedo)}
@@ -447,6 +501,24 @@ export default function InteriorSketchModal({ roomName, onSubmit, onClose }) {
                 stroke={THEME.liveStroke} strokeWidth={4} strokeLinecap="round" opacity={0.9} />
             )}
 
+            {linePoints && linePoints.length > 0 && (
+              <g>
+                <polyline
+                  points={linePoints.map((p) => `${p.x},${p.y}`).join(' ')}
+                  fill="none" stroke={THEME.liveStroke} strokeWidth={4}
+                  strokeLinecap="round" strokeLinejoin="round" opacity={0.9}
+                />
+                {linePreview && (
+                  <line x1={linePoints[linePoints.length - 1].x} y1={linePoints[linePoints.length - 1].y}
+                    x2={linePreview.x} y2={linePreview.y}
+                    stroke={THEME.liveStroke} strokeWidth={4} strokeDasharray="10 6" opacity={0.6} />
+                )}
+                {linePoints.map((p, i) => (
+                  <circle key={i} cx={p.x} cy={p.y} r={6} fill={THEME.liveStroke} opacity={0.9} />
+                ))}
+              </g>
+            )}
+
             {furniture.map((f) => {
               const cx = f.x + f.w / 2;
               const cy = f.y + f.h / 2;
@@ -475,16 +547,16 @@ export default function InteriorSketchModal({ roomName, onSubmit, onClose }) {
               );
             })}
 
-            {!roomShape && !stroke && (
+            {!roomShape && !stroke && !linePoints && (
               <text x={VB_W / 2} y={VB_H / 2 - 10} textAnchor="middle"
                 fill={THEME.muted} fontSize={20} opacity={0.8} pointerEvents="none">
                 ✏️ Draw the room's outline with your finger or mouse
               </text>
             )}
-            {!roomShape && !stroke && (
+            {!roomShape && !stroke && !linePoints && (
               <text x={VB_W / 2} y={VB_H / 2 + 22} textAnchor="middle"
                 fill={THEME.muted} fontSize={13} opacity={0.6} pointerEvents="none">
-                End near where you started and it snaps closed
+                End near where you started and it snaps closed — or use 📏 Straight lines
               </text>
             )}
           </svg>
@@ -496,6 +568,9 @@ export default function InteriorSketchModal({ roomName, onSubmit, onClose }) {
             {tool === 'draw' && (roomShape
               ? 'Room drawn. Draw again to replace it, or switch to Furniture.'
               : 'Draw one closed outline — that becomes the room.')}
+            {tool === 'line' && (roomShape
+              ? 'Room drawn. Tap corners to draw a new one, or switch to Furniture.'
+              : 'Tap each corner of the room — lines snap straight (horizontal, vertical, diagonal). Tap Done, or tap near your first corner to close.')}
             {tool === 'furniture' && (() => {
               const e = FURNITURE_CATALOG.find((f) => f.name === catalogType);
               return `Tap the canvas to place ${e.icon} ${e.label}.`;
