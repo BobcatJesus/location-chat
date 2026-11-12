@@ -74,6 +74,36 @@ function snapTo45(from, to) {
   return { x: from.x + Math.cos(snapped) * len, y: from.y + Math.sin(snapped) * len };
 }
 
+// Sample a smooth (Catmull-Rom, same math as smoothPath) closed curve
+// through `points` into many small straight segments. The room is stored
+// as a plain point list, so a curve only survives saving if it is baked
+// into dense points on commit — otherwise the saved outline would just
+// be straight lines between the tapped points.
+function sampleSmoothCurve(points, perSegment = 10) {
+  if (points.length < 3) return points;
+  const n = points.length;
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const p0 = points[(i - 1 + n) % n];
+    const p1 = points[i];
+    const p2 = points[(i + 1) % n];
+    const p3 = points[(i + 2) % n];
+    const c1x = p1.x + (p2.x - p0.x) / 6;
+    const c1y = p1.y + (p2.y - p0.y) / 6;
+    const c2x = p2.x - (p3.x - p1.x) / 6;
+    const c2y = p2.y - (p3.y - p1.y) / 6;
+    for (let s = 0; s < perSegment; s++) {
+      const t = s / perSegment;
+      const mt = 1 - t;
+      out.push({
+        x: mt * mt * mt * p1.x + 3 * mt * mt * t * c1x + 3 * mt * t * t * c2x + t * t * t * p2.x,
+        y: mt * mt * mt * p1.y + 3 * mt * mt * t * c1y + 3 * mt * t * t * c2y + t * t * t * p2.y,
+      });
+    }
+  }
+  return out;
+}
+
 function pointInPolygon(pt, poly) {
   let inside = false;
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
@@ -90,10 +120,10 @@ function pointInPolygon(pt, poly) {
 // --- component ---------------------------------------------------------------
 
 export default function InteriorSketchModal({ roomName, onSubmit, onClose }) {
-  const [tool, setTool] = useState('draw'); // draw | line | furniture | select
+  const [tool, setTool] = useState('draw'); // draw | line | curve | furniture | select
   const [roomShape, setRoomShape] = useState(null);
   const [stroke, setStroke] = useState(null);
-  const [linePoints, setLinePoints] = useState(null); // straight-line mode: clicked corners
+  const [linePoints, setLinePoints] = useState(null); // line / curve mode: clicked points
   const [linePreview, setLinePreview] = useState(null);
   const [furniture, setFurniture] = useState([]);
   const [catalogType, setCatalogType] = useState(FURNITURE_CATALOG[0].name);
@@ -196,27 +226,34 @@ export default function InteriorSketchModal({ roomName, onSubmit, onClose }) {
 
   const finishLine = useCallback((pts) => {
     if (!pts || pts.length < 3) {
-      setError('Straight lines need at least 3 corners — tap 3+ points, then Done.');
+      setError(tool === 'curve'
+        ? 'Curved lines need at least 3 points — tap 3+ points, then Done.'
+        : 'Straight lines need at least 3 corners — tap 3+ points, then Done.');
       return;
     }
-    commit(pts.map((p) => ({ ...p })), furnRef.current);
+    // Curve mode: bake the smooth curve into dense points so the saved
+    // outline actually looks curved. Straight mode: keep the corners as-is.
+    const shape = tool === 'curve' ? sampleSmoothCurve(pts) : pts.map((p) => ({ ...p }));
+    commit(shape, furnRef.current);
     setLinePoints(null);
     setLinePreview(null);
     setError('');
-  }, [commit]);
+  }, [commit, tool]);
 
   // --- canvas pointer ------------------------------------------------------------
   const onCanvasDown = useCallback((e) => {
     if (e.target !== svgRef.current && !e.target.dataset.canvas) return;
     const pt = toSvg(e);
-    if (tool === 'line') {
+    if (tool === 'line' || tool === 'curve') {
       const prev = linePoints || [];
       if (prev.length >= 3 && Math.hypot(pt.x - prev[0].x, pt.y - prev[0].y) < CLOSE_SNAP) {
         finishLine(prev);
         return;
       }
-      const snapped = prev.length ? snapTo45(prev[prev.length - 1], pt) : pt;
-      setLinePoints([...prev, snapped]);
+      // Straight lines snap to 45°; curved lines keep the exact tap so
+      // the curve flows where you put it.
+      const next = (tool === 'line' && prev.length) ? snapTo45(prev[prev.length - 1], pt) : pt;
+      setLinePoints([...prev, next]);
       setLinePreview(null);
       setError('');
       return;
@@ -247,9 +284,11 @@ export default function InteriorSketchModal({ roomName, onSubmit, onClose }) {
   }, [tool, catalogType, roomShape, toSvg, commit, linePoints, finishLine]);
 
   const onCanvasMove = useCallback((e) => {
-    if (tool === 'line' && linePoints && linePoints.length) {
+    if ((tool === 'line' || tool === 'curve') && linePoints && linePoints.length) {
       const pt = toSvg(e);
-      setLinePreview(snapTo45(linePoints[linePoints.length - 1], pt));
+      setLinePreview(tool === 'line'
+        ? snapTo45(linePoints[linePoints.length - 1], pt)
+        : pt);
       return;
     }
     if (!drawingRef.current) return;
@@ -414,11 +453,12 @@ export default function InteriorSketchModal({ roomName, onSubmit, onClose }) {
         }}>
           {btn(tool === 'draw', THEME.gold, THEME.gold, '✏️ Draw room', () => switchTool('draw'))}
           {btn(tool === 'line', THEME.gold, THEME.gold, '📏 Straight lines', () => switchTool('line'))}
+          {btn(tool === 'curve', THEME.gold, THEME.gold, '〰️ Curved lines', () => switchTool('curve'))}
           {btn(tool === 'furniture', THEME.cyan, THEME.cyan, '🪑 Furniture', () => switchTool('furniture'))}
           {btn(tool === 'select', THEME.pink, THEME.pink, '👆 Select / move', () => switchTool('select'))}
-          {tool === 'line' && linePoints && linePoints.length >= 3 &&
+          {(tool === 'line' || tool === 'curve') && linePoints && linePoints.length >= 3 &&
             btn(false, null, THEME.gold, '✅ Done', () => finishLine(linePoints))}
-          {tool === 'line' && linePoints && linePoints.length > 0 &&
+          {(tool === 'line' || tool === 'curve') && linePoints && linePoints.length > 0 &&
             btn(false, null, THEME.muted, '✕ Cancel', () => { setLinePoints(null); setLinePreview(null); })}
           <div style={{ width: 1, alignSelf: 'stretch', background: 'rgba(255,255,255,0.12)', margin: '2px 4px' }} />
           {btn(false, null, THEME.muted, '↩ Undo', undo, !canUndo)}
@@ -503,15 +543,25 @@ export default function InteriorSketchModal({ roomName, onSubmit, onClose }) {
 
             {linePoints && linePoints.length > 0 && (
               <g>
-                <polyline
-                  points={linePoints.map((p) => `${p.x},${p.y}`).join(' ')}
-                  fill="none" stroke={THEME.liveStroke} strokeWidth={4}
-                  strokeLinecap="round" strokeLinejoin="round" opacity={0.9}
-                />
-                {linePreview && (
-                  <line x1={linePoints[linePoints.length - 1].x} y1={linePoints[linePoints.length - 1].y}
-                    x2={linePreview.x} y2={linePreview.y}
-                    stroke={THEME.liveStroke} strokeWidth={4} strokeDasharray="10 6" opacity={0.6} />
+                {tool === 'curve' ? (
+                  <path
+                    d={smoothPath(linePreview ? [...linePoints, linePreview] : linePoints, true)}
+                    fill="none" stroke={THEME.liveStroke} strokeWidth={4}
+                    strokeLinecap="round" strokeLinejoin="round" opacity={0.9}
+                  />
+                ) : (
+                  <>
+                    <polyline
+                      points={linePoints.map((p) => `${p.x},${p.y}`).join(' ')}
+                      fill="none" stroke={THEME.liveStroke} strokeWidth={4}
+                      strokeLinecap="round" strokeLinejoin="round" opacity={0.9}
+                    />
+                    {linePreview && (
+                      <line x1={linePoints[linePoints.length - 1].x} y1={linePoints[linePoints.length - 1].y}
+                        x2={linePreview.x} y2={linePreview.y}
+                        stroke={THEME.liveStroke} strokeWidth={4} strokeDasharray="10 6" opacity={0.6} />
+                    )}
+                  </>
                 )}
                 {linePoints.map((p, i) => (
                   <circle key={i} cx={p.x} cy={p.y} r={6} fill={THEME.liveStroke} opacity={0.9} />
@@ -556,7 +606,7 @@ export default function InteriorSketchModal({ roomName, onSubmit, onClose }) {
             {!roomShape && !stroke && !linePoints && (
               <text x={VB_W / 2} y={VB_H / 2 + 22} textAnchor="middle"
                 fill={THEME.muted} fontSize={13} opacity={0.6} pointerEvents="none">
-                End near where you started and it snaps closed — or use 📏 Straight lines
+                End near where you started and it snaps closed — or use 📏 Straight lines / 〰️ Curved lines
               </text>
             )}
           </svg>
@@ -571,6 +621,9 @@ export default function InteriorSketchModal({ roomName, onSubmit, onClose }) {
             {tool === 'line' && (roomShape
               ? 'Room drawn. Tap corners to draw a new one, or switch to Furniture.'
               : 'Tap each corner of the room — lines snap straight (horizontal, vertical, diagonal). Tap Done, or tap near your first corner to close.')}
+            {tool === 'curve' && (roomShape
+              ? 'Room drawn. Tap points to draw a new one, or switch to Furniture.'
+              : 'Tap points around the room — the outline curves smoothly through them. Tap Done, or tap near your first point to close.')}
             {tool === 'furniture' && (() => {
               const e = FURNITURE_CATALOG.find((f) => f.name === catalogType);
               return `Tap the canvas to place ${e.icon} ${e.label}.`;
