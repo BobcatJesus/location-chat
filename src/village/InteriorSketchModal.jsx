@@ -98,31 +98,90 @@ function smoothCurvePath(points) {
   return d;
 }
 
-// Sample a smooth (Catmull-Rom, loose 1/3 bend to match smoothCurvePath)
-// closed curve through `points` into many small straight segments. The
-// room is stored as a plain point list, so a curve only survives saving
-// if it is baked into dense points on commit — otherwise the saved
-// outline would just be straight lines between the tapped points.
-function sampleSmoothCurve(points, perSegment = 10) {
-  if (points.length < 3) return points;
-  const n = points.length;
-  const out = [];
-  for (let i = 0; i < n; i++) {
-    const p0 = points[(i - 1 + n) % n];
-    const p1 = points[i];
-    const p2 = points[(i + 1) % n];
-    const p3 = points[(i + 2) % n];
+// --- mixed straight + curved outlines -------------------------------------
+// Every tapped point carries `curved`: true means the segment INTO that
+// point (from the previous point) is curved, false means it is straight.
+// A straight point is never re-drawn as a curve, and a curved point is
+// never straightened — switching tools only decides how the NEXT point
+// is drawn, never how the earlier ones look.
+
+// " C ..." segments for an open curve through `pts` (loose 1/3 bend).
+function curveSegments(pts) {
+  let d = '';
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i === 0 ? 0 : i - 1];
+    const p1 = pts[i];
+    const p2 = pts[i + 1];
+    const p3 = pts[i + 2] || p2;
     const c1x = p1.x + (p2.x - p0.x) / 3;
     const c1y = p1.y + (p2.y - p0.y) / 3;
     const c2x = p2.x - (p3.x - p1.x) / 3;
     const c2y = p2.y - (p3.y - p1.y) / 3;
-    for (let s = 0; s < perSegment; s++) {
+    d += ` C ${c1x} ${c1y}, ${c2x} ${c2y}, ${p2.x} ${p2.y}`;
+  }
+  return d;
+}
+
+// SVG path for a mixed outline: straight runs as L segments, curved runs
+// as C segments. `points` are [{x, y, curved}]; the first point's flag
+// is ignored (there is no segment into it).
+function mixedPath(points) {
+  if (!points || points.length < 2) return '';
+  let d = `M ${points[0].x} ${points[0].y}`;
+  let i = 1;
+  while (i < points.length) {
+    if (points[i].curved) {
+      const run = [points[i - 1]];
+      while (i < points.length && points[i].curved) { run.push(points[i]); i++; }
+      d += curveSegments(run);
+    } else {
+      d += ` L ${points[i].x} ${points[i].y}`;
+      i++;
+    }
+  }
+  return d;
+}
+
+// Sample an open curve through `pts` into dense points (same 1/3 bend
+// as curveSegments, so the saved outline matches the preview).
+function sampleOpenCurve(pts, perSegment = 10) {
+  const out = [{ x: pts[0].x, y: pts[0].y }];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i === 0 ? 0 : i - 1];
+    const p1 = pts[i];
+    const p2 = pts[i + 1];
+    const p3 = pts[i + 2] || p2;
+    const c1x = p1.x + (p2.x - p0.x) / 3;
+    const c1y = p1.y + (p2.y - p0.y) / 3;
+    const c2x = p2.x - (p3.x - p1.x) / 3;
+    const c2y = p2.y - (p3.y - p1.y) / 3;
+    for (let s = 1; s <= perSegment; s++) {
       const t = s / perSegment;
       const mt = 1 - t;
       out.push({
         x: mt * mt * mt * p1.x + 3 * mt * mt * t * c1x + 3 * mt * t * t * c2x + t * t * t * p2.x,
         y: mt * mt * mt * p1.y + 3 * mt * mt * t * c1y + 3 * mt * t * t * c2y + t * t * t * p2.y,
       });
+    }
+  }
+  return out;
+}
+
+// Bake a mixed outline into plain {x, y} points for saving: straight
+// segments stay as their corners, curved runs become dense sampled points.
+function sampleMixedOutline(points) {
+  if (!points || points.length < 3) return points;
+  const out = [{ x: points[0].x, y: points[0].y }];
+  let i = 1;
+  while (i < points.length) {
+    if (points[i].curved) {
+      const run = [points[i - 1]];
+      while (i < points.length && points[i].curved) { run.push(points[i]); i++; }
+      const sampled = sampleOpenCurve(run);
+      out.push(...sampled.slice(1).map((p) => ({ x: p.x, y: p.y })));
+    } else {
+      out.push({ x: points[i].x, y: points[i].y });
+      i++;
     }
   }
   return out;
@@ -242,33 +301,32 @@ export default function InteriorSketchModal({ roomName, onSubmit, onClose }) {
   furnRef.current = furniture;
 
   // --- straight-line / curved drawing -------------------------------------------
+  // Each tapped point remembers whether it was drawn straight or curved.
+  // Switching tools never changes earlier points — it only decides how
+  // the NEXT point is drawn. So a straight run stays straight when you
+  // switch to curved, and you can add a curved stretch outside it.
+  // Only switching to freehand Draw clears the unfinished outline.
   const switchTool = useCallback((next) => {
     setTool(next);
-    // Straight and curved lines share the same tapped points — switching
-    // between them keeps the points and just changes how they connect.
-    // Switching to any other tool discards the unfinished line.
-    const bothPointTools = (tool === 'line' || tool === 'curve') && (next === 'line' || next === 'curve');
-    if (!bothPointTools) {
+    if (next === 'draw') {
       setLinePoints(null);
     }
     setLinePreview(null);
-  }, [tool]);
+  }, []);
 
   const finishLine = useCallback((pts) => {
     if (!pts || pts.length < 3) {
-      setError(tool === 'curve'
-        ? 'Curved lines need at least 3 points — tap 3+ points, then Done.'
-        : 'Straight lines need at least 3 corners — tap 3+ points, then Done.');
+      setError('Need at least 3 points — tap 3+ points, then Done.');
       return;
     }
-    // Curve mode: bake the smooth curve into dense points so the saved
-    // outline actually looks curved. Straight mode: keep the corners as-is.
-    const shape = tool === 'curve' ? sampleSmoothCurve(pts) : pts.map((p) => ({ ...p }));
+    // Straight segments stay as their corners; curved runs are baked
+    // into dense points so the saved outline matches what you drew.
+    const shape = sampleMixedOutline(pts);
     commit(shape, furnRef.current);
     setLinePoints(null);
     setLinePreview(null);
     setError('');
-  }, [commit, tool]);
+  }, [commit]);
 
   // --- canvas pointer ------------------------------------------------------------
   const onCanvasDown = useCallback((e) => {
@@ -281,8 +339,10 @@ export default function InteriorSketchModal({ roomName, onSubmit, onClose }) {
         return;
       }
       // Straight lines snap to 45°; curved lines keep the exact tap so
-      // the curve flows where you put it.
-      const next = (tool === 'line' && prev.length) ? snapTo45(prev[prev.length - 1], pt) : pt;
+      // the curve flows where you put it. The point remembers which
+      // tool drew it, so it never gets converted later.
+      const placed = (tool === 'line' && prev.length) ? snapTo45(prev[prev.length - 1], pt) : pt;
+      const next = { ...placed, curved: tool === 'curve' && prev.length > 0 };
       setLinePoints([...prev, next]);
       setLinePreview(null);
       setError('');
@@ -573,26 +633,17 @@ export default function InteriorSketchModal({ roomName, onSubmit, onClose }) {
 
             {linePoints && linePoints.length > 0 && (
               <g>
-                {tool === 'curve' ? (
-                  <path
-                    d={smoothCurvePath(linePreview ? [...linePoints, linePreview] : linePoints)}
-                    fill="none" stroke={THEME.liveStroke} strokeWidth={4}
-                    strokeLinecap="round" strokeLinejoin="round" opacity={0.9}
-                  />
-                ) : (
-                  <>
-                    <polyline
-                      points={linePoints.map((p) => `${p.x},${p.y}`).join(' ')}
-                      fill="none" stroke={THEME.liveStroke} strokeWidth={4}
-                      strokeLinecap="round" strokeLinejoin="round" opacity={0.9}
-                    />
-                    {linePreview && (
-                      <line x1={linePoints[linePoints.length - 1].x} y1={linePoints[linePoints.length - 1].y}
-                        x2={linePreview.x} y2={linePreview.y}
-                        stroke={THEME.liveStroke} strokeWidth={4} strokeDasharray="10 6" opacity={0.6} />
-                    )}
-                  </>
-                )}
+                {/* Mixed outline: straight segments stay straight, curved
+                    segments stay curved — switching tools never converts
+                    earlier points. The preview point joins with the
+                    current tool's style. */}
+                <path
+                  d={mixedPath(linePreview
+                    ? [...linePoints, { ...linePreview, curved: (tool === 'curve' && linePoints.length > 0) }]
+                    : linePoints)}
+                  fill="none" stroke={THEME.liveStroke} strokeWidth={4}
+                  strokeLinecap="round" strokeLinejoin="round" opacity={0.9}
+                />
                 {linePoints.map((p, i) => (
                   <circle key={i} cx={p.x} cy={p.y} r={6} fill={THEME.liveStroke} opacity={0.9} />
                 ))}
@@ -650,10 +701,10 @@ export default function InteriorSketchModal({ roomName, onSubmit, onClose }) {
               : 'Draw one closed outline — that becomes the room.')}
             {tool === 'line' && (roomShape
               ? 'Room drawn. Tap corners to draw a new one, or switch to Furniture.'
-              : 'Tap each corner of the room — lines snap straight (horizontal, vertical, diagonal). Tap Done, or tap near your first corner to close.')}
+              : 'Tap each corner — lines snap straight. Switch to Curved to add a curved stretch; straight parts stay straight. Tap Done, or tap near your first corner to close.')}
             {tool === 'curve' && (roomShape
               ? 'Room drawn. Tap points to draw a new one, or switch to Furniture.'
-              : 'Tap points around the room — the outline curves smoothly through them. Tap Done, or tap near your first point to close.')}
+              : 'Tap points for a curved stretch — the outline curves through them. Straight parts you already drew stay straight. Tap Done, or tap near your first point to close.')}
             {tool === 'furniture' && (() => {
               const e = FURNITURE_CATALOG.find((f) => f.name === catalogType);
               return `Tap the canvas to place ${e.icon} ${e.label}.`;
