@@ -104,9 +104,14 @@ function makeCatBody(scene) {
   return g;
 }
 
-// Curled-up loaf, shown while asleep — same exact art, squashed flat
-// so she reads as curled up in the sunbeam.
+// Curled up asleep — the user's exact sleeping-cat image, Z bubble
+// and all. The floating 💤 stays too, so the zzzs are unmistakable.
 function makeCurledBody(scene) {
+  if (scene?.textures?.exists('cat-sleep')) {
+    const img = scene.add.image(0, 0, 'cat-sleep');
+    img.setDisplaySize(30, 30);
+    return img;
+  }
   if (scene?.textures?.exists('cat-side')) {
     const img = scene.add.image(0, 2, 'cat-side');
     img.setDisplaySize(26, 17);
