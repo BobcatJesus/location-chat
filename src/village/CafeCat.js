@@ -1,6 +1,7 @@
 // CafeCat.js — the cafe cat in Agora.
 //
-// Design (approved 2026-11-12): one orange tabby that wanders the room.
+// Design (approved 2026-11-12): one white-and-orange calico that wanders
+// the room (reference image 2026-11-12: teal collar, gold bell, big eyes).
 // Walk up and pet it and it purrs, hops happily and follows you for a bit.
 // After 3 pets it curls up and falls asleep in a sunbeam, and stays asleep
 // until someone new walks into the room.
@@ -51,44 +52,66 @@ function playPurr() {
   } catch {}
 }
 
-// Orange tabby, faces right by default.
+// White-and-orange calico, faces right by default — matches the
+// reference image: white body with orange patches, big dark eyes,
+// pink cheeks, fluffy tail, teal collar with a gold bell.
 function makeCatBody(scene) {
   const g = scene.add.graphics();
-  g.fillStyle(0xe8912d, 1);          // tail (behind body)
-  g.fillEllipse(-20, -4, 18, 7);
-  g.fillStyle(0xf6a93b, 1);          // body
+  g.fillStyle(0xfff6ec, 1);          // fluffy tail (behind body)
+  g.fillEllipse(-21, -6, 14, 12);
+  g.fillCircle(-24, -10, 6);
+  g.fillStyle(0xf6a93b, 1);          // orange tail tip
+  g.fillCircle(-26, -12, 5);
+  g.fillStyle(0xfff6ec, 1);          // body
   g.fillEllipse(0, 0, 34, 22);
-  g.fillStyle(0xb96a1b, 1);          // tabby stripes
-  g.fillEllipse(-8, -3, 4, 14);
-  g.fillEllipse(0, -4, 4, 15);
-  g.fillEllipse(8, -3, 4, 14);
-  g.fillStyle(0xf6a93b, 1);          // head
+  g.fillStyle(0xf6a93b, 1);          // orange patches on the back
+  g.fillEllipse(-8, -5, 12, 10);
+  g.fillEllipse(4, -6, 9, 8);
+  g.fillStyle(0xfff6ec, 1);          // head
   g.fillCircle(14, -13, 10);
-  g.fillStyle(0xe8912d, 1);          // ears
+  g.fillStyle(0xf6a93b, 1);          // orange patch over one ear
+  g.fillCircle(17, -19, 6);
+  g.fillStyle(0xfff6ec, 1);          // ears
   g.fillTriangle(8, -20, 10, -28, 14, -20);
   g.fillTriangle(16, -21, 20, -28, 22, -19);
-  g.fillStyle(0xf6d56b, 1);          // muzzle
-  g.fillCircle(20, -10, 4);
-  g.fillStyle(0x222222, 1);          // eye
-  g.fillCircle(17, -15, 2);
+  g.fillStyle(0xf2a0b5, 1);          // pink inner ears
+  g.fillTriangle(10, -21, 11, -25, 13, -21);
+  g.fillTriangle(18, -22, 19, -25, 21, -21);
+  g.fillStyle(0x0e7490, 1);          // teal collar
+  g.fillRect(4, -5, 12, 4);
+  g.fillStyle(0xf6c344, 1);          // gold bell
+  g.fillCircle(10, 0, 2.5);
+  g.fillStyle(0x222222, 1);          // big eye
+  g.fillCircle(17, -15, 3);
+  g.fillStyle(0xffffff, 1);          // eye shine
+  g.fillCircle(18, -16, 1);
+  g.fillStyle(0xf2a0b5, 1);          // pink cheek
+  g.fillCircle(20, -10, 2.5);
   g.fillStyle(0xd96a8b, 1);          // nose
-  g.fillCircle(22, -12, 1.5);
+  g.fillCircle(23, -12, 1.5);
   return g;
 }
 
-// Curled-up loaf, shown while asleep.
+// Curled-up loaf, shown while asleep — same calico, collar and bell.
 function makeCurledBody(scene) {
   const g = scene.add.graphics();
-  g.fillStyle(0xf6a93b, 1);
+  g.fillStyle(0xfff6ec, 1);
   g.fillEllipse(0, 0, 36, 20);
-  g.fillStyle(0xb96a1b, 1);
-  g.fillEllipse(-8, -2, 4, 12);
-  g.fillEllipse(0, -3, 4, 13);
-  g.fillEllipse(8, -2, 4, 12);
-  g.fillStyle(0xe8912d, 1);          // tucked tail
-  g.fillEllipse(14, 4, 14, 6);
-  g.fillStyle(0xf6a93b, 1);          // head tucked in
+  g.fillStyle(0xf6a93b, 1);
+  g.fillEllipse(-6, -4, 12, 10);
+  g.fillEllipse(8, -5, 9, 8);
+  g.fillStyle(0xfff6ec, 1);          // fluffy tail curled around
+  g.fillEllipse(14, 5, 14, 8);
+  g.fillStyle(0xf6a93b, 1);
+  g.fillCircle(19, 4, 4);
+  g.fillStyle(0xfff6ec, 1);          // head tucked in
   g.fillCircle(-12, -6, 8);
+  g.fillStyle(0xf6a93b, 1);
+  g.fillCircle(-13, -11, 4);
+  g.fillStyle(0x0e7490, 1);          // teal collar peeking out
+  g.fillRect(-8, -1, 8, 3);
+  g.fillStyle(0xf6c344, 1);          // gold bell
+  g.fillCircle(-4, 2, 2);
   g.fillStyle(0x222222, 1);          // closed eye (a line)
   g.fillRect(-16, -8, 6, 1.5);
   return g;
