@@ -3,6 +3,7 @@ export const OPEN_ACCESS_ROOM_IDS = Object.freeze([
   'shepherd-park',
   'asgard-games',
   'lolas-depot',
+  'agora-houston',
 ]);
 
 const openAccessRoomIds = new Set(OPEN_ACCESS_ROOM_IDS);
