@@ -350,6 +350,10 @@ async function loadShelfBooks(roomId) {
 const jukeboxRooms = {};
 // Jack-o'-lanterns: per-room set of lit pumpkin indices (Halloween decor).
 const pumpkinLit = {};
+// Cafe cat: per-room shared state { pets, asleep } — 3 pets puts the cat
+// to sleep in a sunbeam; a new player walking in wakes it back up.
+const catState = {};
+const CATS_PETS_TO_SLEEP = 3;
 // Matches youtube.com/watch?v=, youtu.be/, youtube.com/embed/, youtube.com/shorts/
 const YOUTUBE_ID_RE = /(?:(?:www\.|music\.)?youtube\.com\/(?:watch\?[^#]*v=|embed\/|shorts\/|v\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/;
 function extractYouTubeId(url) {
@@ -821,6 +825,12 @@ io.on('connection', (socket) => {
 
     socket.join(roomId);
 
+    // A new player walking in wakes a sleeping cafe cat back up.
+    if (catState[roomId]?.asleep) {
+      catState[roomId] = { pets: 0, asleep: false };
+      io.to(roomId).emit('cat_state', { pets: 0, asleep: false });
+    }
+
     if (!rooms[roomId]) {
       rooms[roomId] = {};
     }
@@ -959,6 +969,30 @@ io.on('connection', (socket) => {
     if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
     const lit = pumpkinLit[roomId] ? [...pumpkinLit[roomId]] : [];
     socket.emit('pumpkin_state', { lit });
+  });
+
+  // PET THE CAFE CAT (shared Agora interaction — petting is counted
+  // per room; 3 pets puts the cat to sleep in a sunbeam for everyone)
+  socket.on('pet_cat', ({ roomId } = {}) => {
+    if (!roomId || roomId !== 'agora-houston') return;
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const userId = socketUserMap[socket.id] || socket.id;
+    const rate = checkRateLimit(userId);
+    if (!rate.allowed) return;
+    if (!catState[roomId]) catState[roomId] = { pets: 0, asleep: false };
+    const state = catState[roomId];
+    if (state.asleep) return;
+    state.pets += 1;
+    if (state.pets >= CATS_PETS_TO_SLEEP) state.asleep = true;
+    socket.to(roomId).emit('cat_petted', { pets: state.pets, by: socket.id });
+    io.to(roomId).emit('cat_state', { pets: state.pets, asleep: state.asleep });
+  });
+
+  socket.on('get_cat', ({ roomId } = {}) => {
+    if (!roomId || roomId !== 'agora-houston') return;
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const state = catState[roomId] || { pets: 0, asleep: false };
+    socket.emit('cat_state', { pets: state.pets, asleep: state.asleep });
   });
 
   // DAY/NIGHT: answer with the canonical phase (see currentTimePhase

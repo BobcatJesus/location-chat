@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { DEPTH } from './depth.js';
 import { DuckPond } from './DuckPond.js';
+import { CafeCat } from './CafeCat.js';
 import { io } from 'socket.io-client';
 import { RoomLayout } from './RoomLayout.js';
 import { pickLayout } from './layoutPicker.js';
@@ -576,6 +577,9 @@ export class VillageScene extends Phaser.Scene {
     // Duck pond interaction (procedural: any pond zone gets ducks + feeding)
     this.duckPond = new DuckPond(this);
     this.duckPond.refresh();
+    // Cafe cat (Agora only — CafeCat itself no-ops in every other room).
+    this.cafeCat = new CafeCat(this);
+    this.cafeCat.refresh();
     // Seasonal: pumpkins, bats, spooky tint in October.
     this.halloween = new HalloweenMode(this);
     this.halloween.start();
@@ -587,6 +591,14 @@ export class VillageScene extends Phaser.Scene {
     this.feedPrompt = this.add.text(0, 0, '🦆 Feed the ducks [E]', {
       fontSize: '15px',
       color: '#1a4971',
+      backgroundColor: 'rgba(255,255,255,0.85)',
+      padding: { x: 8, y: 4 },
+    }).setOrigin(0.5, 1).setDepth(DEPTH.UI).setAlpha(0);
+
+    // Cafe cat interaction (Agora).
+    this.catPrompt = this.add.text(0, 0, '🐱 Pet the cat [E]', {
+      fontSize: '15px',
+      color: '#7c2d12',
       backgroundColor: 'rgba(255,255,255,0.85)',
       padding: { x: 8, y: 4 },
     }).setOrigin(0.5, 1).setDepth(DEPTH.UI).setAlpha(0);
@@ -1019,16 +1031,19 @@ export class VillageScene extends Phaser.Scene {
       this.onOpenJukebox({ roomId: this.roomId });
     } else if (kind === 'ducks') {
       this._tryFeedDucks();
+    } else if (kind === 'cat') {
+      this.cafeCat?.petCat(true);
     } else if (kind === 'bar') {
       this._tryBuyDrink();
     }
   }
 
-  // Public: what would the E key do right now? Priority: ducks > shelf > jukebox.
+  // Public: what would the E key do right now? Priority: ducks > cat > shelf > jukebox.
   getInteractKind() {
     if (!this.player) return null;
     const nearPond = this.duckPond?.nearestFeedablePond(this.player.gx, this.player.gy);
     if (nearPond && this._feedCooldownMs <= 0) return 'ducks';
+    if (this.cafeCat?.nearestCat(this.player.gx, this.player.gy)) return 'cat';
     if (this._nearestShelf()) return 'shelf';
     if (this._nearestJukebox()) return 'jukebox';
     if (this._nearestBar()) return 'bar';
@@ -1582,6 +1597,7 @@ export class VillageScene extends Phaser.Scene {
       socket.emit('get_room_decorations', { roomId: this.roomId });
       socket.emit('get_jukebox', { roomId: this.roomId });
       socket.emit('get_pumpkins', { roomId: this.roomId });
+      socket.emit('get_cat', { roomId: this.roomId });
       socket.emit('get_time_phase', {});
       const now = Date.now();
       this._lastPresenceSyncAt = now;
@@ -1745,6 +1761,18 @@ export class VillageScene extends Phaser.Scene {
     // The room's already-lit pumpkins, sent when we join.
     socket.on('pumpkin_state', ({ lit } = {}) => {
       this.halloween?.applyPumpkinState(lit || []);
+    });
+
+    // Somebody petted the cafe cat: react locally (no re-broadcast).
+    socket.on('cat_petted', ({ pets } = {}) => {
+      this.cafeCat?.onRemotePet();
+      if (Number.isFinite(Number(pets))) this.cafeCat.pets = Number(pets);
+    });
+
+    // The cat's shared state (pets so far, asleep or awake), sent when
+    // we join and whenever it changes.
+    socket.on('cat_state', (payload = {}) => {
+      this.cafeCat?.applyState(payload);
     });
 
     // The server's canonical day/night phase (outdoor venues render
@@ -2267,6 +2295,7 @@ export class VillageScene extends Phaser.Scene {
     this._feedCooldownMs = Math.max(0, (this._feedCooldownMs || 0) - delta);
     this._drinkCooldownMs = Math.max(0, (this._drinkCooldownMs || 0) - delta);
     this.duckPond?.update(delta);
+    this.cafeCat?.update(delta);
     this.halloween?.update(delta);
     this.dayNight?.update(delta);
     const nearPond = this.duckPond?.nearestFeedablePond(this.player.gx, this.player.gy);
@@ -2274,6 +2303,14 @@ export class VillageScene extends Phaser.Scene {
       this.feedPrompt.setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
     } else {
       this.feedPrompt.setAlpha(0);
+    }
+
+    // Cafe cat: prompt near the cat (duck prompt takes priority).
+    const nearCat = this.cafeCat?.nearestCat(this.player.gx, this.player.gy);
+    if (nearCat && !nearPond) {
+      this.catPrompt.setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
+    } else {
+      this.catPrompt.setAlpha(0);
     }
 
     // Bookshelf: prompt near interactable shelves (duck prompt takes priority).
@@ -2564,6 +2601,9 @@ export class VillageScene extends Phaser.Scene {
     this.remotePlayers.clear();
     this.duckPond?.destroy();
     this.duckPond = null;
+    this.cafeCat?.destroy();
+    this.cafeCat = null;
+    this.catPrompt?.destroy();
     this.halloween?.destroy();
     this.halloween = null;
     this.dayNight?.destroy();
@@ -2597,6 +2637,7 @@ export class VillageScene extends Phaser.Scene {
     this.currentFloor = floorIndex;
     this.roomLayout.drawFloor(floorIndex);
     this.duckPond?.refresh();
+    this.cafeCat?.refresh();
     this._emitFloorStatus();
     this.roomLayout.setDynamicSolids(this.customZones);
     this.roomLayout.setCollisionDebug(this.showCollisionDebug);
