@@ -62,8 +62,10 @@ function playPurr() {
 // calico drawn below.
 function makeCatBody(scene) {
   if (scene?.textures?.exists('cat-side')) {
-    const img = scene.add.image(0, -4, 'cat-side');
-    img.setDisplaySize(58, 60);
+    const img = scene.add.image(0, -2, 'cat-side');
+    // Small on purpose: an avatar is ~64-76 units tall, so ~32 tall
+    // puts her top below the avatar's knees.
+    img.setDisplaySize(32, 33);
     return img;
   }
   const g = scene.add.graphics();
@@ -107,7 +109,7 @@ function makeCatBody(scene) {
 function makeCurledBody(scene) {
   if (scene?.textures?.exists('cat-side')) {
     const img = scene.add.image(0, 2, 'cat-side');
-    img.setDisplaySize(58, 38);
+    img.setDisplaySize(32, 21);
     return img;
   }
   const g = scene.add.graphics();
@@ -197,7 +199,7 @@ export class CafeCat {
     curled.setVisible(false);
     const container = scene.add.container(start.x, start.y, [body, curled]);
     container.setDepth(DEPTH.ACTOR_MIN + Math.round(start.y));
-    container.setSize(52, 44);
+    container.setSize(36, 34);
     container.setInteractive({ useHandCursor: true });
     const target = this._randomWanderPoint();
     const catRef = {
