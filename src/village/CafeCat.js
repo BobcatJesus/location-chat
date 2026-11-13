@@ -63,9 +63,9 @@ function playPurr() {
 function makeCatBody(scene) {
   if (scene?.textures?.exists('cat-side')) {
     const img = scene.add.image(0, -2, 'cat-side');
-    // Small on purpose: an avatar is ~64-76 units tall, so ~32 tall
-    // puts her top below the avatar's knees.
-    img.setDisplaySize(32, 33);
+    // Small on purpose: an avatar is ~64-76 units tall, so ~26 tall
+    // puts her top well below the avatar's knees.
+    img.setDisplaySize(26, 27);
     return img;
   }
   const g = scene.add.graphics();
@@ -109,7 +109,7 @@ function makeCatBody(scene) {
 function makeCurledBody(scene) {
   if (scene?.textures?.exists('cat-side')) {
     const img = scene.add.image(0, 2, 'cat-side');
-    img.setDisplaySize(32, 21);
+    img.setDisplaySize(26, 17);
     return img;
   }
   const g = scene.add.graphics();
