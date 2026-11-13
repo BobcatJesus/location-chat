@@ -194,7 +194,7 @@ function AvatarStudioPage({
   );
 }
 
-function RetroLandingPage({ onEnter, onOpenShepherdPark, onOpenMdAndersonLibrary, onOpenAsgardGames, onOpenLolasDepot }) {
+function RetroLandingPage({ onEnter, onOpenShepherdPark, onOpenMdAndersonLibrary, onOpenAsgardGames, onOpenLolasDepot, onOpenAgora }) {
   const referenceArtCandidates = ['/assets/landing-original.png', '/assets/landing-reference.png'];
   const [useReferenceArt, setUseReferenceArt] = useState(true);
   const [referenceArtIndex, setReferenceArtIndex] = useState(0);
@@ -493,6 +493,24 @@ function RetroLandingPage({ onEnter, onOpenShepherdPark, onOpenMdAndersonLibrary
             }}
           >
             Lola's Depot
+          </button>
+          <button
+            onClick={onOpenAgora}
+            style={{
+              padding: '12px 20px',
+              background: '#9333ea',
+              border: '3px solid #9333ea',
+              color: '#f3e8ff',
+              fontWeight: 900,
+              cursor: 'pointer',
+              borderRadius: 999,
+              fontSize: 11,
+              textTransform: 'uppercase',
+              letterSpacing: '0.1em',
+              boxShadow: '0 5px 0 rgba(0,0,0,0.32)',
+            }}
+          >
+            🍷 Open Agora
           </button>
         </div>
       </div>
@@ -1553,6 +1571,10 @@ function App() {
           onOpenLolasDepot={() => {
             setShowLanding(false);
             window.history.replaceState({}, '', `${window.location.pathname}?openRoom=lolas-depot`);
+          }}
+          onOpenAgora={() => {
+            setShowLanding(false);
+            window.history.replaceState({}, '', `${window.location.pathname}?openRoom=agora-houston`);
           }}
         />
       )}
