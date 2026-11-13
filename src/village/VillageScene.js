@@ -498,6 +498,10 @@ export class VillageScene extends Phaser.Scene {
     this.load.image('duck-stand-art', '/places/duck-stand.png');
     this.load.image('shelf-front', '/places/shelf-front.png');
     this.load.image('shelf-34', '/places/shelf-34.png');
+    this.load.image('cat-side', '/assets/sprites/cat-side.png');
+    this.load.image('cat-front', '/assets/sprites/cat-front.png');
+    this.load.image('cat-threequarter', '/assets/sprites/cat-threequarter.png');
+    this.load.image('cat-back', '/assets/sprites/cat-back.png');
     this.load.image('sq-jackolantern', '/assets/sprites/halloween/jackolantern.png');
     this.load.image('sq-ghost', '/assets/sprites/halloween/ghost.png');
     this.load.image('sq-batmist', '/assets/sprites/halloween/bat-mist.png');

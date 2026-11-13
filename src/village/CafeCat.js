@@ -1,7 +1,10 @@
 // CafeCat.js — the cafe cat in Agora.
 //
 // Design (approved 2026-11-12): one white-and-orange calico that wanders
-// the room (reference image 2026-11-12: teal collar, gold bell, big eyes).
+// the room. Her art is the user's exact reference sheet
+// (public/assets/sprites/cat-side.png etc., cut from the 4-view image
+// he sent 2026-11-12) — side view while awake, same art squashed flat
+// while asleep. Vector calico in CafeCat.js is only a fallback.
 // Walk up and pet it and it purrs, hops happily and follows you for a bit.
 // After 3 pets it curls up and falls asleep in a sunbeam, and stays asleep
 // until someone new walks into the room.
@@ -52,10 +55,17 @@ function playPurr() {
   } catch {}
 }
 
-// White-and-orange calico, faces right by default — matches the
-// reference image: white body with orange patches, big dark eyes,
-// pink cheeks, fluffy tail, teal collar with a gold bell.
+// The cat's art is the user's reference sheet, cut into transparent
+// sprites (public/assets/sprites/cat-*.png, loaded in VillageScene).
+// Awake = the side view, facing right; it flips when she walks left.
+// If the textures are missing for any reason, fall back to the vector
+// calico drawn below.
 function makeCatBody(scene) {
+  if (scene?.textures?.exists('cat-side')) {
+    const img = scene.add.image(0, -4, 'cat-side');
+    img.setDisplaySize(58, 60);
+    return img;
+  }
   const g = scene.add.graphics();
   g.fillStyle(0xfff6ec, 1);          // fluffy tail (behind body)
   g.fillEllipse(-21, -6, 14, 12);
@@ -92,8 +102,14 @@ function makeCatBody(scene) {
   return g;
 }
 
-// Curled-up loaf, shown while asleep — same calico, collar and bell.
+// Curled-up loaf, shown while asleep — same exact art, squashed flat
+// so she reads as curled up in the sunbeam.
 function makeCurledBody(scene) {
+  if (scene?.textures?.exists('cat-side')) {
+    const img = scene.add.image(0, 2, 'cat-side');
+    img.setDisplaySize(58, 38);
+    return img;
+  }
   const g = scene.add.graphics();
   g.fillStyle(0xfff6ec, 1);
   g.fillEllipse(0, 0, 36, 20);
