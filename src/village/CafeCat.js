@@ -272,30 +272,22 @@ export class CafeCat {
   _showAsleep() {
     if (!this.cat) return;
     this.followUntil = 0;
-    const spot = this.sunbeamSpot || { x: this.cat.x, y: this.cat.y };
-    // Trot over to the sunbeam, then curl up.
-    try {
-      this.scene.tweens.add({
-        targets: this.cat.container,
-        x: spot.x, y: spot.y,
-        duration: 700, ease: 'Quad.easeOut',
-        onComplete: () => {
-          if (!this.cat) return;
-          this.cat.x = spot.x; this.cat.y = spot.y;
-          this.cat.body.setVisible(false);
-          this.cat.curled.setVisible(true);
-          this.cat.container.setDepth(DEPTH.ACTOR_MIN + Math.round(spot.y));
-          this._showZzz();
-        },
-      });
-    } catch {
-      this.cat.body.setVisible(false);
-      this.cat.curled.setVisible(true);
-      this._showZzz();
-    }
+    // Sleep right where she is — no trotting off to a sunbeam spot.
+    // The sunbeam comes to her instead: redraw it underneath her.
     if (this.sunbeam) {
-      try { this.sunbeam.setAlpha(1); } catch {}
+      try {
+        this.sunbeam.clear();
+        this.sunbeam.fillStyle(0xffe98a, 0.16);
+        this.sunbeam.fillEllipse(this.cat.x, this.cat.y, 150, 70);
+        this.sunbeam.fillStyle(0xffe98a, 0.22);
+        this.sunbeam.fillEllipse(this.cat.x, this.cat.y, 90, 42);
+        this.sunbeam.setAlpha(1);
+      } catch {}
     }
+    this.cat.body.setVisible(false);
+    this.cat.curled.setVisible(true);
+    this.cat.container.setDepth(DEPTH.ACTOR_MIN + Math.round(this.cat.y));
+    this._showZzz();
   }
 
   _showAwake() {
@@ -307,8 +299,16 @@ export class CafeCat {
     this.cat.tx = target.x; this.cat.ty = target.y;
     this.cat.state = 'wander';
     this.cat.idleMs = 400 + Math.random() * 800;
-    if (this.sunbeam) {
-      try { this.sunbeam.setAlpha(0.55); } catch {}
+    // Sunbeam goes back to its usual spot until she sleeps again.
+    if (this.sunbeam && this.sunbeamSpot) {
+      try {
+        this.sunbeam.clear();
+        this.sunbeam.fillStyle(0xffe98a, 0.16);
+        this.sunbeam.fillEllipse(this.sunbeamSpot.x, this.sunbeamSpot.y, 150, 70);
+        this.sunbeam.fillStyle(0xffe98a, 0.22);
+        this.sunbeam.fillEllipse(this.sunbeamSpot.x, this.sunbeamSpot.y, 90, 42);
+        this.sunbeam.setAlpha(0.55);
+      } catch {}
     }
   }
 
