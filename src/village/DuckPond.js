@@ -8,6 +8,13 @@
 //     park and keep meandering park-wide, so the player has to hunt them
 //     down. Only roaming ducks count toward the Duck Roundup quest — pond
 //     ducks neither add to nor subtract from it.
+//   - When a roaming duck is petted, it immediately waddles back to the
+//     pond (RETURN_SPEED) and becomes a pond duck on arrival: it swims
+//     in the water like the others and no longer counts toward the
+//     quest if petted again. The pet itself still counts (+1 coin,
+//     quest step) — the walk home happens after the pet, not instead
+//     of it. With 4 roaming ducks per pond and 3 needed for the quest,
+//     it stays completable with no respawn.
 //   - Petting a duck (click, or E when right next to one) needs the
 //     player to be right up next to it (PET_RANGE). Clicking from across
 //     the park does nothing.
@@ -32,6 +39,8 @@ const PET_RANGE = 70;      // px from a duck the player must be within to pet it
 const PELLET_BITES = 3;    // bites before a crumb is gone
 const PET_COOLDOWN_MS = 5000; // per-duck petting cooldown
 const PET_COIN_REWARD = 1;
+const RETURN_SPEED = 90;   // px/sec — a petted roaming duck waddles home
+                           // clearly faster than its 13.5 px/s meander
 
 /** Synthesized quack via Web Audio — no asset needed. */
 function playQuack() {
@@ -268,7 +277,9 @@ export class DuckPond {
    * Pet a duck: happy hop + quack + heart + 1 coin (per-duck cooldown).
    * Only works when the player is right up next to the duck (PET_RANGE)
    * — clicking one from across the park does nothing. Pond ducks still
-   * give the +1 coin, but only roaming ducks fire the quest hook.
+   * give the +1 coin, but only roaming ducks fire the quest hook. A
+   * petted roaming duck then waddles straight back to its pond and
+   * becomes a pond duck on arrival.
    */
   petDuck(duck) {
     if (!duck || !duck.container || !duck.container.active) return;
@@ -284,7 +295,27 @@ export class DuckPond {
     // Quest hook: a pet counts as a duck interaction — but only for
     // roaming ducks. Pond ducks neither add to nor subtract from it.
     // The duck itself is passed so VillageScene can tell them apart.
+    // The hook runs BEFORE the conversion below, so this pet still
+    // counts even though the duck stops being a roaming duck.
     try { this.onDuckPet?.(duck); } catch {}
+    // A petted roaming duck immediately waddles back to its pond and
+    // becomes a pond duck there — it no longer counts toward the quest
+    // if petted again, so the quest needs 3 different roaming ducks.
+    if (duck.roaming) {
+      duck.roaming = false;
+      duck.state = 'returning';
+      duck.pellet = null;
+      duck.idleMs = 0;
+      // Home point in the pond — retry if it happens to sit inside a
+      // solid (a solid overlapping the water would be unreachable).
+      const layout = this.scene?.roomLayout;
+      let home = randomPointInPond(duck.pond);
+      for (let i = 0; i < 8 && layout?.collidesWithSolid?.(home.x, home.y, 20); i++) {
+        home = randomPointInPond(duck.pond);
+      }
+      duck.tx = home.x;
+      duck.ty = home.y;
+    }
     // Happy hop: timer-driven so the wander loop doesn't override it.
     duck.hopMs = 320;
     // Floating heart.
@@ -341,7 +372,7 @@ export class DuckPond {
     this.pellets.push({ x: pos.x, y: pos.y, bites: PELLET_BITES, circle, pond });
     // Swimming ducks on this pond notice the splash (roaming ducks keep wandering the park).
     for (const duck of this.ducks) {
-      if (duck.pond === pond && duck.state === 'wander' && !duck.roaming) {
+      if (duck.pond === pond && duck.state === 'wander' && !duck.roaming) { // 'returning' ducks are not 'wander', so they are never diverted
         duck.state = 'seek';
         duck.pellet = this.pellets[this.pellets.length - 1];
       }
@@ -378,6 +409,50 @@ export class DuckPond {
             duck.eatMs = EAT_PAUSE_MS;
           }
         }
+        continue;
+      }
+
+      // A petted roaming duck waddles home to its pond at RETURN_SPEED,
+      // then becomes an ordinary pond duck on arrival. Straight-ish
+      // path to the water; if a solid blocks the next step, slide
+      // along one axis instead of getting stuck on it.
+      if (duck.state === 'returning') {
+        const rdx = duck.tx - duck.x;
+        const rdy = duck.ty - duck.y;
+        const rdist = Math.hypot(rdx, rdy);
+        if (rdist < 10) {
+          duck.state = 'wander';
+          duck.pellet = null;
+          duck.idleMs = 400 + Math.random() * 1200;
+          const t = randomPointInPond(duck.pond);
+          duck.tx = t.x;
+          duck.ty = t.y;
+          continue;
+        }
+        const layout = this.scene?.roomLayout;
+        const step = Math.min(rdist, RETURN_SPEED * dt);
+        let nx = duck.x + (rdx / rdist) * step;
+        let ny = duck.y + (rdy / rdist) * step;
+        const blocked = (x, y) => layout?.collidesWithSolid && layout.collidesWithSolid(x, y, 20);
+        if (blocked(nx, ny)) {
+          if (!blocked(nx, duck.y)) ny = duck.y;        // slide along x
+          else if (!blocked(duck.x, ny)) nx = duck.x;    // slide along y
+          else {
+            // Boxed in on both axes: sidestep perpendicular to the
+            // direction home, either way round the obstacle.
+            const px = -(rdy / rdist) * step;
+            const py = (rdx / rdist) * step;
+            if (!blocked(duck.x + px, duck.y + py)) { nx = duck.x + px; ny = duck.y + py; }
+            else if (!blocked(duck.x - px, duck.y - py)) { nx = duck.x - px; ny = duck.y - py; }
+            else continue; // truly boxed in — wait a tick and retry
+          }
+        }
+        const clamped = layout?.clampPointToRoom ? layout.clampPointToRoom(nx, ny, 30) : { x: nx, y: ny };
+        duck.x = clamped.x;
+        duck.y = clamped.y;
+        if (Math.abs(rdx) > 2) duck.container.setScale(rdx < 0 ? -1 : 1, 1);
+        duck.container.setPosition(duck.x, duck.y);
+        duck.container.setDepth(DEPTH.ACTOR_MIN + Math.round(duck.y));
         continue;
       }
 
