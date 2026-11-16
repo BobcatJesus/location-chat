@@ -235,6 +235,8 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
   const [showModQueue, setShowModQueue] = useState(false);
   const [approvedLayout, setApprovedLayout] = useState(null);
   const [interactKind, setInteractKind] = useState(null);
+  const [questHud, setQuestHud] = useState(null);
+  const questHudVersionRef = useRef(-1);
   const [roomPopulation, setRoomPopulation] = useState(1);
   const [cameraMode, setCameraMode] = useState('wide-follow');
   const [currentFloor, setCurrentFloor] = useState(0);
@@ -261,6 +263,34 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
     }, 1000);
     return () => clearInterval(t);
   }, []);
+  // Poll the quest HUD (tracker/banner/toast as DOM, below the top bar).
+  // The in-canvas quest text sits underneath the DOM top bar on PC, so
+  // the DOM is the only render path that can actually be seen. The
+  // manager bumps `version` on every change; only re-render then.
+  useEffect(() => {
+    const t = setInterval(() => {
+      try {
+        const scene = gameRef.current?.scene?.getScene('VillageScene');
+        const hud = scene?.questManager?.getHudState ? scene.questManager.getHudState() : null;
+        if (!hud) {
+          if (questHudVersionRef.current !== -1) { questHudVersionRef.current = -1; setQuestHud(null); }
+          return;
+        }
+        if (hud.version !== questHudVersionRef.current) {
+          questHudVersionRef.current = hud.version;
+          setQuestHud(hud);
+        }
+      } catch { /* scene not ready yet */ }
+    }, 500);
+    return () => clearInterval(t);
+  }, []);
+
+  const dismissQuestBanner = () => {
+    try {
+      const scene = gameRef.current?.scene?.getScene('VillageScene');
+      if (scene?.questManager?.dismissBanner) scene.questManager.dismissBanner();
+    } catch {}
+  };
 
   const triggerInteract = () => {
     try {
@@ -272,6 +302,22 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
       }
     } catch {}
   };
+
+  // Mobile interact button: one icon + label per kind. Before this,
+  // only 'ducks'/'shelf'/'jukebox' had icons, so petting the cat
+  // showed a 🎵 "Open the jukebox" button — the phone's only pet path
+  // looked like the wrong action.
+  const INTERACT_META = {
+    duck: ['🦆', 'Pet the duck'],
+    ducks: ['🦆', 'Feed the ducks'],
+    cat: ['🐱', 'Pet the cat'],
+    'cat-asleep': ['💤', 'Cat is asleep'],
+    key: ['🔑', 'Pick up the golden key'],
+    shelf: ['📚', 'Browse the shelf'],
+    jukebox: ['🎵', 'Open the jukebox'],
+    bar: ['🍺', 'Order a drink'],
+  };
+  const interactMeta = INTERACT_META[interactKind] || ['✦', 'Interact'];
   const [eventClock, setEventClock] = useState(() => Date.now());
   const roomId = canonicalRoomId(room);
   const venueEvents = providedVenueEvents.length
@@ -877,6 +923,51 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
         )}
       </div>
 
+      {/* Quest HUD as DOM, below the top bar: the in-canvas tracker and
+          banner sit underneath the DOM top bar on PC (zIndex 1000) and
+          can't be seen, so the DOM is the render path. Tracker is
+          persistent; banner shows ~5.5s per quest (click dismisses). */}
+      {questHud?.trackerLines?.length > 0 && (
+        <div style={{
+          position: 'absolute', top: 116, left: 12, zIndex: 1000,
+          maxWidth: 'min(340px, calc(100vw - 24px))',
+          background: 'rgba(255,255,255,0.92)', color: '#1a4971',
+          borderRadius: 8, padding: '8px 10px', fontSize: 14, lineHeight: 1.35,
+          pointerEvents: 'none', whiteSpace: 'pre-line',
+          boxShadow: '0 2px 10px rgba(0,0,0,0.25)',
+        }}>
+          {questHud.trackerLines.join('\n')}
+        </div>
+      )}
+      {questHud?.banner && (
+        <div
+          onClick={dismissQuestBanner}
+          title="Click to dismiss"
+          style={{
+            position: 'absolute', top: 116, left: '50%', transform: 'translateX(-50%)',
+            zIndex: 1001, width: 'min(360px, calc(100vw - 24px))',
+            background: 'rgba(255,255,255,0.95)', color: '#1a4971',
+            borderRadius: 8, padding: '10px 14px', fontSize: 15, textAlign: 'center',
+            cursor: 'pointer', boxShadow: '0 2px 12px rgba(0,0,0,0.3)',
+          }}
+        >
+          <div style={{ fontWeight: 'bold', fontSize: 16 }}>{questHud.banner.emoji} {questHud.banner.title}</div>
+          <div>{questHud.banner.description}</div>
+          <div>Reward: +{questHud.banner.rewardCoins} coins</div>
+        </div>
+      )}
+      {questHud?.toast && (
+        <div style={{
+          position: 'absolute', top: '30%', left: '50%', transform: 'translate(-50%, -50%)',
+          zIndex: 1001, background: 'rgba(255,255,255,0.94)', color: '#14532d',
+          borderRadius: 8, padding: '10px 14px', fontSize: 16, fontWeight: 'bold',
+          textAlign: 'center', pointerEvents: 'none',
+          boxShadow: '0 2px 12px rgba(0,0,0,0.3)',
+        }}>
+          {questHud.toast}
+        </div>
+      )}
+
       {import.meta.env.DEV && (
         <div style={{
           position: 'absolute',
@@ -993,7 +1084,7 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
       {interactKind && (
         <button
           onClick={triggerInteract}
-          title={interactKind === 'ducks' ? 'Feed the ducks' : interactKind === 'shelf' ? 'Browse the shelf' : 'Open the jukebox'}
+          title={interactMeta[1]}
           style={{
             position: 'absolute',
             left: 16,
@@ -1009,7 +1100,7 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}
         >
-          {interactKind === 'ducks' ? '🦆' : interactKind === 'shelf' ? '📚' : '🎵'}
+          {interactMeta[0]}
         </button>
       )}
       <div style={{

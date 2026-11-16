@@ -340,6 +340,15 @@ export class CafeCat {
     return d < INTERACT_RANGE ? this.cat : null;
   }
 
+  /** Sleeping cat within INTERACT_RANGE of (x, y) — or null. Used so
+   * petting a sleeping cat explains itself instead of silently doing
+   * nothing (she only wakes when someone new walks in). */
+  nearestSleepingCat(x, y) {
+    if (!this.cat || !this.asleep) return null;
+    const d = Math.hypot(this.cat.x - x, this.cat.y - y);
+    return d < INTERACT_RANGE ? this.cat : null;
+  }
+
   update(delta) {
     const cat = this.cat;
     if (!cat || !cat.container || !cat.container.active) return;

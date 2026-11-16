@@ -598,6 +598,9 @@ export class VillageScene extends Phaser.Scene {
     // Petting a ROAMING duck counts toward the duck quest; petting a
     // pond duck does not (it neither adds to nor subtracts from it).
     this.questManager = new QuestManager(this);
+    // Quest UI renders as DOM (VillageCanvas polls getHudState):
+    // in-canvas tracker/banner sit underneath the DOM top bar on PC.
+    this.questManager.domHud = true;
     this.questManager.refresh();
     this.duckPond.onDuckPet = (duck) => {
       if (duck?.roaming) this.questManager?.recordEvent('duck-fed');
@@ -1077,6 +1080,10 @@ export class VillageScene extends Phaser.Scene {
       this._tryFeedDucks();
     } else if (kind === 'cat') {
       this.cafeCat?.petCat(true);
+    } else if (kind === 'cat-asleep') {
+      // Petting a sleeping cat does nothing in CafeCat — say why, in
+      // the readable DOM notice, instead of failing silently.
+      this.onSystemNotice?.('💤 The cat is asleep — she wakes up when someone new walks in.');
     } else if (kind === 'key') {
       // Golden Key quest: pick it up, then count the find.
       if (this.hiddenKey?.collect()) this.questManager?.recordEvent('key-found');
@@ -1095,6 +1102,7 @@ export class VillageScene extends Phaser.Scene {
     const nearPond = this.duckPond?.nearestFeedablePond(this.player.gx, this.player.gy);
     if (nearPond && this._feedCooldownMs <= 0) return 'ducks';
     if (this.cafeCat?.nearestCat(this.player.gx, this.player.gy)) return 'cat';
+    if (this.cafeCat?.nearestSleepingCat(this.player.gx, this.player.gy)) return 'cat-asleep';
     if (this._nearestShelf()) return 'shelf';
     if (this._nearestJukebox()) return 'jukebox';
     if (this._nearestBar()) return 'bar';

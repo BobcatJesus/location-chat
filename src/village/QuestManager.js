@@ -94,6 +94,64 @@ export class QuestManager {
     this._bannerTimer = null;
     this._bannerQuestId = null; // quest id the live banner (if any) is for
     this._shownBanners = new Set(); // quest ids the banner already showed for, this session
+    // DOM HUD (VillageCanvas renders tracker/banner/toast as DOM): when
+    // true, QuestManager keeps the same state but exposes it via
+    // getHudState() instead of drawing Phaser text. Default false keeps
+    // the old in-canvas UI for any scene without a DOM HUD.
+    this.domHud = false;
+    this._bannerInfo = null; // { emoji, title, description, rewardCoins }
+    this._toastText = null;
+    this._hudVersion = 0; // bumped on every HUD change; the DOM polls it
+  }
+
+  /** Bump the HUD version so the DOM poll knows something changed. */
+  _bumpHud() {
+    this._hudVersion += 1;
+  }
+
+  /** Plain-data HUD for the DOM (VillageCanvas polls this ~2x/sec).
+   * trackerLines: the same lines _drawTracker would render.
+   * banner: the live banner info, or null. toast: live toast text, or null. */
+  getHudState() {
+    return {
+      version: this._hudVersion,
+      trackerLines: this._trackerLines(),
+      banner: this._bannerInfo ? { ...this._bannerInfo } : null,
+      toast: this._toastText,
+    };
+  }
+
+  /** Public dismiss for the DOM banner's click handler. */
+  dismissBanner() {
+    this._dismissBanner();
+  }
+
+  /** CSS-pixel size of the game canvas under FIT scaling. Quest UI text
+   * is drawn in world units, so on a phone (canvas ~390 CSS px wide
+   * for a 1600-unit game) a 15px font renders at ~4 CSS px — the
+   * tracker/banner/toast exist but are unreadable. Scale fonts,
+   * padding and wrap widths by 1/f so text reads ~15-20 CSS px on
+   * any screen. Desktop (f≈0.8-1) barely changes. */
+  _uiScale() {
+    try {
+      const s = this.scene?.scale;
+      const gameW = Number(s?.width) || 1600;
+      const dispW = Number(s?.displaySize?.width) || gameW;
+      const f = dispW / gameW;
+      if (Number.isFinite(f) && f > 0.05) return f;
+    } catch {}
+    return 1;
+  }
+
+  /** World-unit font size that reads as ~cssPx CSS pixels. */
+  _fontFor(cssPx) {
+    return Math.min(96, Math.max(cssPx, Math.round(cssPx / this._uiScale())));
+  }
+
+  /** World-unit wrap width that reads as ~cssPx CSS pixels wide. */
+  _wrapFor(cssPx) {
+    const f = this._uiScale();
+    return Math.min(1500, Math.max(200, Math.round(cssPx / f)));
   }
 
   /** Anywhere quests (roomId '*') you have not finished yet. */
@@ -161,19 +219,24 @@ export class QuestManager {
       (q) => q.roomId === roomId && !this.saved[q.id]?.completed,
     ) || null;
     this.sharedCount = 0;
-    // No room quest here? The tracker still shows if an anywhere quest
-    // (Wanderer / Coin Collector / Room Full of Friends) is still open.
-    if (!this.activeQuest && this.anywhereQuests().length === 0) return;
+    // The tracker is always drawn — even with no open quest it says
+    // "All quests complete", so an empty corner never reads as a
+    // broken quest system (and a finished Cat Cuddles visibly hands
+    // over to the Golden Key).
     try {
-      const scene = this.scene;
-      this.tracker = scene.add.text(16, 16, '', {
-        fontSize: '15px',
-        color: '#1a4971',
-        backgroundColor: 'rgba(255,255,255,0.88)',
-        padding: { x: 10, y: 8 },
-      });
-      this.tracker.setScrollFactor(0);
-      this.tracker.setDepth(DEPTH.UI);
+      if (!this.domHud) {
+        const scene = this.scene;
+        const f = this._uiScale();
+        this.tracker = scene.add.text(16, 16, '', {
+          fontSize: `${this._fontFor(15)}px`,
+          color: '#1a4971',
+          backgroundColor: 'rgba(255,255,255,0.88)',
+          padding: { x: Math.round(10 / f), y: Math.round(8 / f) },
+          wordWrap: { width: this._wrapFor(340) },
+        });
+        this.tracker.setScrollFactor(0);
+        this.tracker.setDepth(DEPTH.UI);
+      }
       this._drawTracker();
       if (this.activeQuest) {
         // The banner we just destroyed was for this same quest and the
@@ -342,29 +405,48 @@ export class QuestManager {
   _showQuestBanner(quest) {
     if (!quest || this._shownBanners.has(quest.id)) return;
     this._shownBanners.add(quest.id);
+    // The banner's data lives here whether it renders in-canvas or in
+    // the DOM — getHudState() reads it. (On PC the in-canvas banner
+    // sat underneath the DOM top bar, so the DOM is the render path
+    // that can actually be seen.)
+    this._bannerInfo = {
+      emoji: quest.emoji,
+      title: quest.title,
+      description: quest.description,
+      rewardCoins: quest.rewardCoins,
+    };
+    // Remember which quest this live banner is for, so refresh() can
+    // tell a banner the player actually saw from one it destroyed
+    // itself before the player ever saw it.
+    this._bannerQuestId = quest.id;
+    this._bumpHud();
+    if (this.domHud) {
+      // DOM renders it; the timer below still dismisses it on schedule.
+      try {
+        this._bannerTimer = this.scene.time.delayedCall(QUEST_BANNER_MS, () => this._dismissBanner());
+      } catch {}
+      return;
+    }
     try {
       const scene = this.scene;
       const w = scene?.scale?.width || 800;
+      const f = this._uiScale();
       const text = [
         `${quest.emoji} ${quest.title}`,
         quest.description,
         `Reward: +${quest.rewardCoins} coins`,
       ].join('\n');
       this.banner = scene.add.text(w / 2, 64, text, {
-        fontSize: '18px',
+        fontSize: `${this._fontFor(18)}px`,
         color: '#1a4971',
         backgroundColor: 'rgba(255,255,255,0.95)',
-        padding: { x: 16, y: 12 },
+        padding: { x: Math.round(16 / f), y: Math.round(12 / f) },
         align: 'center',
-        wordWrap: { width: Math.min(560, w - 40) },
+        wordWrap: { width: this._wrapFor(360) },
       });
       this.banner.setOrigin(0.5, 0);
       this.banner.setScrollFactor(0);
       this.banner.setDepth(DEPTH.UI + 2);
-      // Remember which quest this live banner is for, so refresh() can
-      // tell a banner the player actually saw from one it destroyed
-      // itself before the player ever saw it.
-      this._bannerQuestId = quest.id;
       // Tap / click dismisses it early; it never blocks play for long.
       try {
         this.banner.setInteractive({ useHandCursor: true });
@@ -380,6 +462,8 @@ export class QuestManager {
     this._bannerTimer = null;
     // Genuinely seen/dismissed: refresh() must NOT re-show it.
     this._bannerQuestId = null;
+    this._bannerInfo = null;
+    this._bumpHud();
     if (!this.banner) return;
     const banner = this.banner;
     this.banner = null;
@@ -393,8 +477,8 @@ export class QuestManager {
     }
   }
 
-  _drawTracker() {
-    if (!this.tracker) return;
+  /** The tracker lines, shared by the canvas text and the DOM HUD. */
+  _trackerLines() {
     const lines = [];
     const quest = this.activeQuest;
     if (quest) {
@@ -416,13 +500,38 @@ export class QuestManager {
         lines.push(`${q.emoji} ${q.title}  ${n}/${q.target}`);
       }
     }
-    if (lines.length === 0) return;
+    if (lines.length === 0) {
+      // Nothing open: say so, instead of leaving a blank corner that
+      // reads as a broken quest system.
+      lines.push('✅ All quests complete — more coming soon!');
+    }
+    return lines;
+  }
+
+  _drawTracker() {
+    this._bumpHud();
+    if (this.domHud) return; // the DOM renders getHudState() instead
+    if (!this.tracker) return;
     try {
-      this.tracker.setText(lines.join('\n'));
+      this.tracker.setText(this._trackerLines().join('\n'));
     } catch {}
   }
 
   _showToast(text) {
+    this._toastText = text;
+    this._bumpHud();
+    if (this.domHud) {
+      // DOM renders it; clear it on the same 4.5s schedule.
+      try {
+        if (this._toastTimer) this._toastTimer.remove();
+        this._toastTimer = this.scene.time.delayedCall(4500, () => {
+          this._toastText = null;
+          this._toastTimer = null;
+          this._bumpHud();
+        });
+      } catch {}
+      return;
+    }
     try {
       const scene = this.scene;
       if (this._toastTimer) {
@@ -432,13 +541,14 @@ export class QuestManager {
       if (this.toast) this.toast.destroy();
       const w = scene?.scale?.width || 800;
       const h = scene?.scale?.height || 600;
+      const f = this._uiScale();
       this.toast = scene.add.text(w / 2, h * 0.28, text, {
-        fontSize: '20px',
+        fontSize: `${this._fontFor(20)}px`,
         color: '#14532d',
         backgroundColor: 'rgba(255,255,255,0.94)',
-        padding: { x: 14, y: 10 },
+        padding: { x: Math.round(14 / f), y: Math.round(10 / f) },
         align: 'center',
-        wordWrap: { width: Math.min(520, w - 40) },
+        wordWrap: { width: this._wrapFor(360) },
       });
       this.toast.setOrigin(0.5, 0.5);
       this.toast.setScrollFactor(0);
@@ -468,6 +578,9 @@ export class QuestManager {
     try { this.banner?.destroy(); } catch {}
     this.banner = null;
     this._bannerQuestId = null;
+    this._bannerInfo = null;
+    this._toastText = null;
+    this._bumpHud();
     try { this.tracker?.destroy(); } catch {}
     this.tracker = null;
     try { this.toast?.destroy(); } catch {}
