@@ -308,7 +308,11 @@ export default function InventoryPanel({
                             state.atHome ? 'Dropped on the floor of your home.' : 'Dropped on the ground here.',
                           )}
                           title={state.atHome ? 'Drop this on the floor of your home — it stays there until you pick it back up' : 'Drop this on the ground here'}
-                          style={{ ...btnStyle, background: 'transparent' }}
+                          // sq-drop-label-fix-v1 — Drop used to keep btnStyle's
+                          // white text with a transparent background, so the
+                          // label was invisible on the light card. It now
+                          // uses the plain shared button style (dark blue).
+                          style={btnStyle}
                         >
                           Drop
                         </button>
