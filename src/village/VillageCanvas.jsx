@@ -12,6 +12,7 @@ import { buildAutoLayout } from './AutoLayout.js';
 import { isOutdoorLocation } from './outdoorRoomDetection.js';
 import { bookstore } from './layouts/bookstore.js';
 import { library } from './layouts/library.js';
+import { agora } from './layouts/agora.js';
 import { getDistanceMeters } from '../geo';
 import { ROOMS } from '../../rooms/rooms.js';
 import { getVenueEvents } from '../../lib/venueEvents.js';
@@ -434,6 +435,11 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
     || normalizedRoom?.amenity === 'library'
     || normalizedRoom?.tags?.amenity === 'library'
     || normalizedRoom?.shop === 'library';
+  // Agora: use the furnished big-space layout (layouts/agora.js) instead
+  // of the auto-generated two-level scaffold its building:levels=2
+  // would otherwise force. An approved user layout still wins (see
+  // explicitLayout below), as with every other room.
+  const forceAgoraLayout = roomId === 'agora-houston' || roomDescriptor.includes('agora');
   const preferUltraClose = roomDescriptor.includes('agora');
   const preferredCameraMode = preferUltraClose
     ? 'ultra-close-follow'
@@ -567,9 +573,11 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
         ? library
         : forceBookstoreLayout
           ? bookstore
-          : (outdoorMode || shouldForceMultiLevelScaffold
-            ? buildAutoLayout(roomId, normalizedRoom?.name || '', normalizedRoom?.amenity || '', normalizedRoom?.shop || '', roomFootprint || null, normalizedRoom)
-            : null));
+          : forceAgoraLayout
+            ? agora
+            : (outdoorMode || shouldForceMultiLevelScaffold
+              ? buildAutoLayout(roomId, normalizedRoom?.name || '', normalizedRoom?.amenity || '', normalizedRoom?.shop || '', roomFootprint || null, normalizedRoom)
+              : null));
 
     VillageScene._boot = {
       roomId,
@@ -657,7 +665,7 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
       setTotalFloors(1);
       setStairScaffoldActive(false);
     };
-  }, [roomSignature, roomId, outdoorMode, forceBookstoreLayout, forceLibraryLayout, preferredCameraMode, shouldForceMultiLevelScaffold, approvedLayout]);
+  }, [roomSignature, roomId, outdoorMode, forceBookstoreLayout, forceLibraryLayout, forceAgoraLayout, preferredCameraMode, shouldForceMultiLevelScaffold, approvedLayout]);
 
   const toggleEditor = () => {
     const scene = gameRef.current?.scene?.getScene('VillageScene');

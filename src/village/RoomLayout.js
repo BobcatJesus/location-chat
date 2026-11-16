@@ -98,6 +98,7 @@ const SOLID_ZONE_TYPES = new Set([
   'magazine_rack',
   'book_table',
   'cafe_counter',
+  'cafe_table',
   'toy_display',
   'cd_rack',
   'bathroom',
@@ -707,6 +708,19 @@ export class RoomLayout {
     const h = Number(z?.h);
     const x = Number(z?.x);
     const y = Number(z?.y);
+    // Cafe tables carry no w/h (their size is the fixed drawn circle) — handle
+    // them before the size guard below, or they would never register as solid.
+    if (String(z?.type || '').toLowerCase() === 'cafe_table') {
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+      const r = 30;
+      this.staticSolidZones.push({
+        left: x - r,
+        top: y - r,
+        right: x + r,
+        bottom: y + r,
+      });
+      return;
+    }
     if (!Number.isFinite(w) || !Number.isFinite(h) || !Number.isFinite(x) || !Number.isFinite(y)) return;
     if (w <= 0 || h <= 0) return;
     // Trees are rendered bottom-anchored: the sprite's base (trunk foot) sits at
@@ -721,6 +735,28 @@ export class RoomLayout {
         left: x - trunkW / 2,
         top: y - trunkH,
         right: x + trunkW / 2,
+        bottom: y,
+      });
+      return;
+    }
+    // Benches and lampposts are also bottom-anchored sprites (origin 0.5, 1),
+    // so their solid box is centred on (x, y) and rises from the base.
+    if (type === 'bench') {
+      this.staticSolidZones.push({
+        left: x - w / 2,
+        top: y - h,
+        right: x + w / 2,
+        bottom: y,
+      });
+      return;
+    }
+    if (type === 'lamppost') {
+      // Only the post itself blocks — a thin box at the base, not the whole
+      // 108px-tall zone (the lamp head is above everyone's head).
+      this.staticSolidZones.push({
+        left: x - 15,
+        top: y - 24,
+        right: x + 15,
         bottom: y,
       });
       return;
@@ -1037,11 +1073,82 @@ export class RoomLayout {
         break;
 
       case 'cafe_table': {
-        const r = 22;
+        // 60px across — a cafe table for 2-4, about twice an avatar's width.
+        // Was r=22 (44px): smaller than a person is wide.
+        const r = 30;
         g.fillStyle(0x4a3728, 1);
         g.fillCircle(x, y, r);
         g.lineStyle(1.5, C.WALL, 1);
         g.strokeCircle(x, y, r);
+        // Tables with interact:true join interactZones so the group
+        // puzzle can resolve its under-table pieces to real tables.
+        if (z.interact) this.interactZones.push(z);
+        break;
+      }
+
+      case 'plant': {
+        // Potted plant: terracotta pot + green foliage. Small solid
+        // footprint — z.x/z.y are the top-left corner.
+        g.fillStyle(0xb45309, 1);
+        g.fillRect(x + 6, y + h - 16, w - 12, 14);
+        g.fillStyle(0x228b22, 1);
+        g.fillCircle(x + w / 2, y + h * 0.32, Math.min(w, h) * 0.32);
+        g.fillStyle(0x2e9e4f, 1);
+        g.fillCircle(x + w * 0.3, y + h * 0.45, Math.min(w, h) * 0.24);
+        g.fillCircle(x + w * 0.7, y + h * 0.45, Math.min(w, h) * 0.24);
+        g.lineStyle(1.5, C.WALL, 1);
+        g.strokeRect(x + 6, y + h - 16, w - 12, 14);
+        if (z.interact) this.interactZones.push(z);
+        break;
+      }
+
+      case 'rug': {
+        // Flat rug — walkable, never solid (solid:false on the zone).
+        g.fillStyle(0x9b2c2c, 1);
+        g.fillRoundedRect(x, y, w, h, 10);
+        g.lineStyle(2, 0xd9a441, 1);
+        g.strokeRoundedRect(x, y, w, h, 10);
+        g.lineStyle(1, 0xd9a441, 0.7);
+        g.strokeRoundedRect(x + 10, y + 10, w - 20, h - 20, 6);
+        if (z.interact) this.interactZones.push(z);
+        break;
+      }
+
+      case 'portrait': {
+        // Framed portrait hanging on a wall: dark frame, warm canvas,
+        // a sun and a simple hill. Not solid — it hangs above the floor.
+        g.fillStyle(0x3b2f1d, 1);
+        g.fillRect(x, y, w, h);
+        g.fillStyle(0xf6d8a0, 1);
+        g.fillRect(x + 6, y + 6, w - 12, h - 12);
+        g.fillStyle(0xfbbf24, 1);
+        g.fillCircle(x + w * 0.72, y + h * 0.3, Math.min(w, h) * 0.12);
+        g.fillStyle(0x5b8c5a, 1);
+        g.beginPath();
+        g.moveTo(x + 6, y + h - 6);
+        g.lineTo(x + w * 0.45, y + h * 0.45);
+        g.lineTo(x + w - 6, y + h - 6);
+        g.closePath();
+        g.fillPath();
+        g.lineStyle(2, C.WALL, 1);
+        g.strokeRect(x, y, w, h);
+        if (z.label) this._lbl(x + w / 2, y + h + 4, z.label, LABEL_STYLE, 0.5, 0);
+        if (z.interact) this.interactZones.push(z);
+        break;
+      }
+
+      case 'trash_can': {
+        // Small trash can: grey cylinder with a darker lid. The group
+        // puzzle's piece 5 hides here (PuzzleQuest.js resolves it from
+        // this zone by type / label).
+        g.fillStyle(0x6b7280, 1);
+        g.fillRoundedRect(x, y + 6, w, h - 6, 4);
+        g.fillStyle(0x4b5563, 1);
+        g.fillRoundedRect(x - 2, y, w + 4, 10, 4);
+        g.lineStyle(1.5, C.WALL, 1);
+        g.strokeRoundedRect(x, y + 6, w, h - 6, 4);
+        if (z.label) this._lbl(x + w / 2, y - 8, z.label, LABEL_STYLE, 0.5, 1);
+        if (z.interact) this.interactZones.push(z);
         break;
       }
 
@@ -1158,7 +1265,11 @@ export class RoomLayout {
           g.lineBetween(x + cw / 2, y, x + cw / 2, y + ch);
           break;
         }
-        const cw = 140, ch = 50;
+        // Couches honour the zone's own size; zones without one (the old
+        // hand-written layouts) keep the classic 140x50 two-seater. Was a
+        // hardcoded 140x50 for every couch — which made the cafe "chairs"
+        // (couch zones placed around tables) render as 140px sofa slabs.
+        const cw = z.w || 140, ch = z.h || 50;
         g.fillStyle(C.COUCH, 1);
         g.fillRect(x, y, cw, ch);
         g.lineStyle(1.5, C.WALL, 1);

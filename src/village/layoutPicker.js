@@ -2,6 +2,7 @@ import { bookstore } from './layouts/bookstore.js';
 import { library } from './layouts/library.js';
 import { asgardGames } from './layouts/asgardGames.js';
 import { bar } from './layouts/bar.js';
+import { agora } from './layouts/agora.js';
 import { buildAutoLayout } from './AutoLayout.js';
 
 const NAME_KEYWORDS = [
@@ -32,6 +33,9 @@ export function pickLayout(roomId = '', roomName = '', amenityTag = '', shopTag 
   const lower = (roomName + ' ' + roomId).toLowerCase();
   if (lower.includes('asgard-games') || lower.includes('asgard games')) return asgardGames;
   if (lower.includes('lolas-depot') || lower.includes("lola's depot")) return bar;
+  // Agora: the furnished big-space layout (layouts/agora.js), not the
+  // auto-generated two-level scaffold. See VillageCanvas forceAgoraLayout.
+  if (lower.includes('agora-houston') || lower.includes('agora')) return agora;
   const isLibrary = amenityTag === 'library' || lower.includes('library');
   if (isLibrary) return library;
 

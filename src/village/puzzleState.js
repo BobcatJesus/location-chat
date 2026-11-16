@@ -13,7 +13,7 @@
 // random anywhere — that was the Golden Key's problem):
 //   0-2  under a table (three different tables)
 //   3-4  on top of the bar / behind the bar counter
-//   5    on a bookshelf
+//   5    in the trash can (by the coffee bar — furniture pass v1)
 //   6    in the sunny spot by the window
 //   7    under the sleeping cat — only while she naps after 3 pets
 //   8    from the barista — ask the NPC about the puzzle / a missing
@@ -38,7 +38,7 @@ export const PUZZLE_SPOTS = [
   { id: 2, kind: 'table', label: 'under a table' },
   { id: 3, kind: 'bar', label: 'on top of the bar' },
   { id: 4, kind: 'bar', label: 'behind the bar' },
-  { id: 5, kind: 'shelf', label: 'on a bookshelf' },
+  { id: 5, kind: 'trash', label: 'in the trash can' },
   { id: 6, kind: 'sunbeam', label: 'in the sunny spot' },
   { id: 7, kind: 'cat', label: 'under the sleeping cat' },
   { id: 8, kind: 'npc', label: 'from the barista' },

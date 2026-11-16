@@ -12,7 +12,7 @@
 // The 9 pieces hide at SET spots in Agora (never random anywhere):
 //   0-2  under a table (three different tables)
 //   3-4  on top of the bar / behind the bar counter
-//   5    on a bookshelf
+//   5    in the trash can (by the coffee bar — furniture pass v1)
 //   6    in the sunny spot by the window
 //   7    under the sleeping cat — only while she naps after 3 pets
 //         (links Cat Cuddles to this quest: pet her to sleep, then
@@ -389,7 +389,7 @@ export class PuzzleQuest {
   // ---- piece hiding spots ----------------------------------------------
 
   /** Where each floor piece hides, resolved from the live room layout:
-   * real furniture first (zones labelled Table / Bar / Bookshelf),
+   * real furniture first (zones labelled Table / Bar / Trash Can),
    * boundary fractions as fallback, so the spots are SET places in
    * Agora, never a random point on the open floor. */
   _resolveSpotPositions() {
@@ -405,7 +405,6 @@ export class PuzzleQuest {
     const zoneCenter = (z) => ({ x: z.x + (z.w || 0) / 2, y: z.y + (z.h || 0) / 2 });
     const tables = zones.filter((z) => /table/i.test(z.label || ''));
     const bars = zones.filter((z) => z.type === 'counter' || /bar|coffee/i.test(z.label || ''));
-    const shelves = zones.filter((z) => z.type === 'shelf' || /shelf|book/i.test(z.label || ''));
     // Pieces 0-2: under a table (south side of the tabletop).
     const tableFallbacks = [frac(0.25, 0.35), frac(0.6, 0.3), frac(0.4, 0.62)];
     for (let i = 0; i < 3; i++) {
@@ -420,9 +419,11 @@ export class PuzzleQuest {
       const p = z ? zoneCenter(z) : barFallbacks[i];
       this._spotPos.set(3 + i, i === 0 ? p : { x: p.x, y: p.y + 34 });
     }
-    // Piece 5: on a bookshelf.
-    const shelf = shelves[0];
-    this._spotPos.set(5, shelf ? zoneCenter(shelf) : frac(0.15, 0.2));
+    // Piece 5: in the trash can by the coffee bar (furniture pass v1 —
+    // replaces the old bookshelf spot). Fallback fraction (0.77, 0.15)
+    // is the trash can's spot on the furnished Agora floor.
+    const trash = zones.find((z) => z.type === 'trash_can' || /trash/i.test(z.label || ''));
+    this._spotPos.set(5, trash ? zoneCenter(trash) : frac(0.77, 0.15));
     // Piece 6: in the sunny spot (the cat's sunbeam spot, or a window corner).
     const sunbeam = this.scene?.cafeCat?.sunbeamSpot;
     this._spotPos.set(6, sunbeam ? { x: sunbeam.x, y: sunbeam.y } : frac(0.72, 0.68));

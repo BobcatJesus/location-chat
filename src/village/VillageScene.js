@@ -1214,6 +1214,12 @@ export class VillageScene extends Phaser.Scene {
     this._drinkAnimUntil = this.time.now + 2600;
     this._raiseBuzz(this.socket?.id || '__local__');
     avatar.playDrink();
+    // Agora coffee: say so in the notice, so the -2 coins reads as a
+    // coffee purchase, not a beer. (No Coffee Quest yet — this is just
+    // the bar + buy-coffee from the Agora furniture pass.)
+    if (this.roomId === 'agora-houston') {
+      this.onSystemNotice?.('☕ Fresh coffee! -2 coins — enjoy!');
+    }
     this.socket?.emit('buy_drink', { roomId: this.roomId });
   }
 
@@ -2502,7 +2508,10 @@ export class VillageScene extends Phaser.Scene {
       // Your drink is being poured / drunk: no prompt over the mug.
       this.drinkPrompt.setAlpha(0);
     } else if (canOrder && !nearPond && !nearShelf && !nearJukebox) {
-      this.drinkPrompt.setText(bartender ? '🍺 Talk to the bartender to order · 2 coins' : '🍺 Buy a drink · 2 coins [E]').setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
+      // Agora's coffee bar gets a coffee prompt (not a beer one) — the
+      // Barista serves coffee via the instant-buy path, -2 coins.
+      const isCoffeeBar = /coffee/i.test(nearBar?.label || '');
+      this.drinkPrompt.setText(bartender ? '🍺 Talk to the bartender to order · 2 coins' : (isCoffeeBar ? '☕ Buy a coffee · 2 coins [E]' : '🍺 Buy a drink · 2 coins [E]')).setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
     } else if (nearBar && bartender && !nearBartender && !myOrderActive && !nearPond && !nearShelf && !nearJukebox) {
       this.drinkPrompt.setText('🍺 Get closer to the bartender to order').setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
     } else {

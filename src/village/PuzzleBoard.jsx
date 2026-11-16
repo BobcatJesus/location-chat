@@ -139,8 +139,9 @@ export default function PuzzleBoard({ getBoardState, onPlace, onClose }) {
           </div>
         ) : (
           <div style={{ fontSize: 13, marginTop: 6, color: '#3d6a8a' }}>
-            Find pieces around Agora — under tables, on the bar, under the sleeping cat,
-            or ask the barista about the puzzle — then drag them onto the board.
+            Find pieces around Agora — under tables, on the bar, in the trash can,
+            under the sleeping cat, or ask the barista about the puzzle — then drag
+            them onto the board.
             Pieces can go anywhere: a wrong spot stays put until someone moves it.
           </div>
         )}
