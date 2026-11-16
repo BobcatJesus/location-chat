@@ -3,9 +3,17 @@
 // Design: any pond zone (type: 'pond') automatically becomes a living duck
 // pond. No per-location authoring: park + pond => ducks + feeding, everywhere.
 //
-//   - Ducks spawn on each pond and wander inside the water ellipse.
-//   - A player near a pond can feed: a crumb pellet is tossed, nearby ducks
-//     swim to it and eat it (happy hop included).
+//   - A few ducks stay on each pond and wander inside the water ellipse.
+//   - The rest are ROAMING ducks: they spawn at random spots all over the
+//     park and keep meandering park-wide, so the player has to hunt them
+//     down. Only roaming ducks count toward the Duck Roundup quest — pond
+//     ducks neither add to nor subtract from it.
+//   - Petting a duck (click, or E when right next to one) needs the
+//     player to be right up next to it (PET_RANGE). Clicking from across
+//     the park does nothing.
+//   - A player near a pond can feed: a crumb pellet is tossed, nearby
+//     pond ducks swim to it and eat it (happy hop included). Feeding is
+//     a pond-duck thing, so it does NOT count toward the quest.
 //   - Feeding is broadcast over Socket.IO (`feed_ducks` / `duck_fed`) so every
 //     player in the room sees the same feeding frenzy.
 //
@@ -14,11 +22,13 @@
 
 import { DEPTH } from './depth.js';
 
-const DUCKS_PER_POND = 3;
+const DUCKS_PER_POND = 3;      // pond ducks: stay in the water, don't count for the quest
+const ROAMING_DUCKS_PER_POND = 4; // roaming ducks: spawn anywhere in the park, count for the quest
 const MAX_DUCKS_TOTAL = 9;
 const WANDER_SPEED = 30;   // px/sec
 const SEEK_SPEED = 110;    // px/sec when chasing food
 const FEED_RANGE = 150;    // px from the pond's edge the player must be within
+const PET_RANGE = 70;      // px from a duck the player must be within to pet it — right up next to it
 const PELLET_BITES = 3;    // bites before a crumb is gone
 const PET_COOLDOWN_MS = 5000; // per-duck petting cooldown
 const PET_COIN_REWARD = 1;
@@ -49,7 +59,6 @@ function playQuack() {
   } catch {}
 }
 const EAT_PAUSE_MS = 450;
-const SHORE_DUCKS_PER_POND = 2;  // standing ducks that waddle the shoreline
 
 function pondCenter(pond) {
   return { x: pond.x + pond.w / 2, y: pond.y + pond.h / 2 };
@@ -67,14 +76,13 @@ function randomPointInPond(pond) {
   return { x: c.x + Math.cos(a) * rx * r, y: c.y + Math.sin(a) * ry * r };
 }
 
-function randomShorePoint(pond) {
-  const c = pondCenter(pond);
-  const { rx, ry } = pondRadii(pond);
-  const a = Math.random() * Math.PI * 2;
-  const ring = 1.12 + Math.random() * 0.25; // just outside the water
-  const x = Math.min(Math.max(c.x + Math.cos(a) * rx * ring, pond.x + 12), pond.x + pond.w - 12);
-  const y = Math.min(Math.max(c.y + Math.sin(a) * ry * ring, pond.y + 12), pond.y + pond.h - 12);
-  return { x, y };
+/** True when (x, y) is inside (or within `margin` of) any known pond. */
+function insideAnyPond(ponds, x, y, margin = 0) {
+  for (const pond of ponds || []) {
+    if (x >= pond.x - margin && x <= pond.x + pond.w + margin &&
+        y >= pond.y - margin && y <= pond.y + pond.h + margin) return true;
+  }
+  return false;
 }
 
 function clampPointToPond(pond, x, y) {
@@ -122,9 +130,9 @@ function makeDuckBody(scene) {
 export class DuckPond {
   constructor(scene) {
     this.scene = scene;
-    // Called (no args) whenever a duck is petted past its cooldown —
-    // VillageScene wires this to the quest loop (a pet counts toward
-    // the duck quest, same as a feed).
+    // Called with the petted duck whenever a duck is petted past its
+    // cooldown — VillageScene wires this to the quest loop, but only
+    // roaming ducks count toward the duck quest (pond ducks don't).
     this.onDuckPet = null;
     this.ducks = [];   // { container, pond, x, y, tx, ty, state, idleMs, eatMs }
     this.pellets = []; // { x, y, bites, circle }
@@ -142,13 +150,70 @@ export class DuckPond {
       for (let i = 0; i < n; i++) this._spawnDuck(pond);
       budget -= n;
       if (budget <= 0) break;
-      for (let i = 0; i < SHORE_DUCKS_PER_POND; i++) this._spawnShoreDuck(pond);
+      // Roaming ducks: spawn anywhere in the park (not budgeted like
+      // pond ducks — same as the old shoreline ducks were).
+      for (let i = 0; i < ROAMING_DUCKS_PER_POND; i++) this._spawnRoamingDuck(pond);
     }
   }
 
-  _spawnShoreDuck(pond) {
+  /**
+   * A random point anywhere in the park: inside the room boundary,
+   * on dry land (not in a pond), not inside a solid. Retries a few
+   * times, then falls back to the middle of the park.
+   */
+  randomParkPoint() {
+    const layout = this.scene?.roomLayout;
+    const bounds = layout?.getBoundaryBounds?.() || { x: 0, y: 0, w: 1600, h: 900 };
+    for (let i = 0; i < 12; i++) {
+      const x = bounds.x + 40 + Math.random() * Math.max(1, bounds.w - 80);
+      const y = bounds.y + 40 + Math.random() * Math.max(1, bounds.h - 80);
+      const p = layout?.clampPointToRoom ? layout.clampPointToRoom(x, y, 30) : { x, y };
+      if (insideAnyPond(this.ponds, p.x, p.y, 24)) continue;
+      if (layout?.collidesWithSolid && layout.collidesWithSolid(p.x, p.y, 20)) continue;
+      return p;
+    }
+    const fallback = layout?.clampPointToRoom
+      ? layout.clampPointToRoom(bounds.x + bounds.w / 2, bounds.y + bounds.h / 2, 30)
+      : { x: bounds.x + bounds.w / 2, y: bounds.y + bounds.h / 2 };
+    return fallback;
+  }
+
+  /** Nearest duck the player can actually pet (within PET_RANGE, off cooldown), or null. */
+  nearestPettableDuck(x, y) {
+    const now = Date.now();
+    let best = null;
+    let bestD = PET_RANGE;
+    for (const duck of this.ducks) {
+      if (!duck.container || !duck.container.active) continue;
+      if (duck.petCooldown && now < duck.petCooldown) continue;
+      const d = Math.hypot(duck.x - x, duck.y - y);
+      if (d <= bestD) { bestD = d; best = duck; }
+    }
+    return best;
+  }
+
+  /**
+   * Pick a roaming target whose straight-line walk from (fromX, fromY)
+   * doesn't cross a pond — roaming ducks walk on land, not across the
+   * water. Retries a few times, then takes whatever it got.
+   */
+  _pickRoamingTarget(fromX, fromY) {
+    for (let i = 0; i < 6; i++) {
+      const t = this.randomParkPoint();
+      let crosses = false;
+      for (let s = 1; s <= 8; s++) {
+        const x = fromX + (t.x - fromX) * (s / 8);
+        const y = fromY + (t.y - fromY) * (s / 8);
+        if (insideAnyPond(this.ponds, x, y, 12)) { crosses = true; break; }
+      }
+      if (!crosses) return t;
+    }
+    return this.randomParkPoint();
+  }
+
+  _spawnRoamingDuck(pond) {
     const scene = this.scene;
-    const p = randomShorePoint(pond);
+    const p = this.randomParkPoint();
     let body;
     if (scene?.textures?.exists('duck-stand-art')) {
       body = scene.add.image(0, 0, 'duck-stand-art');
@@ -161,12 +226,12 @@ export class DuckPond {
     container.setDepth(DEPTH.ACTOR_MIN + Math.round(p.y));
     container.setSize(48, 40);
     container.setInteractive({ useHandCursor: true });
-    const t = randomShorePoint(pond);
+    const t = this._pickRoamingTarget(p.x, p.y);
     const duckRef = {
       container, pond,
       x: p.x, y: p.y,
       tx: t.x, ty: t.y,
-      state: 'wander', shore: true,
+      state: 'wander', roaming: true,
       idleMs: 500 + Math.random() * 1500,
       eatMs: 0, pellet: null,
       petCooldown: 0,
@@ -187,7 +252,7 @@ export class DuckPond {
       container, pond,
       x: p.x, y: p.y,
       tx: 0, ty: 0,
-      state: 'wander',
+      state: 'wander', roaming: false,
       idleMs: 0,
       eatMs: 0,
       pellet: null,
@@ -199,15 +264,27 @@ export class DuckPond {
     this.ducks.push(duckRef);
   }
 
-  /** Pet a duck: happy hop + quack + heart + 1 coin (per-duck cooldown). */
+  /**
+   * Pet a duck: happy hop + quack + heart + 1 coin (per-duck cooldown).
+   * Only works when the player is right up next to the duck (PET_RANGE)
+   * — clicking one from across the park does nothing. Pond ducks still
+   * give the +1 coin, but only roaming ducks fire the quest hook.
+   */
   petDuck(duck) {
     if (!duck || !duck.container || !duck.container.active) return;
+    const player = this.scene?.player;
+    if (player && Number.isFinite(player.gx) && Number.isFinite(player.gy)) {
+      const d = Math.hypot(player.gx - duck.x, player.gy - duck.y);
+      if (d > PET_RANGE) return; // too far away — walk right up to it
+    }
     const now = Date.now();
     if (duck.petCooldown && now < duck.petCooldown) return;
     duck.petCooldown = now + PET_COOLDOWN_MS;
     playQuack();
-    // Quest hook: a pet counts as a duck interaction.
-    try { this.onDuckPet?.(); } catch {}
+    // Quest hook: a pet counts as a duck interaction — but only for
+    // roaming ducks. Pond ducks neither add to nor subtract from it.
+    // The duck itself is passed so VillageScene can tell them apart.
+    try { this.onDuckPet?.(duck); } catch {}
     // Happy hop: timer-driven so the wander loop doesn't override it.
     duck.hopMs = 320;
     // Floating heart.
@@ -262,9 +339,9 @@ export class DuckPond {
     circle.setDepth(DEPTH.ACTOR_MIN + Math.round(pos.y) + 1);
     circle.setStrokeStyle(1.5, 0x5d3a17, 1);
     this.pellets.push({ x: pos.x, y: pos.y, bites: PELLET_BITES, circle, pond });
-    // Swimming ducks on this pond notice the splash (shore ducks stay put).
+    // Swimming ducks on this pond notice the splash (roaming ducks keep wandering the park).
     for (const duck of this.ducks) {
-      if (duck.pond === pond && duck.state === 'wander' && !duck.shore) {
+      if (duck.pond === pond && duck.state === 'wander' && !duck.roaming) {
         duck.state = 'seek';
         duck.pellet = this.pellets[this.pellets.length - 1];
       }
@@ -304,9 +381,9 @@ export class DuckPond {
         continue;
       }
 
-      let speed = duck.shore ? WANDER_SPEED * 0.45 : WANDER_SPEED;
-      if (duck.shore) {
-        // Shore ducks amble along the waterline; they don't chase crumbs.
+      let speed = duck.roaming ? WANDER_SPEED * 0.45 : WANDER_SPEED;
+      if (duck.roaming) {
+        // Roaming ducks amble all over the park; they don't chase crumbs.
         if (duck.state === 'seek') { duck.state = 'wander'; duck.pellet = null; }
       } else if (duck.state === 'seek' && duck.pellet && duck.pellet.bites > 0) {
         duck.tx = duck.pellet.x;
@@ -337,7 +414,10 @@ export class DuckPond {
       if (dist < 8) {
         if (duck.state === 'wander') {
           duck.idleMs = 800 + Math.random() * 2600;
-          const t = duck.shore ? randomShorePoint(duck.pond) : randomPointInPond(duck.pond);
+          // Roaming ducks pick their next stop anywhere in the park
+          // (walking around the pond, never across it); pond ducks
+          // pick a new spot in the water.
+          const t = duck.roaming ? this._pickRoamingTarget(duck.x, duck.y) : randomPointInPond(duck.pond);
           duck.tx = t.x;
           duck.ty = t.y;
         }

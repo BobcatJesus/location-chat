@@ -588,10 +588,13 @@ export class VillageScene extends Phaser.Scene {
     this.cafeCat.refresh();
     // Quest loop (Quest Wrapper v1): auto-starts the quest for this
     // room, tracks it in the corner, toasts + pays coins on completion.
-    // Petting a duck counts toward the duck quest, same as feeding one.
+    // Petting a ROAMING duck counts toward the duck quest; petting a
+    // pond duck does not (it neither adds to nor subtracts from it).
     this.questManager = new QuestManager(this);
     this.questManager.refresh();
-    this.duckPond.onDuckPet = () => this.questManager?.recordEvent('duck-fed');
+    this.duckPond.onDuckPet = (duck) => {
+      if (duck?.roaming) this.questManager?.recordEvent('duck-fed');
+    };
     // Seasonal: pumpkins, bats, spooky tint in October.
     this.halloween = new HalloweenMode(this);
     this.halloween.start();
@@ -601,6 +604,14 @@ export class VillageScene extends Phaser.Scene {
     this.dayNight.start();
     this._feedCooldownMs = 0;
     this.feedPrompt = this.add.text(0, 0, '🦆 Feed the ducks [E]', {
+      fontSize: '15px',
+      color: '#1a4971',
+      backgroundColor: 'rgba(255,255,255,0.85)',
+      padding: { x: 8, y: 4 },
+    }).setOrigin(0.5, 1).setDepth(DEPTH.UI).setAlpha(0);
+
+    // Pet prompt: shown when a duck is right next to the player.
+    this.duckPrompt = this.add.text(0, 0, '🦆 Pet the duck [E]', {
       fontSize: '15px',
       color: '#1a4971',
       backgroundColor: 'rgba(255,255,255,0.85)',
@@ -1041,6 +1052,10 @@ export class VillageScene extends Phaser.Scene {
       if (shelf) this.onOpenShelf({ shelf: shelf.label, roomId: this.roomId });
     } else if (kind === 'jukebox') {
       this.onOpenJukebox({ roomId: this.roomId });
+    } else if (kind === 'duck') {
+      // Pet the duck right next to the player (E key, close-up only).
+      const duck = this.duckPond?.nearestPettableDuck(this.player.gx, this.player.gy);
+      if (duck) this.duckPond.petDuck(duck);
     } else if (kind === 'ducks') {
       this._tryFeedDucks();
     } else if (kind === 'cat') {
@@ -1050,9 +1065,11 @@ export class VillageScene extends Phaser.Scene {
     }
   }
 
-  // Public: what would the E key do right now? Priority: ducks > cat > shelf > jukebox.
+  // Public: what would the E key do right now? Priority: pet a duck
+  // right next to you > feed at the pond > cat > shelf > jukebox.
   getInteractKind() {
     if (!this.player) return null;
+    if (this.duckPond?.nearestPettableDuck(this.player.gx, this.player.gy)) return 'duck';
     const nearPond = this.duckPond?.nearestFeedablePond(this.player.gx, this.player.gy);
     if (nearPond && this._feedCooldownMs <= 0) return 'ducks';
     if (this.cafeCat?.nearestCat(this.player.gx, this.player.gy)) return 'cat';
@@ -1570,8 +1587,9 @@ export class VillageScene extends Phaser.Scene {
     if (this.duckPond.feed(fx, fy)) {
       this._feedCooldownMs = 2500;
       this.socket?.emit('feed_ducks', { roomId: this.roomId, x: Math.round(fx), y: Math.round(fy) });
-      // Quest step: feeding a duck counts toward the duck quest.
-      this.questManager?.recordEvent('duck-fed');
+      // Feeding tosses crumbs to the pond ducks, and pond ducks don't
+      // count toward the Duck Roundup — so feeding no longer records
+      // a quest step. Only petting a roaming duck does.
     }
   }
 
@@ -2325,8 +2343,16 @@ export class VillageScene extends Phaser.Scene {
     this.questManager?.update(delta);
     this.halloween?.update(delta);
     this.dayNight?.update(delta);
+    const nearDuck = this.duckPond?.nearestPettableDuck(this.player.gx, this.player.gy);
     const nearPond = this.duckPond?.nearestFeedablePond(this.player.gx, this.player.gy);
-    if (nearPond && this._feedCooldownMs <= 0) {
+    // Pet prompt wins when a duck is right next to you; otherwise the
+    // feed prompt shows near a pond.
+    if (nearDuck) {
+      this.duckPrompt.setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
+    } else {
+      this.duckPrompt.setAlpha(0);
+    }
+    if (nearPond && !nearDuck && this._feedCooldownMs <= 0) {
       this.feedPrompt.setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
     } else {
       this.feedPrompt.setAlpha(0);
@@ -2638,6 +2664,7 @@ export class VillageScene extends Phaser.Scene {
     this.dayNight?.destroy();
     this.dayNight = null;
     this.feedPrompt?.destroy();
+    this.duckPrompt?.destroy();
     this.shelfPrompt?.destroy();
     this.jukeboxPrompt?.destroy();
     this.drinkPrompt?.destroy();

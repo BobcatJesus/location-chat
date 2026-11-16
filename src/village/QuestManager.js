@@ -10,11 +10,16 @@
 //     (first quest in quests.js whose roomId matches this room and
 //     which you have not finished yet).
 //   - Tracks progress as events arrive (recordEvent('duck-fed') is
-//     called by VillageScene when you feed the ducks, and by DuckPond
-//     when you pet one — either counts toward the 3).
+//     called by VillageScene when you pet a ROAMING duck — pond ducks
+//     and pond feeding don't count toward the 3).
 //   - Shows a tracker in the top-left of the screen (quest title +
 //     your progress + the room's shared feed total) and a completion
 //     toast (+ coins) when you finish.
+//   - Shows a quest banner at the top-centre of the screen when a
+//     quest first starts (emoji + title, description, reward), which
+//     fades after ~5.5s or on click/tap. Once per session per quest:
+//     it never shows for a quest you already finished, and it does
+//     not pop up again if you leave and re-enter mid-quest.
 //   - Syncs with the server (quest_progress / quest_state /
 //     quest_completed in server/socket.js, same membership-checked,
 //     rate-limited pattern as pet_cat): the server keeps a per-room
@@ -31,6 +36,10 @@ import { DEPTH } from './depth.js';
 import { QUESTS, getQuest } from './quests.js';
 
 const QUESTS_PREFIX = 'location-chat-quests';
+
+// How long the quest banner stays up before fading (ms). It also
+// goes away early if the player clicks / taps it.
+const QUEST_BANNER_MS = 5500;
 
 // Who owns this quest progress? Same per-profile scoping as
 // CoinWallet: the profile email (guests get their own guest email),
@@ -73,6 +82,9 @@ export class QuestManager {
     this.tracker = null; // Phaser text, pinned top-left of the screen
     this.toast = null; // Phaser text, centered completion toast
     this._toastTimer = null;
+    this.banner = null; // Phaser text, top-centre quest banner
+    this._bannerTimer = null;
+    this._shownBanners = new Set(); // quest ids the banner already showed for, this session
   }
 
   /** (Re)pick the quest for this room and (re)draw the tracker. */
@@ -95,6 +107,7 @@ export class QuestManager {
       this.tracker.setScrollFactor(0);
       this.tracker.setDepth(DEPTH.UI);
       this._drawTracker();
+      this._showQuestBanner(this.activeQuest);
     } catch {}
   }
 
@@ -188,6 +201,63 @@ export class QuestManager {
     this._showToast(toastText);
   }
 
+  /**
+   * Big top-centre banner when a quest first starts: emoji + title,
+   * the one-line description, and the reward. Built generically from
+   * the quest definition, so future quests get one for free.
+   * Shows once per session per quest: never for a quest already
+   * finished (refresh() only picks unfinished quests), and not again
+   * if you leave and re-enter mid-quest. Fades after QUEST_BANNER_MS,
+   * or right away on click / tap.
+   */
+  _showQuestBanner(quest) {
+    if (!quest || this._shownBanners.has(quest.id)) return;
+    this._shownBanners.add(quest.id);
+    try {
+      const scene = this.scene;
+      const w = scene?.scale?.width || 800;
+      const text = [
+        `${quest.emoji} ${quest.title}`,
+        quest.description,
+        `Reward: +${quest.rewardCoins} coins`,
+      ].join('\n');
+      this.banner = scene.add.text(w / 2, 64, text, {
+        fontSize: '18px',
+        color: '#1a4971',
+        backgroundColor: 'rgba(255,255,255,0.95)',
+        padding: { x: 16, y: 12 },
+        align: 'center',
+        wordWrap: { width: Math.min(560, w - 40) },
+      });
+      this.banner.setOrigin(0.5, 0);
+      this.banner.setScrollFactor(0);
+      this.banner.setDepth(DEPTH.UI + 2);
+      // Tap / click dismisses it early; it never blocks play for long.
+      try {
+        this.banner.setInteractive({ useHandCursor: true });
+        this.banner.on('pointerdown', () => this._dismissBanner());
+      } catch {}
+      this._bannerTimer = scene.time.delayedCall(QUEST_BANNER_MS, () => this._dismissBanner());
+    } catch {}
+  }
+
+  /** Fade the banner out and remove it (timer or tap). */
+  _dismissBanner() {
+    try { this._bannerTimer?.remove(); } catch {}
+    this._bannerTimer = null;
+    if (!this.banner) return;
+    const banner = this.banner;
+    this.banner = null;
+    try {
+      this.scene.tweens.add({
+        targets: banner, alpha: 0, duration: 600,
+        onComplete: () => { try { banner.destroy(); } catch {} },
+      });
+    } catch {
+      try { banner.destroy(); } catch {}
+    }
+  }
+
   _drawTracker() {
     if (!this.tracker || !this.activeQuest) return;
     const quest = this.activeQuest;
@@ -242,6 +312,10 @@ export class QuestManager {
   _clearTexts() {
     try { this._toastTimer?.remove(); } catch {}
     this._toastTimer = null;
+    try { this._bannerTimer?.remove(); } catch {}
+    this._bannerTimer = null;
+    try { this.banner?.destroy(); } catch {}
+    this.banner = null;
     try { this.tracker?.destroy(); } catch {}
     this.tracker = null;
     try { this.toast?.destroy(); } catch {}

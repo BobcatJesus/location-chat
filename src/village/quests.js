@@ -23,7 +23,7 @@ export const QUESTS = [
   {
     id: 'duck-roundup',
     title: 'The Duck Roundup',
-    description: 'Feed the ducks at the Shepherd Park pond 3 times.',
+    description: 'Find the roaming ducks around Shepherd Park and pet 3 of them.',
     roomId: 'shepherd-park',
     kind: 'solo',
     event: 'duck-fed',
