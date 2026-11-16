@@ -1234,6 +1234,27 @@ export class RoomLayout {
         break;
       }
 
+      case 'storage_chest': {
+        // Storage chest (Your Place v1, `sq-your-place-v1`): a wooden
+        // chest with a curved lid, iron bands, and a gold latch. The
+        // HomeStorageSystem resolves it from this zone by type /
+        // label — walk up and press E, or click it, to open storage.
+        g.fillStyle(0x8b5a2b, 1);
+        g.fillRoundedRect(x, y + h * 0.35, w, h * 0.65, 4);
+        g.fillStyle(0x6b4423, 1);
+        g.fillRoundedRect(x, y + h * 0.1, w, h * 0.35, { tl: 10, tr: 10, bl: 0, br: 0 });
+        g.fillStyle(0x4b5563, 1);
+        g.fillRect(x + 8, y + h * 0.1, 6, h - h * 0.1 - 4);
+        g.fillRect(x + w - 14, y + h * 0.1, 6, h - h * 0.1 - 4);
+        g.fillStyle(0xf59e0b, 1);
+        g.fillRect(x + w / 2 - 7, y + h * 0.32, 14, 12);
+        g.lineStyle(1.5, C.WALL, 1);
+        g.strokeRoundedRect(x, y + h * 0.35, w, h * 0.65, 4);
+        if (z.label) this._lbl(x + w / 2, y - 8, z.label, LABEL_STYLE, 0.5, 1);
+        if (z.interact) this.interactZones.push(z);
+        break;
+      }
+
       case 'toy_display':
         g.fillStyle(C.TOY_DISPLAY, 1);
         g.fillRect(x, y, w, h);

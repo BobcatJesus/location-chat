@@ -9,6 +9,7 @@ import { normalizeAvatarModel } from '../game/entities/avatarModels.js';
 import { deriveLocationPalette } from '../utils/locationPalette';
 import { signOut } from '../lib/authClient';
 import { getRoomAccessRadius, isOpenAccessRoom } from '../accessPolicy';
+import { homeRoomIdFor } from '../village/homeStorage.js';
 
 const VillageCanvas = lazy(() => import('../village/VillageCanvas.jsx'));
 const MapView = lazy(() => import('./MapView.jsx'));
@@ -1281,6 +1282,19 @@ function App() {
     };
   };
 
+  // Your Place v1 (`sq-your-place-v1`): the 🏠 Home button in the
+  // room top bar goes to your own home room (home-<owner>). The
+  // poiMeta carries no lat/lng, so no GPS gate applies — your place
+  // is always open to you — and the server still refuses anyone else
+  // at the door (join_denied). No home room exists for a fully
+  // anonymous session (homeRoomIdFor returns null), so the button
+  // hides then.
+  const handleGoHome = () => {
+    const homeId = homeRoomIdFor(profile);
+    if (!homeId) return;
+    handleEnterRoom(homeId, { id: homeId, name: 'Your Place', kind: 'home' });
+  };
+
   const handleEnterRoom = (roomId, poiMeta = null) => {
     const hasOpenAccess = isOpenAccessRoom(roomId);
     const canonicalRoom = allRooms.find((room) => room.id === roomId) || null;
@@ -1677,7 +1691,7 @@ function App() {
             ) : (
               <div style={{ flex: 1, border: '2px solid #334155', borderRadius: 12, overflow: 'hidden', position: 'relative' }}>
                 <Suspense fallback={<div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', color: '#94a3b8', background: '#0f172a' }}>Loading room…</div>}>
-                  <VillageCanvas room={osmRoom ? { ...osmRoom, id: osmRoom.id } : activeRoom} venueEvents={venueEvents} canManageVenue={venuePermissions.canManage} isModerator={venuePermissions.isModerator} profile={profile} location={location} onLeave={() => { setActiveScene('world'); setOsmRoom(null); }} />
+                  <VillageCanvas room={osmRoom ? { ...osmRoom, id: osmRoom.id } : activeRoom} venueEvents={venueEvents} canManageVenue={venuePermissions.canManage} isModerator={venuePermissions.isModerator} profile={profile} location={location} onLeave={() => { setActiveScene('world'); setOsmRoom(null); }} onGoHome={homeRoomIdFor(profile) ? handleGoHome : null} />
                 </Suspense>
                 {venuePermissions.canManage && <button
                   type="button"

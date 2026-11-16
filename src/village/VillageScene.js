@@ -7,6 +7,7 @@ import { PuzzleQuest } from './PuzzleQuest.js';
 import { QuestManager } from './QuestManager.js';
 import { ItemsSystem } from './ItemsSystem.js';
 import { NoticeBoardSystem } from './NoticeBoardSystem.js';
+import { HomeStorageSystem } from './HomeStorageSystem.js';
 import { hasBag as inventoryHasBag, INVENTORY_FULL_MESSAGE } from './items.js';
 import { badgeListFrom, normalizeBadgeMap, formatBadgeDate } from './badges.js';
 import { io } from 'socket.io-client';
@@ -464,6 +465,8 @@ export class VillageScene extends Phaser.Scene {
     this.onOpenPuzzle = d.onOpenPuzzle ?? (() => {});
     this.onOpenInventory = d.onOpenInventory ?? (() => {});
     this.onOpenNoticeBoard = d.onOpenNoticeBoard ?? (() => {});
+    // Your Place v1: opens the storage chest panel (DOM).
+    this.onOpenHomeStorage = d.onOpenHomeStorage ?? (() => {});
     // Quest badges v1: opens another player's badges panel (DOM).
     this.onOpenPlayerBadges = d.onOpenPlayerBadges ?? (() => {});
     this.preferredCameraMode = ['ultra-close-follow', 'close-follow', 'follow', 'wide-follow', 'overview'].includes(d.preferredCameraMode)
@@ -643,6 +646,11 @@ export class VillageScene extends Phaser.Scene {
     // Each room's board is separate.
     this.noticeBoardSystem = new NoticeBoardSystem(this);
     this.noticeBoardSystem.refresh();
+    // Your Place v1 (`sq-your-place-v1`): the storage chest in your
+    // own home room — Store / Take / Unload All. Home-room only;
+    // the system itself no-ops everywhere else.
+    this.homeStorageSystem = new HomeStorageSystem(this);
+    this.homeStorageSystem.refresh();
     // Wanderer quest: this room entry counts (after refresh, not in it).
     this.questManager?.noteRoomVisit();
     // Seasonal: pumpkins, bats, spooky tint in October.
@@ -883,6 +891,13 @@ export class VillageScene extends Phaser.Scene {
       try {
         const br = this.noticeBoardSystem?.boardTapAt(ptr.worldX, ptr.worldY);
         if (br && br.opened) return;
+      } catch {}
+      // Your Place v1: a click on the storage chest itself opens it
+      // (if you are standing close enough) — same scene-level
+      // pointerdown pattern as the notice board.
+      try {
+        const cr = this.homeStorageSystem?.chestTapAt(ptr.worldX, ptr.worldY);
+        if (cr && cr.opened) return;
       } catch {}
       this.target = target;
       this.tapDot.setPosition(ptr.worldX, ptr.worldY).setAlpha(0.7);
@@ -1186,6 +1201,9 @@ export class VillageScene extends Phaser.Scene {
     } else if (kind === 'notice-board') {
       // Notice board v1: open the pinned-flyers board.
       this.noticeBoardSystem?.openBoard();
+    } else if (kind === 'storage-chest') {
+      // Your Place v1: open the storage chest panel.
+      this.homeStorageSystem?.openStorage();
     } else if (kind === 'bar') {
       this._tryBuyDrink();
     }
@@ -1207,6 +1225,7 @@ export class VillageScene extends Phaser.Scene {
     if (this.cafeCat?.nearestSleepingCat(this.player.gx, this.player.gy)) return 'cat-asleep';
     if (this.puzzleQuest?.nearestTable(this.player.gx, this.player.gy)) return 'puzzle-table';
     if (this.noticeBoardSystem?.nearestBoard(this.player.gx, this.player.gy)) return 'notice-board';
+    if (this.homeStorageSystem?.nearestChest(this.player.gx, this.player.gy)) return 'storage-chest';
     if (this._nearestShelf()) return 'shelf';
     if (this._nearestJukebox()) return 'jukebox';
     if (this._nearestBar()) return 'bar';
@@ -1810,11 +1829,16 @@ export class VillageScene extends Phaser.Scene {
       socket.emit('get_quest_state', { roomId: this.roomId });
       socket.emit('get_puzzle', { roomId: this.roomId });
       socket.emit('get_board', { roomId: this.roomId });
+      socket.emit('get_home', { roomId: this.roomId });
       socket.emit('get_time_phase', {});
       // Quest badges v1: re-sync my local completions record so the
       // server's per-player badge store (wiped by a restart) comes
       // back, and the room hears about my badges.
       try { this.questManager?.syncBadgesToServer?.(); } catch {}
+      // Your Place v1: re-sync my local stored-items record so the
+      // server's per-player home store (wiped by a restart) comes
+      // back — stored items survive a restart the same way badges do.
+      try { this.homeStorageSystem?.syncToServer?.(); } catch {}
       const now = Date.now();
       this._lastPresenceSyncAt = now;
       this._lastDecorSyncAt = now;
@@ -2040,6 +2064,12 @@ export class VillageScene extends Phaser.Scene {
     // per room, in-memory on the server like the puzzle).
     socket.on('board_state', (payload = {}) => {
       this.noticeBoardSystem?.applyState(payload);
+    });
+
+    // Your Place state (per player — only your own stored items,
+    // in-memory on the server like badges).
+    socket.on('home_state', (payload = {}) => {
+      this.homeStorageSystem?.applyState(payload);
     });
     // The room finished the puzzle — re-ask for the canonical state
     // (the puzzle_state broadcast just before this carries it too;
@@ -2990,6 +3020,8 @@ export class VillageScene extends Phaser.Scene {
     this.itemsSystem = null;
     this.noticeBoardSystem?.destroy();
     this.noticeBoardSystem = null;
+    this.homeStorageSystem?.destroy();
+    this.homeStorageSystem = null;
     this.questManager?.destroy();
     this.questManager = null;
     this.catPrompt?.destroy();

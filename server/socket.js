@@ -37,6 +37,13 @@ import {
   serializeNoticeBoardState,
 } from '../src/village/noticeBoardState.js';
 import { backfilledBadgesFromQuestState } from '../src/village/badges.js';
+import {
+  isHomeRoom,
+  homeOwnerOf,
+  normalizeHomeOwner,
+  normalizeHomeItems,
+  mergeHomeItems,
+} from '../src/village/homeStorage.js';
 
 // Shared instructions so every NPC reads as a real person, not a helpful assistant.
 const HUMAN_STYLE_GUIDE = `
@@ -476,6 +483,29 @@ function socketIdForUser(userId) {
     if (String(uid) === String(userId)) return sid;
   }
   return null;
+}
+// Your Place (Your Place v1, `sq-your-place-v1`): per-player home
+// storage — what is stored at home. userHomeStorage[userId] = [items]
+// (same stored-item shape as the inventory). In-memory like badges:
+// a server restart wipes the server's copy, but each client keeps
+// its own localStorage record and re-syncs it on connect
+// (home_sync), so stored items come back. Merges are add-only unions
+// by item id — removals only happen via explicit home_take /
+// home_store / home_unload_all events. Honest edge: a STALE second
+// device/tab whose local record still lists an item taken out
+// elsewhere can bring it back on its next re-sync. The merge favors
+// never LOSING an item over strict removal consistency. Only the owner
+// can touch their own store (every handler below re-checks the
+// room owner + room membership); a bad client can only store items
+// of known types in its own home, never anyone else's.
+const userHomeStorage = {};
+function homeItemsFor(userId) {
+  if (!userHomeStorage[userId]) userHomeStorage[userId] = [];
+  return userHomeStorage[userId];
+}
+function setHomeItems(userId, items) {
+  userHomeStorage[userId] = normalizeHomeItems(items);
+  return userHomeStorage[userId];
 }
 // Group puzzle (Shared Puzzle Quest v1.2,
 // `group-puzzle-v1-2-hidden-search`): per-room state
@@ -996,6 +1026,24 @@ io.on('connection', (socket) => {
       }
     }
 
+    // Your Place (Your Place v1, `sq-your-place-v1`): a home room
+    // belongs to one player — anyone else is refused at the door.
+    // The room id carries the owner key (home-<owner>), and the
+    // actor key comes from the join payload's email (or id, which
+    // the client sets to the same email). Checked BEFORE joining,
+    // so a refused player never appears in the room at all.
+    if (isHomeRoom(roomId)) {
+      const owner = homeOwnerOf(roomId);
+      const actorKey = normalizeHomeOwner(user?.email || user?.id || socket.id);
+      if (!owner || owner !== actorKey) {
+        socket.emit('join_denied', {
+          roomId,
+          reason: "This is someone else's place — only the owner can enter.",
+        });
+        return;
+      }
+    }
+
     socket.join(roomId);
 
     // A new player walking in wakes a sleeping cafe cat back up.
@@ -1255,6 +1303,62 @@ io.on('connection', (socket) => {
     // shows their recovered badges too.
     backfillBadgesFromQuests(target);
     socket.emit('badges_state', { userId: target, badges: badgesArrayFor(target) });
+  });
+
+  // YOUR PLACE (Your Place v1, `sq-your-place-v1`): per-player home
+  // storage. The client re-syncs its own local record on connect —
+  // this is what brings stored items back after a server restart
+  // wiped the in-memory store. The server merges the record
+  // (add-only union by id) and replies with the merged record
+  // (home_state), which the client treats as authoritative.
+  // Every mutating handler re-checks that the caller is IN their
+  // own home room — storage is owner-only, and only at your place.
+  socket.on('home_sync', ({ roomId, items } = {}) => {
+    const userId = socketUserMap[socket.id] || socket.id;
+    const rate = checkRateLimit(userId);
+    if (!rate.allowed) return;
+    const merged = mergeHomeItems(homeItemsFor(userId), items);
+    setHomeItems(userId, merged);
+    socket.emit('home_state', { userId, items: homeItemsFor(userId) });
+  });
+
+  // YOUR PLACE: ask for my own stored-items record.
+  socket.on('get_home', () => {
+    const userId = socketUserMap[socket.id] || socket.id;
+    socket.emit('home_state', { userId, items: homeItemsFor(userId) });
+  });
+
+  // YOUR PLACE: store one pocket item at home.
+  socket.on('home_store', ({ roomId, item } = {}) => {
+    if (!isHomeRoom(roomId) || !rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const userId = socketUserMap[socket.id] || socket.id;
+    if (homeOwnerOf(roomId) !== normalizeHomeOwner(userId)) return;
+    const clean = normalizeHomeItems([item]);
+    if (!clean.length) return;
+    const list = homeItemsFor(userId);
+    if (!list.some((it) => it.id === clean[0].id)) list.push(clean[0]);
+    setHomeItems(userId, list);
+    socket.emit('home_state', { userId, items: homeItemsFor(userId) });
+  });
+
+  // YOUR PLACE: take one stored item back into the pocket.
+  socket.on('home_take', ({ roomId, itemId } = {}) => {
+    if (!isHomeRoom(roomId) || !rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const userId = socketUserMap[socket.id] || socket.id;
+    if (homeOwnerOf(roomId) !== normalizeHomeOwner(userId)) return;
+    if (typeof itemId !== 'string' || !itemId) return;
+    setHomeItems(userId, homeItemsFor(userId).filter((it) => it.id !== itemId));
+    socket.emit('home_state', { userId, items: homeItemsFor(userId) });
+  });
+
+  // YOUR PLACE: unload a whole pocket/bag into storage at once.
+  socket.on('home_unload_all', ({ roomId, items } = {}) => {
+    if (!isHomeRoom(roomId) || !rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const userId = socketUserMap[socket.id] || socket.id;
+    if (homeOwnerOf(roomId) !== normalizeHomeOwner(userId)) return;
+    const merged = mergeHomeItems(homeItemsFor(userId), items);
+    setHomeItems(userId, merged);
+    socket.emit('home_state', { userId, items: homeItemsFor(userId) });
   });
 
   // GROUP PUZZLE (Shared Puzzle Quest v1.2,

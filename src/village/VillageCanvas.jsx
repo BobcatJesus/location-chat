@@ -7,6 +7,7 @@ import JukeboxPanel from './JukeboxPanel.jsx';
 import PuzzleBoard from './PuzzleBoard.jsx';
 import InventoryPanel from './InventoryPanel.jsx';
 import NoticeBoardPanel from './NoticeBoardPanel.jsx';
+import HomeStoragePanel from './HomeStoragePanel.jsx';
 import PlayerBadgesPanel from './PlayerBadgesPanel.jsx';
 import InteriorSketchModal from './InteriorSketchModal.jsx';
 import ModQueuePanel from './ModQueuePanel.jsx';
@@ -16,6 +17,8 @@ import { isOutdoorLocation } from './outdoorRoomDetection.js';
 import { bookstore } from './layouts/bookstore.js';
 import { library } from './layouts/library.js';
 import { agora } from './layouts/agora.js';
+import { home } from './layouts/home.js';
+import { isHomeRoom } from './homeStorage.js';
 import { getDistanceMeters } from '../geo';
 import { ROOMS } from '../../rooms/rooms.js';
 import { getVenueEvents } from '../../lib/venueEvents.js';
@@ -221,7 +224,7 @@ function createDecahedronRoomFootprint(room = {}) {
   return points;
 }
 
-export default function VillageCanvas({ room, profile, onLeave, location, venueEvents: providedVenueEvents = [], canManageVenue = false, isModerator = false }) {
+export default function VillageCanvas({ room, profile, onLeave, onGoHome = null, location, venueEvents: providedVenueEvents = [], canManageVenue = false, isModerator = false }) {
   const BASE_WIDTH = 1600;
   const BASE_HEIGHT = 900;
   const containerRef = useRef(null);
@@ -252,6 +255,9 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
   const [openPuzzle, setOpenPuzzle] = useState(false);
   const [openInventory, setOpenInventory] = useState(false);
   const [openNoticeBoard, setOpenNoticeBoard] = useState(false);
+  // Your Place v1: the storage chest panel, opened from the chest
+  // in your home room (E key / click / interact button).
+  const [openHomeStorage, setOpenHomeStorage] = useState(false);
   // Quest badges v1: another player's badges panel, opened by
   // clicking them ({ socketId } or null).
   const [openPlayerBadges, setOpenPlayerBadges] = useState(null);
@@ -339,6 +345,7 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
     key: ['🔑', 'Pick up the golden key'],
     'puzzle-table': ['🧩', 'Open the puzzle table'],
     'notice-board': ['📌', 'Read the notice board'],
+    'storage-chest': ['📦', 'Open your storage chest'],
     shelf: ['📚', 'Browse the shelf'],
     jukebox: ['🎵', 'Open the jukebox'],
     bar: ['🍺', 'Order a drink'],
@@ -461,6 +468,11 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
   // would otherwise force. An approved user layout still wins (see
   // explicitLayout below), as with every other room.
   const forceAgoraLayout = roomId === 'agora-houston' || roomDescriptor.includes('agora');
+  // Your Place: use the furnished home layout (layouts/home.js) for
+  // `home-<owner>` room ids, instead of the auto-generated scaffold.
+  // An approved user layout still wins (see explicitLayout below),
+  // as with every other room.
+  const forceHomeLayout = isHomeRoom(roomId);
   const preferUltraClose = roomDescriptor.includes('agora');
   const preferredCameraMode = preferUltraClose
     ? 'ultra-close-follow'
@@ -590,15 +602,17 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
     // Dev-mode remounts can leave stale canvases behind; reset container before creating a game.
     el.innerHTML = '';
     const explicitLayout = approvedLayout
-      || (forceLibraryLayout
-        ? library
-        : forceBookstoreLayout
-          ? bookstore
-          : forceAgoraLayout
-            ? agora
-            : (outdoorMode || shouldForceMultiLevelScaffold
-              ? buildAutoLayout(roomId, normalizedRoom?.name || '', normalizedRoom?.amenity || '', normalizedRoom?.shop || '', roomFootprint || null, normalizedRoom)
-              : null));
+      || (forceHomeLayout
+        ? home
+        : forceLibraryLayout
+          ? library
+          : forceBookstoreLayout
+            ? bookstore
+            : forceAgoraLayout
+              ? agora
+              : (outdoorMode || shouldForceMultiLevelScaffold
+                ? buildAutoLayout(roomId, normalizedRoom?.name || '', normalizedRoom?.amenity || '', normalizedRoom?.shop || '', roomFootprint || null, normalizedRoom)
+                : null));
 
     VillageScene._boot = {
       roomId,
@@ -621,6 +635,7 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
       onOpenPuzzle: () => setOpenPuzzle(true),
       onOpenInventory: () => setOpenInventory(true),
       onOpenNoticeBoard: () => setOpenNoticeBoard(true),
+      onOpenHomeStorage: () => setOpenHomeStorage(true),
       onOpenPlayerBadges: (info) => setOpenPlayerBadges(info),
       onNearbyNpcChange: setNearbyNpc,
       onNpcConversationClear: ({ npcId } = {}) => {
@@ -689,7 +704,7 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
       setTotalFloors(1);
       setStairScaffoldActive(false);
     };
-  }, [roomSignature, roomId, outdoorMode, forceBookstoreLayout, forceLibraryLayout, forceAgoraLayout, preferredCameraMode, shouldForceMultiLevelScaffold, approvedLayout]);
+  }, [roomSignature, roomId, outdoorMode, forceBookstoreLayout, forceLibraryLayout, forceAgoraLayout, forceHomeLayout, preferredCameraMode, shouldForceMultiLevelScaffold, approvedLayout]);
 
   const toggleEditor = () => {
     const scene = gameRef.current?.scene?.getScene('VillageScene');
@@ -821,6 +836,15 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
           onClose={() => setOpenNoticeBoard(false)}
         />
       )}
+      {openHomeStorage && (
+        <HomeStoragePanel
+          getState={() => gameRef.current?.scene?.getScene('VillageScene')?.homeStorageSystem?.getState?.()}
+          onStore={(id) => gameRef.current?.scene?.getScene('VillageScene')?.homeStorageSystem?.storeItem?.(id) || { ok: false, reason: 'error' }}
+          onTake={(id) => gameRef.current?.scene?.getScene('VillageScene')?.homeStorageSystem?.takeItem?.(id) || { ok: false, reason: 'error' }}
+          onUnloadAll={() => gameRef.current?.scene?.getScene('VillageScene')?.homeStorageSystem?.unloadAll?.() || { ok: false, reason: 'error' }}
+          onClose={() => setOpenHomeStorage(false)}
+        />
+      )}
       {openPlayerBadges && (
         <PlayerBadgesPanel
           getState={() => gameRef.current?.scene?.getScene('VillageScene')?.getPlayerBadges?.(openPlayerBadges.socketId)}
@@ -917,6 +941,29 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
         >
           ← Leave
         </button>
+        {/* Your Place v1: 🏠 Home goes to your own home room
+            (home-<owner>). Shown whenever the app can take you there
+            (onGoHome), and hidden while you are already home — going
+            home from home is pointless. */}
+        {onGoHome && !isHomeRoom(roomId) && (
+          <button
+            onClick={onGoHome}
+            title="Go to your place — your home room, where you can store things"
+            style={{
+              background: 'rgba(0,0,0,0.55)', color: '#fff', border: 'none',
+              borderRadius: 8,
+              padding: '6px 14px',
+              minHeight: 44,
+              display: 'flex', alignItems: 'center',
+              cursor: 'pointer',
+              fontSize: 14,
+              flexShrink: 0,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            🏠 Home
+          </button>
+        )}
         <button
           onClick={toggleEditor}
           style={{
