@@ -15,6 +15,9 @@
 //   onUse(id) / onDrop(id) / onDispose(id) — return { ok, reason? }
 //   onBuyBag() — returns { ok, reason? }
 //   onMakeFlyer(title, text) — returns { ok, reason? }
+//   onPinFlyer(id) — pin a flyer to the Agora notice board (Notice
+//     Board v1); returns { ok, pending?, reason? } — the flyer
+//     leaves the pocket when the server confirms the pin
 //   onOpenPuzzle() — close this panel and open the puzzle board
 //   onClose()
 
@@ -32,12 +35,15 @@ const REASON_TEXT = {
   'not-trash': 'Only trash can be thrown away.',
   'puzzle-piece-use-board': 'Place it on the puzzle board — that frees the slot.',
   'puzzle-piece-no-drop': 'Puzzle pieces can’t be dropped — place them on the puzzle board.',
+  'not-flyer': 'Only flyers can be pinned to the notice board.',
+  offline: 'You seem to be offline — try again when you’re connected.',
+  'not-available': 'The notice board is only in Agora.',
   'not-found': 'That item is no longer in your pocket.',
   error: 'Something went wrong — try again.',
 };
 
 export default function InventoryPanel({
-  getState, onUse, onDrop, onDispose, onBuyBag, onMakeFlyer, onOpenPuzzle, onClose,
+  getState, onUse, onDrop, onDispose, onBuyBag, onMakeFlyer, onPinFlyer, onOpenPuzzle, onClose,
 }) {
   const [state, setState] = useState(() => {
     try { return getState ? getState() : null; } catch { return null; }
@@ -193,6 +199,18 @@ export default function InventoryPanel({
                           Open puzzle board 🧩
                         </button>
                       )}
+                      {item.type === 'flyer' && state.roomId === 'agora-houston' && (
+                        <button
+                          onClick={() => run(
+                            () => onPinFlyer && onPinFlyer(item.id),
+                            '📌 Pinning it to the notice board…',
+                          )}
+                          title="Pin this flyer to the Agora notice board so everyone can read it — it leaves your pocket once the board confirms it"
+                          style={btnStyle}
+                        >
+                          Pin to board 📌
+                        </button>
+                      )}
                       {item.disposable && (
                         <button
                           onClick={() => run(() => onDispose && onDispose(item.id), '🗑️ Tossed! The cafe stays tidy.')}
@@ -273,7 +291,8 @@ export default function InventoryPanel({
                   <div style={{ fontWeight: 'bold', fontSize: 14 }}>📄 Make a flyer</div>
                   <div style={{ fontSize: 12.5, color: '#3d6a8a', marginTop: 2 }}>
                     {state.flyerCost} coins. The flyer goes into your pocket —
-                    read it, or drop it here for someone to stumble on.
+                    read it, drop it here for someone to stumble on, or pin
+                    it to the notice board in Agora for everyone to see.
                   </div>
                   <input
                     value={flyerTitle}

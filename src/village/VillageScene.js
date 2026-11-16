@@ -6,6 +6,7 @@ import { HiddenKey } from './HiddenKey.js';
 import { PuzzleQuest } from './PuzzleQuest.js';
 import { QuestManager } from './QuestManager.js';
 import { ItemsSystem } from './ItemsSystem.js';
+import { NoticeBoardSystem } from './NoticeBoardSystem.js';
 import { hasBag as inventoryHasBag, INVENTORY_FULL_MESSAGE } from './items.js';
 import { io } from 'socket.io-client';
 import { RoomLayout } from './RoomLayout.js';
@@ -461,6 +462,7 @@ export class VillageScene extends Phaser.Scene {
     this.onOpenJukebox = d.onOpenJukebox ?? (() => {});
     this.onOpenPuzzle = d.onOpenPuzzle ?? (() => {});
     this.onOpenInventory = d.onOpenInventory ?? (() => {});
+    this.onOpenNoticeBoard = d.onOpenNoticeBoard ?? (() => {});
     this.preferredCameraMode = ['ultra-close-follow', 'close-follow', 'follow', 'wide-follow', 'overview'].includes(d.preferredCameraMode)
       ? d.preferredCameraMode
       : null;
@@ -632,6 +634,11 @@ export class VillageScene extends Phaser.Scene {
     // cigarette box. Puzzle pieces live in this inventory too.
     this.itemsSystem = new ItemsSystem(this);
     this.itemsSystem.refresh();
+    // Notice board v1 (Agora only — the system itself no-ops
+    // elsewhere): the cork board by the entrance, server-synced
+    // flyers everyone in the room can read.
+    this.noticeBoardSystem = new NoticeBoardSystem(this);
+    this.noticeBoardSystem.refresh();
     // Wanderer quest: this room entry counts (after refresh, not in it).
     this.questManager?.noteRoomVisit();
     // Seasonal: pumpkins, bats, spooky tint in October.
@@ -852,6 +859,13 @@ export class VillageScene extends Phaser.Scene {
         if (lr && lr.reason === 'inventory-full') {
           this.onSystemNotice?.(`🎒 ${INVENTORY_FULL_MESSAGE}`);
         }
+      } catch {}
+      // Notice board v1: a click on the board itself opens it (if
+      // you are standing close enough) — same scene-level
+      // pointerdown pattern as the puzzle / items search.
+      try {
+        const br = this.noticeBoardSystem?.boardTapAt(ptr.worldX, ptr.worldY);
+        if (br && br.opened) return;
       } catch {}
       this.target = target;
       this.tapDot.setPosition(ptr.worldX, ptr.worldY).setAlpha(0.7);
@@ -1152,6 +1166,9 @@ export class VillageScene extends Phaser.Scene {
     } else if (kind === 'puzzle-table') {
       // Group puzzle quest: open the zoomed-in board.
       this.puzzleQuest?.openBoard();
+    } else if (kind === 'notice-board') {
+      // Notice board v1: open the pinned-flyers board.
+      this.noticeBoardSystem?.openBoard();
     } else if (kind === 'bar') {
       this._tryBuyDrink();
     }
@@ -1172,6 +1189,7 @@ export class VillageScene extends Phaser.Scene {
     if (this.cafeCat?.nearestCat(this.player.gx, this.player.gy)) return 'cat';
     if (this.cafeCat?.nearestSleepingCat(this.player.gx, this.player.gy)) return 'cat-asleep';
     if (this.puzzleQuest?.nearestTable(this.player.gx, this.player.gy)) return 'puzzle-table';
+    if (this.noticeBoardSystem?.nearestBoard(this.player.gx, this.player.gy)) return 'notice-board';
     if (this._nearestShelf()) return 'shelf';
     if (this._nearestJukebox()) return 'jukebox';
     if (this._nearestBar()) return 'bar';
@@ -1768,6 +1786,7 @@ export class VillageScene extends Phaser.Scene {
       socket.emit('get_cat', { roomId: this.roomId });
       socket.emit('get_quest_state', { roomId: this.roomId });
       socket.emit('get_puzzle', { roomId: this.roomId });
+      socket.emit('get_board', { roomId: this.roomId });
       socket.emit('get_time_phase', {});
       const now = Date.now();
       this._lastPresenceSyncAt = now;
@@ -1959,6 +1978,11 @@ export class VillageScene extends Phaser.Scene {
     // Group puzzle state (Agora, shared for the whole room).
     socket.on('puzzle_state', (payload = {}) => {
       this.puzzleQuest?.applyState(payload);
+    });
+
+    // Notice board state (Agora, shared for the whole room).
+    socket.on('board_state', (payload = {}) => {
+      this.noticeBoardSystem?.applyState(payload);
     });
     // The room finished the puzzle — re-ask for the canonical state
     // (the puzzle_state broadcast just before this carries it too;
@@ -2831,6 +2855,8 @@ export class VillageScene extends Phaser.Scene {
     this.puzzleQuest = null;
     this.itemsSystem?.destroy();
     this.itemsSystem = null;
+    this.noticeBoardSystem?.destroy();
+    this.noticeBoardSystem = null;
     this.questManager?.destroy();
     this.questManager = null;
     this.catPrompt?.destroy();

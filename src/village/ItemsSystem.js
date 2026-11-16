@@ -478,6 +478,40 @@ export class ItemsSystem {
     } catch {}
   }
 
+  /** Pin a flyer from the pocket to the Agora notice board
+   * (Notice Board v1). The flyer leaves the pocket only when the
+   * server confirms the pin — see NoticeBoardSystem.applyState ->
+   * confirmPinnedFlyer. If the pin never lands (offline,
+   * rate-limited), the flyer simply stays in the pocket: pinning
+   * never loses a flyer. */
+  pinFlyerToBoard(id) {
+    const item = getItem(id);
+    if (!item) return { ok: false, reason: 'not-found' };
+    if (item.type !== ITEM_TYPES.FLYER) return { ok: false, reason: 'not-flyer' };
+    return this.scene?.noticeBoardSystem?.pinFlyer(item.title, item.text, item.id)
+      || { ok: false, reason: 'not-available' };
+  }
+
+  /** The server confirmed a pin: the flyer leaves the pocket (the
+   * slot frees up). Called by NoticeBoardSystem on the board_state
+   * broadcast that shows the flyer. */
+  confirmPinnedFlyer(itemId) {
+    const removed = removeItem(itemId);
+    return { ok: Boolean(removed), item: removed };
+  }
+
+  /** A flyer taken down from the board comes back to the pocket —
+   * if there is room. Returns { ok, reason? } — 'inventory-full'
+   * means the flyer was discarded instead (the board already let
+   * it go). Called by NoticeBoardSystem on the broadcast that
+   * confirms the owner's take-down. */
+  returnFlyerToPocket(flyer) {
+    if (!flyer || !flyer.title || !flyer.text) return { ok: false, reason: 'not-found' };
+    const res = addItem({ type: ITEM_TYPES.FLYER, title: flyer.title, text: flyer.text });
+    if (!res.ok) return { ok: false, reason: res.reason || 'error' };
+    return { ok: true, item: res.item };
+  }
+
   /** Make a flyer (5 coins, title + text) — see items.createFlyer. */
   makeFlyer(title, text) {
     return createFlyer(title, text);

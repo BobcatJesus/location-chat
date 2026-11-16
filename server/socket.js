@@ -29,6 +29,13 @@ import {
   placePiece,
   serializePuzzleState,
 } from '../src/village/puzzleState.js';
+import {
+  NOTICE_BOARD_MAX_FLYERS,
+  createNoticeBoardState,
+  pinFlyer,
+  removeFlyer,
+  serializeNoticeBoardState,
+} from '../src/village/noticeBoardState.js';
 
 // Shared instructions so every NPC reads as a real person, not a helpful assistant.
 const HUMAN_STYLE_GUIDE = `
@@ -399,6 +406,15 @@ const puzzleState = {};
 function puzzleRoom(roomId) {
   if (!puzzleState[roomId]) puzzleState[roomId] = { state: createPuzzleState(), resetTimer: null };
   return puzzleState[roomId];
+}
+// Notice board (Notice Board v1, `sq-notice-board-v1`): per-room
+// pinned flyers, Agora only. In-memory like the puzzle — a server
+// restart wipes the board clean (fresh board, nothing pinned).
+// noticeBoards[roomId] = { state }.
+const noticeBoards = {};
+function noticeBoardRoom(roomId) {
+  if (!noticeBoards[roomId]) noticeBoards[roomId] = { state: createNoticeBoardState() };
+  return noticeBoards[roomId];
 }
 // Matches youtube.com/watch?v=, youtu.be/, youtube.com/embed/, youtube.com/shorts/
 const YOUTUBE_ID_RE = /(?:(?:www\.|music\.)?youtube\.com\/(?:watch\?[^#]*v=|embed\/|shorts\/|v\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/;
@@ -1164,6 +1180,56 @@ io.on('connection', (socket) => {
     if (!roomId || roomId !== 'agora-houston') return;
     if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
     socket.emit('puzzle_state', serializePuzzleState(puzzleRoom(roomId).state));
+  });
+
+  // NOTICE BOARD (Notice Board v1, `sq-notice-board-v1` — Agora
+  // only). Pin a flyer from your pocket: the server validates the
+  // text (title up to 60 chars, text up to 200 — the same limits as
+  // making a flyer), caps the board at NOTICE_BOARD_MAX_FLYERS
+  // (10; the oldest flyer falls off when the 11th pins), and
+  // broadcasts the board so every player in the room sees it.
+  // Pinning is free — the 5 coins were paid when the flyer was made.
+  socket.on('board_pin', ({ roomId, id, title, text } = {}) => {
+    if (!roomId || roomId !== 'agora-houston') return;
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const userId = socketUserMap[socket.id] || socket.id;
+    const rate = checkRateLimit(userId);
+    if (!rate.allowed) return;
+    const room = noticeBoardRoom(roomId);
+    const res = pinFlyer(room.state, {
+      id,
+      title,
+      text,
+      addedBy: userId,
+      addedByName: rooms[roomId][socket.id]?.name || 'Someone',
+    });
+    if (!res.ok) return;
+    io.to(roomId).emit('board_state', serializeNoticeBoardState(room.state));
+  });
+
+  // NOTICE BOARD REMOVAL: your own flyer, or any flyer if you are a
+  // moderator (same global moderator list as the layout review
+  // endpoints). The board broadcast carries the result; what happens
+  // to the flyer afterwards is the client's call (back to the
+  // owner's pocket if they took it down and have room, discarded
+  // otherwise — a moderator removal always discards it).
+  socket.on('board_remove', ({ roomId, flyerId } = {}) => {
+    if (!roomId || roomId !== 'agora-houston') return;
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const userId = socketUserMap[socket.id] || socket.id;
+    const rate = checkRateLimit(userId);
+    if (!rate.allowed) return;
+    const room = noticeBoardRoom(roomId);
+    const res = removeFlyer(room.state, flyerId, userId, isGlobalModerator(userId));
+    if (!res.ok) return;
+    io.to(roomId).emit('board_state', serializeNoticeBoardState(room.state));
+  });
+
+  // NOTICE BOARD STATE: the room's board, sent when you join (or ask).
+  socket.on('get_board', ({ roomId } = {}) => {
+    if (!roomId || roomId !== 'agora-houston') return;
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    socket.emit('board_state', serializeNoticeBoardState(noticeBoardRoom(roomId).state));
   });
 
   // DAY/NIGHT: answer with the canonical phase (see currentTimePhase

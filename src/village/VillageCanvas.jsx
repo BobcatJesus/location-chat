@@ -6,6 +6,7 @@ import ShelfPanel from './ShelfPanel.jsx';
 import JukeboxPanel from './JukeboxPanel.jsx';
 import PuzzleBoard from './PuzzleBoard.jsx';
 import InventoryPanel from './InventoryPanel.jsx';
+import NoticeBoardPanel from './NoticeBoardPanel.jsx';
 import InteriorSketchModal from './InteriorSketchModal.jsx';
 import ModQueuePanel from './ModQueuePanel.jsx';
 import { getCoins } from './CoinWallet.js';
@@ -249,6 +250,7 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
   const [openJukebox, setOpenJukebox] = useState(null);
   const [openPuzzle, setOpenPuzzle] = useState(false);
   const [openInventory, setOpenInventory] = useState(false);
+  const [openNoticeBoard, setOpenNoticeBoard] = useState(false);
   const [inventoryCount, setInventoryCount] = useState(null); // "n/cap" for the bottom-left button badge
 
   // Refresh coin balance when jukebox closes or every 5s
@@ -332,6 +334,7 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
     'cat-asleep': ['💤', 'Cat is asleep'],
     key: ['🔑', 'Pick up the golden key'],
     'puzzle-table': ['🧩', 'Open the puzzle table'],
+    'notice-board': ['📌', 'Read the notice board'],
     shelf: ['📚', 'Browse the shelf'],
     jukebox: ['🎵', 'Open the jukebox'],
     bar: ['🍺', 'Order a drink'],
@@ -613,6 +616,7 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
       onOpenJukebox: (info) => setOpenJukebox(info),
       onOpenPuzzle: () => setOpenPuzzle(true),
       onOpenInventory: () => setOpenInventory(true),
+      onOpenNoticeBoard: () => setOpenNoticeBoard(true),
       onNearbyNpcChange: setNearbyNpc,
       onNpcConversationClear: ({ npcId } = {}) => {
         setMessages((prev) => prev.filter((msg) => msg.channel !== 'npc' || msg.npcId !== npcId));
@@ -798,8 +802,17 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
           onDispose={(id) => gameRef.current?.scene?.getScene('VillageScene')?.itemsSystem?.disposeTrash?.(id) || { ok: false, reason: 'error' }}
           onBuyBag={() => gameRef.current?.scene?.getScene('VillageScene')?.itemsSystem?.buyBag?.() || { ok: false, reason: 'error' }}
           onMakeFlyer={(title, text) => gameRef.current?.scene?.getScene('VillageScene')?.itemsSystem?.makeFlyer?.(title, text) || { ok: false, reason: 'error' }}
+          onPinFlyer={(id) => gameRef.current?.scene?.getScene('VillageScene')?.itemsSystem?.pinFlyerToBoard?.(id) || { ok: false, reason: 'error' }}
           onOpenPuzzle={() => { setOpenInventory(false); setOpenPuzzle(true); }}
           onClose={() => { setOpenInventory(false); setCoinBalance(getCoins()); }}
+        />
+      )}
+      {openNoticeBoard && (
+        <NoticeBoardPanel
+          getState={() => gameRef.current?.scene?.getScene('VillageScene')?.noticeBoardSystem?.getState?.()}
+          onRemove={(flyerId) => gameRef.current?.scene?.getScene('VillageScene')?.noticeBoardSystem?.removeFlyer?.(flyerId) || { ok: false, reason: 'error' }}
+          isModerator={isModerator}
+          onClose={() => setOpenNoticeBoard(false)}
         />
       )}
       {showEditHint && (

@@ -3,6 +3,11 @@
 // Base: the very large empty-space template (layouts/default.js) — a
 // full 1600x900 room, spawn by the entrance — furnished for the first
 // time in the Agora furniture pass (`agora-furniture-v1`):
+//   - a notice board on the south wall, just west of the entrance
+//     (Notice Board v1, `sq-notice-board-v1`): walk up and press E,
+//     or click it, to read the flyers pinned here. Everyone in the
+//     room sees the same board (server state); pinning happens from
+//     the inventory, on a flyer in your pocket.
 //   - a coffee bar along the north wall, with the Barista NPC behind it
 //     (buy a coffee there: -2 coins, reusing the existing drink system)
 //   - a clear entrance at the bottom centre, spawn just inside it
@@ -38,6 +43,13 @@ const F1_ZONES = [
 
   // Entrance (bottom centre) — spawn is just inside it.
   { type: 'entry', x: 700, y: 780, w: 200, h: 40, label: 'Entrance' },
+
+  // Notice board (Notice Board v1, `sq-notice-board-v1`) — on the
+  // south wall, just west of the entrance, so everyone walks past it
+  // coming in. Not solid (it hangs on the wall, like the portrait);
+  // interact:true so E opens it. The north wall was considered
+  // first, but it is full: bar counter, AGORA sign, portrait.
+  { type: 'notice_board', x: 480, y: 745, w: 180, h: 60, label: 'Notice Board', interact: true, solid: false },
 
   // Coffee bar along the north wall. Type 'counter' + a label with
   // "Bar" in it is what the existing drink system looks for

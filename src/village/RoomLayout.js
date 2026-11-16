@@ -1137,6 +1137,37 @@ export class RoomLayout {
         break;
       }
 
+      case 'notice_board': {
+        // Cork notice board hanging on the wall (Notice Board v1):
+        // dark wood frame, tan cork, a few mini flyers pinned on
+        // with coloured pins. Not solid — it hangs above the floor.
+        g.fillStyle(0x5b3a1e, 1);
+        g.fillRect(x - 4, y - 4, w + 8, h + 8);
+        g.fillStyle(0xd9a441, 1);
+        g.fillRect(x, y, w, h);
+        // Mini pinned flyers (decoration only — the real list lives
+        // in the DOM panel; the count here never pretends to match).
+        const mini = [
+          { mx: x + 14, my: y + 10, mw: 34, mh: 22, pin: 0xef4444 },
+          { mx: x + w / 2 - 14, my: y + 8, mw: 28, mh: 26, pin: 0x3b82f6 },
+          { mx: x + w - 52, my: y + 12, mw: 36, mh: 20, pin: 0x22c55e },
+        ];
+        for (const m of mini) {
+          g.fillStyle(0xfffdf5, 1);
+          g.fillRect(m.mx, m.my, m.mw, m.mh);
+          g.lineStyle(1, 0x94a3b8, 0.7);
+          g.lineBetween(m.mx + 4, m.my + 7, m.mx + m.mw - 4, m.my + 7);
+          g.lineBetween(m.mx + 4, m.my + 13, m.mx + m.mw - 4, m.my + 13);
+          g.fillStyle(m.pin, 1);
+          g.fillCircle(m.mx + m.mw / 2, m.my, 3);
+        }
+        g.lineStyle(2, C.WALL, 1);
+        g.strokeRect(x - 4, y - 4, w + 8, h + 8);
+        if (z.label) this._lbl(x + w / 2, y + h + 14, z.label, LABEL_STYLE, 0.5, 0);
+        if (z.interact) this.interactZones.push(z);
+        break;
+      }
+
       case 'trash_can': {
         // Small trash can: grey cylinder with a darker lid. The group
         // puzzle's piece 5 hides here (PuzzleQuest.js resolves it from
