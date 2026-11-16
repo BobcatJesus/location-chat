@@ -151,6 +151,7 @@ export class CafeCat {
     this.asleep = false;
     this.petCooldown = 0;
     this.followUntil = 0;
+    this.onCatPet = null; // quest hook (Cat Cuddles): set by VillageScene
   }
 
   get enabled() {
@@ -246,6 +247,12 @@ export class CafeCat {
     try {
       import('./CoinWallet.js').then((m) => m.earnCoins(PET_COIN_REWARD, 'cat-pet')).catch(() => {});
     } catch {}
+    // Quest hook (Cat Cuddles + the Bartender's Errand): a successful
+    // LOCAL pet counts. Remote pets go through onRemotePet, not here,
+    // so nobody else's petting fills your quest.
+    if (local) {
+      try { this.onCatPet?.(); } catch {}
+    }
     // Tell the server so everyone counts the pet toward the 3-pet sleep.
     if (local) {
       try { this.scene.socket?.emit('pet_cat', { roomId: this.scene.roomId }); } catch {}

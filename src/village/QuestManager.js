@@ -29,8 +29,16 @@
 //     server-side rewards are v2.
 //
 // What v1 does NOT do: onboarding, group shared-progress quests,
-// quest chaining / next-quest, or a quest list UI beyond the one
-// active tracker. Those are v2.
+// or a quest list UI beyond the tracker. Those are v2.
+//
+// Quest batch v1.1 (2026-11-15): 6 more quests on the same loop —
+// Cat Cuddles (Agora), Say Hello to the Bartender + Barfly (Lola's
+// Depot), The Golden Key (hidden object, Agora), plus two ANYWHERE
+// quests (roomId '*') that run alongside the room quest in every
+// room: Wanderer (visit 3 places) and The Bartender's Errand (a
+// 3-step chain: bartender → feed ducks → pet cat, in order). A room
+// can hold several quests in sequence: refresh() picks the first
+// unfinished one, and finishing it activates the next.
 
 import { DEPTH } from './depth.js';
 import { QUESTS, getQuest } from './quests.js';
@@ -87,6 +95,53 @@ export class QuestManager {
     this._shownBanners = new Set(); // quest ids the banner already showed for, this session
   }
 
+  /** Anywhere quests (roomId '*') you have not finished yet. */
+  anywhereQuests() {
+    return QUESTS.filter((q) => q.roomId === '*' && !this.saved[q.id]?.completed);
+  }
+
+  /**
+   * A room entry counts toward the Wanderer quest. Called by VillageScene
+   * AFTER refresh() (not from inside it — completing Wanderer here calls
+   * refresh() again, and re-entering refresh mid-refresh would eat the
+   * completion toast). Distinct rooms only: re-entering the same room
+   * never counts (see recordDistinct).
+   */
+  noteRoomVisit() {
+    const roomId = this.scene?.roomId;
+    if (!roomId || roomId === '*') return;
+    this.recordDistinct('room-visited', roomId, 'rooms');
+  }
+
+  /**
+   * Count a DISTINCT value toward quests (different beers for Barfly,
+   * different rooms for Wanderer). Repeats don't count: the seen values
+   * live on the quest's saved entry under `key`, so progress survives
+   * a reload. Checks the active room quest and every open anywhere
+   * quest — whichever one listens for this event.
+   */
+  recordDistinct(eventName, value, key) {
+    if (value == null || value === '') return;
+    const quests = [this.activeQuest, ...this.anywhereQuests()].filter(Boolean);
+    for (const quest of quests) {
+      if (quest.event !== eventName) continue;
+      const entry = this.saved[quest.id] || { count: 0, completed: false };
+      if (entry.completed) continue;
+      const list = Array.isArray(entry[key]) ? entry[key] : [];
+      if (list.includes(value)) continue;
+      list.push(value);
+      entry[key] = list;
+      entry.count = Math.min(list.length, quest.target);
+      this.saved[quest.id] = entry;
+      saveSaved(this.saved);
+      this._drawTracker();
+      try {
+        this.scene.socket?.emit('quest_progress', { roomId: this.scene.roomId, questId: quest.id });
+      } catch {}
+      if (entry.count >= quest.target) this._completeQuest(quest);
+    }
+  }
+
   /** (Re)pick the quest for this room and (re)draw the tracker. */
   refresh() {
     this._clearTexts();
@@ -95,7 +150,9 @@ export class QuestManager {
       (q) => q.roomId === roomId && !this.saved[q.id]?.completed,
     ) || null;
     this.sharedCount = 0;
-    if (!this.activeQuest) return;
+    // No room quest here? The tracker still shows if an anywhere quest
+    // (Wanderer / Coin Collector / Room Full of Friends) is still open.
+    if (!this.activeQuest && this.anywhereQuests().length === 0) return;
     try {
       const scene = this.scene;
       this.tracker = scene.add.text(16, 16, '', {
@@ -107,7 +164,7 @@ export class QuestManager {
       this.tracker.setScrollFactor(0);
       this.tracker.setDepth(DEPTH.UI);
       this._drawTracker();
-      this._showQuestBanner(this.activeQuest);
+      if (this.activeQuest) this._showQuestBanner(this.activeQuest);
     } catch {}
   }
 
@@ -120,13 +177,54 @@ export class QuestManager {
     );
   }
 
-  /** One quest event happened (e.g. you fed a duck). */
+  /** One quest event happened for the ROOM quest (e.g. you fed a duck). */
   recordEvent(eventName) {
     const quest = this.activeQuest;
-    if (!quest || quest.event !== eventName) return;
+    if (quest && quest.event === eventName) this._increment(quest);
+    // The same action can also be a step of an anywhere quest (the
+    // Bartender's Errand advances on bartender-talk / ducks-fed /
+    // cat-pet), so anywhere quests always get a look too.
+    this.recordGlobalEvent(eventName);
+  }
+
+  /**
+   * One quest event happened for the ANYWHERE quests (roomId '*':
+   * Wanderer, The Bartender's Errand). Unlike recordEvent, this is not
+   * tied to the active room quest — every unfinished anywhere quest
+   * listening for this event counts it. Chain quests only advance on
+   * their NEXT step's event, in order — feeding the ducks before
+   * talking to the bartender does nothing for the Errand.
+   * The banner for an anywhere quest shows the first time it records
+   * progress, so they stagger instead of popping at once.
+   */
+  recordGlobalEvent(eventName) {
+    for (const quest of QUESTS) {
+      if (quest.roomId !== '*') continue;
+      const entry = this.saved[quest.id] || { count: 0, completed: false };
+      if (entry.completed) continue;
+      if (Array.isArray(quest.steps)) {
+        const step = Number(entry.step || 0);
+        if (quest.steps[step] !== eventName) continue;
+      } else if (quest.event !== eventName) {
+        continue;
+      }
+      const firstStep = (Number(entry.count) || 0) === 0;
+      this._increment(quest);
+      if (firstStep) this._showQuestBanner(quest);
+    }
+  }
+
+  /** Count one event toward one quest: save, sync, complete at target. */
+  _increment(quest) {
     const entry = this.saved[quest.id] || { count: 0, completed: false };
     if (entry.completed) return;
-    entry.count = Math.min((Number(entry.count) || 0) + 1, quest.target);
+    if (Array.isArray(quest.steps)) {
+      // Chain quest: one step done, in order. count IS the step index.
+      entry.step = Math.min((Number(entry.step) || 0) + 1, quest.steps.length);
+      entry.count = entry.step;
+    } else {
+      entry.count = Math.min((Number(entry.count) || 0) + 1, quest.target);
+    }
     this.saved[quest.id] = entry;
     saveSaved(this.saved);
     this._drawTracker();
@@ -134,7 +232,7 @@ export class QuestManager {
     try {
       this.scene.socket?.emit('quest_progress', { roomId: this.scene.roomId, questId: quest.id });
     } catch {}
-    if (entry.count >= quest.target) this._completeQuest();
+    if (entry.count >= quest.target) this._completeQuest(quest);
   }
 
   /** Apply the server's canonical quest state (on join / on change). */
@@ -145,13 +243,25 @@ export class QuestManager {
     if (Number.isFinite(Number(payload.shared))) {
       this.sharedCount = Number(payload.shared);
     }
+    // Only the active room quest or an open anywhere quest can merge
+    // server progress — a quest for another room never touches yours.
+    const isMine = this.activeQuest?.id === quest.id
+      || (quest.roomId === '*' && !this.saved[quest.id]?.completed);
     // Your own count: take the higher of local / server, so a server
     // restart (in-memory state) never wipes progress you already made.
-    if (Number.isFinite(Number(payload.count)) && this.activeQuest?.id === quest.id) {
+    if (Number.isFinite(Number(payload.count)) && isMine) {
       const entry = this.saved[quest.id] || { count: 0, completed: false };
       const best = Math.max(Number(entry.count) || 0, Number(payload.count));
       if (best !== entry.count) {
         entry.count = Math.min(best, quest.target);
+        this.saved[quest.id] = entry;
+        saveSaved(this.saved);
+      }
+      // Chain quests: the server's count IS the step index — keep the
+      // step pointer in sync with the merged count, or the next step
+      // would expect the wrong event.
+      if (Array.isArray(quest.steps)) {
+        entry.step = Math.min(entry.count, quest.steps.length);
         this.saved[quest.id] = entry;
         saveSaved(this.saved);
       }
@@ -161,7 +271,7 @@ export class QuestManager {
         saveSaved(this.saved);
         // Local save never paid for this one (payment happens in
         // _completeQuest, which sets completed) — so pay here.
-        this._completeQuest();
+        this._completeQuest(quest);
         return;
       }
     }
@@ -177,8 +287,7 @@ export class QuestManager {
     this._showToast(`🎉 Another player finished "${quest.title}"!`);
   }
 
-  _completeQuest() {
-    const quest = this.activeQuest;
+  _completeQuest(quest = this.activeQuest) {
     if (!quest) return;
     const entry = this.saved[quest.id] || { count: 0, completed: false };
     entry.completed = true;
@@ -259,14 +368,29 @@ export class QuestManager {
   }
 
   _drawTracker() {
-    if (!this.tracker || !this.activeQuest) return;
+    if (!this.tracker) return;
+    const lines = [];
     const quest = this.activeQuest;
-    const mine = this.progress;
-    const lines = [
-      `${quest.emoji} ${quest.title}  ${mine}/${quest.target}`,
-      quest.description,
-    ];
-    if (this.sharedCount > 0) lines.push(`Room total: ${this.sharedCount} feeds`);
+    if (quest) {
+      const mine = this.progress;
+      lines.push(
+        `${quest.emoji} ${quest.title}  ${mine}/${quest.target}`,
+        quest.description,
+      );
+      if (this.sharedCount > 0) lines.push(`Room total: ${this.sharedCount}`);
+    }
+    // Anywhere quests ride along under the room quest.
+    for (const q of this.anywhereQuests()) {
+      const n = Math.min(Number(this.saved[q.id]?.count || 0), q.target);
+      if (Array.isArray(q.steps)) {
+        // Chain quest: show the NEXT step, not just the count.
+        const next = q.stepLabels?.[n] || '';
+        lines.push(`${q.emoji} ${q.title}  ${n}/${q.target}${next ? ` — ${next}` : ''}`);
+      } else {
+        lines.push(`${q.emoji} ${q.title}  ${n}/${q.target}`);
+      }
+    }
+    if (lines.length === 0) return;
     try {
       this.tracker.setText(lines.join('\n'));
     } catch {}
@@ -305,8 +429,9 @@ export class QuestManager {
   }
 
   update() {
-    // Nothing per-frame in v1: progress arrives via recordEvent /
-    // applyServerState, and the toast fades on a timer.
+    // Nothing per-frame: progress arrives via recordEvent /
+    // recordGlobalEvent / recordDistinct / noteRoomVisit, and the toast
+    // fades on a timer.
   }
 
   _clearTexts() {

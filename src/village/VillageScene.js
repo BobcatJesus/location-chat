@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { DEPTH } from './depth.js';
 import { DuckPond } from './DuckPond.js';
 import { CafeCat } from './CafeCat.js';
+import { HiddenKey } from './HiddenKey.js';
 import { QuestManager } from './QuestManager.js';
 import { io } from 'socket.io-client';
 import { RoomLayout } from './RoomLayout.js';
@@ -161,15 +162,21 @@ function getOutdoorSpriteMeta(type = '') {
   const normalized = String(type || '').toLowerCase();
   switch (normalized) {
     case 'oak_tree':
-      return { textureKey: 'tree-oak', targetHeight: 126, rotation: 0 };
+      // Big park tree: ~2.5x a humanoid avatar (64-76px). The oak art is a
+      // wide canopy on a short trunk, so height is what makes it read as a tree.
+      return { textureKey: 'tree-oak', targetHeight: 175, rotation: 0 };
     case 'tree':
-      return { textureKey: 'tree-oak', targetHeight: 92, rotation: 0 };
+      // Ordinary tree: ~2x avatar height — clearly taller than a person,
+      // not a shrub and not a skyscraper.
+      return { textureKey: 'tree-oak', targetHeight: 140, rotation: 0 };
     case 'shrub':
-      return { textureKey: 'tree-oak', targetHeight: 52, rotation: 0 };
+      return { textureKey: 'tree-oak', targetHeight: 40, rotation: 0 };
     case 'hedge':
       return { textureKey: 'tree-oak', targetHeight: 44, rotation: 0 };
     case 'bench':
-      return { textureKey: 'bench', targetHeight: 64, rotation: 0 };
+      // Park bench: back top ~chest height on an avatar, seat below the knee.
+      // (Was 64 — as tall as a person, which made benches read as walls.)
+      return { textureKey: 'bench', targetHeight: 48, rotation: 0 };
     case 'lamppost':
       return { textureKey: 'lamppost', targetHeight: 106, rotation: 0 };
     case 'flowerbed':
@@ -595,6 +602,16 @@ export class VillageScene extends Phaser.Scene {
     this.duckPond.onDuckPet = (duck) => {
       if (duck?.roaming) this.questManager?.recordEvent('duck-fed');
     };
+    // Cat Cuddles quest: a successful local pet counts (also a step of
+    // the Bartender's Errand, via recordEvent -> recordGlobalEvent).
+    this.cafeCat.onCatPet = () => {
+      this.questManager?.recordEvent('cat-pet');
+    };
+    // Golden Key quest (Agora only — HiddenKey itself no-ops elsewhere).
+    this.hiddenKey = new HiddenKey(this);
+    this.hiddenKey.refresh();
+    // Wanderer quest: this room entry counts (after refresh, not in it).
+    this.questManager?.noteRoomVisit();
     // Seasonal: pumpkins, bats, spooky tint in October.
     this.halloween = new HalloweenMode(this);
     this.halloween.start();
@@ -1060,16 +1077,21 @@ export class VillageScene extends Phaser.Scene {
       this._tryFeedDucks();
     } else if (kind === 'cat') {
       this.cafeCat?.petCat(true);
+    } else if (kind === 'key') {
+      // Golden Key quest: pick it up, then count the find.
+      if (this.hiddenKey?.collect()) this.questManager?.recordEvent('key-found');
     } else if (kind === 'bar') {
       this._tryBuyDrink();
     }
   }
 
   // Public: what would the E key do right now? Priority: pet a duck
-  // right next to you > feed at the pond > cat > shelf > jukebox.
+  // right next to you > grab the golden key > feed at the pond > cat >
+  // shelf > jukebox.
   getInteractKind() {
     if (!this.player) return null;
     if (this.duckPond?.nearestPettableDuck(this.player.gx, this.player.gy)) return 'duck';
+    if (this.hiddenKey?.nearestKey(this.player.gx, this.player.gy)) return 'key';
     const nearPond = this.duckPond?.nearestFeedablePond(this.player.gx, this.player.gy);
     if (nearPond && this._feedCooldownMs <= 0) return 'ducks';
     if (this.cafeCat?.nearestCat(this.player.gx, this.player.gy)) return 'cat';
@@ -1134,7 +1156,12 @@ export class VillageScene extends Phaser.Scene {
     // (the drink card). No card from down the bar — walk up to him.
     const btNpc = this._bartenderNpc();
     if (btNpc) {
-      if (Math.hypot(this.player.gx - btNpc.gx, this.player.gy - btNpc.gy) <= 170) this._openDrinkCard();
+      if (Math.hypot(this.player.gx - btNpc.gx, this.player.gy - btNpc.gy) <= 170) {
+        // Say Hello to the Bartender quest (also step 1 of the
+        // Bartender's Errand): opening the drink card IS the hello.
+        this.questManager?.recordEvent('bartender-talk');
+        this._openDrinkCard();
+      }
       return;
     }
     let wallet;
@@ -1279,6 +1306,12 @@ export class VillageScene extends Phaser.Scene {
     }
     this._enqueueDrinkOrder(myId, beerLabel);
     this.socket?.emit('order_drink', { roomId: this.roomId, beer: beerLabel });
+    // Barfly quest: a placed order for a NEW beer counts (water doesn't
+    // — this is a bar). The card and the conversational order both land
+    // here, so both count.
+    if (beerLabel !== 'Water') {
+      this.questManager?.recordDistinct('beer-ordered', beerLabel, 'beers');
+    }
     return true;
   }
 
@@ -1589,7 +1622,9 @@ export class VillageScene extends Phaser.Scene {
       this.socket?.emit('feed_ducks', { roomId: this.roomId, x: Math.round(fx), y: Math.round(fy) });
       // Feeding tosses crumbs to the pond ducks, and pond ducks don't
       // count toward the Duck Roundup — so feeding no longer records
-      // a quest step. Only petting a roaming duck does.
+      // a quest step. Only petting a roaming duck does. It DOES count
+      // as step 2 of the Bartender's Errand (via recordGlobalEvent).
+      this.questManager?.recordEvent('ducks-fed');
     }
   }
 
@@ -2340,6 +2375,7 @@ export class VillageScene extends Phaser.Scene {
     this._drinkCooldownMs = Math.max(0, (this._drinkCooldownMs || 0) - delta);
     this.duckPond?.update(delta);
     this.cafeCat?.update(delta);
+    this.hiddenKey?.update(delta);
     this.questManager?.update(delta);
     this.halloween?.update(delta);
     this.dayNight?.update(delta);
@@ -2656,6 +2692,8 @@ export class VillageScene extends Phaser.Scene {
     this.duckPond = null;
     this.cafeCat?.destroy();
     this.cafeCat = null;
+    this.hiddenKey?.destroy();
+    this.hiddenKey = null;
     this.questManager?.destroy();
     this.questManager = null;
     this.catPrompt?.destroy();
@@ -2695,6 +2733,8 @@ export class VillageScene extends Phaser.Scene {
     this.duckPond?.refresh();
     this.cafeCat?.refresh();
     this.questManager?.refresh();
+    this.hiddenKey?.refresh();
+    this.questManager?.noteRoomVisit();
     this._emitFloorStatus();
     this.roomLayout.setDynamicSolids(this.customZones);
     this.roomLayout.setCollisionDebug(this.showCollisionDebug);

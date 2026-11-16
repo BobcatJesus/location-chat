@@ -364,7 +364,15 @@ const CATS_PETS_TO_SLEEP = 3;
 // The server only knows the quest ids in QUEST_DEFS, so a bad client
 // can't invent quests or rewards.
 const questState = {};
-const QUEST_DEFS = { 'duck-roundup': { target: 3, rewardCoins: 5 } };
+const QUEST_DEFS = {
+  'duck-roundup': { target: 3, rewardCoins: 5 },
+  'cat-cuddles': { target: 3, rewardCoins: 3 },
+  'first-round': { target: 1, rewardCoins: 3 },
+  'barfly': { target: 3, rewardCoins: 5 },
+  'golden-key': { target: 1, rewardCoins: 5 },
+  'wanderer': { target: 3, rewardCoins: 4 },
+  'bartenders-errand': { target: 3, rewardCoins: 5 },
+};
 // Matches youtube.com/watch?v=, youtu.be/, youtube.com/embed/, youtube.com/shorts/
 const YOUTUBE_ID_RE = /(?:(?:www\.|music\.)?youtube\.com\/(?:watch\?[^#]*v=|embed\/|shorts\/|v\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/;
 function extractYouTubeId(url) {
