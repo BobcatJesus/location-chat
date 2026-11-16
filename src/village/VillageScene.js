@@ -812,6 +812,13 @@ export class VillageScene extends Phaser.Scene {
       }
       const target = this.roomLayout?.clampPointToRoom(ptr.worldX, ptr.worldY, 20)
         || { x: Phaser.Math.Clamp(ptr.worldX, 20, W * 4 - 20), y: Phaser.Math.Clamp(ptr.worldY, 60, H * 4 - 10) };
+      // Group puzzle v1.2 (hidden search): a click on furniture
+      // hiding a piece counts as one search tap (3 taps finds it).
+      // Silent unless the tap finds a piece — no hint about which
+      // furniture hides one. Tap-to-move still happens below, as
+      // before, so clicking a table both walks you there and
+      // searches it.
+      try { this.puzzleQuest?.searchTapAt(ptr.worldX, ptr.worldY); } catch {}
       this.target = target;
       this.tapDot.setPosition(ptr.worldX, ptr.worldY).setAlpha(0.7);
       this.tweens.add({ targets: this.tapDot, alpha: 0, duration: 400 });
@@ -1095,16 +1102,17 @@ export class VillageScene extends Phaser.Scene {
     } else if (kind === 'cat') {
       this.cafeCat?.petCat(true);
     } else if (kind === 'cat-asleep') {
-      // Petting a sleeping cat does nothing in CafeCat — say why, in
-      // the readable DOM notice, instead of failing silently.
-      this.onSystemNotice?.('💤 The cat is asleep — she wakes up when someone new walks in.');
+      // Group puzzle v1.2: E near the sleeping cat counts as one
+      // search tap under her (3 taps finds her piece). Silent unless
+      // it finds the piece — only when her piece is already found
+      // does E just say she's asleep.
+      const res = this.puzzleQuest?.searchTapCat();
+      if (res && res.reason === 'already-found') {
+        this.onSystemNotice?.('💤 The cat is asleep — she wakes up when someone new walks in.');
+      }
     } else if (kind === 'key') {
       // Golden Key quest: pick it up, then count the find.
       if (this.hiddenKey?.collect()) this.questManager?.recordEvent('key-found');
-    } else if (kind === 'puzzle-piece') {
-      // Group puzzle quest: pick up a hidden piece for the room.
-      const piece = this.puzzleQuest?.nearestPiece(this.player.gx, this.player.gy);
-      if (piece) this.puzzleQuest?.tryCollectPiece(piece.pieceId);
     } else if (kind === 'puzzle-table') {
       // Group puzzle quest: open the zoomed-in board.
       this.puzzleQuest?.openBoard();
@@ -1114,13 +1122,15 @@ export class VillageScene extends Phaser.Scene {
   }
 
   // Public: what would the E key do right now? Priority: pet a duck
-  // right next to you > grab the golden key > grab a puzzle piece >
-  // feed at the pond > cat > puzzle table > shelf > jukebox.
+  // right next to you > grab the golden key > feed at the pond >
+  // cat > puzzle table > shelf > jukebox. (v1.2: there is no
+  // 'puzzle-piece' E action anymore — hidden pieces are found by
+  // clicking their furniture, not by an E prompt that would give
+  // away where they are.)
   getInteractKind() {
     if (!this.player) return null;
     if (this.duckPond?.nearestPettableDuck(this.player.gx, this.player.gy)) return 'duck';
     if (this.hiddenKey?.nearestKey(this.player.gx, this.player.gy)) return 'key';
-    if (this.puzzleQuest?.nearestPiece(this.player.gx, this.player.gy)) return 'puzzle-piece';
     const nearPond = this.duckPond?.nearestFeedablePond(this.player.gx, this.player.gy);
     if (nearPond && this._feedCooldownMs <= 0) return 'ducks';
     if (this.cafeCat?.nearestCat(this.player.gx, this.player.gy)) return 'cat';
@@ -1219,6 +1229,10 @@ export class VillageScene extends Phaser.Scene {
     // the bar + buy-coffee from the Agora furniture pass.)
     if (this.roomId === 'agora-houston') {
       this.onSystemNotice?.('☕ Fresh coffee! -2 coins — enjoy!');
+      // Group puzzle v1.2: a coffee has a 1-in-3 chance of
+      // containing puzzle piece 8. The coffee still costs 2 coins;
+      // the piece is the reward, never coins.
+      try { this.puzzleQuest?.tryCoffeePiece(); } catch {}
     }
     this.socket?.emit('buy_drink', { roomId: this.roomId });
   }
@@ -2008,10 +2022,10 @@ export class VillageScene extends Phaser.Scene {
         this._maybeConversationalOrder(text, npc, wasArmed);
         this._convoArmUntil = this.time.now + 45000;
       }
-      // Group puzzle: asking the NPC about the puzzle / a missing
-      // piece earns the barista piece (Agora only, PuzzleQuest gates
-      // it — wrong questions and repeats do nothing).
-      this.puzzleQuest?.tryNpcPiece(text);
+      // Group puzzle v1.2: the old "ask the barista" piece is gone —
+      // piece 8 now turns up at random in a coffee you buy (see
+      // _tryBuyDrink / tryCoffeePiece). Chatting about the puzzle
+      // earns nothing anymore.
       const replyNumber = this.npcReplyCounts.get(nearbyNpc.id) || 0;
       this.npcReplyCounts.set(nearbyNpc.id, replyNumber + 1);
       this.onChatMessage({
@@ -2457,12 +2471,11 @@ export class VillageScene extends Phaser.Scene {
       this.catPrompt.setAlpha(0);
     }
 
-    // Group puzzle: prompt near a hidden piece, or near the table.
-    const nearPiece = this.puzzleQuest?.nearestPiece(this.player.gx, this.player.gy);
-    const nearTable = !nearPiece ? this.puzzleQuest?.nearestTable(this.player.gx, this.player.gy) : null;
-    if (nearPiece && !nearPond) {
-      this.puzzlePrompt.setText('🧩 Pick up puzzle piece [E]').setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
-    } else if (nearTable && !nearPond && !nearCat) {
+    // Group puzzle: prompt near the table only. v1.2 pieces are
+    // functionally invisible — there is no prompt near a hidden
+    // piece, or the prompt would give away where they are.
+    const nearTable = this.puzzleQuest?.nearestTable(this.player.gx, this.player.gy);
+    if (nearTable && !nearPond && !nearCat) {
       this.puzzlePrompt.setText('🧩 Puzzle table [E]').setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
     } else {
       this.puzzlePrompt.setAlpha(0);

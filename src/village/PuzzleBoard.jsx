@@ -1,5 +1,5 @@
 // PuzzleBoard.jsx — the zoomed-in group puzzle board (Shared Puzzle
-// Quest v1.1, `group-puzzle-v1-1-free-place`).
+// Quest v1.2, `group-puzzle-v1-2-hidden-search`).
 //
 // Opens when you click the puzzle table in Agora. DOM overlay (not
 // Phaser): a 3x3 grid of the cat picture (cat-threequarter.png, sliced
@@ -10,9 +10,12 @@
 // it, and a placed piece can be picked up again (click it, or drag
 // it) and moved anywhere else. Completion only counts when all 9 are
 // in their home cells at the same time, so the header counts pieces
-// in the RIGHT place, not pieces on the board. The board is shared:
-// placements by anyone in the room show up for everyone (the parent
-// polls getBoardState while the board is open).
+// in the RIGHT place, not pieces on the board. v1.2: the pieces are
+// hidden — no markers on the floor. They turn up by clicking on the
+// furniture a few times, or sometimes in a coffee. This board never
+// lists where they hide. The board is shared: placements by anyone
+// in the room show up for everyone (the parent polls getBoardState
+// while the board is open).
 //
 // Props:
 //   getBoardState() — () => { round, collected, placed, placedCount,
@@ -139,9 +142,9 @@ export default function PuzzleBoard({ getBoardState, onPlace, onClose }) {
           </div>
         ) : (
           <div style={{ fontSize: 13, marginTop: 6, color: '#3d6a8a' }}>
-            Find pieces around Agora — under tables, on the bar, in the trash can,
-            under the sleeping cat, or ask the barista about the puzzle — then drag
-            them onto the board.
+            Pieces are hidden around Agora — click on the furniture a few
+            times and one might turn up. One might even turn up in a coffee.
+            Then drag found pieces onto the board.
             Pieces can go anywhere: a wrong spot stays put until someone moves it.
           </div>
         )}

@@ -381,13 +381,20 @@ const QUEST_DEFS = {
   'wanderer': { target: 3, rewardCoins: 4 },
   'bartenders-errand': { target: 3, rewardCoins: 5 },
 };
-// Group puzzle (Shared Puzzle Quest v1, `group-puzzle-v1`): per-room
-// state puzzleState[roomId] = { state, resetTimer }. Agora only.
+// Group puzzle (Shared Puzzle Quest v1.2,
+// `group-puzzle-v1-2-hidden-search`): per-room state
+// puzzleState[roomId] = { state, resetTimer }. Agora only.
 // In-memory like the cat and the pumpkins — a server restart starts
 // a fresh puzzle (round 1, nothing found). Pieces are shared: the
 // first finder claims a piece for the whole room, and a piece only
 // locks into its home cell (the server re-validates every placement,
 // so a bad client can't complete the puzzle by inventing moves).
+// v1.2: pieces are functionally invisible — the client finds them by
+// clicking hiding furniture a few times (3 clicks) or by a lucky
+// coffee (piece 8, 1-in-3 per coffee bought). The server does not
+// verify the clicks or the coffee roll — same trust level as v1's
+// marker clicks; it guards the already-found rule, room membership,
+// rate limits, and the sleeping-cat rule below.
 const puzzleState = {};
 function puzzleRoom(roomId) {
   if (!puzzleState[roomId]) puzzleState[roomId] = { state: createPuzzleState(), resetTimer: null };
@@ -1093,9 +1100,13 @@ io.on('connection', (socket) => {
     }
   });
 
-  // GROUP PUZZLE (Shared Puzzle Quest v1, `group-puzzle-v1` — Agora
-  // only). One player found a piece: the room claims it together.
-  // Piece 7 (under the sleeping cat) only counts while the cat naps.
+  // GROUP PUZZLE (Shared Puzzle Quest v1.2,
+  // `group-puzzle-v1-2-hidden-search` — Agora only). One player
+  // found a piece: the room claims it together. Piece 7 (under the
+  // sleeping cat) only counts while the cat naps — the server
+  // enforces that, so a client cannot claim it while she is awake.
+  // Piece 8 comes from a lucky coffee (client rolls 1-in-3 per
+  // coffee bought); the server only guards the already-found rule.
   socket.on('puzzle_piece', ({ roomId, pieceId } = {}) => {
     if (!roomId || roomId !== 'agora-houston') return;
     if (!rooms[roomId] || !rooms[roomId][socket.id]) return;

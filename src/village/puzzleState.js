@@ -9,21 +9,44 @@
 // The picture is the calico cat (Agora's mascot, cat-threequarter.png),
 // cut 3x3. Piece N belongs at cell (col = N % 3, row = floor(N / 3)).
 //
-// The 9 pieces and where they are found (all SET spots in Agora, never
-// random anywhere — that was the Golden Key's problem):
-//   0-2  under a table (three different tables)
-//   3-4  on top of the bar / behind the bar counter
+// v1.2 (`group-puzzle-v1-2-hidden-search`): the pieces are
+// FUNCTIONALLY INVISIBLE — no markers, no glow, nothing out in the
+// open. A piece is found only by clicking a few times
+// (PUZZLE_SEARCH_CLICKS) on the furniture hiding it. That is the
+// whole point: it should be difficult, so one player cannot sweep
+// up all 9 and more than one person has to contribute. The 9 pieces
+// and where they hide (all SET furniture in Agora, never the open
+// floor — the old sunbeam spot and the old "ask the barista" piece
+// are gone):
+//   0-2  under a cafe table (three of the four tables; the fourth
+//        is a decoy — clicking it finds nothing)
+//   3    behind the coffee bar counter
+//   4    in a couch
 //   5    in the trash can (by the coffee bar — furniture pass v1)
-//   6    in the sunny spot by the window
+//   6    behind a plant
 //   7    under the sleeping cat — only while she naps after 3 pets
-//   8    from the barista — ask the NPC about the puzzle / a missing
-//        piece ("puzzle", "jigsaw", "missing piece", "lost piece")
+//   8    in a coffee from the barista — each coffee you buy has a
+//        PUZZLE_COFFEE_CHANCE of containing it (the coffee still
+//        costs 2 coins; the piece is the reward, never coins)
 
 export const PUZZLE_ID = 'group-puzzle';
 export const PUZZLE_MARKER = 'group-puzzle-v1';
 // v1.1 (`group-puzzle-v1-1-free-place`): free placement — any piece
 // may sit in any cell, wrong spots stay until someone moves them.
 export const PUZZLE_MARKER_V11 = 'group-puzzle-v1-1-free-place';
+// v1.2 (`group-puzzle-v1-2-hidden-search`): pieces are functionally
+// invisible — no markers, no glow. A piece is found only by clicking
+// a few times on the furniture hiding it (PUZZLE_SEARCH_CLICKS),
+// and one piece (id 8) turns up at random in a coffee you buy
+// (PUZZLE_COFFEE_CHANCE per coffee).
+export const PUZZLE_MARKER_V12 = 'group-puzzle-v1-2-hidden-search';
+// Clicks on a hiding piece of furniture needed to reveal its piece.
+// Deliberately more than one, so finding a piece takes a little
+// hunting — and so one player cannot sweep all 9 at a glance.
+export const PUZZLE_SEARCH_CLICKS = 3;
+// Chance that a coffee you buy from the barista contains puzzle
+// piece 8. The coffee still costs 2 coins either way.
+export const PUZZLE_COFFEE_CHANCE = 1 / 3;
 export const PUZZLE_SIZE = 3; // 3x3 grid
 export const PUZZLE_TOTAL = 9;
 export const PUZZLE_REWARD_COINS = 5;
@@ -33,16 +56,27 @@ export const PUZZLE_IMAGE_URL = '/assets/sprites/cat-threequarter.png';
 export const PUZZLE_RESET_MS = 60000;
 
 export const PUZZLE_SPOTS = [
-  { id: 0, kind: 'table', label: 'under a table' },
-  { id: 1, kind: 'table', label: 'under a table' },
-  { id: 2, kind: 'table', label: 'under a table' },
-  { id: 3, kind: 'bar', label: 'on top of the bar' },
-  { id: 4, kind: 'bar', label: 'behind the bar' },
+  { id: 0, kind: 'table', label: 'under a cafe table' },
+  { id: 1, kind: 'table', label: 'under a cafe table' },
+  { id: 2, kind: 'table', label: 'under a cafe table' },
+  { id: 3, kind: 'bar', label: 'behind the coffee bar' },
+  { id: 4, kind: 'couch', label: 'in a couch' },
   { id: 5, kind: 'trash', label: 'in the trash can' },
-  { id: 6, kind: 'sunbeam', label: 'in the sunny spot' },
+  { id: 6, kind: 'plant', label: 'behind a plant' },
   { id: 7, kind: 'cat', label: 'under the sleeping cat' },
-  { id: 8, kind: 'npc', label: 'from the barista' },
+  { id: 8, kind: 'coffee', label: 'in a coffee from the barista' },
 ];
+
+/**
+ * Does this coffee contain puzzle piece 8? `random` is injectable
+ * so the roll is testable (defaults to Math.random). The caller is
+ * responsible for checking the piece is still unclaimed — this is
+ * only the dice roll.
+ */
+export function rollCoffeePiece(random = Math.random) {
+  const r = typeof random === 'function' ? random() : Math.random();
+  return Number(r) < PUZZLE_COFFEE_CHANCE;
+}
 
 /** The cell a piece belongs in. */
 export function pieceHome(pieceId) {

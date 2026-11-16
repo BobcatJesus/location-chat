@@ -316,7 +316,6 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
     cat: ['🐱', 'Pet the cat'],
     'cat-asleep': ['💤', 'Cat is asleep'],
     key: ['🔑', 'Pick up the golden key'],
-    'puzzle-piece': ['🧩', 'Pick up puzzle piece'],
     'puzzle-table': ['🧩', 'Open the puzzle table'],
     shelf: ['📚', 'Browse the shelf'],
     jukebox: ['🎵', 'Open the jukebox'],
