@@ -4,6 +4,7 @@ import Phaser from 'phaser';
 import { VillageScene } from './VillageScene.js';
 import ShelfPanel from './ShelfPanel.jsx';
 import JukeboxPanel from './JukeboxPanel.jsx';
+import PuzzleBoard from './PuzzleBoard.jsx';
 import InteriorSketchModal from './InteriorSketchModal.jsx';
 import ModQueuePanel from './ModQueuePanel.jsx';
 import { getCoins } from './CoinWallet.js';
@@ -244,6 +245,7 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
   const [stairScaffoldActive, setStairScaffoldActive] = useState(false);
   const [openShelf, setOpenShelf] = useState(null);
   const [openJukebox, setOpenJukebox] = useState(null);
+  const [openPuzzle, setOpenPuzzle] = useState(false);
 
   // Refresh coin balance when jukebox closes or every 5s
   useEffect(() => {
@@ -313,6 +315,8 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
     cat: ['🐱', 'Pet the cat'],
     'cat-asleep': ['💤', 'Cat is asleep'],
     key: ['🔑', 'Pick up the golden key'],
+    'puzzle-piece': ['🧩', 'Pick up puzzle piece'],
+    'puzzle-table': ['🧩', 'Open the puzzle table'],
     shelf: ['📚', 'Browse the shelf'],
     jukebox: ['🎵', 'Open the jukebox'],
     bar: ['🍺', 'Order a drink'],
@@ -585,6 +589,7 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
       onNearbyChange: setNearbyCount,
       onOpenShelf: (info) => setOpenShelf(info),
       onOpenJukebox: (info) => setOpenJukebox(info),
+      onOpenPuzzle: () => setOpenPuzzle(true),
       onNearbyNpcChange: setNearbyNpc,
       onNpcConversationClear: ({ npcId } = {}) => {
         setMessages((prev) => prev.filter((msg) => msg.channel !== 'npc' || msg.npcId !== npcId));
@@ -750,6 +755,16 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
           roomId={roomId}
           onClose={() => setOpenJukebox(null)}
           getSocket={() => gameRef.current?.scene?.getScene('VillageScene')?.socket}
+        />
+      )}
+      {openPuzzle && (
+        <PuzzleBoard
+          getBoardState={() => gameRef.current?.scene?.getScene('VillageScene')?.puzzleQuest?.getBoardState?.()}
+          onPlace={(pieceId, col, row) => {
+            const scene = gameRef.current?.scene?.getScene('VillageScene');
+            return scene?.puzzleQuest?.placePiece?.(pieceId, col, row) || { ok: false, reason: 'error' };
+          }}
+          onClose={() => setOpenPuzzle(false)}
         />
       )}
       {showEditHint && (

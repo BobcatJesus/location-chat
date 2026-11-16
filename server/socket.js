@@ -21,6 +21,14 @@ import {
   MAX_MEMORY_FACTS_PER_PLAYER,
 } from '../lib/inworld.js';
 import { addVenueEvent, formatVenueEventsForPrompt, getVenueEvents } from '../lib/venueEvents.js';
+import {
+  PUZZLE_MARKER,
+  PUZZLE_RESET_MS,
+  createPuzzleState,
+  collectPiece,
+  placePiece,
+  serializePuzzleState,
+} from '../src/village/puzzleState.js';
 
 // Shared instructions so every NPC reads as a real person, not a helpful assistant.
 const HUMAN_STYLE_GUIDE = `
@@ -373,6 +381,18 @@ const QUEST_DEFS = {
   'wanderer': { target: 3, rewardCoins: 4 },
   'bartenders-errand': { target: 3, rewardCoins: 5 },
 };
+// Group puzzle (Shared Puzzle Quest v1, `group-puzzle-v1`): per-room
+// state puzzleState[roomId] = { state, resetTimer }. Agora only.
+// In-memory like the cat and the pumpkins — a server restart starts
+// a fresh puzzle (round 1, nothing found). Pieces are shared: the
+// first finder claims a piece for the whole room, and a piece only
+// locks into its home cell (the server re-validates every placement,
+// so a bad client can't complete the puzzle by inventing moves).
+const puzzleState = {};
+function puzzleRoom(roomId) {
+  if (!puzzleState[roomId]) puzzleState[roomId] = { state: createPuzzleState(), resetTimer: null };
+  return puzzleState[roomId];
+}
 // Matches youtube.com/watch?v=, youtu.be/, youtube.com/embed/, youtube.com/shorts/
 const YOUTUBE_ID_RE = /(?:(?:www\.|music\.)?youtube\.com\/(?:watch\?[^#]*v=|embed\/|shorts\/|v\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/;
 function extractYouTubeId(url) {
@@ -1049,6 +1069,66 @@ io.on('connection', (socket) => {
       const mine = q.users[userId] || { count: 0, completed: false };
       socket.emit('quest_state', { questId, count: mine.count, shared: q.shared, completed: mine.completed });
     }
+  });
+
+  // GROUP PUZZLE (Shared Puzzle Quest v1, `group-puzzle-v1` — Agora
+  // only). One player found a piece: the room claims it together.
+  // Piece 7 (under the sleeping cat) only counts while the cat naps.
+  socket.on('puzzle_piece', ({ roomId, pieceId } = {}) => {
+    if (!roomId || roomId !== 'agora-houston') return;
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const userId = socketUserMap[socket.id] || socket.id;
+    const rate = checkRateLimit(userId);
+    if (!rate.allowed) return;
+    const id = Number(pieceId);
+    if (!Number.isInteger(id) || id < 0 || id > 8) return;
+    if (id === 7 && !catState[roomId]?.asleep) return;
+    const room = puzzleRoom(roomId);
+    const res = collectPiece(room.state, id, userId);
+    if (!res.ok) return;
+    io.to(roomId).emit('puzzle_state', serializePuzzleState(room.state));
+  });
+
+  // GROUP PUZZLE PLACEMENT: one player put a found piece on the board.
+  // The server re-validates (found? right home cell?) — a wrong cell
+  // is rejected and the piece stays in the tray. On the 9th correct
+  // placement the room completes: everyone hears about it, and a
+  // fresh puzzle starts automatically after PUZZLE_RESET_MS.
+  socket.on('puzzle_place', ({ roomId, pieceId, col, row } = {}) => {
+    if (!roomId || roomId !== 'agora-houston') return;
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const userId = socketUserMap[socket.id] || socket.id;
+    const rate = checkRateLimit(userId);
+    if (!rate.allowed) return;
+    const room = puzzleRoom(roomId);
+    const res = placePiece(room.state, Number(pieceId), Number(col), Number(row), userId);
+    if (!res.ok) return;
+    io.to(roomId).emit('puzzle_state', serializePuzzleState(room.state));
+    if (res.completed) {
+      io.to(roomId).emit('puzzle_completed', {
+        round: room.state.round,
+        contributors: [...room.state.contributors],
+      });
+      if (!room.resetTimer) {
+        room.resetTimer = setTimeout(() => {
+          room.resetTimer = null;
+          // Fresh round, same picture: new state, round number up.
+          const next = createPuzzleState();
+          next.round = room.state.round + 1;
+          room.state = next;
+          io.to(roomId).emit('puzzle_state', serializePuzzleState(room.state));
+        }, PUZZLE_RESET_MS);
+        // Don't hold the process open for a puzzle timer alone.
+        if (room.resetTimer.unref) room.resetTimer.unref();
+      }
+    }
+  });
+
+  // GROUP PUZZLE STATE: the room's board, sent when you join (or ask).
+  socket.on('get_puzzle', ({ roomId } = {}) => {
+    if (!roomId || roomId !== 'agora-houston') return;
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    socket.emit('puzzle_state', serializePuzzleState(puzzleRoom(roomId).state));
   });
 
   // DAY/NIGHT: answer with the canonical phase (see currentTimePhase

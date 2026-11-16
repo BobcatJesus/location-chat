@@ -3,6 +3,7 @@ import { DEPTH } from './depth.js';
 import { DuckPond } from './DuckPond.js';
 import { CafeCat } from './CafeCat.js';
 import { HiddenKey } from './HiddenKey.js';
+import { PuzzleQuest } from './PuzzleQuest.js';
 import { QuestManager } from './QuestManager.js';
 import { io } from 'socket.io-client';
 import { RoomLayout } from './RoomLayout.js';
@@ -451,6 +452,7 @@ export class VillageScene extends Phaser.Scene {
     this.onLeave    = d.onLeave    ?? (() => {});
     this.onOpenShelf = d.onOpenShelf ?? (() => {});
     this.onOpenJukebox = d.onOpenJukebox ?? (() => {});
+    this.onOpenPuzzle = d.onOpenPuzzle ?? (() => {});
     this.preferredCameraMode = ['ultra-close-follow', 'close-follow', 'follow', 'wide-follow', 'overview'].includes(d.preferredCameraMode)
       ? d.preferredCameraMode
       : null;
@@ -613,6 +615,10 @@ export class VillageScene extends Phaser.Scene {
     // Golden Key quest (Agora only — HiddenKey itself no-ops elsewhere).
     this.hiddenKey = new HiddenKey(this);
     this.hiddenKey.refresh();
+    // Group puzzle quest (Agora only — PuzzleQuest itself no-ops
+    // elsewhere): the puzzle table + hidden pieces in the room.
+    this.puzzleQuest = new PuzzleQuest(this);
+    this.puzzleQuest.refresh();
     // Wanderer quest: this room entry counts (after refresh, not in it).
     this.questManager?.noteRoomVisit();
     // Seasonal: pumpkins, bats, spooky tint in October.
@@ -640,6 +646,14 @@ export class VillageScene extends Phaser.Scene {
 
     // Cafe cat interaction (Agora).
     this.catPrompt = this.add.text(0, 0, '🐱 Pet the cat [E]', {
+      fontSize: '15px',
+      color: '#7c2d12',
+      backgroundColor: 'rgba(255,255,255,0.85)',
+      padding: { x: 8, y: 4 },
+    }).setOrigin(0.5, 1).setDepth(DEPTH.UI).setAlpha(0);
+
+    // Group puzzle interaction (Agora): piece on the floor / table.
+    this.puzzlePrompt = this.add.text(0, 0, '🧩 Puzzle [E]', {
       fontSize: '15px',
       color: '#7c2d12',
       backgroundColor: 'rgba(255,255,255,0.85)',
@@ -1087,22 +1101,31 @@ export class VillageScene extends Phaser.Scene {
     } else if (kind === 'key') {
       // Golden Key quest: pick it up, then count the find.
       if (this.hiddenKey?.collect()) this.questManager?.recordEvent('key-found');
+    } else if (kind === 'puzzle-piece') {
+      // Group puzzle quest: pick up a hidden piece for the room.
+      const piece = this.puzzleQuest?.nearestPiece(this.player.gx, this.player.gy);
+      if (piece) this.puzzleQuest?.tryCollectPiece(piece.pieceId);
+    } else if (kind === 'puzzle-table') {
+      // Group puzzle quest: open the zoomed-in board.
+      this.puzzleQuest?.openBoard();
     } else if (kind === 'bar') {
       this._tryBuyDrink();
     }
   }
 
   // Public: what would the E key do right now? Priority: pet a duck
-  // right next to you > grab the golden key > feed at the pond > cat >
-  // shelf > jukebox.
+  // right next to you > grab the golden key > grab a puzzle piece >
+  // feed at the pond > cat > puzzle table > shelf > jukebox.
   getInteractKind() {
     if (!this.player) return null;
     if (this.duckPond?.nearestPettableDuck(this.player.gx, this.player.gy)) return 'duck';
     if (this.hiddenKey?.nearestKey(this.player.gx, this.player.gy)) return 'key';
+    if (this.puzzleQuest?.nearestPiece(this.player.gx, this.player.gy)) return 'puzzle-piece';
     const nearPond = this.duckPond?.nearestFeedablePond(this.player.gx, this.player.gy);
     if (nearPond && this._feedCooldownMs <= 0) return 'ducks';
     if (this.cafeCat?.nearestCat(this.player.gx, this.player.gy)) return 'cat';
     if (this.cafeCat?.nearestSleepingCat(this.player.gx, this.player.gy)) return 'cat-asleep';
+    if (this.puzzleQuest?.nearestTable(this.player.gx, this.player.gy)) return 'puzzle-table';
     if (this._nearestShelf()) return 'shelf';
     if (this._nearestJukebox()) return 'jukebox';
     if (this._nearestBar()) return 'bar';
@@ -1674,6 +1697,7 @@ export class VillageScene extends Phaser.Scene {
       socket.emit('get_pumpkins', { roomId: this.roomId });
       socket.emit('get_cat', { roomId: this.roomId });
       socket.emit('get_quest_state', { roomId: this.roomId });
+      socket.emit('get_puzzle', { roomId: this.roomId });
       socket.emit('get_time_phase', {});
       const now = Date.now();
       this._lastPresenceSyncAt = now;
@@ -1862,6 +1886,18 @@ export class VillageScene extends Phaser.Scene {
       this.questManager?.onRemoteCompleted(payload);
     });
 
+    // Group puzzle state (Agora, shared for the whole room).
+    socket.on('puzzle_state', (payload = {}) => {
+      this.puzzleQuest?.applyState(payload);
+    });
+    // The room finished the puzzle — re-ask for the canonical state
+    // (the puzzle_state broadcast just before this carries it too;
+    // this covers a missed broadcast). Completion handling itself
+    // lives in PuzzleQuest.applyState, so it can only fire once.
+    socket.on('puzzle_completed', () => {
+      try { socket.emit('get_puzzle', { roomId: this.roomId }); } catch {}
+    });
+
     // The server's canonical day/night phase (outdoor venues render
     // it; the module ignores it indoors).
     socket.on('time_phase', (payload = {}) => {
@@ -1966,6 +2002,10 @@ export class VillageScene extends Phaser.Scene {
         this._maybeConversationalOrder(text, npc, wasArmed);
         this._convoArmUntil = this.time.now + 45000;
       }
+      // Group puzzle: asking the NPC about the puzzle / a missing
+      // piece earns the barista piece (Agora only, PuzzleQuest gates
+      // it — wrong questions and repeats do nothing).
+      this.puzzleQuest?.tryNpcPiece(text);
       const replyNumber = this.npcReplyCounts.get(nearbyNpc.id) || 0;
       this.npcReplyCounts.set(nearbyNpc.id, replyNumber + 1);
       this.onChatMessage({
@@ -2384,6 +2424,7 @@ export class VillageScene extends Phaser.Scene {
     this.duckPond?.update(delta);
     this.cafeCat?.update(delta);
     this.hiddenKey?.update(delta);
+    this.puzzleQuest?.update(delta);
     this.questManager?.update(delta);
     this.halloween?.update(delta);
     this.dayNight?.update(delta);
@@ -2408,6 +2449,17 @@ export class VillageScene extends Phaser.Scene {
       this.catPrompt.setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
     } else {
       this.catPrompt.setAlpha(0);
+    }
+
+    // Group puzzle: prompt near a hidden piece, or near the table.
+    const nearPiece = this.puzzleQuest?.nearestPiece(this.player.gx, this.player.gy);
+    const nearTable = !nearPiece ? this.puzzleQuest?.nearestTable(this.player.gx, this.player.gy) : null;
+    if (nearPiece && !nearPond) {
+      this.puzzlePrompt.setText('🧩 Pick up puzzle piece [E]').setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
+    } else if (nearTable && !nearPond && !nearCat) {
+      this.puzzlePrompt.setText('🧩 Puzzle table [E]').setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
+    } else {
+      this.puzzlePrompt.setAlpha(0);
     }
 
     // Bookshelf: prompt near interactable shelves (duck prompt takes priority).
@@ -2702,9 +2754,12 @@ export class VillageScene extends Phaser.Scene {
     this.cafeCat = null;
     this.hiddenKey?.destroy();
     this.hiddenKey = null;
+    this.puzzleQuest?.destroy();
+    this.puzzleQuest = null;
     this.questManager?.destroy();
     this.questManager = null;
     this.catPrompt?.destroy();
+    this.puzzlePrompt?.destroy();
     this.halloween?.destroy();
     this.halloween = null;
     this.dayNight?.destroy();
@@ -2742,6 +2797,7 @@ export class VillageScene extends Phaser.Scene {
     this.cafeCat?.refresh();
     this.questManager?.refresh();
     this.hiddenKey?.refresh();
+    this.puzzleQuest?.refresh();
     this.questManager?.noteRoomVisit();
     this._emitFloorStatus();
     this.roomLayout.setDynamicSolids(this.customZones);

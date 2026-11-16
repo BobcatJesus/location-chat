@@ -109,6 +109,17 @@ export class QuestManager {
     this._hudVersion += 1;
   }
 
+  /** Public HUD bump for other systems (e.g. PuzzleQuest) whose state
+   *  the DOM tracker shows — same version the tracker poll watches. */
+  bumpHud() {
+    this._bumpHud();
+  }
+
+  /** Public toast for other systems (e.g. PuzzleQuest completion). */
+  showToast(text) {
+    this._showToast(text);
+  }
+
   /** Plain-data HUD for the DOM (VillageCanvas polls this ~2x/sec).
    * trackerLines: the same lines _drawTracker would render.
    * trackerSections: { room, anywhere } — the room quest on its own
@@ -485,7 +496,9 @@ export class QuestManager {
    * anywhere quests (roomId '*') kept separate so they never read as
    * quests for the room you're standing in. A chain quest's next step
    * already names where it happens ("Say hi to the bartender at
-   * Lola's Depot"), so no extra location hint is needed. */
+   * Lola's Depot"), so no extra location hint is needed.
+   * The Agora group puzzle rides along UNDER the room quest (it is a
+   * room thing, not an anywhere quest): "🧩 Group Puzzle X/9". */
   _trackerSections() {
     const room = [];
     const anywhere = [];
@@ -497,6 +510,14 @@ export class QuestManager {
         quest.description,
       );
       if (this.sharedCount > 0) room.push(`Room total: ${this.sharedCount}`);
+    }
+    const puzzle = this.scene?.puzzleQuest?.getProgress?.();
+    if (puzzle) {
+      room.push(
+        puzzle.completed
+          ? `🧩 Group Puzzle  ${puzzle.placed}/${puzzle.total} — complete!`
+          : `🧩 Group Puzzle  ${puzzle.placed}/${puzzle.total}`,
+      );
     }
     for (const q of this.anywhereQuests()) {
       const n = Math.min(Number(this.saved[q.id]?.count || 0), q.target);
