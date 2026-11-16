@@ -936,7 +936,24 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
           pointerEvents: 'none', whiteSpace: 'pre-line',
           boxShadow: '0 2px 10px rgba(0,0,0,0.25)',
         }}>
-          {questHud.trackerLines.join('\n')}
+          {questHud.trackerSections ? (
+            <>
+              <div style={{ whiteSpace: 'pre-line' }}>
+                {questHud.trackerSections.room.length > 0 ? questHud.trackerSections.room.join('\n') : '✅ All quests complete — more coming soon!'}
+              </div>
+              {questHud.trackerSections.anywhere.length > 0 && (
+                <div style={{
+                  marginTop: 8, paddingTop: 6, borderTop: '1px solid rgba(26,73,113,0.3)',
+                  fontSize: 12.5, lineHeight: 1.35, color: '#3d6a8a', whiteSpace: 'pre-line',
+                }}>
+                  <div style={{ fontWeight: 'bold', fontSize: 12, letterSpacing: '0.04em', color: '#1a4971' }}>🌍 ANYWHERE QUESTS</div>
+                  {questHud.trackerSections.anywhere.join('\n')}
+                </div>
+              )}
+            </>
+          ) : (
+            questHud.trackerLines.join('\n')
+          )}
         </div>
       )}
       {questHud?.banner && (

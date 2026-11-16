@@ -111,11 +111,15 @@ export class QuestManager {
 
   /** Plain-data HUD for the DOM (VillageCanvas polls this ~2x/sec).
    * trackerLines: the same lines _drawTracker would render.
+   * trackerSections: { room, anywhere } — the room quest on its own
+   * and the anywhere quests separately, so the DOM can lead with
+   * this room's quest and label the anywhere ones as not-this-room.
    * banner: the live banner info, or null. toast: live toast text, or null. */
   getHudState() {
     return {
       version: this._hudVersion,
       trackerLines: this._trackerLines(),
+      trackerSections: this._trackerSections(),
       banner: this._bannerInfo ? { ...this._bannerInfo } : null,
       toast: this._toastText,
     };
@@ -477,28 +481,45 @@ export class QuestManager {
     }
   }
 
-  /** The tracker lines, shared by the canvas text and the DOM HUD. */
-  _trackerLines() {
-    const lines = [];
+  /** The tracker split into two sections: this room's quest, and the
+   * anywhere quests (roomId '*') kept separate so they never read as
+   * quests for the room you're standing in. A chain quest's next step
+   * already names where it happens ("Say hi to the bartender at
+   * Lola's Depot"), so no extra location hint is needed. */
+  _trackerSections() {
+    const room = [];
+    const anywhere = [];
     const quest = this.activeQuest;
     if (quest) {
       const mine = this.progress;
-      lines.push(
+      room.push(
         `${quest.emoji} ${quest.title}  ${mine}/${quest.target}`,
         quest.description,
       );
-      if (this.sharedCount > 0) lines.push(`Room total: ${this.sharedCount}`);
+      if (this.sharedCount > 0) room.push(`Room total: ${this.sharedCount}`);
     }
-    // Anywhere quests ride along under the room quest.
     for (const q of this.anywhereQuests()) {
       const n = Math.min(Number(this.saved[q.id]?.count || 0), q.target);
       if (Array.isArray(q.steps)) {
         // Chain quest: show the NEXT step, not just the count.
         const next = q.stepLabels?.[n] || '';
-        lines.push(`${q.emoji} ${q.title}  ${n}/${q.target}${next ? ` — ${next}` : ''}`);
+        anywhere.push(`${q.emoji} ${q.title}  ${n}/${q.target}${next ? ` — ${next}` : ''}`);
       } else {
-        lines.push(`${q.emoji} ${q.title}  ${n}/${q.target}`);
+        anywhere.push(`${q.emoji} ${q.title}  ${n}/${q.target}`);
       }
+    }
+    return { room, anywhere };
+  }
+
+  /** The tracker lines, shared by the canvas text and the DOM HUD.
+   * Room quest first; anywhere quests under a labelled separator. */
+  _trackerLines() {
+    const { room, anywhere } = this._trackerSections();
+    const lines = [...room];
+    if (anywhere.length > 0) {
+      if (lines.length > 0) lines.push('');
+      lines.push('🌍 Anywhere quests');
+      lines.push(...anywhere);
     }
     if (lines.length === 0) {
       // Nothing open: say so, instead of leaving a blank corner that
