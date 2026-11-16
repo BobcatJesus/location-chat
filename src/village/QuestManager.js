@@ -31,6 +31,14 @@
 // What v1 does NOT do: onboarding, group shared-progress quests,
 // or a quest list UI beyond the tracker. Those are v2.
 //
+// Quest badges v1 (2026-11-16, `sq-quest-badges-v1`): finishing a
+// quest earns a badge, once ever. Your completions list lives in
+// the pocket popup as a second tab (Badges), and other players can
+// see your badges by clicking you — the server keeps a per-player
+// badge record (in-memory, re-synced from your local record on
+// connect), so badges show across rooms. Coffee purchases are quest
+// steps, not badges: only completing a quest earns its badge.
+//
 // Quest batch v1.1 (2026-11-15): 6 more quests on the same loop —
 // Cat Cuddles (Agora), Say Hello to the Bartender + Barfly (Lola's
 // Depot), The Golden Key (hidden object, Agora), plus two ANYWHERE
@@ -42,6 +50,14 @@
 
 import { DEPTH } from './depth.js';
 import { QUESTS, getQuest } from './quests.js';
+import {
+  BADGES_MARKER_V1,
+  GROUP_PUZZLE_BADGE,
+  badgeListFrom,
+  mergeBadgeMaps,
+  normalizeBadgeMap,
+  formatBadgeDate,
+} from './badges.js';
 
 const QUESTS_PREFIX = 'location-chat-quests';
 
@@ -94,6 +110,13 @@ export class QuestManager {
     this._bannerTimer = null;
     this._bannerQuestId = null; // quest id the live banner (if any) is for
     this._shownBanners = new Set(); // quest ids the banner already showed for, this session
+    // Quest badges v1 (`sq-quest-badges-v1`): completions the SERVER
+    // knows about for me (its reply to badges_sync, or a badge it
+    // awarded while I was online). getCompletions() unions these
+    // with my localStorage record, so a badge the server saw but my
+    // local save missed still shows in my list.
+    this._serverBadges = {}; // { [questId]: completedAt }
+    this.marker = BADGES_MARKER_V1;
     // DOM HUD (VillageCanvas renders tracker/banner/toast as DOM): when
     // true, QuestManager keeps the same state but exposes it via
     // getHudState() instead of drawing Phaser text. Default false keeps
@@ -275,6 +298,89 @@ export class QuestManager {
     );
   }
 
+  // ---- quest badges v1 (`sq-quest-badges-v1`) -----------------------
+
+  /** My own completions record, as a map { questId: completedAt },
+   *  from localStorage only. Sent to the server on connect
+   *  (badges_sync) so a restart never loses badges I already earned. */
+  getCompletedMap() {
+    const out = {};
+    for (const [id, entry] of Object.entries(this.saved || {})) {
+      if (entry?.completed) {
+        out[id] = Number.isFinite(Number(entry.completedAt)) && Number(entry.completedAt) > 0
+          ? Number(entry.completedAt)
+          : Date.now();
+      }
+    }
+    return out;
+  }
+
+  /** Ids of the quests I have finished (local record only). */
+  getCompletedIds() {
+    return Object.keys(this.getCompletedMap());
+  }
+
+  /** My completions list for the Badges tab: every finished quest
+   *  (local record + anything the server knows about), newest
+   *  first — [{ questId, emoji, title, description, completedAt,
+   *  completedLabel }]. Old saves without a timestamp show as
+   *  "Completed" with no date. */
+  getCompletions() {
+    const merged = mergeBadgeMaps(this.getCompletedMap(), this._serverBadges);
+    return badgeListFrom(merged).map((b) => ({
+      ...b,
+      completedLabel: formatBadgeDate(b.completedAt),
+    }));
+  }
+
+  /** Record the shared Group Puzzle badge: I helped finish the cat
+   *  puzzle in Agora (PuzzleQuest calls this from
+   *  _onPuzzleCompleted). Once ever — a later round finishing does
+   *  not re-earn it, and the server awards the same badge to every
+   *  contributor, so both paths converge on one entry. */
+  recordPuzzleCompletion() {
+    const entry = this.saved[GROUP_PUZZLE_BADGE.id] || { count: 0, completed: false };
+    if (entry.completed) return false;
+    entry.completed = true;
+    entry.count = 1;
+    entry.completedAt = Date.now();
+    this.saved[GROUP_PUZZLE_BADGE.id] = entry;
+    saveSaved(this.saved);
+    this._bumpHud();
+    return true;
+  }
+
+  /** Merge the server's badge record for me (its reply to
+   *  badges_sync / get_badges) into my list. Display-only: this
+   *  never pays coins — quest completion / rewards still go through
+   *  _completeQuest / applyServerState alone. */
+  applyServerBadges(badges) {
+    const next = mergeBadgeMaps(this._serverBadges, normalizeBadgeMap(badges));
+    const changed = JSON.stringify(next) !== JSON.stringify(this._serverBadges);
+    this._serverBadges = next;
+    if (changed) this._bumpHud();
+    return changed;
+  }
+
+  /** Send my local completions record to the server (on connect):
+   *  the server merges it into its per-player badge store, replies
+   *  with the merged record (badges_state), and tells the room so
+   *  other players can see my badges. */
+  syncBadgesToServer() {
+    try {
+      const socket = this.scene?.socket;
+      if (!socket?.connected) return false;
+      socket.emit('badges_sync', {
+        roomId: this.scene?.roomId,
+        badges: Object.entries(this.getCompletedMap())
+          .map(([questId, completedAt]) => ({ questId, completedAt })),
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   /** One quest event happened for the ROOM quest (e.g. you fed a duck). */
   recordEvent(eventName) {
     const quest = this.activeQuest;
@@ -390,6 +496,11 @@ export class QuestManager {
     const entry = this.saved[quest.id] || { count: 0, completed: false };
     entry.completed = true;
     entry.count = quest.target;
+    // Quest badges v1: stamp the finish so the Badges tab can show
+    // when it happened. Old saves without a stamp show "Completed".
+    if (!Number.isFinite(Number(entry.completedAt)) || Number(entry.completedAt) <= 0) {
+      entry.completedAt = Date.now();
+    }
     this.saved[quest.id] = entry;
     saveSaved(this.saved);
     // Reward: coins from the local wallet (same as duck-pet coins).

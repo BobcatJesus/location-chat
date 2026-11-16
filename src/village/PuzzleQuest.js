@@ -244,6 +244,13 @@ export class PuzzleQuest {
     const owner = currentOwner();
     const paidRounds = Array.isArray(paid[owner]) ? paid[owner] : [];
     const toast = '🎉 The cat puzzle is complete! A new puzzle starts in a minute.';
+    if (iContributed) {
+      // Quest badges v1 (`sq-quest-badges-v1`): helping finish the
+      // puzzle earns the Group Puzzle badge, once ever — a later
+      // round finishing does not re-earn it. The server awards the
+      // same badge to every contributor, so both paths converge.
+      try { this.scene?.questManager?.recordPuzzleCompletion?.(); } catch {}
+    }
     if (iContributed && !paidRounds.includes(state.round)) {
       // Pay once per round: record it BEFORE the async wallet call,
       // so a double broadcast can't pay twice.

@@ -7,6 +7,7 @@ import JukeboxPanel from './JukeboxPanel.jsx';
 import PuzzleBoard from './PuzzleBoard.jsx';
 import InventoryPanel from './InventoryPanel.jsx';
 import NoticeBoardPanel from './NoticeBoardPanel.jsx';
+import PlayerBadgesPanel from './PlayerBadgesPanel.jsx';
 import InteriorSketchModal from './InteriorSketchModal.jsx';
 import ModQueuePanel from './ModQueuePanel.jsx';
 import { getCoins } from './CoinWallet.js';
@@ -251,6 +252,9 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
   const [openPuzzle, setOpenPuzzle] = useState(false);
   const [openInventory, setOpenInventory] = useState(false);
   const [openNoticeBoard, setOpenNoticeBoard] = useState(false);
+  // Quest badges v1: another player's badges panel, opened by
+  // clicking them ({ socketId } or null).
+  const [openPlayerBadges, setOpenPlayerBadges] = useState(null);
   const [inventoryCount, setInventoryCount] = useState(null); // "n/cap" for the bottom-left button badge
 
   // Refresh coin balance when jukebox closes or every 5s
@@ -617,6 +621,7 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
       onOpenPuzzle: () => setOpenPuzzle(true),
       onOpenInventory: () => setOpenInventory(true),
       onOpenNoticeBoard: () => setOpenNoticeBoard(true),
+      onOpenPlayerBadges: (info) => setOpenPlayerBadges(info),
       onNearbyNpcChange: setNearbyNpc,
       onNpcConversationClear: ({ npcId } = {}) => {
         setMessages((prev) => prev.filter((msg) => msg.channel !== 'npc' || msg.npcId !== npcId));
@@ -797,6 +802,7 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
       {openInventory && (
         <InventoryPanel
           getState={() => gameRef.current?.scene?.getScene('VillageScene')?.itemsSystem?.getState?.()}
+          getBadges={() => gameRef.current?.scene?.getScene('VillageScene')?.questManager?.getCompletions?.() || []}
           onUse={(id) => gameRef.current?.scene?.getScene('VillageScene')?.itemsSystem?.useItem?.(id) || { ok: false, reason: 'error' }}
           onDrop={(id) => gameRef.current?.scene?.getScene('VillageScene')?.itemsSystem?.dropItem?.(id) || { ok: false, reason: 'error' }}
           onDispose={(id) => gameRef.current?.scene?.getScene('VillageScene')?.itemsSystem?.disposeTrash?.(id) || { ok: false, reason: 'error' }}
@@ -813,6 +819,12 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
           onRemove={(flyerId) => gameRef.current?.scene?.getScene('VillageScene')?.noticeBoardSystem?.removeFlyer?.(flyerId) || { ok: false, reason: 'error' }}
           isModerator={isModerator}
           onClose={() => setOpenNoticeBoard(false)}
+        />
+      )}
+      {openPlayerBadges && (
+        <PlayerBadgesPanel
+          getState={() => gameRef.current?.scene?.getScene('VillageScene')?.getPlayerBadges?.(openPlayerBadges.socketId)}
+          onClose={() => setOpenPlayerBadges(null)}
         />
       )}
       {showEditHint && (

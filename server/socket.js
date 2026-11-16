@@ -388,6 +388,59 @@ const QUEST_DEFS = {
   'wanderer': { target: 3, rewardCoins: 4 },
   'bartenders-errand': { target: 3, rewardCoins: 5 },
 };
+// Quest badges (Quest Completions / Badges v1,
+// `sq-quest-badges-v1`): one badge per completed quest, per player,
+// across ALL rooms — a Duck Roundup badge earned in Shepherd Park
+// still shows in Agora. userBadges[userId] = { [questId]:
+// completedAt }. In-memory like the puzzle and the boards: a server
+// restart wipes the server's copy, but each client keeps its own
+// localStorage record and re-syncs it on connect (badges_sync), so
+// badges come back. Badges carry no coins — the abuse surface of a
+// client asserting a badge it didn't earn is only showing off, so
+// badges_sync restores the client's own local record (validated
+// against the known quest list below). The authoritative awards are
+// quest_progress (count-based) and puzzle_place (contributors).
+const BADGE_QUEST_IDS = new Set([...Object.keys(QUEST_DEFS), 'group-puzzle']);
+const userBadges = {};
+function badgeMapFor(userId) {
+  if (!userBadges[userId]) userBadges[userId] = {};
+  return userBadges[userId];
+}
+function awardBadge(userId, questId, completedAt) {
+  if (typeof questId !== 'string' || !BADGE_QUEST_IDS.has(questId)) return false;
+  const map = badgeMapFor(userId);
+  if (map[questId]) return false; // already has it — badges are once ever
+  const at = Number.isFinite(Number(completedAt)) && Number(completedAt) > 0
+    ? Number(completedAt)
+    : Date.now();
+  map[questId] = at;
+  return true;
+}
+function badgesArrayFor(userId) {
+  const map = userBadges[userId] || {};
+  return Object.entries(map).map(([questId, completedAt]) => ({ questId, completedAt }));
+}
+// Merge a client's badge record into the server store. Accepts a map
+// ({ questId: completedAt }), an array of { questId, completedAt },
+// or an array of plain ids. Earliest timestamp wins per quest.
+function mergeClientBadges(userId, badges) {
+  const list = Array.isArray(badges)
+    ? badges
+    : (badges && typeof badges === 'object' ? Object.entries(badges) : []);
+  let changed = false;
+  for (const entry of list) {
+    const id = typeof entry === 'string' ? entry : (Array.isArray(entry) ? entry[0] : entry?.questId);
+    const at = Array.isArray(entry) ? entry[1] : entry?.completedAt;
+    if (awardBadge(userId, id, at)) changed = true;
+  }
+  return changed;
+}
+function socketIdForUser(userId) {
+  for (const [sid, uid] of Object.entries(socketUserMap || {})) {
+    if (String(uid) === String(userId)) return sid;
+  }
+  return null;
+}
 // Group puzzle (Shared Puzzle Quest v1.2,
 // `group-puzzle-v1-2-hidden-search`): per-room state
 // puzzleState[roomId] = { state, resetTimer }. Agora only.
@@ -955,6 +1008,15 @@ io.on('connection', (socket) => {
       y: 400 + spawnOffsetY,
     };
 
+    // Quest badges v1: restore this player's own local completions
+    // record (sent in the join payload) into the server's per-player
+    // badge store, then carry it in playerState so the room sees
+    // their badges on join. NOTE: hasBag is NOT in this whitelist
+    // yet (see the inventory kit report) — badges ARE, because the
+    // whole point is other players seeing them.
+    mergeClientBadges(userId, user?.badges);
+    playerState.badges = badgesArrayFor(userId);
+
     rooms[roomId][socket.id] = playerState;
     socketUserMap[socket.id] = userId;
     await removeDuplicatePresenceByUser({ roomId, userId, keepSocketId: socket.id });
@@ -1100,6 +1162,12 @@ io.on('connection', (socket) => {
     if (mine.count >= def.target) {
       mine.completed = true;
       io.to(roomId).emit('quest_completed', { questId, userId, shared: q.shared });
+      // Quest badges v1: finishing a quest earns its badge, once
+      // ever — tell the room so other players see it on this
+      // player's avatar right away.
+      if (awardBadge(userId, questId, Date.now())) {
+        io.to(roomId).emit('player_badges', { socketId: socket.id, userId, badges: badgesArrayFor(userId) });
+      }
     }
   });
 
@@ -1114,6 +1182,31 @@ io.on('connection', (socket) => {
       const mine = q.users[userId] || { count: 0, completed: false };
       socket.emit('quest_state', { questId, count: mine.count, shared: q.shared, completed: mine.completed });
     }
+  });
+
+  // QUEST BADGES (Quest Completions / Badges v1,
+  // `sq-quest-badges-v1`): the client re-syncs its own local
+  // completions record on connect — this is what brings badges back
+  // after a server restart wiped the in-memory store. The server
+  // merges the record, replies with the merged record (badges_state),
+  // and tells the room so other players see the badges.
+  socket.on('badges_sync', ({ roomId, badges } = {}) => {
+    const userId = socketUserMap[socket.id] || socket.id;
+    const rate = checkRateLimit(userId);
+    if (!rate.allowed) return;
+    mergeClientBadges(userId, badges);
+    socket.emit('badges_state', { userId, badges: badgesArrayFor(userId) });
+    if (roomId && rooms[roomId]?.[socket.id]) {
+      io.to(roomId).emit('player_badges', { socketId: socket.id, userId, badges: badgesArrayFor(userId) });
+    }
+  });
+
+  // QUEST BADGES: ask for one player's badge record (by userId —
+  // sockets change on reconnect). Used when opening their badges
+  // panel, so it shows their freshest list.
+  socket.on('get_badges', ({ userId } = {}) => {
+    const target = userId || socketUserMap[socket.id] || socket.id;
+    socket.emit('badges_state', { userId: target, badges: badgesArrayFor(target) });
   });
 
   // GROUP PUZZLE (Shared Puzzle Quest v1.2,
@@ -1160,6 +1253,16 @@ io.on('connection', (socket) => {
         round: room.state.round,
         contributors: [...room.state.contributors],
       });
+      // Quest badges v1: every contributor earns the Group Puzzle
+      // badge, once ever — tell the room about each of them.
+      for (const contributorId of [...room.state.contributors]) {
+        if (awardBadge(contributorId, 'group-puzzle', Date.now())) {
+          const sid = socketIdForUser(contributorId);
+          if (sid) {
+            io.to(roomId).emit('player_badges', { socketId: sid, userId: contributorId, badges: badgesArrayFor(contributorId) });
+          }
+        }
+      }
       if (!room.resetTimer) {
         room.resetTimer = setTimeout(() => {
           room.resetTimer = null;

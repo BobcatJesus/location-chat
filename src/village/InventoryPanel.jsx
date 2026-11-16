@@ -19,6 +19,9 @@
 //     Board v1); returns { ok, pending?, reason? } — the flyer
 //     leaves the pocket when the server confirms the pin
 //   onOpenPuzzle() — close this panel and open the puzzle board
+//   getBadges() — () => [{ questId, emoji, title, description,
+//     completedAt, completedLabel }] (QuestManager.getCompletions,
+//     Quest Badges v1) — the Badges tab
 //   onClose()
 
 import React, { useEffect, useState } from 'react';
@@ -43,10 +46,17 @@ const REASON_TEXT = {
 };
 
 export default function InventoryPanel({
-  getState, onUse, onDrop, onDispose, onBuyBag, onMakeFlyer, onPinFlyer, onOpenPuzzle, onClose,
+  getState, onUse, onDrop, onDispose, onBuyBag, onMakeFlyer, onPinFlyer, onOpenPuzzle, getBadges, onClose,
 }) {
   const [state, setState] = useState(() => {
     try { return getState ? getState() : null; } catch { return null; }
+  });
+  // Quest badges v1: second tab, next to the items — your finished
+  // quests, newest first. Coffee purchases are steps, not badges:
+  // only a completed quest earns its badge.
+  const [tab, setTab] = useState('items');
+  const [badges, setBadges] = useState(() => {
+    try { return getBadges ? getBadges() : []; } catch { return []; }
   });
   const [notice, setNotice] = useState('');
   const [reader, setReader] = useState(null); // item being read, or null
@@ -60,9 +70,13 @@ export default function InventoryPanel({
         const next = getState ? getState() : null;
         if (next) setState(next);
       } catch {}
+      try {
+        const nextBadges = getBadges ? getBadges() : null;
+        if (Array.isArray(nextBadges)) setBadges(nextBadges);
+      } catch {}
     }, 500);
     return () => clearInterval(t);
-  }, [getState]);
+  }, [getState, getBadges]);
 
   const refresh = () => {
     try {
@@ -125,7 +139,69 @@ export default function InventoryPanel({
           {state.full ? ' · Pocket full!' : ''}
         </div>
 
-        {reader ? (
+        <div style={{ display: 'flex', gap: 6, marginTop: 12 }}>
+          <button
+            onClick={() => setTab('items')}
+            style={{
+              ...btnStyle,
+              background: tab === 'items' ? '#1a4971' : 'transparent',
+              color: tab === 'items' ? '#fff' : '#1a4971',
+              border: tab === 'items' ? 'none' : '1px solid #1a4971',
+            }}
+          >
+            🎒 Pocket
+          </button>
+          <button
+            onClick={() => setTab('badges')}
+            style={{
+              ...btnStyle,
+              background: tab === 'badges' ? '#1a4971' : 'transparent',
+              color: tab === 'badges' ? '#fff' : '#1a4971',
+              border: tab === 'badges' ? 'none' : '1px solid #1a4971',
+            }}
+          >
+            🏅 Badges ({badges.length})
+          </button>
+        </div>
+
+        {tab === 'badges' ? (
+          <div style={{ marginTop: 12 }}>
+            {badges.length === 0 ? (
+              <div style={{ fontSize: 13, color: '#3d6a8a' }}>
+                No badges yet. Finish a quest and its badge shows up
+                here — and other players can see it when they click
+                on you.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {badges.map((badge) => (
+                  <div
+                    key={badge.questId}
+                    style={{
+                      border: '1px solid #e2b46c', borderRadius: 8, padding: '10px 12px',
+                      background: '#fffdf5',
+                    }}
+                  >
+                    <div style={{ fontWeight: 'bold', fontSize: 14 }}>
+                      {badge.emoji} {badge.title}
+                    </div>
+                    <div style={{ fontSize: 12.5, color: '#3d6a8a', marginTop: 2 }}>
+                      {badge.description}
+                    </div>
+                    <div style={{ fontSize: 12, color: '#92400e', marginTop: 4 }}>
+                      Finished {badge.completedLabel || '—'}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={{ fontSize: 12, marginTop: 12, color: '#64748b' }}>
+              One badge per finished quest — coffee buys and other
+              quest steps don’t earn badges, only completing the
+              quest does.
+            </div>
+          </div>
+        ) : reader ? (
           <div style={{ marginTop: 12 }}>
             <div style={{ fontWeight: 'bold', fontSize: 15 }}>
               {reader.emoji} {reader.title || reader.label}

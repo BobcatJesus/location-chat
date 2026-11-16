@@ -78,6 +78,7 @@ export default class SpriteAvatarBase extends Phaser.GameObjects.Container {
     if (hasBag) this.setHasBag(true);
 
     const labelText = (name || '').trim() || (isLocal ? 'YOU' : 'Traveler');
+    this._baseLabel = labelText; // setBadgeCount appends " 🏅n" to this
     this._label = scene.add.text(x, y - 38, labelText, {
       fontFamily: 'Courier New',
       fontSize: '10px',
@@ -150,6 +151,21 @@ export default class SpriteAvatarBase extends Phaser.GameObjects.Container {
     bag.fillCircle(15, -22, 1.6);
     this.add(bag);
     this._bag = bag;
+    return this;
+  }
+
+  /** Quest badges v1 (`sq-quest-badges-v1`): show how many quests
+   *  this player has finished, right in the name label above their
+   *  head ("Jules 🏅3") — so you can see at a glance who has badges
+   *  before you click them. n = 0 shows the plain name. Called live
+   *  when badges change; the count comes from the server's
+   *  per-player badge record. */
+  setBadgeCount(n) {
+    if (!this._label) return this;
+    const count = Math.max(0, Number(n) || 0);
+    try {
+      this._label.setText(count > 0 ? `${this._baseLabel || ''} 🏅${count}` : (this._baseLabel || ''));
+    } catch {}
     return this;
   }
 

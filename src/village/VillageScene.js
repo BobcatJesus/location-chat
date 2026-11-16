@@ -8,6 +8,7 @@ import { QuestManager } from './QuestManager.js';
 import { ItemsSystem } from './ItemsSystem.js';
 import { NoticeBoardSystem } from './NoticeBoardSystem.js';
 import { hasBag as inventoryHasBag, INVENTORY_FULL_MESSAGE } from './items.js';
+import { badgeListFrom, normalizeBadgeMap, formatBadgeDate } from './badges.js';
 import { io } from 'socket.io-client';
 import { RoomLayout } from './RoomLayout.js';
 import { pickLayout } from './layoutPicker.js';
@@ -463,6 +464,8 @@ export class VillageScene extends Phaser.Scene {
     this.onOpenPuzzle = d.onOpenPuzzle ?? (() => {});
     this.onOpenInventory = d.onOpenInventory ?? (() => {});
     this.onOpenNoticeBoard = d.onOpenNoticeBoard ?? (() => {});
+    // Quest badges v1: opens another player's badges panel (DOM).
+    this.onOpenPlayerBadges = d.onOpenPlayerBadges ?? (() => {});
     this.preferredCameraMode = ['ultra-close-follow', 'close-follow', 'follow', 'wide-follow', 'overview'].includes(d.preferredCameraMode)
       ? d.preferredCameraMode
       : null;
@@ -831,6 +834,19 @@ export class VillageScene extends Phaser.Scene {
         this.target = null;
         return;
       }
+      // Quest badges v1: click another player (standing close
+      // enough to look at them) to see their badges — same
+      // scene-level pointerdown pattern as the bartender. Consumes
+      // the click, so it never also walks you there or searches
+      // the furniture under them.
+      try {
+        const clickedPlayer = this._playerAt(ptr.worldX, ptr.worldY);
+        if (clickedPlayer) {
+          this._openPlayerBadges(clickedPlayer);
+          this.target = null;
+          return;
+        }
+      } catch {}
       const target = this.roomLayout?.clampPointToRoom(ptr.worldX, ptr.worldY, 20)
         || { x: Phaser.Math.Clamp(ptr.worldX, 20, W * 4 - 20), y: Phaser.Math.Clamp(ptr.worldY, 60, H * 4 - 10) };
       // Group puzzle v1.2 (hidden search): a click on furniture
@@ -1778,6 +1794,12 @@ export class VillageScene extends Phaser.Scene {
           // will only see the bag once that one line lands (see the kit
           // report). Your own avatar shows it immediately.
           hasBag: (() => { try { return inventoryHasBag(); } catch { return false; } })(),
+          // Quest badges v1: my own local completions record, so the
+          // server can put my badges in playerState and the room
+          // sees them on join (validated server-side against the
+          // known quest list; a restart never loses them because
+          // the client re-sends them every connect).
+          badges: (() => { try { return this.questManager?.getCompletedMap?.() || {}; } catch { return {}; } })(),
         },
       });
       socket.emit('get_room_state', { roomId: this.roomId });
@@ -1789,6 +1811,10 @@ export class VillageScene extends Phaser.Scene {
       socket.emit('get_puzzle', { roomId: this.roomId });
       socket.emit('get_board', { roomId: this.roomId });
       socket.emit('get_time_phase', {});
+      // Quest badges v1: re-sync my local completions record so the
+      // server's per-player badge store (wiped by a restart) comes
+      // back, and the room hears about my badges.
+      try { this.questManager?.syncBadgesToServer?.(); } catch {}
       const now = Date.now();
       this._lastPresenceSyncAt = now;
       this._lastDecorSyncAt = now;
@@ -1854,6 +1880,11 @@ export class VillageScene extends Phaser.Scene {
             }
           }
           remotePlayer.sync();
+          // Quest badges v1: keep their badge record fresh from the
+          // room state too (room_state re-renders on the fallback
+          // sync, so a badge earned while you weren't looking still
+          // lands in their label).
+          if (player.badges !== undefined) this._updateRemoteBadges(sid, player.badges);
         } else {
           this._spawnRemote(sid, player);
         }
@@ -1866,6 +1897,30 @@ export class VillageScene extends Phaser.Scene {
         this._spawnRemote(socketId, player);
       }
       this._emitRoomPopulation();
+    });
+
+    // Quest badges v1: the server's badge record for me (reply to
+    // badges_sync / get_badges), and live updates for other players
+    // (someone just earned a badge, or re-synced after a restart).
+    socket.on('badges_state', (payload = {}) => {
+      const uid = payload.userId;
+      if (uid && this.userId && String(uid) !== String(this.userId)) {
+        // Badges for someone else (a get_badges reply): update
+        // their record, if they are in this room.
+        const sid = this._findRemoteSocketIdByUserKey(`user:${String(uid)}`);
+        if (sid) this._updateRemoteBadges(sid, payload.badges);
+        return;
+      }
+      try { this.questManager?.applyServerBadges?.(payload.badges); } catch {}
+    });
+
+    socket.on('player_badges', ({ socketId, userId, badges } = {}) => {
+      if (socketId && socketId === socket.id) return;
+      if (userId && this.userId && String(userId) === String(this.userId)) {
+        try { this.questManager?.applyServerBadges?.(badges); } catch {}
+        return;
+      }
+      if (socketId) this._updateRemoteBadges(socketId, badges);
     });
 
     socket.on('player_moved', ({ socketId, x, y }) => {
@@ -2346,6 +2401,13 @@ export class VillageScene extends Phaser.Scene {
       remotePlayer.sync();
       remotePlayer.avatar.setScale?.(this._currentAvatarScale());
       remotePlayer.avatar.syncLabel?.();
+      // Quest badges v1: carry their badge record on the player, and
+      // show the count in their name label ("Jules 🏅3") so you can
+      // see at a glance who has badges before you click them.
+      remotePlayer.userId = player?.id || null;
+      remotePlayer.displayName = player?.firstName || player?.name || 'Traveler';
+      remotePlayer.badges = normalizeBadgeMap(player?.badges);
+      try { remotePlayer.avatar?.setBadgeCount?.(Object.keys(remotePlayer.badges).length); } catch {}
       this.remotePlayers.set(socketId, remotePlayer);
       this._emitRoomPopulation();
     } catch (error) {
@@ -2353,6 +2415,75 @@ export class VillageScene extends Phaser.Scene {
     } finally {
       this.pendingRemoteSpawns.delete(socketId);
     }
+  }
+
+  // ---- quest badges v1 (`sq-quest-badges-v1`) ----------------------
+
+  /** Remote player at world (wx, wy), if you are standing close
+   *  enough to look at them — for the badges panel. Same ranges as
+   *  the bartender click (46px to hit, 170px to reach). */
+  _playerAt(wx, wy) {
+    if (!this.player) return null;
+    for (const [socketId, remotePlayer] of this.remotePlayers.entries()) {
+      if (Math.hypot(wx - remotePlayer.gx, wy - remotePlayer.gy) >= 46) continue;
+      if (Math.hypot(this.player.gx - remotePlayer.gx, this.player.gy - remotePlayer.gy) > 170) continue;
+      return socketId;
+    }
+    return null;
+  }
+
+  /** Open another player's badges panel (DOM, via VillageCanvas). */
+  _openPlayerBadges(socketId) {
+    const remotePlayer = this.remotePlayers.get(socketId);
+    if (!remotePlayer) return;
+    // Ask the server for their freshest badges too — the panel polls
+    // getPlayerBadges(), so the fresh copy lands when it arrives.
+    try { this.requestPlayerBadges(socketId); } catch {}
+    try { this.onOpenPlayerBadges({ socketId }); } catch {}
+  }
+
+  /** Badge state for one remote player, for the DOM panel:
+   *  { name, badges: [{ questId, emoji, title, description,
+   *  completedAt, completedLabel }] } or null if they left. */
+  getPlayerBadges(socketId) {
+    const remotePlayer = this.remotePlayers.get(socketId);
+    if (!remotePlayer) return null;
+    return {
+      name: remotePlayer.displayName || 'Traveler',
+      badges: badgeListFrom(remotePlayer.badges || {}).map((b) => ({
+        ...b,
+        completedLabel: formatBadgeDate(b.completedAt),
+      })),
+    };
+  }
+
+  /** Ask the server for one player's freshest badges (by their
+   *  userId, not their socket — sockets change on reconnect). */
+  requestPlayerBadges(socketId) {
+    try {
+      const remotePlayer = this.remotePlayers.get(socketId);
+      const userId = remotePlayer?.userId;
+      if (!userId || !this.socket?.connected) return false;
+      this.socket.emit('get_badges', { userId });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Apply a fresh badge record for a remote player (from
+   *  player_badges, room_state, or badges_state): store it and
+   *  update the 🏅 count in their name label. No-op when nothing
+   *  changed, so the room_state fallback sync doesn't re-set the
+   *  label every second. */
+  _updateRemoteBadges(socketId, badges) {
+    const remotePlayer = this.remotePlayers.get(socketId);
+    if (!remotePlayer) return false;
+    const next = normalizeBadgeMap(badges);
+    if (JSON.stringify(next) === JSON.stringify(remotePlayer.badges || {})) return false;
+    remotePlayer.badges = next;
+    try { remotePlayer.avatar?.setBadgeCount?.(Object.keys(next).length); } catch {}
+    return true;
   }
 
   _runFallbackSync() {
