@@ -11,6 +11,23 @@
 // to the Coffee Quest's progress, and only completing that quest
 // (buy 3, when it exists) earns its badge.
 //
+// Backfill v1.1 (`sq-quest-badges-v1-1`): a quest finished BEFORE
+// badges existed still earns its badge. Two recovery paths:
+//   1. The client's own record — QuestManager's localStorage saved
+//      record already knows which quests are finished
+//      (completionsFromSaved), so loading the game after the kit
+//      turns every pre-existing completion into a badge.
+//   2. The server's own record — its in-memory quest-progress store
+//      remembers completions the client's localStorage lost (another
+//      browser, cleared storage). backfilledBadgesFromQuestState
+//      lists them; server/socket.js awards them from badges_sync /
+//      get_badges / join_room. Only completions since the last server
+//      restart can be recovered this way.
+// A backfilled badge with no stored finish time keeps an UNKNOWN
+// timestamp (null) and the list shows "Completed" — never a made-up
+// date. A real timestamp, when one exists anywhere, always beats
+// null; the earliest real timestamp wins.
+//
 // This module is pure (no Phaser, no socket, no localStorage) so the
 // merge / list logic is unit-testable. The client keeps its own
 // record in QuestManager (localStorage, same profile scoping as
@@ -24,6 +41,9 @@ import { QUESTS, getQuest } from './quests.js';
 
 // Landing marker for the v1 kit check.
 export const BADGES_MARKER_V1 = 'sq-quest-badges-v1';
+
+// Landing marker for the v1.1 backfill kit check.
+export const BADGES_BACKFILL_MARKER_V1_1 = 'sq-quest-badges-v1-1';
 
 /** The shared Group Puzzle's badge — not a QuestManager quest, so
  *  its def lives here. id must match what PuzzleQuest and the
@@ -63,9 +83,12 @@ export function getBadgeDef(questId) {
   };
 }
 
-/** A completions map is { [questId]: completedAt } (ms epoch).
- *  Normalize anything wire-shaped into that map, dropping unknown
- *  ids and unparseable timestamps (unknown timestamps become now). */
+/** A completions map is { [questId]: completedAt | null } (ms epoch,
+ *  or null when the finish time is unknown). Normalize anything
+ *  wire-shaped into that map, dropping unknown ids. A missing or
+ *  unparseable timestamp stays UNKNOWN (null) — the list shows
+ *  "Completed" for it. Never invent a date: a badge backfilled from
+ *  an old save must not claim it was earned today. */
 export function normalizeBadgeMap(input) {
   const out = {};
   if (!input || typeof input !== 'object') return out;
@@ -81,9 +104,56 @@ export function normalizeBadgeMap(input) {
   }
   for (const [id, at] of entries) {
     if (!isBadgeQuestId(id)) continue;
-    const ts = Number.isFinite(Number(at)) && Number(at) > 0 ? Number(at) : Date.now();
-    // Earliest completion wins — a badge is earned once, ever.
-    if (!out[id] || ts < out[id]) out[id] = ts;
+    const ts = Number.isFinite(Number(at)) && Number(at) > 0 ? Number(at) : null;
+    // Earliest REAL completion wins — a badge is earned once, ever.
+    // A real timestamp beats an unknown one; unknown stays unknown.
+    if (!(id in out)) out[id] = ts;
+    else if (out[id] == null && ts != null) out[id] = ts;
+    else if (out[id] != null && ts != null && ts < out[id]) out[id] = ts;
+  }
+  return out;
+}
+
+/** Backfill source (Quest Badges v1.1): turn a QuestManager saved
+ *  record ({ [questId]: { count, completed, completedAt } }) into
+ *  the completions map { [questId]: completedAt | null }. Every
+ *  entry with completed: true is a badge — including quests finished
+ *  BEFORE badges existed, which is the whole point of the backfill.
+ *  The stored finish time is used when one exists; otherwise the
+ *  timestamp is null and the list shows "Completed" (never a made-up
+ *  date). Unknown quest ids pass through here and are filtered by
+ *  normalizeBadgeMap / getBadgeDef downstream. */
+export function completionsFromSaved(saved) {
+  const out = {};
+  if (!saved || typeof saved !== 'object') return out;
+  for (const [id, entry] of Object.entries(saved)) {
+    if (!entry?.completed) continue;
+    const at = entry.completedAt;
+    out[id] = Number.isFinite(Number(at)) && Number(at) > 0 ? Number(at) : null;
+  }
+  return out;
+}
+
+/** Backfill source (Quest Badges v1.1, server side): scan the
+ *  server's own quest-progress store (questState[roomId][questId].
+ *  users[userId].completed) and list the quests it remembers this
+ *  player finishing, across ALL rooms. The server never recorded
+ *  WHEN a quest finished, so completedAt is null ("Completed").
+ *  Returns [{ questId, completedAt: null }]. Pure — the server
+ *  (server/socket.js) calls this from badges_sync / get_badges /
+ *  join_room, so completions the client's localStorage lost (another
+ *  browser, cleared storage) still come back as badges. Only
+ *  completions since the last server restart can be recovered this
+ *  way — the store is in-memory. */
+export function backfilledBadgesFromQuestState(questState, userId) {
+  const out = [];
+  if (!questState || typeof questState !== 'object' || !userId) return out;
+  for (const room of Object.values(questState)) {
+    if (!room || typeof room !== 'object') continue;
+    for (const [questId, q] of Object.entries(room)) {
+      if (!isBadgeQuestId(questId)) continue;
+      if (q?.users?.[userId]?.completed) out.push({ questId, completedAt: null });
+    }
   }
   return out;
 }
@@ -107,7 +177,7 @@ export function badgeListFrom(completions) {
     if (!def) continue;
     list.push({ ...def, questId, completedAt });
   }
-  list.sort((a, b) => b.completedAt - a.completedAt);
+  list.sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0)); // newest first, unknown dates last
   return list;
 }
 

@@ -36,6 +36,7 @@ import {
   removeFlyer,
   serializeNoticeBoardState,
 } from '../src/village/noticeBoardState.js';
+import { backfilledBadgesFromQuestState } from '../src/village/badges.js';
 
 // Shared instructions so every NPC reads as a real person, not a helpful assistant.
 const HUMAN_STYLE_GUIDE = `
@@ -392,14 +393,26 @@ const QUEST_DEFS = {
 // `sq-quest-badges-v1`): one badge per completed quest, per player,
 // across ALL rooms — a Duck Roundup badge earned in Shepherd Park
 // still shows in Agora. userBadges[userId] = { [questId]:
-// completedAt }. In-memory like the puzzle and the boards: a server
-// restart wipes the server's copy, but each client keeps its own
-// localStorage record and re-syncs it on connect (badges_sync), so
-// badges come back. Badges carry no coins — the abuse surface of a
-// client asserting a badge it didn't earn is only showing off, so
-// badges_sync restores the client's own local record (validated
-// against the known quest list below). The authoritative awards are
-// quest_progress (count-based) and puzzle_place (contributors).
+// completedAt | null } — null means the finish time is unknown and
+// the list shows "Completed" (never a made-up date). In-memory like
+// the puzzle and the boards: a server restart wipes the server's
+// copy, but each client keeps its own localStorage record and
+// re-syncs it on connect (badges_sync), so badges come back. Badges
+// carry no coins — the abuse surface of a client asserting a badge
+// it didn't earn is only showing off, so badges_sync restores the
+// client's own local record (validated against the known quest list
+// below). The authoritative awards are quest_progress (count-based)
+// and puzzle_place (contributors).
+//
+// Backfill v1.1 (`sq-quest-badges-v1-1`): a quest finished BEFORE
+// badges existed still earns its badge. backfillBadgesFromQuests
+// awards badges from the server's own quest-progress store — the
+// completions the client's localStorage lost (another browser,
+// cleared storage) come back as badges. Only completions since the
+// last server restart can be recovered this way. Past Group Puzzle
+// completions can't be recovered: no persistent record of past
+// puzzle contributors exists anywhere (the puzzle state resets
+// every round).
 const BADGE_QUEST_IDS = new Set([...Object.keys(QUEST_DEFS), 'group-puzzle']);
 const userBadges = {};
 function badgeMapFor(userId) {
@@ -409,12 +422,35 @@ function badgeMapFor(userId) {
 function awardBadge(userId, questId, completedAt) {
   if (typeof questId !== 'string' || !BADGE_QUEST_IDS.has(questId)) return false;
   const map = badgeMapFor(userId);
-  if (map[questId]) return false; // already has it — badges are once ever
+  // An unknown finish time stays unknown (null) — the list shows
+  // "Completed". Never invent a date for a backfilled badge.
   const at = Number.isFinite(Number(completedAt)) && Number(completedAt) > 0
     ? Number(completedAt)
-    : Date.now();
+    : null;
+  if (questId in map) {
+    // Already has the badge — once ever. Only upgrade an unknown
+    // date to a real one (or keep the earliest real one).
+    if (map[questId] == null && at != null) { map[questId] = at; return true; }
+    if (map[questId] != null && at != null && at < map[questId]) { map[questId] = at; return true; }
+    return false;
+  }
   map[questId] = at;
   return true;
+}
+// Quest badges v1.1 backfill (`sq-quest-badges-v1-1`): award badges
+// from the server's own quest-progress store — the completions the
+// client's localStorage lost (another browser, cleared storage).
+// Idempotent (awardBadge is once-ever); no coins; timestamp is null
+// (the server never recorded WHEN the quest finished). Returns true
+// if anything was added. Called from join_room, badges_sync and
+// get_badges, so the recovery happens on every path that reads a
+// player's badges.
+function backfillBadgesFromQuests(userId) {
+  let changed = false;
+  for (const { questId } of backfilledBadgesFromQuestState(questState, userId)) {
+    if (awardBadge(userId, questId, null)) changed = true;
+  }
+  return changed;
 }
 function badgesArrayFor(userId) {
   const map = userBadges[userId] || {};
@@ -1015,6 +1051,10 @@ io.on('connection', (socket) => {
     // yet (see the inventory kit report) — badges ARE, because the
     // whole point is other players seeing them.
     mergeClientBadges(userId, user?.badges);
+    // Quest badges v1.1 backfill: also award badges from the
+    // server's own quest-progress store, for completions the
+    // client's local record lost.
+    backfillBadgesFromQuests(userId);
     playerState.badges = badgesArrayFor(userId);
 
     rooms[roomId][socket.id] = playerState;
@@ -1195,6 +1235,10 @@ io.on('connection', (socket) => {
     const rate = checkRateLimit(userId);
     if (!rate.allowed) return;
     mergeClientBadges(userId, badges);
+    // Quest badges v1.1 backfill: also award badges from the
+    // server's own quest-progress store, for completions the
+    // client's local record lost.
+    backfillBadgesFromQuests(userId);
     socket.emit('badges_state', { userId, badges: badgesArrayFor(userId) });
     if (roomId && rooms[roomId]?.[socket.id]) {
       io.to(roomId).emit('player_badges', { socketId: socket.id, userId, badges: badgesArrayFor(userId) });
@@ -1206,6 +1250,10 @@ io.on('connection', (socket) => {
   // panel, so it shows their freshest list.
   socket.on('get_badges', ({ userId } = {}) => {
     const target = userId || socketUserMap[socket.id] || socket.id;
+    // Quest badges v1.1 backfill: award from the server's own
+    // quest-progress store before replying, so a player's panel
+    // shows their recovered badges too.
+    backfillBadgesFromQuests(target);
     socket.emit('badges_state', { userId: target, badges: badgesArrayFor(target) });
   });
 

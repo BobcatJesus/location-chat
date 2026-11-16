@@ -4,6 +4,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   BADGES_MARKER_V1,
+  BADGES_BACKFILL_MARKER_V1_1,
   GROUP_PUZZLE_BADGE,
   BADGE_QUEST_IDS,
   isBadgeQuestId,
@@ -12,11 +13,17 @@ import {
   mergeBadgeMaps,
   badgeListFrom,
   formatBadgeDate,
+  completionsFromSaved,
+  backfilledBadgesFromQuestState,
 } from '../src/village/badges.js';
 
 describe('badge defs', () => {
   it('carries the v1 marker', () => {
     expect(BADGES_MARKER_V1).toBe('sq-quest-badges-v1');
+  });
+
+  it('carries the v1.1 backfill marker', () => {
+    expect(BADGES_BACKFILL_MARKER_V1_1).toBe('sq-quest-badges-v1-1');
   });
 
   it('covers every solo quest plus the group puzzle', () => {
@@ -53,9 +60,27 @@ describe('normalizeBadgeMap', () => {
     expect(normalizeBadgeMap({ 'duck-roundup': 1000 })).toEqual({ 'duck-roundup': 1000 });
     expect(normalizeBadgeMap([{ questId: 'duck-roundup', completedAt: 1000 }]))
       .toEqual({ 'duck-roundup': 1000 });
+    // A bare id has no finish time — it stays unknown (null), never
+    // a made-up "today" date.
     const withIds = normalizeBadgeMap(['duck-roundup']);
-    expect(Object.keys(withIds)).toEqual(['duck-roundup']);
-    expect(withIds['duck-roundup']).toBeGreaterThan(0);
+    expect(withIds).toEqual({ 'duck-roundup': null });
+  });
+
+  it('keeps an unknown timestamp unknown instead of inventing one', () => {
+    expect(normalizeBadgeMap({ 'duck-roundup': null })).toEqual({ 'duck-roundup': null });
+    expect(normalizeBadgeMap({ 'duck-roundup': 'garbage' })).toEqual({ 'duck-roundup': null });
+    expect(normalizeBadgeMap({ 'duck-roundup': 0 })).toEqual({ 'duck-roundup': null });
+  });
+
+  it('a real timestamp beats an unknown one, and the earliest real one wins', () => {
+    expect(mergeBadgeMaps({ 'duck-roundup': null }, { 'duck-roundup': 5000 }))
+      .toEqual({ 'duck-roundup': 5000 });
+    expect(mergeBadgeMaps({ 'duck-roundup': 5000 }, { 'duck-roundup': null }))
+      .toEqual({ 'duck-roundup': 5000 });
+    expect(mergeBadgeMaps({ 'duck-roundup': 9000 }, { 'duck-roundup': 2000 }))
+      .toEqual({ 'duck-roundup': 2000 });
+    expect(mergeBadgeMaps({ 'duck-roundup': null }, { 'duck-roundup': null }))
+      .toEqual({ 'duck-roundup': null });
   });
 
   it('drops unknown ids and keeps the earliest timestamp per quest', () => {
@@ -112,6 +137,15 @@ describe('badgeListFrom', () => {
   it('is empty with no completions', () => {
     expect(badgeListFrom({})).toEqual([]);
   });
+
+  it('sorts badges with unknown dates last', () => {
+    const list = badgeListFrom({
+      'duck-roundup': null,
+      'cat-cuddles': 3000,
+      'barfly': 2000,
+    });
+    expect(list.map((b) => b.questId)).toEqual(['cat-cuddles', 'barfly', 'duck-roundup']);
+  });
 });
 
 describe('formatBadgeDate', () => {
@@ -123,5 +157,49 @@ describe('formatBadgeDate', () => {
   it('falls back for a missing timestamp', () => {
     expect(formatBadgeDate(null)).toBe('Completed');
     expect(formatBadgeDate('garbage')).toBe('Completed');
+  });
+});
+
+describe('completionsFromSaved (v1.1 backfill source)', () => {
+  it('turns every finished quest in the local record into a badge', () => {
+    expect(completionsFromSaved({
+      'duck-roundup': { count: 3, completed: true },
+      'cat-cuddles': { count: 3, completed: true, completedAt: 1700000000000 },
+      'barfly': { count: 2, completed: false },
+      'wanderer': { count: 0, completed: false },
+    })).toEqual({
+      'duck-roundup': null,
+      'cat-cuddles': 1700000000000,
+    });
+  });
+
+  it('returns an empty map for junk input', () => {
+    expect(completionsFromSaved(null)).toEqual({});
+    expect(completionsFromSaved('nope')).toEqual({});
+  });
+});
+
+describe('backfilledBadgesFromQuestState (v1.1 server source)', () => {
+  const questState = {
+    'shepherd-park': {
+      'duck-roundup': { shared: 3, users: { 'u1': { count: 3, completed: true }, 'u2': { count: 1, completed: false } } },
+    },
+    'agora-houston': {
+      'cat-cuddles': { shared: 3, users: { 'u1': { count: 3, completed: true } } },
+      'golden-key': { shared: 0, users: { 'u1': { count: 0, completed: false } } },
+    },
+  };
+
+  it('lists quests the server remembers this player finishing, across rooms', () => {
+    expect(backfilledBadgesFromQuestState(questState, 'u1')).toEqual([
+      { questId: 'duck-roundup', completedAt: null },
+      { questId: 'cat-cuddles', completedAt: null },
+    ]);
+  });
+
+  it('returns nothing for a player with no completions, or junk input', () => {
+    expect(backfilledBadgesFromQuestState(questState, 'u2')).toEqual([]);
+    expect(backfilledBadgesFromQuestState(questState, null)).toEqual([]);
+    expect(backfilledBadgesFromQuestState(null, 'u1')).toEqual([]);
   });
 });

@@ -39,6 +39,20 @@
 // connect), so badges show across rooms. Coffee purchases are quest
 // steps, not badges: only completing a quest earns its badge.
 //
+// Quest badges v1.1 backfill (2026-11-16, `sq-quest-badges-v1-1`):
+// a quest finished BEFORE badges existed still earns its badge.
+// Badges derive from the completions record itself (there is no
+// separate badge store client-side), so the backfill is a read of
+// that record — backfillBadges() runs at construction and before
+// every sync. A backfilled badge with no stored finish time shows
+// "Completed" (never a made-up date). The server also backfills
+// from its own quest-progress store (server/socket.js), so
+// completions the local record lost (another browser, cleared
+// storage) still come back. Past Group Puzzle completions can't be
+// recovered — no persistent record of past puzzle contributors
+// exists anywhere (the server's puzzle state resets every round,
+// and the client only recorded puzzle completions after v1).
+//
 // Quest batch v1.1 (2026-11-15): 6 more quests on the same loop —
 // Cat Cuddles (Agora), Say Hello to the Bartender + Barfly (Lola's
 // Depot), The Golden Key (hidden object, Agora), plus two ANYWHERE
@@ -52,8 +66,10 @@ import { DEPTH } from './depth.js';
 import { QUESTS, getQuest } from './quests.js';
 import {
   BADGES_MARKER_V1,
+  BADGES_BACKFILL_MARKER_V1_1,
   GROUP_PUZZLE_BADGE,
   badgeListFrom,
+  completionsFromSaved,
   mergeBadgeMaps,
   normalizeBadgeMap,
   formatBadgeDate,
@@ -101,6 +117,10 @@ export class QuestManager {
   constructor(scene) {
     this.scene = scene;
     this.saved = loadSaved(); // { [questId]: { count, completed } }
+    // Quest badges v1.1 backfill (`sq-quest-badges-v1-1`): turn every
+    // pre-existing completion in the local record into a badge, so
+    // quests finished before badges existed show up on first load.
+    this.backfillBadges();
     this.activeQuest = null;
     this.sharedCount = 0; // room-wide total for the active quest (server)
     this.tracker = null; // Phaser text, pinned top-left of the screen
@@ -117,6 +137,7 @@ export class QuestManager {
     // local save missed still shows in my list.
     this._serverBadges = {}; // { [questId]: completedAt }
     this.marker = BADGES_MARKER_V1;
+    this.backfillMarker = BADGES_BACKFILL_MARKER_V1_1;
     // DOM HUD (VillageCanvas renders tracker/banner/toast as DOM): when
     // true, QuestManager keeps the same state but exposes it via
     // getHudState() instead of drawing Phaser text. Default false keeps
@@ -300,19 +321,27 @@ export class QuestManager {
 
   // ---- quest badges v1 (`sq-quest-badges-v1`) -----------------------
 
-  /** My own completions record, as a map { questId: completedAt },
-   *  from localStorage only. Sent to the server on connect
+  /** Quest badges v1.1 backfill (`sq-quest-badges-v1-1`): every quest
+   *  finished BEFORE the badges system existed still earns its
+   *  badge. Badges derive from the completions record itself (there
+   *  is no separate badge store client-side), so the backfill is a
+   *  read of that record — any entry with completed: true is a
+   *  badge, with its stored finish time when one exists and no date
+   *  ("Completed") when it doesn't. Runs at construction and before
+   *  every sync — once ever per quest, idempotent (a second load
+   *  returns the same set), never pays coins (completion / rewards
+   *  still go through _completeQuest alone). Returns the backfilled
+   *  map { questId: completedAt | null }. */
+  backfillBadges() {
+    return completionsFromSaved(this.saved);
+  }
+
+  /** My own completions record, as a map { questId: completedAt |
+   *  null }, from localStorage only — this IS the backfilled record
+   *  (see backfillBadges). Sent to the server on connect
    *  (badges_sync) so a restart never loses badges I already earned. */
   getCompletedMap() {
-    const out = {};
-    for (const [id, entry] of Object.entries(this.saved || {})) {
-      if (entry?.completed) {
-        out[id] = Number.isFinite(Number(entry.completedAt)) && Number(entry.completedAt) > 0
-          ? Number(entry.completedAt)
-          : Date.now();
-      }
-    }
-    return out;
+    return this.backfillBadges();
   }
 
   /** Ids of the quests I have finished (local record only). */
