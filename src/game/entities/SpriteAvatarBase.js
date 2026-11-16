@@ -35,6 +35,7 @@ export default class SpriteAvatarBase extends Phaser.GameObjects.Container {
     targetHeight = 52,
     shadowColor = 0x000000,
     bodyType = 'standard',
+    hasBag = false,
   } = {}) {
     super(scene, x, y);
     this.scene = scene;
@@ -67,6 +68,14 @@ export default class SpriteAvatarBase extends Phaser.GameObjects.Container {
     this._baseScale = inferSpriteScale(scene, initialTexture, this._targetHeight) * this._bodyScale;
     this._sprite.setScale(this._baseScale);
     this.add(this._sprite);
+    // Bag upgrade (Items + Inventory v1, `sq-items-inventory-v1`): a
+    // bought bag (purse/backpack, 10 slots instead of 3) is drawn on
+    // the avatar so other players can see it. A small satchel at the
+    // hip with a shoulder strap — drawn, no asset needed, so every
+    // avatar model inherits it. setHasBag() toggles it live (e.g.
+    // right after purchase); the constructor applies it from options.
+    this._bag = null;
+    if (hasBag) this.setHasBag(true);
 
     const labelText = (name || '').trim() || (isLocal ? 'YOU' : 'Traveler');
     this._label = scene.add.text(x, y - 38, labelText, {
@@ -118,6 +127,30 @@ export default class SpriteAvatarBase extends Phaser.GameObjects.Container {
   _getPhotoSize() {
     const scale = this._getVisualScale();
     return Math.round(PHOTO_BASE_SIZE * Math.max(1.1, scale));
+  }
+
+  setHasBag(hasBag) {
+    if (!this.scene?.add) return this;
+    if (!hasBag) {
+      try { this._bag?.destroy(); } catch {}
+      this._bag = null;
+      return this;
+    }
+    if (this._bag) return this;
+    // Satchel at the hip: brown body + darker flap + a strap up over
+    // the shoulder. Sized to the avatar (~64 tall, origin at feet).
+    const bag = this.scene.add.graphics();
+    bag.lineStyle(2, 0x78350f, 1); // strap, shoulder to hip
+    bag.lineBetween(-6, -52, 14, -26);
+    bag.fillStyle(0x92400e, 1); // satchel body
+    bag.fillRect(6, -30, 18, 14);
+    bag.fillStyle(0x78350f, 1); // flap
+    bag.fillRect(6, -30, 18, 6);
+    bag.fillStyle(0xfbbf24, 1); // clasp
+    bag.fillCircle(15, -22, 1.6);
+    this.add(bag);
+    this._bag = bag;
+    return this;
   }
 
   setScale(x, y = x) {

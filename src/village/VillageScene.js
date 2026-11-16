@@ -5,6 +5,8 @@ import { CafeCat } from './CafeCat.js';
 import { HiddenKey } from './HiddenKey.js';
 import { PuzzleQuest } from './PuzzleQuest.js';
 import { QuestManager } from './QuestManager.js';
+import { ItemsSystem } from './ItemsSystem.js';
+import { hasBag as inventoryHasBag, INVENTORY_FULL_MESSAGE } from './items.js';
 import { io } from 'socket.io-client';
 import { RoomLayout } from './RoomLayout.js';
 import { pickLayout } from './layoutPicker.js';
@@ -123,6 +125,11 @@ function normalizeAvatarState(source = {}) {
     footwear: source.footwear || 'sneakers',
     glasses: Boolean(source.glasses),
     hasScythe: Boolean(source.hasScythe),
+    // Bag upgrade (Items + Inventory v1): the bought bag shows on the
+    // avatar. Carried in the avatar state so remote spawns can draw
+    // it too (see join_room — the server must relay it; v1 note in
+    // the kit report).
+    hasBag: Boolean(source.hasBag),
   };
 }
 
@@ -453,6 +460,7 @@ export class VillageScene extends Phaser.Scene {
     this.onOpenShelf = d.onOpenShelf ?? (() => {});
     this.onOpenJukebox = d.onOpenJukebox ?? (() => {});
     this.onOpenPuzzle = d.onOpenPuzzle ?? (() => {});
+    this.onOpenInventory = d.onOpenInventory ?? (() => {});
     this.preferredCameraMode = ['ultra-close-follow', 'close-follow', 'follow', 'wide-follow', 'overview'].includes(d.preferredCameraMode)
       ? d.preferredCameraMode
       : null;
@@ -619,6 +627,11 @@ export class VillageScene extends Phaser.Scene {
     // elsewhere): the puzzle table + hidden pieces in the room.
     this.puzzleQuest = new PuzzleQuest(this);
     this.puzzleQuest.refresh();
+    // Items + inventory v1 (Agora hidden search; ground litter also
+    // by any pond): pocket/bag, trash, flyers, notes, diary, food,
+    // cigarette box. Puzzle pieces live in this inventory too.
+    this.itemsSystem = new ItemsSystem(this);
+    this.itemsSystem.refresh();
     // Wanderer quest: this room entry counts (after refresh, not in it).
     this.questManager?.noteRoomVisit();
     // Seasonal: pumpkins, bats, spooky tint in October.
@@ -817,8 +830,29 @@ export class VillageScene extends Phaser.Scene {
       // Silent unless the tap finds a piece — no hint about which
       // furniture hides one. Tap-to-move still happens below, as
       // before, so clicking a table both walks you there and
-      // searches it.
-      try { this.puzzleQuest?.searchTapAt(ptr.worldX, ptr.worldY); } catch {}
+      // searches it. A FULL pocket refuses a piece pickup:
+      // "Your pocket is full — place a piece on the puzzle board first."
+      try {
+        const pr = this.puzzleQuest?.searchTapAt(ptr.worldX, ptr.worldY);
+        if (pr && pr.reason === 'inventory-full') {
+          this.onSystemNotice?.(`🎒 ${INVENTORY_FULL_MESSAGE}`);
+        }
+      } catch {}
+      // Items + inventory v1: the same click can also count toward a
+      // hidden item (trash can, Table 4, plant, couch, portrait) or
+      // pick up visible ground litter you are standing next to.
+      try {
+        const ir = this.itemsSystem?.searchTapAt(ptr.worldX, ptr.worldY);
+        if (ir && ir.reason === 'inventory-full') {
+          this.onSystemNotice?.(`🎒 ${INVENTORY_FULL_MESSAGE}`);
+        }
+      } catch {}
+      try {
+        const lr = this.itemsSystem?.pickupTapAt(ptr.worldX, ptr.worldY);
+        if (lr && lr.reason === 'inventory-full') {
+          this.onSystemNotice?.(`🎒 ${INVENTORY_FULL_MESSAGE}`);
+        }
+      } catch {}
       this.target = target;
       this.tapDot.setPosition(ptr.worldX, ptr.worldY).setAlpha(0.7);
       this.tweens.add({ targets: this.tapDot, alpha: 0, duration: 400 });
@@ -967,6 +1001,8 @@ export class VillageScene extends Phaser.Scene {
     try {
       const localAvatar = await createAvatarEntity(this, spawn.x, spawn.y, {
         ...this.avatarState,
+        // Bag upgrade (Items + Inventory v1): drawn on the avatar.
+        hasBag: (() => { try { return inventoryHasBag(); } catch { return false; } })(),
         name: firstName,
         isLocal: true,
       });
@@ -1231,8 +1267,15 @@ export class VillageScene extends Phaser.Scene {
       this.onSystemNotice?.('☕ Fresh coffee! -2 coins — enjoy!');
       // Group puzzle v1.2: a coffee has a 1-in-3 chance of
       // containing puzzle piece 8. The coffee still costs 2 coins;
-      // the piece is the reward, never coins.
-      try { this.puzzleQuest?.tryCoffeePiece(); } catch {}
+      // the piece is the reward, never coins. The piece is an
+      // INVENTORY item: a full pocket means it stays in the coffee
+      // (unclaimed) — the next coffee rolls again.
+      try {
+        const coffeePiece = this.puzzleQuest?.tryCoffeePiece();
+        if (coffeePiece && coffeePiece.reason === 'inventory-full') {
+          this.onSystemNotice?.(`🎒 ${INVENTORY_FULL_MESSAGE}`);
+        }
+      } catch {}
     }
     this.socket?.emit('buy_drink', { roomId: this.roomId });
   }
@@ -1709,6 +1752,13 @@ export class VillageScene extends Phaser.Scene {
           firstName,
           isCreator,
           ...this.avatarState,
+          // Bag upgrade (Items + Inventory v1): sent so other players'
+          // clients can draw the bag on this avatar. NOTE: the server
+          // builds playerState from a fixed whitelist (server/socket.js
+          // join_room) that does NOT include hasBag yet — other players
+          // will only see the bag once that one line lands (see the kit
+          // report). Your own avatar shows it immediately.
+          hasBag: (() => { try { return inventoryHasBag(); } catch { return false; } })(),
         },
       });
       socket.emit('get_room_state', { roomId: this.roomId });
@@ -2445,6 +2495,7 @@ export class VillageScene extends Phaser.Scene {
     this.cafeCat?.update(delta);
     this.hiddenKey?.update(delta);
     this.puzzleQuest?.update(delta);
+    this.itemsSystem?.update(delta);
     this.questManager?.update(delta);
     this.halloween?.update(delta);
     this.dayNight?.update(delta);
@@ -2778,6 +2829,8 @@ export class VillageScene extends Phaser.Scene {
     this.hiddenKey = null;
     this.puzzleQuest?.destroy();
     this.puzzleQuest = null;
+    this.itemsSystem?.destroy();
+    this.itemsSystem = null;
     this.questManager?.destroy();
     this.questManager = null;
     this.catPrompt?.destroy();
@@ -2820,6 +2873,7 @@ export class VillageScene extends Phaser.Scene {
     this.questManager?.refresh();
     this.hiddenKey?.refresh();
     this.puzzleQuest?.refresh();
+    this.itemsSystem?.refresh();
     this.questManager?.noteRoomVisit();
     this._emitFloorStatus();
     this.roomLayout.setDynamicSolids(this.customZones);

@@ -5,6 +5,7 @@ import { VillageScene } from './VillageScene.js';
 import ShelfPanel from './ShelfPanel.jsx';
 import JukeboxPanel from './JukeboxPanel.jsx';
 import PuzzleBoard from './PuzzleBoard.jsx';
+import InventoryPanel from './InventoryPanel.jsx';
 import InteriorSketchModal from './InteriorSketchModal.jsx';
 import ModQueuePanel from './ModQueuePanel.jsx';
 import { getCoins } from './CoinWallet.js';
@@ -247,6 +248,8 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
   const [openShelf, setOpenShelf] = useState(null);
   const [openJukebox, setOpenJukebox] = useState(null);
   const [openPuzzle, setOpenPuzzle] = useState(false);
+  const [openInventory, setOpenInventory] = useState(false);
+  const [inventoryCount, setInventoryCount] = useState(null); // "n/cap" for the bottom-left button badge
 
   // Refresh coin balance when jukebox closes or every 5s
   useEffect(() => {
@@ -263,6 +266,18 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
         const scene = gameRef.current?.scene?.getScene('VillageScene');
         setInteractKind(scene?.getInteractKind ? scene.getInteractKind() : null);
       } catch { setInteractKind(null); }
+    }, 1000);
+    return () => clearInterval(t);
+  }, []);
+  // Poll the inventory badge (bottom-left 🎒 button count, "n/cap").
+  useEffect(() => {
+    const t = setInterval(() => {
+      try {
+        const scene = gameRef.current?.scene?.getScene('VillageScene');
+        const st = scene?.itemsSystem?.getState ? scene.itemsSystem.getState() : null;
+        if (st) setInventoryCount(`${st.count}/${st.capacity}`);
+        else if (inventoryCount !== null) setInventoryCount(null);
+      } catch { /* scene not ready yet */ }
     }, 1000);
     return () => clearInterval(t);
   }, []);
@@ -597,6 +612,7 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
       onOpenShelf: (info) => setOpenShelf(info),
       onOpenJukebox: (info) => setOpenJukebox(info),
       onOpenPuzzle: () => setOpenPuzzle(true),
+      onOpenInventory: () => setOpenInventory(true),
       onNearbyNpcChange: setNearbyNpc,
       onNpcConversationClear: ({ npcId } = {}) => {
         setMessages((prev) => prev.filter((msg) => msg.channel !== 'npc' || msg.npcId !== npcId));
@@ -772,6 +788,18 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
             return scene?.puzzleQuest?.placePiece?.(pieceId, col, row) || { ok: false, reason: 'error' };
           }}
           onClose={() => setOpenPuzzle(false)}
+        />
+      )}
+      {openInventory && (
+        <InventoryPanel
+          getState={() => gameRef.current?.scene?.getScene('VillageScene')?.itemsSystem?.getState?.()}
+          onUse={(id) => gameRef.current?.scene?.getScene('VillageScene')?.itemsSystem?.useItem?.(id) || { ok: false, reason: 'error' }}
+          onDrop={(id) => gameRef.current?.scene?.getScene('VillageScene')?.itemsSystem?.dropItem?.(id) || { ok: false, reason: 'error' }}
+          onDispose={(id) => gameRef.current?.scene?.getScene('VillageScene')?.itemsSystem?.disposeTrash?.(id) || { ok: false, reason: 'error' }}
+          onBuyBag={() => gameRef.current?.scene?.getScene('VillageScene')?.itemsSystem?.buyBag?.() || { ok: false, reason: 'error' }}
+          onMakeFlyer={(title, text) => gameRef.current?.scene?.getScene('VillageScene')?.itemsSystem?.makeFlyer?.(title, text) || { ok: false, reason: 'error' }}
+          onOpenPuzzle={() => { setOpenInventory(false); setOpenPuzzle(true); }}
+          onClose={() => { setOpenInventory(false); setCoinBalance(getCoins()); }}
         />
       )}
       {showEditHint && (
@@ -1120,6 +1148,43 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
         </div>
       )}
 
+      {/* Inventory button (Items + Inventory v1): BOTTOM LEFT, never the
+          toolbar — the user said the toolbar already has too many
+          things. Stacked above the round interact button (same left
+          edge), always visible, with a n/capacity badge. Tapping it
+          opens the pocket/bag popup (same feel as the puzzle board). */}
+      <button
+        onClick={() => setOpenInventory(true)}
+        title={inventoryCount ? `Pocket — ${inventoryCount} items` : 'Pocket — look inside'}
+        style={{
+          position: 'absolute',
+          left: 16,
+          bottom: 104,
+          zIndex: 1001,
+          width: 68, height: 68,
+          borderRadius: '50%',
+          background: '#1a4971',
+          border: '3px solid #e2b46c',
+          boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+          fontSize: 30,
+          cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          color: '#fff',
+        }}
+      >
+        🎒
+        {inventoryCount && (
+          <span style={{
+            position: 'absolute', bottom: -4, right: -6,
+            background: '#fbbf24', color: '#1a4971',
+            borderRadius: 10, padding: '1px 6px',
+            fontSize: 11, fontWeight: 'bold', lineHeight: 1.4,
+            border: '2px solid #1a4971',
+          }}>
+            {inventoryCount}
+          </span>
+        )}
+      </button>
       {interactKind && (
         <button
           onClick={triggerInteract}

@@ -240,6 +240,11 @@ export default function PuzzleBoard({ getBoardState, onPlace, onClose }) {
         <div style={{ fontSize: 12, marginTop: 10, color: '#64748b' }}>
           You found {Array.isArray(board.myFound) ? board.myFound.length : 0} piece{Array.isArray(board.myFound) && board.myFound.length === 1 ? '' : 's'} this round.
           {board.completed ? '' : ' Pieces are shared — anyone in Agora can place a piece you found.'}
+          {Array.isArray(board.carriedPieces) && board.carriedPieces.length > 0 && (
+            <div style={{ marginTop: 4, color: '#92400e' }}>
+              🧩 You are carrying {board.carriedPieces.length} piece{board.carriedPieces.length === 1 ? '' : 's'} in your pocket — placing one frees its slot.
+            </div>
+          )}
         </div>
       </div>
     </div>

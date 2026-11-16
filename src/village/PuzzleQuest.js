@@ -16,7 +16,12 @@
 // Clicks on furniture with no piece do nothing visible, and no hint
 // says which furniture hides a piece or how many clicks are left.
 // It is meant to be difficult, so one player cannot sweep all 9 and
-// more than one person has to contribute. The 9 pieces hide at SET
+// more than one person has to contribute. Pieces are INVENTORY ITEMS
+// (Items + Inventory v1, `sq-items-inventory-v1`): a found piece
+// occupies one pocket slot (3, or 10 with a bag) until it is placed
+// on this board, which frees the slot. A full pocket refuses the
+// pickup — "Your pocket is full — place a piece on the puzzle board
+// first" — and the piece stays unfound until there is room.
 // furniture spots in Agora (never the open floor):
 //   0-2  under a cafe table (three of the four tables; the fourth
 //        table is a decoy — clicking it finds nothing)
@@ -58,6 +63,19 @@ import {
   serializePuzzleState,
   parsePuzzleState,
 } from './puzzleState.js';
+// Items + Inventory v1 (`sq-items-inventory-v1`): puzzle pieces are
+// inventory items — a found piece occupies one pocket slot until it
+// is placed on the board, which frees the slot again. A full pocket
+// refuses the pickup (reason 'inventory-full'); the piece stays
+// unfound and the search taps stay counted, so one more click after
+// making room picks it up.
+import {
+  canAddItem,
+  addPuzzlePiece,
+  removePuzzlePiece,
+  carriedPuzzlePieces,
+  clearPuzzlePieces,
+} from './items.js';
 
 const AGORA_ROOM_ID = 'agora-houston';
 const TABLE_RANGE = 130; // px from the table the player must be within (E key)
@@ -133,6 +151,10 @@ export class PuzzleQuest {
       ...s,
       myFound: [...this.myFound],
       myPlaced: [...this.myPlaced],
+      // Pieces I am carrying in my pocket right now — placing one
+      // frees its slot (see placePiece). The tray below is still the
+      // SHARED tray: anyone in the room can place a found piece.
+      carriedPieces: carriedPuzzlePieces(),
     };
   }
 
@@ -173,6 +195,19 @@ export class PuzzleQuest {
         this._pendingFind.delete(id);
         this.myFound.add(id);
         this._searchTaps.delete(id);
+        // The piece goes into my pocket (one slot) — confirmed by
+        // the server, so this is the moment it is really mine. If my
+        // pocket filled in the split second since I claimed it, the
+        // piece stays on the shared board tray instead: placeable
+        // from the board, just not carried by me.
+        const pocket = addPuzzlePiece(id);
+        if (!pocket.ok) {
+          try {
+            this.scene?.onSystemNotice?.(
+              '🧩 You found a puzzle piece, but your pocket is full — it’s on the shared board tray; place it from the board.',
+            );
+          } catch {}
+        }
         try {
           this.scene?.onSystemNotice?.(
             `🧩 You found a puzzle piece! (${next.collected.length}/${PUZZLE_TOTAL})`,
@@ -180,12 +215,21 @@ export class PuzzleQuest {
         } catch {}
       }
     }
+    // A claim the server rejected (someone else found it first) never
+    // appears in newlyCollected — but it DOES appear in the room's
+    // collected list, so drop it from pending instead of crediting it
+    // (or carrying it) later.
+    for (const id of [...this._pendingFind]) {
+      if ((next.collected || []).includes(id)) this._pendingFind.delete(id);
+    }
     if (roundChanged) {
       // New round: my finds/placements/taps from the old round don't count.
       this.myFound.clear();
       this.myPlaced.clear();
       this._searchTaps.clear();
       this._pendingFind.clear();
+      // Carried pieces belong to the old round — free those slots.
+      try { clearPuzzlePieces(); } catch {}
     }
     this.state = next;
     this._drawTable();
@@ -240,16 +284,23 @@ export class PuzzleQuest {
 
   /** Try to collect piece `pieceId`. Called only after the v1.2
    * search rules have been satisfied (enough clicks on its hiding
-   * furniture, a lucky coffee, or the sleeping cat). */
+   * furniture, a lucky coffee, or the sleeping cat). INVENTORY GATE:
+   * the piece occupies one pocket slot, so a full pocket refuses the
+   * pickup BEFORE anything is claimed — the piece stays unfound and
+   * the caller keeps the search taps counted, so one more click
+   * after making room picks it up. */
   tryCollectPiece(pieceId) {
     const id = Number(pieceId);
     if (!Number.isInteger(id) || id < 0 || id >= PUZZLE_TOTAL) return { ok: false, reason: 'bad-piece' };
     if (!this._pieceAvailable(id)) return { ok: false, reason: 'not-available' };
+    if (!canAddItem({ type: 'puzzle-piece', pieceId: id })) {
+      return { ok: false, reason: 'inventory-full' };
+    }
     const socket = this.scene?.socket;
     if (socket?.connected) {
       // The server validates and broadcasts the new state to the room.
-      // applyState confirms it (toast + credit) when the broadcast
-      // shows the piece collected.
+      // applyState confirms it (toast + credit + pocket) when the
+      // broadcast shows the piece collected.
       this._pendingFind.add(id);
       try { socket.emit('puzzle_piece', { roomId: this.scene.roomId, pieceId: id }); } catch {}
       return { ok: true, pending: true };
@@ -258,6 +309,7 @@ export class PuzzleQuest {
     const res = collectPiece(this.state, id, this._myUserId());
     if (!res.ok) return res;
     this.myFound.add(id);
+    addPuzzlePiece(id);
     this._afterLocalChange(`🧩 You found a puzzle piece! (${this.state.collected.length}/${PUZZLE_TOTAL})`);
     return { ok: true };
   }
@@ -304,8 +356,14 @@ export class PuzzleQuest {
       this._searchTaps.set(id, taps);
       return { ok: true, tapped: true, remaining: PUZZLE_SEARCH_CLICKS - taps };
     }
-    this._searchTaps.delete(id);
     const res = this.tryCollectPiece(id);
+    if (!res.ok && res.reason === 'inventory-full') {
+      // Full pocket: keep the taps counted, so one more click after
+      // making room picks the piece up instead of starting over.
+      this._searchTaps.set(id, PUZZLE_SEARCH_CLICKS);
+      return { ...res, found: false };
+    }
+    this._searchTaps.delete(id);
     return { ...res, found: res.ok };
   }
 
@@ -322,8 +380,12 @@ export class PuzzleQuest {
       this._searchTaps.set(CAT_PIECE_ID, taps);
       return { ok: true, tapped: true, remaining: PUZZLE_SEARCH_CLICKS - taps };
     }
-    this._searchTaps.delete(CAT_PIECE_ID);
     const res = this.tryCollectPiece(CAT_PIECE_ID);
+    if (!res.ok && res.reason === 'inventory-full') {
+      this._searchTaps.set(CAT_PIECE_ID, PUZZLE_SEARCH_CLICKS);
+      return { ...res, found: false };
+    }
+    this._searchTaps.delete(CAT_PIECE_ID);
     return { ...res, found: res.ok };
   }
 
@@ -384,6 +446,10 @@ export class PuzzleQuest {
     const res = placePiece(this.state, id, col, row, this._myUserId());
     if (!res.ok) return res;
     this.myPlaced.add(id);
+    // Placing the piece frees its pocket slot (if I was carrying it —
+    // placing someone else's piece from the shared tray is a no-op
+    // here, exactly as the shared board worked before).
+    try { removePuzzlePiece(id); } catch {}
     const socket = this.scene?.socket;
     if (socket?.connected) {
       try { socket.emit('puzzle_place', { roomId: this.scene.roomId, pieceId: id, col, row }); } catch {}
