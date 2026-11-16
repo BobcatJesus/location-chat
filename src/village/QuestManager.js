@@ -92,6 +92,7 @@ export class QuestManager {
     this._toastTimer = null;
     this.banner = null; // Phaser text, top-centre quest banner
     this._bannerTimer = null;
+    this._bannerQuestId = null; // quest id the live banner (if any) is for
     this._shownBanners = new Set(); // quest ids the banner already showed for, this session
   }
 
@@ -144,6 +145,16 @@ export class QuestManager {
 
   /** (Re)pick the quest for this room and (re)draw the tracker. */
   refresh() {
+    // If a banner is live when we redraw, remember which quest it was
+    // for. refresh() is also called from _completeQuest — e.g. when the
+    // Wanderer completes on room entry (noteRoomVisit runs right after
+    // this refresh in create), or when the server reports an anywhere
+    // quest finished just after entry — and _clearTexts() destroys that
+    // banner. Without the re-show below, _shownBanners would refuse to
+    // show it again and the player would never see the room quest's
+    // banner at all (the tracker survives, so it looks like the quest
+    // is tracked but never announced).
+    const liveBannerQuestId = this._bannerQuestId;
     this._clearTexts();
     const roomId = this.scene?.roomId;
     this.activeQuest = QUESTS.find(
@@ -164,7 +175,16 @@ export class QuestManager {
       this.tracker.setScrollFactor(0);
       this.tracker.setDepth(DEPTH.UI);
       this._drawTracker();
-      if (this.activeQuest) this._showQuestBanner(this.activeQuest);
+      if (this.activeQuest) {
+        // The banner we just destroyed was for this same quest and the
+        // player never got to see it — let it show again. (If it was
+        // already dismissed by timer/tap, _bannerQuestId is null and
+        // the once-per-session rule stands.)
+        if (liveBannerQuestId && liveBannerQuestId === this.activeQuest.id) {
+          this._shownBanners.delete(liveBannerQuestId);
+        }
+        this._showQuestBanner(this.activeQuest);
+      }
     } catch {}
   }
 
@@ -341,6 +361,10 @@ export class QuestManager {
       this.banner.setOrigin(0.5, 0);
       this.banner.setScrollFactor(0);
       this.banner.setDepth(DEPTH.UI + 2);
+      // Remember which quest this live banner is for, so refresh() can
+      // tell a banner the player actually saw from one it destroyed
+      // itself before the player ever saw it.
+      this._bannerQuestId = quest.id;
       // Tap / click dismisses it early; it never blocks play for long.
       try {
         this.banner.setInteractive({ useHandCursor: true });
@@ -354,6 +378,8 @@ export class QuestManager {
   _dismissBanner() {
     try { this._bannerTimer?.remove(); } catch {}
     this._bannerTimer = null;
+    // Genuinely seen/dismissed: refresh() must NOT re-show it.
+    this._bannerQuestId = null;
     if (!this.banner) return;
     const banner = this.banner;
     this.banner = null;
@@ -441,6 +467,7 @@ export class QuestManager {
     this._bannerTimer = null;
     try { this.banner?.destroy(); } catch {}
     this.banner = null;
+    this._bannerQuestId = null;
     try { this.tracker?.destroy(); } catch {}
     this.tracker = null;
     try { this.toast?.destroy(); } catch {}
