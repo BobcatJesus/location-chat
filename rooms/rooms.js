@@ -230,14 +230,21 @@ export function loadUserRooms(ownerId) {
   } catch {}
 }
 
-export function createUserRoom({ id, name, lat, lng, radiusMeters = 50, contributor, ownerId, isPublic = false }) {
+export function createUserRoom({ id, name, lat, lng, radiusMeters = 50, contributor, ownerId, isPublic = false, kind = 'user-created' }) {
+  // Id-keyed dedupe: a fast double-tap on a create button must not
+  // register the same room twice. Normal rooms get a fresh
+  // `user-<timestamp>` id each time, so this only bites for
+  // deterministic ids — the home room (`home-<owner>`), where a
+  // second create is refused by the UI and this is the backstop.
+  const existing = USER_CREATED_ROOMS.find((r) => r.id === id);
+  if (existing) return existing;
   const room = {
     id,
     name,
     lat,
     lng,
     radiusMeters,
-    kind: 'user-created',
+    kind,
     contributors: contributor ? [contributor] : ['anonymous'],
     ownerId: ownerId || 'unknown',
     invitedIds: [],
@@ -250,6 +257,23 @@ export function createUserRoom({ id, name, lat, lng, radiusMeters = 50, contribu
     localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
   } catch {}
   return room;
+}
+
+// Find one user room by id — in-memory first, then the persisted
+// store (so the answer is right even before loadUserRooms runs).
+// Used by the Create Home flow: a home is a user room with id
+// `home-<owner>`, so this is the "does this player have a home?"
+// check. Returns the room or null.
+export function findUserRoomById(roomId) {
+  if (!roomId) return null;
+  const inMemory = USER_CREATED_ROOMS.find((r) => r.id === roomId);
+  if (inMemory) return inMemory;
+  try {
+    const all = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    return all.find((r) => r.id === roomId) || null;
+  } catch {
+    return null;
+  }
 }
 
 export function deleteUserRoom(roomId, ownerId) {

@@ -9,7 +9,7 @@ import { normalizeAvatarModel } from '../game/entities/avatarModels.js';
 import { deriveLocationPalette } from '../utils/locationPalette';
 import { signOut } from '../lib/authClient';
 import { getRoomAccessRadius, isOpenAccessRoom } from '../accessPolicy';
-import { homeRoomIdFor } from '../village/homeStorage.js';
+import { homeRoomIdFor, findHomeRoom, homeCreateState, HOME_ROOM_RADIUS } from '../village/homeStorage.js';
 
 const VillageCanvas = lazy(() => import('../village/VillageCanvas.jsx'));
 const MapView = lazy(() => import('./MapView.jsx'));
@@ -892,6 +892,14 @@ function App() {
 
   const allRooms = mergeRoomsById(getAllRooms(), communityRooms);
 
+  // Your Place v1.1 (`sq-your-place-v1-1`): the player's home is a
+  // user room (kind 'home', id `home-<owner>`). One home per player
+  // — once it is in allRooms, the Create Home option disappears
+  // from the create-location flow and the 🏠 Home button is the way
+  // back (gated on homeExists below, at the VillageCanvas prop).
+  const homeRoom = findHomeRoom(allRooms, profile);
+  const homeExists = !!homeRoom;
+
   const staticRoomMatch = location
     ? (() => {
       for (const room of allRooms) {
@@ -1037,6 +1045,53 @@ function App() {
     }
   };
 
+  // Your Place v1.1 (`sq-your-place-v1-1`): "Create Home" from the
+  // map page's Create a Place flow. Same GPS capture as creating a
+  // location — the home is created at the player's real current
+  // location. One home per player: homeCreateState refuses a second
+  // one, and the option disappears from the modal once a home
+  // exists (homeExists above). After creation the player is taken
+  // straight into their home, like a newly created room — so the
+  // home pin appears on the map the next time the map mounts
+  // (MapView builds its pins once on mount, same as other rooms).
+  const confirmCreateHome = () => {
+    const state = homeCreateState({ location, profile, rooms: allRooms });
+    if (state.status === 'no-location') {
+      setCreatingRoom(false);
+      setGpsToast('Waiting for GPS. Use Retry Location before creating your home.');
+      setTimeout(() => setGpsToast(null), 4000);
+      retryLocation();
+      return;
+    }
+    if (state.status === 'no-profile') {
+      setCreatingRoom(false);
+      setGpsToast('Sign in to create your home.');
+      setTimeout(() => setGpsToast(null), 4000);
+      return;
+    }
+    if (state.status === 'already-exists') {
+      setCreatingRoom(false);
+      setGpsToast('Your home is already created — tap 🏠 Home to go there.');
+      setTimeout(() => setGpsToast(null), 4000);
+      return;
+    }
+    const ownerId = profile?.profile?.email || profile?.mode || 'guest';
+    const contributorName = profile?.profile?.characterName || profile?.mode || 'guest';
+    const home = createUserRoom({
+      id: state.homeId, name: 'Your Place',
+      lat: location.latitude, lng: location.longitude,
+      radiusMeters: HOME_ROOM_RADIUS, contributor: contributorName, ownerId, isPublic: false,
+      kind: 'home',
+    });
+    setCreatingRoom(false);
+    if (home) {
+      setSelectedRoom(home.id);
+      setActiveScene('room');
+      setGpsToast('🏠 Home created — welcome home.');
+      setTimeout(() => setGpsToast(null), 5000);
+    }
+  };
+
   const roomCards = [
     ...allRooms.map((room) => {
       const palette = deriveLocationPalette(room);
@@ -1055,11 +1110,13 @@ function App() {
       radiusMeters: room.radiusMeters,
       ownerId: room.ownerId,
       contributors: room.contributors,
-      icon: (room.kind === 'user-created' || room.kind === 'community') ? (room.emoji || '🔥') : { 'starbucks-spring': '☕', 'mcdonalds-practice': '🍟', 'agora-houston': '🍷', 'downtown-hub': '🏙️', 'forest-gate': '🌲', 'sunset-temple': '⛩️', 'hermann-park': '🦆' }[room.id] || '🏛️',
-      blurb: (room.kind === 'user-created' || room.kind === 'community')
+      icon: room.kind === 'home' ? '🏠' : (room.kind === 'user-created' || room.kind === 'community') ? (room.emoji || '🔥') : { 'starbucks-spring': '☕', 'mcdonalds-practice': '🍟', 'agora-houston': '🍷', 'downtown-hub': '🏙️', 'forest-gate': '🌲', 'sunset-temple': '⛩️', 'hermann-park': '🦆' }[room.id] || '🏛️',
+      blurb: room.kind === 'home'
+        ? 'Your place · store things here'
+        : (room.kind === 'user-created' || room.kind === 'community')
         ? `Community space · ${room.contributors.join(', ')}`
         : `GPS-anchored · ${room.radiusMeters}m radius`,
-      status: roomMatch?.room?.id === room.id ? '✦ You are here' : (room.kind === 'user-created' || room.kind === 'community') ? 'Community' : 'GPS room',
+      status: roomMatch?.room?.id === room.id ? '✦ You are here' : room.kind === 'home' ? 'Your Place' : (room.kind === 'user-created' || room.kind === 'community') ? 'Community' : 'GPS room',
       accent: (room.kind === 'user-created' || room.kind === 'community') ? (room.color || palette.accent) : palette.accent,
       bg: (room.kind === 'user-created' || room.kind === 'community')
         ? `linear-gradient(135deg, ${palette.floor1} 0%, ${palette.wall} 100%)`
@@ -1282,13 +1339,16 @@ function App() {
     };
   };
 
-  // Your Place v1 (`sq-your-place-v1`): the 🏠 Home button in the
-  // room top bar goes to your own home room (home-<owner>). The
-  // poiMeta carries no lat/lng, so no GPS gate applies — your place
-  // is always open to you — and the server still refuses anyone else
-  // at the door (join_denied). No home room exists for a fully
+  // Your Place v1 (`sq-your-place-v1`) + Create Home v1.1
+  // (`sq-your-place-v1-1`): the 🏠 Home button in the room top bar
+  // goes to your own home room (home-<owner>). The poiMeta carries
+  // no lat/lng, so no GPS gate applies — your place is always open
+  // to you — and the server still refuses anyone else at the door
+  // (join_denied). v1.1: the button only shows once a home EXISTS
+  // (gated on homeExists at the VillageCanvas prop) — before that
+  // it would lead nowhere. No home room exists for a fully
   // anonymous session (homeRoomIdFor returns null), so the button
-  // hides then.
+  // hides then too.
   const handleGoHome = () => {
     const homeId = homeRoomIdFor(profile);
     if (!homeId) return;
@@ -1556,6 +1616,20 @@ function App() {
                 Cancel
               </button>
             </div>
+            {/* Your Place v1.1 (`sq-your-place-v1-1`): Create Home lives
+                in the same flow as Create a Place, at your current
+                location. One home per player — once a home exists this
+                whole block is GONE (not disabled, not relabelled);
+                the 🏠 Home button is the way back after that. */}
+            {!homeExists && (
+              <div style={{ marginTop: 16, borderTop: '2px solid #334155', paddingTop: 14 }}>
+                <div style={{ fontSize: 10, color: '#64748b', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 }}>— or —</div>
+                <button onClick={confirmCreateHome} style={{ width: '100%', padding: '10px 0', background: '#7c3aed', border: '2px solid #000', boxShadow: '2px 2px 0 #000', color: '#fff', fontWeight: 'bold', fontFamily: 'Courier New, monospace', fontSize: 12, cursor: 'pointer', textTransform: 'uppercase' }}>
+                  🏠 Create Home here
+                </button>
+                <div style={{ color: '#64748b', fontSize: 10, marginTop: 8 }}>Your private place, at your current location. One home per player — once created, this option disappears and 🏠 Home takes you there.</div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1691,7 +1765,7 @@ function App() {
             ) : (
               <div style={{ flex: 1, border: '2px solid #334155', borderRadius: 12, overflow: 'hidden', position: 'relative' }}>
                 <Suspense fallback={<div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', color: '#94a3b8', background: '#0f172a' }}>Loading room…</div>}>
-                  <VillageCanvas room={osmRoom ? { ...osmRoom, id: osmRoom.id } : activeRoom} venueEvents={venueEvents} canManageVenue={venuePermissions.canManage} isModerator={venuePermissions.isModerator} profile={profile} location={location} onLeave={() => { setActiveScene('world'); setOsmRoom(null); }} onGoHome={homeRoomIdFor(profile) ? handleGoHome : null} />
+                  <VillageCanvas room={osmRoom ? { ...osmRoom, id: osmRoom.id } : activeRoom} venueEvents={venueEvents} canManageVenue={venuePermissions.canManage} isModerator={venuePermissions.isModerator} profile={profile} location={location} onLeave={() => { setActiveScene('world'); setOsmRoom(null); }} onGoHome={homeExists ? handleGoHome : null} />
                 </Suspense>
                 {venuePermissions.canManage && <button
                   type="button"

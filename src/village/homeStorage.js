@@ -24,6 +24,30 @@
 //     v1 safety rule, not a user decision — say so if it is ever
 //     questioned.
 //
+// CREATE HOME (v1.1, `sq-your-place-v1-1`):
+//   - The way IN to "home" is the map page: the Create a Place flow
+//     ("+ Create room here" → the 📍 Create a Place modal) carries a
+//     "🏠 Create Home here" option that creates the player's home at
+//     their real current GPS location — the same capture as creating
+//     a location. The home is a user room (kind 'home', id
+//     `home-<owner>`, radius 60m, private), so it shows up on the map
+//     like any other created location (MapView pins every room in
+//     allRooms) and in the room list.
+//   - ONE HOME PER PLAYER, expressed as UI: once a home exists, the
+//     "Create Home" option DISAPPEARS from the create-location flow
+//     entirely — not disabled, not replaced by a label, just gone.
+//     The 🏠 Home top-bar button is the way back after that, and it
+//     only shows once a home exists (before that it would lead
+//     nowhere). It still hides while already home and for fully
+//     anonymous sessions, as in v1.
+//
+
+export const HOME_STORAGE_MARKER_V1 = 'sq-your-place-v1';
+export const HOME_STORAGE_MARKER_V1_1 = 'sq-your-place-v1-1';
+
+// GPS radius of a home room on the map (same as a created place).
+export const HOME_ROOM_RADIUS = 60;
+
 // NUMBERS THE USER DID NOT DECIDE (picked here, documented):
 //   - Home storage has NO capacity limit (your place is your place)
 //     — only a 200-item sanity cap against a bad client flooding the
@@ -41,8 +65,6 @@
 //     it back on its next re-sync. The merge favors never LOSING an
 //     item over strict removal consistency — a resurrected item is
 //     annoying, a vanished one is worse.
-
-export const HOME_STORAGE_MARKER_V1 = 'sq-your-place-v1';
 
 // Room id prefix for personal home rooms.
 export const HOME_ROOM_PREFIX = 'home-';
@@ -114,6 +136,36 @@ export function isHomeRoom(roomId) {
 export function homeOwnerOf(roomId) {
   if (!isHomeRoom(roomId)) return '';
   return String(roomId).slice(HOME_ROOM_PREFIX.length);
+}
+
+// --- create home (v1.1, pure — no storage access, so unit-testable) -----
+// The home is a user room (kind 'home') whose id is `home-<owner>`.
+// These helpers work on a plain rooms list (allRooms in app.jsx),
+// so the one-home-per-player rule and the "option disappears" UI
+// both read from the same source of truth: whether the home room
+// is in the list.
+/** The player's home room from a rooms list, or null when no home
+ *  has been created yet. */
+export function findHomeRoom(rooms, profile) {
+  const homeId = homeRoomIdFor(profile);
+  if (!homeId) return null;
+  if (!Array.isArray(rooms)) return null;
+  return rooms.find((r) => r && r.id === homeId) || null;
+}
+
+/** Is the home option available, and if not, why? Returns
+ *  { status, homeId } — status is 'ready' (no home yet, GPS locked,
+ *  profile known), 'no-location', 'no-profile', or
+ *  'already-exists'. The app uses 'already-exists' to hide the
+ *  Create Home option entirely (user's rule: it disappears). */
+export function homeCreateState({ location, profile, rooms } = {}) {
+  const homeId = homeRoomIdFor(profile);
+  if (!homeId) return { status: 'no-profile', homeId: null };
+  if (findHomeRoom(rooms, profile)) return { status: 'already-exists', homeId };
+  const lat = Number(location?.latitude);
+  const lng = Number(location?.longitude);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return { status: 'no-location', homeId };
+  return { status: 'ready', homeId };
 }
 
 // --- storage (per profile, localStorage; in-memory fallback when

@@ -27,6 +27,7 @@
 import { DEPTH } from './depth.js';
 import {
   HOME_STORAGE_MARKER_V1,
+  HOME_STORAGE_MARKER_V1_1,
   HOME_CHEST_OPEN_RANGE,
   isHomeRoom,
   homeOwnerOf,
@@ -71,6 +72,10 @@ export class HomeStorageSystem {
     this.scene = scene;
     // sq-your-place-v1 — marker for the v1 landing check.
     this.marker = HOME_STORAGE_MARKER_V1;
+    // sq-your-place-v1-1 — marker for the v1.1 (Create Home) landing
+    // check. A live reference, so the string survives minification
+    // into the built bundle (unused exports are tree-shaken out).
+    this.markerV11 = HOME_STORAGE_MARKER_V1_1;
     this._chest = null; // { x, y, w, h } of the chest, from the layout
   }
 

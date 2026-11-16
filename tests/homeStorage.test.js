@@ -6,13 +6,17 @@
 import { describe, it, expect } from 'vitest';
 import {
   HOME_STORAGE_MARKER_V1,
+  HOME_STORAGE_MARKER_V1_1,
   HOME_ROOM_PREFIX,
+  HOME_ROOM_RADIUS,
   HOME_STORAGE_MAX_ITEMS,
   homeRoomIdFor,
   isHomeRoom,
   homeOwnerOf,
   normalizeHomeOwner,
   ownerKeyFromProfile,
+  findHomeRoom,
+  homeCreateState,
   normalizeHomeItems,
   mergeHomeItems,
   storeIntoHome,
@@ -156,5 +160,56 @@ describe('your place v1', () => {
     expect(getHomeItems().map((it) => it.id)).toEqual(['trash-1', 'food-1']);
     _setHomeItemsForTest([]);
     expect(getHomeItems()).toEqual([]);
+  });
+});
+
+describe('create home v1.1', () => {
+  const profile = 'tfkelleher3@gmail.com';
+  const homeId = 'home-tfkelleher3-gmail-com';
+  const loc = { latitude: 29.75, longitude: -95.4 };
+  const homeRoom = { id: homeId, name: 'Your Place', kind: 'home', lat: 29.75, lng: -95.4 };
+  const otherRoom = { id: 'agora-houston', name: 'Agora', kind: 'gps' };
+
+  it('carries the v1.1 marker (v1 marker kept)', () => {
+    expect(HOME_STORAGE_MARKER_V1_1).toBe('sq-your-place-v1-1');
+    expect(HOME_STORAGE_MARKER_V1).toBe('sq-your-place-v1');
+    expect(HOME_ROOM_RADIUS).toBe(60);
+  });
+
+  it('finds the home room in a rooms list, or null when not created', () => {
+    expect(findHomeRoom([otherRoom], profile)).toBe(null);
+    expect(findHomeRoom([otherRoom, homeRoom], profile)).toBe(homeRoom);
+    expect(findHomeRoom([], profile)).toBe(null);
+    expect(findHomeRoom([homeRoom], null)).toBe(null);
+    // Another player's home is not mine.
+    expect(findHomeRoom([{ id: 'home-jules-example-com', kind: 'home' }], profile)).toBe(null);
+  });
+
+  it('says ready when there is no home yet, GPS is locked, profile known', () => {
+    const state = homeCreateState({ location: loc, profile, rooms: [otherRoom] });
+    expect(state).toEqual({ status: 'ready', homeId });
+  });
+
+  it('says already-exists once the home room is in the list', () => {
+    const state = homeCreateState({ location: loc, profile, rooms: [otherRoom, homeRoom] });
+    expect(state.status).toBe('already-exists');
+    expect(state.homeId).toBe(homeId);
+  });
+
+  it('refuses without GPS, and without a profile', () => {
+    expect(homeCreateState({ location: null, profile, rooms: [] }).status).toBe('no-location');
+    expect(homeCreateState({ location: {}, profile, rooms: [] }).status).toBe('no-location');
+    expect(homeCreateState({ location: loc, profile: null, rooms: [] }).status).toBe('no-profile');
+    expect(homeCreateState({ location: loc, profile: 'guest', rooms: [] }).status).toBe('no-profile');
+  });
+
+  it('a second create is refused even with a fresh GPS fix', () => {
+    // The modal hides the option, but the state function is the
+    // backstop: calling it again with the home already in the list
+    // still says already-exists.
+    const first = homeCreateState({ location: loc, profile, rooms: [] });
+    expect(first.status).toBe('ready');
+    const second = homeCreateState({ location: { latitude: 29.8, longitude: -95.5 }, profile, rooms: [homeRoom] });
+    expect(second.status).toBe('already-exists');
   });
 });

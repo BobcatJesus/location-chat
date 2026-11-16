@@ -873,7 +873,10 @@ export default function MapView({ location, rooms, onEnterRoom }) {
     // Manual rooms
     rooms.forEach(room => {
       if (!room.lat || !room.lng) return;
-      const style = ROOM_STYLES[room.id] || { color: '#a78bfa', emoji: '📍' };
+      // Your Place v1.1 (`sq-your-place-v1-1`): a home room gets a
+      // purple 🏠 pin (home ids are per-player, so they can't be
+      // keyed in ROOM_STYLES like the fixed rooms).
+      const style = ROOM_STYLES[room.id] || (room.kind === 'home' ? { color: '#7c3aed', emoji: '🏠' } : { color: '#a78bfa', emoji: '📍' });
       addPin(map, room.lat, room.lng, room.name, style.emoji, style.color, room.radiusMeters,
         () => {
           const initialResult = resolveRoomFootprint(room, null);
