@@ -634,9 +634,10 @@ export class VillageScene extends Phaser.Scene {
     // cigarette box. Puzzle pieces live in this inventory too.
     this.itemsSystem = new ItemsSystem(this);
     this.itemsSystem.refresh();
-    // Notice board v1 (Agora only — the system itself no-ops
-    // elsewhere): the cork board by the entrance, server-synced
-    // flyers everyone in the room can read.
+    // Notice board in every room (boards in every location,
+    // `sq-notice-board-everywhere-v1`): the cork board by the
+    // entrance, server-synced flyers everyone in the room can read.
+    // Each room's board is separate.
     this.noticeBoardSystem = new NoticeBoardSystem(this);
     this.noticeBoardSystem.refresh();
     // Wanderer quest: this room entry counts (after refresh, not in it).
@@ -1980,7 +1981,8 @@ export class VillageScene extends Phaser.Scene {
       this.puzzleQuest?.applyState(payload);
     });
 
-    // Notice board state (Agora, shared for the whole room).
+    // Notice board state (shared for the whole room — one board
+    // per room, in-memory on the server like the puzzle).
     socket.on('board_state', (payload = {}) => {
       this.noticeBoardSystem?.applyState(payload);
     });
@@ -2900,6 +2902,10 @@ export class VillageScene extends Phaser.Scene {
     this.hiddenKey?.refresh();
     this.puzzleQuest?.refresh();
     this.itemsSystem?.refresh();
+    // Notice board everywhere v1: re-resolve the board for this
+    // floor (upper floors have no board — _board goes null, so the
+    // ground-floor board cannot be opened from upstairs).
+    this.noticeBoardSystem?.refresh();
     this.questManager?.noteRoomVisit();
     this._emitFloorStatus();
     this.roomLayout.setDynamicSolids(this.customZones);

@@ -1,18 +1,23 @@
-// NoticeBoardSystem.js — the in-room side of Notice Board v1
-// (`sq-notice-board-v1`).
+// NoticeBoardSystem.js — the in-room side of the Notice Board
+// (`sq-notice-board-v1`, boards in every location,
+// `sq-notice-board-everywhere-v1`).
 //
 // Owned by VillageScene, same shape as PuzzleQuest / ItemsSystem:
 // constructed in create(), refreshed on floor switches, destroyed in
-// shutdown(). Agora only.
+// shutdown(). Every room has a board — not just Agora.
 //
-// THE BOARD: hangs on the south wall of Agora, just west of the
-// entrance (see layouts/agora.js) — everyone walks past it coming
-// in. Walk up and press E, or click the board itself, to open it
+// THE BOARD: hangs by the room's entrance (Agora's south wall just
+// west of the door, Lola's south wall, the Library ground floor, a
+// corkboard on a post by the park entry, or a synthetic spot near
+// the entrance in any other room — see noticeBoardPlacement.js and
+// RoomLayout's fallback). Everyone walks past it coming in. Walk up
+// and press E, or click the board itself, to open it
 // (NoticeBoardPanel.jsx): a list of the flyers pinned here, newest
 // first; click one to read it. The board is SERVER state
 // (server/socket.js, in-memory per room like the puzzle): pinning,
 // reading and removing go through the socket, and every player in
-// the room sees the same board.
+// the room sees the same board. Each room's board is separate —
+// flyers pinned in Agora show only in Agora.
 //
 // PINNING (from the inventory — a flyer's "Pin to notice board"
 // button): the flyer leaves the pocket ONLY when the server
@@ -32,28 +37,31 @@
 
 import {
   NOTICE_BOARD_MARKER,
+  NOTICE_BOARD_EVERYWHERE_MARKER,
   NOTICE_BOARD_MAX_FLYERS,
   createNoticeBoardState,
   parseNoticeBoardState,
 } from './noticeBoardState.js';
 
-const AGORA_ROOM_ID = 'agora-houston';
 // How close you must stand to read the board (E key) or click it.
 const BOARD_OPEN_RANGE = 170; // px, same as the bartender's talk range
 
 export class NoticeBoardSystem {
   constructor(scene) {
     this.scene = scene;
-    // sq-notice-board-v1 — marker for the v1 landing check.
-    this.marker = NOTICE_BOARD_MARKER;
+    // sq-notice-board-everywhere-v1 — marker for the everywhere landing check.
+    this.marker = NOTICE_BOARD_EVERYWHERE_MARKER;
+    this.v1Marker = NOTICE_BOARD_MARKER;
     this.state = createNoticeBoardState();
     this._board = null; // { x, y, w, h } of the board, from the layout
     this._pendingPin = null; // { id, itemId } awaiting the board_state that confirms it
     this._pendingRemoval = null; // { flyerId, flyer } awaiting the broadcast that confirms it
   }
 
+  // Every room has a board (boards in every location) — the only
+  // requirement is being in a room at all.
   get enabled() {
-    return this.scene?.roomId === AGORA_ROOM_ID;
+    return Boolean(this.scene?.roomId);
   }
 
   /** Plain-data state for the board panel (polls this ~2x/sec). */
@@ -203,9 +211,11 @@ export class NoticeBoardSystem {
   }
 
   /** Resolve the board to the live room layout: the real
-   * `notice_board` zone first, boundary fractions as fallback, so
-   * the board still opens even if an approved layout hides the
-   * drawing (same approach as PuzzleQuest / ItemsSystem spots). */
+   * `notice_board` zone first (hand-placed in the named layouts,
+   * or RoomLayout's synthetic one near the entrance), RoomLayout's
+   * fallback spot second. On a floor with no board at all (e.g. an
+   * upper floor), there is simply no board here — _board stays null
+   * instead of pointing at another room's spot. */
   _resolveBoard() {
     this._board = null;
     if (!this.enabled) return;
@@ -221,8 +231,13 @@ export class NoticeBoardSystem {
       };
       return;
     }
-    // Fallback: the built-in spot (south wall, west of the entrance).
-    this._board = { x: 480, y: 745, w: 180, h: 60 };
+    // No board zone on this floor: ask RoomLayout for its synthetic
+    // spot (near the entrance / spawn, ground floor only). When it
+    // says null, this floor has no board.
+    const fb = this.scene?.roomLayout?.getNoticeBoardFallback?.();
+    if (fb) {
+      this._board = { x: fb.x, y: fb.y, w: fb.w, h: fb.h };
+    }
   }
 
   update() {

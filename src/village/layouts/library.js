@@ -46,6 +46,12 @@ const F1_ZONES = [
   { type: 'wall_polygon', points: LIBRARY_BOUNDARY, solid: false },
   { type: 'entry', x: 655, y: 830, w: 290, h: 58, label: 'Main Entrance • Welcome Lobby', solid: false },
   { type: 'entry', x: 1518, y: 290, w: 58, h: 220, label: 'North Stacks Wing', solid: false },
+  // Notice board (boards in every location,
+  // `sq-notice-board-everywhere-v1`) — just east of the Main
+  // Entrance, so everyone walks past it coming in. Not solid (it
+  // hangs on the wall); interact:true so E opens it. Ground floor
+  // only; the upper floor has no board.
+  { type: 'notice_board', x: 980, y: 770, w: 180, h: 60, label: 'Notice Board', interact: true, solid: false },
   { type: 'sign', x: 470, y: 118, w: 660, h: 48, label: 'MD ANDERSON LIBRARY | UNIVERSITY OF HOUSTON' },
   { type: 'sign', x: 520, y: 760, w: 560, h: 28, label: 'Study Together • Read Together • Learn Together' },
 

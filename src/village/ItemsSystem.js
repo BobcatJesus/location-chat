@@ -478,8 +478,8 @@ export class ItemsSystem {
     } catch {}
   }
 
-  /** Pin a flyer from the pocket to the Agora notice board
-   * (Notice Board v1). The flyer leaves the pocket only when the
+  /** Pin a flyer from the pocket to this room's notice board
+   * (Notice Board everywhere v1). The flyer leaves the pocket only when the
    * server confirms the pin — see NoticeBoardSystem.applyState ->
    * confirmPinnedFlyer. If the pin never lands (offline,
    * rate-limited), the flyer simply stays in the pocket: pinning

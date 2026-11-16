@@ -30,12 +30,15 @@ const THEMES = {
       const zs = [];
       // Back counter
       zs.push({ type: 'counter', x: 60, y: 60, w: 500, h: 60, label: '☕ Counter' });
-      // Scatter cafe tables + chairs
+      // Scatter cafe tables + chairs. The "couch" zones around a table ARE its
+      // chairs: 44x36 each, one avatar's seat, tucked just clear of the 60px
+      // table circle. (They used to be sizeless, so RoomLayout drew every one
+      // as a fixed 140x50 sofa slab.)
       const spots = [[250,300],[450,300],[650,300],[850,300],[250,500],[450,500],[650,500]];
       spots.forEach(([cx, cy]) => {
         zs.push({ type: 'cafe_table', x: cx + rng()*40-20, y: cy + rng()*40-20 });
-        [[-40,30],[40,30],[0,-40]].forEach(([dx,dy]) => {
-          zs.push({ type: 'couch', x: cx+dx, y: cy+dy });
+        [[-48,34],[48,34],[0,-48]].forEach(([dx,dy]) => {
+          zs.push({ type: 'couch', x: cx+dx, y: cy+dy, w: 44, h: 36 });
         });
       });
       // A plant or two
@@ -87,7 +90,7 @@ const THEMES = {
       zs.push({ type: 'entry', x: 680, y: 820, w: 120, h: 60, label: '🚪 Enter' });
       const stools = 6;
       for (let i = 0; i < stools; i++) {
-        zs.push({ type: 'couch', x: 100 + i * 120, y: 160 });
+        zs.push({ type: 'couch', x: 100 + i * 120, y: 160, w: 44, h: 36 });
       }
       [[300,400],[600,400],[900,400],[300,600],[600,600]].forEach(([cx,cy]) => {
         zs.push({ type: 'cafe_table', x: cx + rng()*20-10, y: cy + rng()*20-10 });
@@ -169,6 +172,12 @@ const THEMES = {
     zones: (rng) => {
       const zs = [];
       zs.push({ type: 'entry', x: 1800, y: 2340, w: 280, h: 80, label: '🌳 Park Entry', solid: false });
+      // Notice board on a post by the entrance (boards in every
+      // location, `sq-notice-board-everywhere-v1`): parks get a
+      // corkboard on two wooden posts (`variant: 'post'`), not a wall
+      // board. Just west of the entry so everyone walks past it
+      // coming in; clear of the trees, benches, lampposts and pond.
+      zs.push({ type: 'notice_board', variant: 'post', x: 1560, y: 2260, w: 180, h: 60, label: 'Notice Board', interact: true, solid: false });
       zs.push({ type: 'sign', x: 1800, y: 100, w: 340, h: 42, label: '🌿 Green Space' });
 
       const treeSpots = [
@@ -186,7 +195,9 @@ const THEMES = {
       shrubSpots.forEach(([x, y]) => zs.push({ type: 'shrub', x: x + rng() * 18 - 9, y: y + rng() * 14 - 7, w: 64, h: 42, solid: false }));
 
       [[420,620],[620,560],[820,620],[980,540],[1220,610],[1480,580],[1740,620],[1980,520],[2220,610],[2480,620],[2720,610],[2980,560],[3220,620],[620,1220],[980,1180],[1420,1200],[1820,1240],[2220,1180],[2420,1180],[2820,1220],[3020,1220],[980,1780],[1420,1760],[1820,1760],[2220,1780],[2720,1820],[3120,1760]].forEach(([x, y]) => {
-        zs.push({ type: 'bench', x: x + rng() * 14 - 7, y: y + rng() * 10 - 5, w: 90, h: 40, solid: true });
+        // Bench footprint matches its sprite (~41px wide at targetHeight 48):
+        // was 90x40, more than twice the visible bench.
+        zs.push({ type: 'bench', x: x + rng() * 14 - 7, y: y + rng() * 10 - 5, w: 56, h: 36, solid: true });
       });
 
       [[260,280],[470,230],[700,220],[900,260],[1100,260],[1300,220],[1500,300],[1700,230],[1900,260],[2100,220],[2300,300],[2500,220],[2700,220],[2900,260],[3100,280],[3320,240],[360,1100],[620,1080],[840,1140],[1080,1120],[1320,1100],[1560,1140],[1800,1160],[2040,1120],[2280,1100],[2520,1140],[2760,1140],[3000,1100],[3240,1100]].forEach(([x, y]) => {

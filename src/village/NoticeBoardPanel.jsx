@@ -1,4 +1,4 @@
-// NoticeBoardPanel.jsx — the Agora notice board popup
+// NoticeBoardPanel.jsx — the notice board popup (one board per room)
 // (Notice Board v1, `sq-notice-board-v1`).
 //
 // Opens from the board itself: walk up and press E, or click the
@@ -25,7 +25,7 @@ const REASON_TEXT = {
   'not-found': 'That flyer is no longer on the board.',
   'not-allowed': 'You can only take down your own flyers.',
   offline: 'You seem to be offline — try again when you’re connected.',
-  'not-available': 'The notice board is only in Agora.',
+  'not-available': 'There is no notice board in this room.',
   error: 'Something went wrong — try again.',
 };
 
@@ -106,7 +106,7 @@ export default function NoticeBoardPanel({ getState, onRemove, isModerator, onCl
           </button>
         </div>
         <div style={{ fontSize: 13, marginTop: 4, color: '#3d6a8a' }}>
-          {state.count}/{state.max} flyers pinned · everyone in Agora can read these
+          {state.count}/{state.max} flyers pinned · everyone in this room can read these
         </div>
 
         {reader ? (
@@ -146,7 +146,7 @@ export default function NoticeBoardPanel({ getState, onRemove, isModerator, onCl
             {flyers.length === 0 ? (
               <div style={{ fontSize: 13, color: '#3d6a8a', marginTop: 12 }}>
                 Nothing pinned yet. Make a flyer from your pocket (5 coins)
-                and pin it here — everyone who walks into Agora will see it.
+                and pin it here — everyone who walks in here will see it.
               </div>
             ) : (
               <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>

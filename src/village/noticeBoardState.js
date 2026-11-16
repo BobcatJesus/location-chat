@@ -1,14 +1,17 @@
-// noticeBoardState.js — shared notice-board rules for Agora
-// (Notice Board v1, `sq-notice-board-v1`).
+// noticeBoardState.js — shared notice-board rules for EVERY room
+// (Notice Board v1, `sq-notice-board-v1`; boards in every location,
+// `sq-notice-board-everywhere-v1`).
 //
 // Pure logic, no Phaser and no Node APIs, so BOTH sides import it:
 //   - server/socket.js (canonical room state, validates every pin
 //     and removal)
 //   - src/village/NoticeBoardSystem.js (local state + instant feedback)
 //
-// The board hangs by the Agora entrance (south wall, west of the
-// door — see layouts/agora.js). A flyer pinned here is visible to
-// EVERYONE in the room, unlike a dropped flyer (inventory v1), which
+// The board hangs by the room's entrance — Agora's south wall west
+// of the door (see layouts/agora.js), Lola's south wall, the Library
+// ground floor, a post by the park entry, or a synthetic spot near
+// the entrance in any other room (see noticeBoardPlacement.js).
+// A flyer pinned here is visible to EVERYONE in the room, unlike a
 // only its owner sees. Pinning is free; making the flyer still costs
 // 5 coins (inventory v1 rule, unchanged), and pinning removes the
 // flyer from your pocket (it frees the slot).
@@ -25,6 +28,9 @@
 //     restart wipes the board clean.
 
 export const NOTICE_BOARD_MARKER = 'sq-notice-board-v1';
+// Boards in every location (not just Agora) — marker for the
+// everywhere landing check.
+export const NOTICE_BOARD_EVERYWHERE_MARKER = 'sq-notice-board-everywhere-v1';
 export const NOTICE_BOARD_MAX_FLYERS = 10;
 // Flyers are the inventory v1 flyers: same limits.
 export const NOTICE_BOARD_TITLE_MAX = 60;

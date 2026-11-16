@@ -37,16 +37,23 @@ const F1_ZONES = [
   { type: 'entry', x: 700, y: 780, w: 200, h: 40, label: 'Entrance' },
   { type: 'sign', x: 680, y: 820, w: 240, h: 18, label: 'ENTRANCE' },
 
+  // Notice board (boards in every location,
+  // `sq-notice-board-everywhere-v1`) — on the south wall, just west
+  // of the entrance, mirroring Agora's spot. Not solid (it hangs on
+  // the wall); interact:true so E opens it. The south wall here is
+  // y=840 for x 320-1280, so the board sits just above it.
+  { type: 'notice_board', x: 480, y: 775, w: 180, h: 60, label: 'Notice Board', interact: true, solid: false },
+
   // Bar counter along the north wall
-  { type: 'counter', x: 420, y: 140, w: 760, h: 90, label: 'Bar', interact: true, solid: true },
+  { type: 'counter', x: 420, y: 140, w: 760, h: 64, label: 'Bar', interact: true, solid: true },
   { type: 'sign', x: 420, y: 236, w: 760, h: 20, label: "LOLA'S DEPOT" },
 
   // THE JUKEBOX — northeast corner, against the wall
-  { type: 'jukebox', x: 1260, y: 130, w: 100, h: 140, label: 'Jukebox', interact: true, solid: true },
+  { type: 'jukebox', x: 1260, y: 130, w: 64, h: 48, label: 'Jukebox', interact: true, solid: true },
 
   // Bar tables (reuse book_table rendering)
-  { type: 'bar_table', x: 300, y: 420, w: 170, h: 110, label: 'Table 1', interact: false, solid: false },
-  { type: 'bar_table', x: 1160, y: 420, w: 170, h: 110, label: 'Table 4', interact: false, solid: false },
+  { type: 'bar_table', x: 300, y: 420, w: 110, h: 72, label: 'Table 1', interact: false, solid: false },
+  { type: 'bar_table', x: 1160, y: 420, w: 110, h: 72, label: 'Table 4', interact: false, solid: false },
 
   // Pool table sign in the west corner
   { type: 'sign', x: 200, y: 160, w: 170, h: 22, label: '🎱 POOL' },

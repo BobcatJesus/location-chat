@@ -1182,15 +1182,17 @@ io.on('connection', (socket) => {
     socket.emit('puzzle_state', serializePuzzleState(puzzleRoom(roomId).state));
   });
 
-  // NOTICE BOARD (Notice Board v1, `sq-notice-board-v1` — Agora
-  // only). Pin a flyer from your pocket: the server validates the
-  // text (title up to 60 chars, text up to 200 — the same limits as
-  // making a flyer), caps the board at NOTICE_BOARD_MAX_FLYERS
-  // (10; the oldest flyer falls off when the 11th pins), and
-  // broadcasts the board so every player in the room sees it.
-  // Pinning is free — the 5 coins were paid when the flyer was made.
+  // NOTICE BOARD (Notice Board v1, `sq-notice-board-v1`; boards in
+  // every location, `sq-notice-board-everywhere-v1`). Pin a flyer
+  // from your pocket: the server validates the text (title up to 60
+  // chars, text up to 200 — the same limits as making a flyer),
+  // caps the board at NOTICE_BOARD_MAX_FLYERS (10; the oldest flyer
+  // falls off when the 11th pins), and broadcasts the board so
+  // every player in the room sees it. Each room has its own board
+  // (noticeBoards[roomId]). Pinning is free — the 5 coins were paid
+  // when the flyer was made.
   socket.on('board_pin', ({ roomId, id, title, text } = {}) => {
-    if (!roomId || roomId !== 'agora-houston') return;
+    if (!roomId) return;
     if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
     const userId = socketUserMap[socket.id] || socket.id;
     const rate = checkRateLimit(userId);
@@ -1214,7 +1216,7 @@ io.on('connection', (socket) => {
   // owner's pocket if they took it down and have room, discarded
   // otherwise — a moderator removal always discards it).
   socket.on('board_remove', ({ roomId, flyerId } = {}) => {
-    if (!roomId || roomId !== 'agora-houston') return;
+    if (!roomId) return;
     if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
     const userId = socketUserMap[socket.id] || socket.id;
     const rate = checkRateLimit(userId);
@@ -1227,7 +1229,7 @@ io.on('connection', (socket) => {
 
   // NOTICE BOARD STATE: the room's board, sent when you join (or ask).
   socket.on('get_board', ({ roomId } = {}) => {
-    if (!roomId || roomId !== 'agora-houston') return;
+    if (!roomId) return;
     if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
     socket.emit('board_state', serializeNoticeBoardState(noticeBoardRoom(roomId).state));
   });

@@ -1,5 +1,6 @@
 import { DEPTH } from './depth.js';
 import { C, SPINES } from './layouts/bookstore.js';
+import { resolveNoticeBoardSpot } from './noticeBoardPlacement.js';
 
 const LABEL_STYLE = {
   fontSize: '8px', fontFamily: 'Courier New, monospace',
@@ -193,7 +194,27 @@ export class RoomLayout {
     this._drawOutsideRoomMask(W, H, carpetColor);
 
     // Draw all zones
-    floor.zones.forEach(z => {
+    // Notice Board everywhere v1 (`sq-notice-board-everywhere-v1`):
+    // every room gets a board. Layouts with a hand-placed
+    // `notice_board` zone keep it; every other ground floor gets a
+    // synthetic one near the entrance (or the spawn), so
+    // user-created rooms and approved layouts get a board
+    // automatically. The synthetic zone is drawn and opened like any
+    // other, but it is NOT written back into floor.zones — the file
+    // layout stays exactly as the author left it. Upper floors get
+    // no board (one board per room, by the entrance).
+    const zonesToDraw = [...(floor.zones || [])];
+    if (this.currentFloor === 0
+      && !zonesToDraw.some((z) => z.type === 'notice_board')) {
+      const fb = this.getNoticeBoardFallback();
+      if (fb) {
+        zonesToDraw.push({
+          type: 'notice_board', ...fb,
+          label: 'Notice Board', interact: true, solid: false, synthetic: true,
+        });
+      }
+    }
+    zonesToDraw.forEach(z => {
       this._draw(z);
       this.currentZones.push(z);
       if (this._isZoneSolid(z)) this._registerStaticSolid(z);
@@ -678,6 +699,27 @@ export class RoomLayout {
     return { ...this._boundaryCentroid };
   }
 
+  /** Where this floor's notice board goes when the layout has no
+   * `notice_board` zone (Notice Board everywhere v1,
+   * `sq-notice-board-everywhere-v1`): near the entrance, else near
+   * the spawn. Ground floor only — one board per room, by the
+   * entrance. Returns { x, y, w, h, variant } or null when this
+   * floor gets no board. */
+  getNoticeBoardFallback() {
+    if (this.currentFloor !== 0) return null;
+    const floor = this.layout?.floors?.[this.currentFloor];
+    if (!floor) return null;
+    const entry = (floor.zones || []).find((z) => z.type === 'entry') || null;
+    const spawn = this.layout?.spawnF1 || null;
+    return resolveNoticeBoardSpot({
+      entry,
+      spawn,
+      bounds: this.getBoundaryBounds(),
+      isPark: isParkLayout(this.layout),
+      isInside: (x, y) => this.isPointInsideRoom(x, y, 0),
+    });
+  }
+
   getBoundaryBounds() {
     const boundary = this.roomBoundary;
     if (boundary.type === 'rect') {
@@ -1138,9 +1180,16 @@ export class RoomLayout {
       }
 
       case 'notice_board': {
-        // Cork notice board hanging on the wall (Notice Board v1):
-        // dark wood frame, tan cork, a few mini flyers pinned on
-        // with coloured pins. Not solid — it hangs above the floor.
+        // Cork notice board (Notice Board v1): dark wood frame, tan
+        // cork, a few mini flyers pinned on with coloured pins. Not
+        // solid — it hangs above the floor. `variant: 'post'` (parks)
+        // is the same board on two wooden posts by the entrance
+        // instead of a wall board.
+        if (z.variant === 'post') {
+          g.fillStyle(0x5b3a1e, 1);
+          g.fillRect(x + 14, y + h, 10, 46);
+          g.fillRect(x + w - 24, y + h, 10, 46);
+        }
         g.fillStyle(0x5b3a1e, 1);
         g.fillRect(x - 4, y - 4, w + 8, h + 8);
         g.fillStyle(0xd9a441, 1);
@@ -1163,7 +1212,9 @@ export class RoomLayout {
         }
         g.lineStyle(2, C.WALL, 1);
         g.strokeRect(x - 4, y - 4, w + 8, h + 8);
-        if (z.label) this._lbl(x + w / 2, y + h + 14, z.label, LABEL_STYLE, 0.5, 0);
+        // The label sits below the posts on a post board, below the
+        // frame on a wall board.
+        if (z.label) this._lbl(x + w / 2, y + h + (z.variant === 'post' ? 52 : 14), z.label, LABEL_STYLE, 0.5, 0);
         if (z.interact) this.interactZones.push(z);
         break;
       }

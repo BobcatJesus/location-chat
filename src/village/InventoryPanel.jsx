@@ -15,7 +15,7 @@
 //   onUse(id) / onDrop(id) / onDispose(id) — return { ok, reason? }
 //   onBuyBag() — returns { ok, reason? }
 //   onMakeFlyer(title, text) — returns { ok, reason? }
-//   onPinFlyer(id) — pin a flyer to the Agora notice board (Notice
+//   onPinFlyer(id) — pin a flyer to this room's notice board (Notice
 //     Board v1); returns { ok, pending?, reason? } — the flyer
 //     leaves the pocket when the server confirms the pin
 //   onOpenPuzzle() — close this panel and open the puzzle board
@@ -199,13 +199,13 @@ export default function InventoryPanel({
                           Open puzzle board 🧩
                         </button>
                       )}
-                      {item.type === 'flyer' && state.roomId === 'agora-houston' && (
+                      {item.type === 'flyer' && (
                         <button
                           onClick={() => run(
                             () => onPinFlyer && onPinFlyer(item.id),
                             '📌 Pinning it to the notice board…',
                           )}
-                          title="Pin this flyer to the Agora notice board so everyone can read it — it leaves your pocket once the board confirms it"
+                          title="Pin this flyer to this room's notice board so everyone here can read it — it leaves your pocket once the board confirms it"
                           style={btnStyle}
                         >
                           Pin to board 📌
