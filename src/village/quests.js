@@ -28,7 +28,7 @@ export const QUESTS = [
     kind: 'solo',
     event: 'duck-fed',
     target: 3,
-    rewardCoins: 5,
+    rewardCoins: 3,
     emoji: '🦆',
   },
 ];
