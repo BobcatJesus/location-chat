@@ -21,6 +21,18 @@
 // explicit store / take / unload-all events, so a stale reconnect
 // can never resurrect an item you already took back out.
 //
+// DROP ON THE HOME FLOOR (v1, `sq-home-drop-v1`): the same pattern,
+// one list over — items dropped on the floor of your home are
+// visible there (their emoji on the floor, like the litter in
+// ItemsSystem) and are picked back up by clicking them or pressing
+// E near them. The floor list lives in the same per-player home
+// state (home_state carries items + floor; home_drop / home_pickup
+// events). A drop never loses an item: the floor list is persisted
+// locally BEFORE the item leaves the pocket, and the server gets
+// it on the next sync even if the socket is down. Puzzle pieces
+// cannot be dropped on the floor (same rule as the chest — they
+// belong on the puzzle board).
+//
 // Puzzle pieces are NOT storable (they belong on the puzzle board —
 // see homeStorage.js). Store / Unload All leave them in the pocket.
 
@@ -28,7 +40,10 @@ import { DEPTH } from './depth.js';
 import {
   HOME_STORAGE_MARKER_V1,
   HOME_STORAGE_MARKER_V1_1,
+  HOME_DROP_MARKER_V1,
   HOME_CHEST_OPEN_RANGE,
+  HOME_FLOOR_CLICK_RANGE,
+  HOME_FLOOR_PICKUP_RANGE,
   isHomeRoom,
   homeOwnerOf,
   ownerKeyFromProfile,
@@ -38,6 +53,12 @@ import {
   storeIntoHome,
   takeFromHome,
   unloadPocketIntoHome,
+  getFloorItems,
+  setFloorItems,
+  normalizeFloorItems,
+  mergeFloorItems,
+  dropOnFloor,
+  pickupFromFloor,
 } from './homeStorage.js';
 import {
   ITEM_DEFS,
@@ -76,7 +97,11 @@ export class HomeStorageSystem {
     // check. A live reference, so the string survives minification
     // into the built bundle (unused exports are tree-shaken out).
     this.markerV11 = HOME_STORAGE_MARKER_V1_1;
+    // sq-home-drop-v1 — marker for the Drop on the home floor v1
+    // landing check (same live-reference reason as above).
+    this.markerDrop = HOME_DROP_MARKER_V1;
     this._chest = null; // { x, y, w, h } of the chest, from the layout
+    this._floor = []; // rendered floor items { id, type, item, emoji, label, x, y, textObj }
   }
 
   // Only in your OWN home room — the server refuses anyone else at
@@ -115,6 +140,7 @@ export class HomeStorageSystem {
   /** (Re)build the chest position and ask the server for its state. */
   refresh() {
     this._resolveChest();
+    this._renderFloor();
     if (this.enabled && this.scene?.socket?.connected) {
       try { this.scene.socket.emit('get_home', { roomId: this.scene.roomId }); } catch {}
     }
@@ -124,7 +150,8 @@ export class HomeStorageSystem {
    *  pattern): this is what brings stored items back after a server
    *  restart wiped the in-memory store. The server merges the record
    *  and replies with the merged home_state. Called from the scene's
-   *  socket connect handler. */
+   *  socket connect handler. The floor record goes along in the same
+   *  sync, so dropped items survive a restart the same way. */
   syncToServer() {
     if (!this.enabled) return;
     if (!this.scene?.socket?.connected) return;
@@ -132,17 +159,21 @@ export class HomeStorageSystem {
       this.scene.socket.emit('home_sync', {
         roomId: this.scene.roomId,
         items: getHomeItems(),
+        floor: getFloorItems(),
       });
     } catch {}
   }
 
   /** The server's authoritative stored-items list (home_state
    *  broadcast): replace the local record with it. Called from the
-   *  scene's socket handler. */
+   *  scene's socket handler. The floor list arrives in the same
+   *  broadcast and is applied the same way. */
   applyState(payload = {}) {
     if (!this.enabled) return;
     const items = normalizeHomeItems(payload.items);
     try { setHomeItems(items); } catch {}
+    try { setFloorItems(normalizeFloorItems(payload.floor)); } catch {}
+    this._renderFloor();
   }
 
   /** Open the storage panel (E key / chest click / interact button). */
@@ -278,12 +309,172 @@ export class HomeStorageSystem {
     return { ok: true, moved: res.moved.length, left: res.left.length };
   }
 
+  // ---- dropped floor items (Drop on the home floor v1) ------------------
+
+  /** Where a dropped item lands: near the player, on a small ring
+   *  (each drop takes the next angle, so a pile spreads out instead
+   *  of stacking exactly), clamped to the room. */
+  _dropPosition() {
+    const player = this.scene?.player;
+    const px = player?.gx ?? 800;
+    const py = player?.gy ?? 450;
+    const n = getFloorItems().length;
+    const angle = n * 2.4; // golden angle — drops spread, never stack
+    const x = px + Math.cos(angle) * 46;
+    const y = py + Math.sin(angle) * 46;
+    try {
+      if (this.scene?.roomLayout?.clampPointToRoom) {
+        return this.scene.roomLayout.clampPointToRoom(x, y, 24);
+      }
+    } catch {}
+    return {
+      x: Math.max(80, Math.min(1520, x)),
+      y: Math.max(80, Math.min(820, y)),
+    };
+  }
+
+  /** Drop one pocket item on the floor of your home. Home only —
+   *  anywhere else the inventory panel routes Drop to the
+   *  session-only litter in ItemsSystem instead. Puzzle pieces are
+   *  refused (they belong on the puzzle board). The floor list is
+   *  persisted locally BEFORE the item leaves the pocket, so a
+   *  failed save can never lose it: if the pocket removal fails,
+   *  the drop is rolled back. */
+  dropItem(id) {
+    if (!this.enabled) return { ok: false, reason: 'not-available' };
+    const item = getItem(id);
+    if (!item) return { ok: false, reason: 'not-found' };
+    if (item.type === ITEM_TYPES.PUZZLE_PIECE) {
+      return { ok: false, reason: 'puzzle-piece-no-drop' };
+    }
+    const pos = this._dropPosition();
+    const res = dropOnFloor(getFloorItems(), item, pos.x, pos.y);
+    if (!res.ok) return { ok: false, reason: res.reason || 'error' };
+    try { setFloorItems(res.list); } catch {}
+    this._renderFloor();
+    const removed = removeItem(id);
+    if (!removed) {
+      // The pocket changed under us (two tabs, a race) — roll the
+      // drop back instead of losing the item.
+      try { setFloorItems(pickupFromFloor(getFloorItems(), res.item.id).list); } catch {}
+      this._renderFloor();
+      return { ok: false, reason: 'not-found' };
+    }
+    try {
+      this.scene?.socket?.emit('home_drop', {
+        roomId: this.scene.roomId, item: res.item, x: res.item.x, y: res.item.y,
+      });
+    } catch {}
+    try { this.scene?.onSystemNotice?.(`📦 Dropped ${res.item.label || 'item'} on the floor of your home.`); } catch {}
+    return { ok: true, dropped: describeStored(res.item) };
+  }
+
+  /** Pick one dropped item back up off the floor — into the pocket,
+   *  if there is room. A full pocket refuses it (the item stays on
+   *  the floor). */
+  pickupItem(id) {
+    if (!this.enabled) return { ok: false, reason: 'not-available' };
+    const entry = getFloorItems().find((it) => it.id === id);
+    if (!entry) return { ok: false, reason: 'not-found' };
+    const inv = getInventory();
+    if (!canAddItem(entry, inv)) return { ok: false, reason: 'inventory-full' };
+    const taken = pickupFromFloor(getFloorItems(), id);
+    if (!taken.item) return { ok: false, reason: 'not-found' };
+    const added = addItem(taken.item);
+    if (!added.ok) {
+      // The pocket filled up between the check and the add — put it
+      // back on the floor instead of losing it.
+      try { setFloorItems(mergeFloorItems(getFloorItems(), [taken.item])); } catch {}
+      this._renderFloor();
+      return { ok: false, reason: added.reason || 'error' };
+    }
+    try { setFloorItems(taken.list); } catch {}
+    this._renderFloor();
+    try {
+      this.scene?.socket?.emit('home_pickup', { roomId: this.scene.roomId, itemId: id });
+    } catch {}
+    try { this.scene?.onSystemNotice?.(`🎒 Picked up ${added.item.label}! (${getInventoryState().count}/${getInventoryState().capacity} in your pocket)`); } catch {}
+    return { ok: true, picked: added.item };
+  }
+
+  /** E key / interact button: pick up the nearest dropped item. */
+  pickupNearest() {
+    if (!this.enabled) return { ok: false, reason: 'not-available' };
+    const player = this.scene?.player;
+    if (!player) return { ok: false, reason: 'no-player' };
+    const near = this.nearestFloorItem(player.gx, player.gy);
+    if (!near) return { ok: false, reason: 'no-floor-item' };
+    return this.pickupItem(near.id);
+  }
+
+  /** One click on a dropped floor item: pick it up if the click
+   *  lands on it and the player is standing close enough. Same
+   *  scene-level pointerdown pattern as the litter and the chest.
+   *  Returns { ok, picked?, reason? }. */
+  floorTapAt(wx, wy) {
+    if (!this.enabled) return { ok: false, reason: 'not-available' };
+    const player = this.scene?.player;
+    if (!player) return { ok: false, reason: 'no-player' };
+    const entry = this._floor.find(
+      (f) => Math.hypot(wx - f.x, wy - f.y) <= HOME_FLOOR_CLICK_RANGE,
+    );
+    if (!entry) return { ok: false, reason: 'no-floor-item' };
+    if (Math.hypot(player.gx - entry.x, player.gy - entry.y) > HOME_FLOOR_PICKUP_RANGE) {
+      return { ok: false, reason: 'too-far' };
+    }
+    return this.pickupItem(entry.id);
+  }
+
+  /** The dropped floor item within pickup range of (x, y) — or null
+   *  (E key / interact button). */
+  nearestFloorItem(px, py) {
+    if (!this.enabled) return null;
+    let best = null;
+    let bestD = HOME_FLOOR_PICKUP_RANGE;
+    for (const f of this._floor) {
+      const d = Math.hypot(px - f.x, py - f.y);
+      if (d <= bestD) { bestD = d; best = f; }
+    }
+    return best ? { ...best } : null;
+  }
+
+  /** (Re)draw the dropped floor items from the local record — one
+   *  emoji on the floor per item, like the litter in ItemsSystem. */
+  _renderFloor() {
+    this._clearFloor();
+    if (!this.enabled) return;
+    const scene = this.scene;
+    for (const item of getFloorItems()) {
+      const def = ITEM_DEFS[item.type] || {};
+      let textObj = null;
+      try {
+        textObj = scene.add.text(item.x, item.y, def.emoji || '📦', { fontSize: '22px' });
+        textObj.setOrigin(0.5, 0.5);
+        textObj.setDepth(DEPTH.ACTOR_MIN + Math.round(item.y));
+      } catch {}
+      this._floor.push({
+        id: item.id, type: item.type, item,
+        emoji: def.emoji || '📦',
+        label: item.label || def.label || 'Item',
+        x: item.x, y: item.y, textObj,
+      });
+    }
+  }
+
+  _clearFloor() {
+    for (const entry of this._floor) {
+      try { entry.textObj?.destroy(); } catch {}
+    }
+    this._floor = [];
+  }
+
   update() {
     // Nothing per-frame: storage arrives over the socket, opens arrive
     // via pointerdown / E, and the panel polls getState().
   }
 
   destroy() {
+    this._clearFloor();
     this._chest = null;
     this.scene = null;
   }

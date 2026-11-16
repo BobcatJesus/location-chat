@@ -346,6 +346,7 @@ export default function VillageCanvas({ room, profile, onLeave, onGoHome = null,
     'puzzle-table': ['🧩', 'Open the puzzle table'],
     'notice-board': ['📌', 'Read the notice board'],
     'storage-chest': ['📦', 'Open your storage chest'],
+    'floor-item': ['🎒', 'Pick up'],
     shelf: ['📚', 'Browse the shelf'],
     jukebox: ['🎵', 'Open the jukebox'],
     bar: ['🍺', 'Order a drink'],
@@ -819,7 +820,17 @@ export default function VillageCanvas({ room, profile, onLeave, onGoHome = null,
           getState={() => gameRef.current?.scene?.getScene('VillageScene')?.itemsSystem?.getState?.()}
           getBadges={() => gameRef.current?.scene?.getScene('VillageScene')?.questManager?.getCompletions?.() || []}
           onUse={(id) => gameRef.current?.scene?.getScene('VillageScene')?.itemsSystem?.useItem?.(id) || { ok: false, reason: 'error' }}
-          onDrop={(id) => gameRef.current?.scene?.getScene('VillageScene')?.itemsSystem?.dropItem?.(id) || { ok: false, reason: 'error' }}
+          onDrop={(id) => {
+            // Drop on the home floor v1 (`sq-home-drop-v1`): in your
+            // OWN home room, Drop puts a PERSISTED item on the floor
+            // (homeStorageSystem — server-backed, survives restarts).
+            // Anywhere else, Drop is the session-only litter from
+            // ItemsSystem, as before.
+            const scene = gameRef.current?.scene?.getScene('VillageScene');
+            const home = scene?.homeStorageSystem;
+            if (home?.enabled) return home.dropItem?.(id) || { ok: false, reason: 'error' };
+            return scene?.itemsSystem?.dropItem?.(id) || { ok: false, reason: 'error' };
+          }}
           onDispose={(id) => gameRef.current?.scene?.getScene('VillageScene')?.itemsSystem?.disposeTrash?.(id) || { ok: false, reason: 'error' }}
           onBuyBag={() => gameRef.current?.scene?.getScene('VillageScene')?.itemsSystem?.buyBag?.() || { ok: false, reason: 'error' }}
           onMakeFlyer={(title, text) => gameRef.current?.scene?.getScene('VillageScene')?.itemsSystem?.makeFlyer?.(title, text) || { ok: false, reason: 'error' }}

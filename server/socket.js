@@ -43,6 +43,8 @@ import {
   normalizeHomeOwner,
   normalizeHomeItems,
   mergeHomeItems,
+  normalizeFloorItems,
+  mergeFloorItems,
 } from '../src/village/homeStorage.js';
 
 // Shared instructions so every NPC reads as a real person, not a helpful assistant.
@@ -506,6 +508,23 @@ function homeItemsFor(userId) {
 function setHomeItems(userId, items) {
   userHomeStorage[userId] = normalizeHomeItems(items);
   return userHomeStorage[userId];
+}
+// Drop on the home floor v1 (`sq-home-drop-v1`): items dropped on
+// the floor of your home — same per-player, owner-only store as the
+// chest, same re-sync pattern. userHomeFloor[userId] = [items with
+// x, y]. The home_state broadcast carries both lists.
+const userHomeFloor = {};
+function homeFloorFor(userId) {
+  if (!userHomeFloor[userId]) userHomeFloor[userId] = [];
+  return userHomeFloor[userId];
+}
+function setHomeFloor(userId, items) {
+  userHomeFloor[userId] = normalizeFloorItems(items);
+  return userHomeFloor[userId];
+}
+/** One home_state payload for a player (chest store + floor). */
+function homeStateFor(userId) {
+  return { userId, items: homeItemsFor(userId), floor: homeFloorFor(userId) };
 }
 // Group puzzle (Shared Puzzle Quest v1.2,
 // `group-puzzle-v1-2-hidden-search`): per-room state
@@ -1313,19 +1332,20 @@ io.on('connection', (socket) => {
   // (home_state), which the client treats as authoritative.
   // Every mutating handler re-checks that the caller is IN their
   // own home room — storage is owner-only, and only at your place.
-  socket.on('home_sync', ({ roomId, items } = {}) => {
+  socket.on('home_sync', ({ roomId, items, floor } = {}) => {
     const userId = socketUserMap[socket.id] || socket.id;
     const rate = checkRateLimit(userId);
     if (!rate.allowed) return;
     const merged = mergeHomeItems(homeItemsFor(userId), items);
     setHomeItems(userId, merged);
-    socket.emit('home_state', { userId, items: homeItemsFor(userId) });
+    setHomeFloor(userId, mergeFloorItems(homeFloorFor(userId), floor));
+    socket.emit('home_state', homeStateFor(userId));
   });
 
   // YOUR PLACE: ask for my own stored-items record.
   socket.on('get_home', () => {
     const userId = socketUserMap[socket.id] || socket.id;
-    socket.emit('home_state', { userId, items: homeItemsFor(userId) });
+    socket.emit('home_state', homeStateFor(userId));
   });
 
   // YOUR PLACE: store one pocket item at home.
@@ -1338,7 +1358,7 @@ io.on('connection', (socket) => {
     const list = homeItemsFor(userId);
     if (!list.some((it) => it.id === clean[0].id)) list.push(clean[0]);
     setHomeItems(userId, list);
-    socket.emit('home_state', { userId, items: homeItemsFor(userId) });
+    socket.emit('home_state', homeStateFor(userId));
   });
 
   // YOUR PLACE: take one stored item back into the pocket.
@@ -1348,7 +1368,7 @@ io.on('connection', (socket) => {
     if (homeOwnerOf(roomId) !== normalizeHomeOwner(userId)) return;
     if (typeof itemId !== 'string' || !itemId) return;
     setHomeItems(userId, homeItemsFor(userId).filter((it) => it.id !== itemId));
-    socket.emit('home_state', { userId, items: homeItemsFor(userId) });
+    socket.emit('home_state', homeStateFor(userId));
   });
 
   // YOUR PLACE: unload a whole pocket/bag into storage at once.
@@ -1358,7 +1378,35 @@ io.on('connection', (socket) => {
     if (homeOwnerOf(roomId) !== normalizeHomeOwner(userId)) return;
     const merged = mergeHomeItems(homeItemsFor(userId), items);
     setHomeItems(userId, merged);
-    socket.emit('home_state', { userId, items: homeItemsFor(userId) });
+    socket.emit('home_state', homeStateFor(userId));
+  });
+
+  // YOUR PLACE — DROP ON THE HOME FLOOR (v1, `sq-home-drop-v1`):
+  // drop one pocket item on the floor of your home, at (x, y).
+  // Puzzle pieces are refused (they belong on the puzzle board);
+  // the position is validated and clamped by normalizeFloorItems.
+  socket.on('home_drop', ({ roomId, item, x, y } = {}) => {
+    if (!isHomeRoom(roomId) || !rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const userId = socketUserMap[socket.id] || socket.id;
+    if (homeOwnerOf(roomId) !== normalizeHomeOwner(userId)) return;
+    const clean = normalizeFloorItems([{ ...(item || {}), x, y }]);
+    if (!clean.length) return;
+    const list = homeFloorFor(userId);
+    if (!list.some((it) => it.id === clean[0].id)) list.push(clean[0]);
+    setHomeFloor(userId, list);
+    socket.emit('home_state', homeStateFor(userId));
+  });
+
+  // YOUR PLACE — DROP ON THE HOME FLOOR: pick one dropped item back
+  // up off the floor (the client only does this when its pocket has
+  // room; the server just removes it from the floor store).
+  socket.on('home_pickup', ({ roomId, itemId } = {}) => {
+    if (!isHomeRoom(roomId) || !rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const userId = socketUserMap[socket.id] || socket.id;
+    if (homeOwnerOf(roomId) !== normalizeHomeOwner(userId)) return;
+    if (typeof itemId !== 'string' || !itemId) return;
+    setHomeFloor(userId, homeFloorFor(userId).filter((it) => it.id !== itemId));
+    socket.emit('home_state', homeStateFor(userId));
   });
 
   // GROUP PUZZLE (Shared Puzzle Quest v1.2,

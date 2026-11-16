@@ -299,7 +299,15 @@ export default function InventoryPanel({
                       )}
                       {item.type !== 'puzzle-piece' && (
                         <button
-                          onClick={() => run(() => onDrop && onDrop(item.id), 'Dropped on the ground here.')}
+                          onClick={() => run(
+                            () => onDrop && onDrop(item.id),
+                            // Drop on the home floor v1: at home the
+                            // drop lands on your floor and stays
+                            // there; anywhere else it is ground
+                            // litter for this session.
+                            state.atHome ? 'Dropped on the floor of your home.' : 'Dropped on the ground here.',
+                          )}
+                          title={state.atHome ? 'Drop this on the floor of your home — it stays there until you pick it back up' : 'Drop this on the ground here'}
                           style={{ ...btnStyle, background: 'transparent' }}
                         >
                           Drop

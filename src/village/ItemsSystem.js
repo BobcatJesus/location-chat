@@ -114,6 +114,10 @@ export class ItemsSystem {
     return {
       ...state,
       roomId: this.scene?.roomId || '',
+      // Drop on the home floor v1: the panel shows a different
+      // success line when Drop puts a persisted item on the home
+      // floor instead of session litter.
+      atHome: Boolean(this.scene?.homeStorageSystem?.enabled),
       canDispose: this.nearTrashCan(),
       canFeedDucks: Boolean(this.scene?.duckPond?.nearestFeedablePond?.(
         this.scene?.player?.gx ?? 0, this.scene?.player?.gy ?? 0,

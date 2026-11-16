@@ -899,6 +899,15 @@ export class VillageScene extends Phaser.Scene {
         const cr = this.homeStorageSystem?.chestTapAt(ptr.worldX, ptr.worldY);
         if (cr && cr.opened) return;
       } catch {}
+      // Drop on the home floor v1: a click on a dropped item picks
+      // it back up (if you are standing close enough). A full
+      // pocket refuses it — the item stays on the floor.
+      try {
+        const fr = this.homeStorageSystem?.floorTapAt(ptr.worldX, ptr.worldY);
+        if (fr && fr.reason === 'inventory-full') {
+          this.onSystemNotice?.(`🎒 ${INVENTORY_FULL_MESSAGE}`);
+        }
+      } catch {}
       this.target = target;
       this.tapDot.setPosition(ptr.worldX, ptr.worldY).setAlpha(0.7);
       this.tweens.add({ targets: this.tapDot, alpha: 0, duration: 400 });
@@ -1204,6 +1213,14 @@ export class VillageScene extends Phaser.Scene {
     } else if (kind === 'storage-chest') {
       // Your Place v1: open the storage chest panel.
       this.homeStorageSystem?.openStorage();
+    } else if (kind === 'floor-item') {
+      // Drop on the home floor v1: pick the nearest dropped item
+      // back up (a full pocket refuses it — the scene shows the
+      // standard message, same as the litter pickup).
+      const res = this.homeStorageSystem?.pickupNearest();
+      if (res && res.reason === 'inventory-full') {
+        this.onSystemNotice?.(`🎒 ${INVENTORY_FULL_MESSAGE}`);
+      }
     } else if (kind === 'bar') {
       this._tryBuyDrink();
     }
@@ -1226,6 +1243,7 @@ export class VillageScene extends Phaser.Scene {
     if (this.puzzleQuest?.nearestTable(this.player.gx, this.player.gy)) return 'puzzle-table';
     if (this.noticeBoardSystem?.nearestBoard(this.player.gx, this.player.gy)) return 'notice-board';
     if (this.homeStorageSystem?.nearestChest(this.player.gx, this.player.gy)) return 'storage-chest';
+    if (this.homeStorageSystem?.nearestFloorItem(this.player.gx, this.player.gy)) return 'floor-item';
     if (this._nearestShelf()) return 'shelf';
     if (this._nearestJukebox()) return 'jukebox';
     if (this._nearestBar()) return 'bar';

@@ -7,6 +7,7 @@ import { describe, it, expect } from 'vitest';
 import {
   HOME_STORAGE_MARKER_V1,
   HOME_STORAGE_MARKER_V1_1,
+  HOME_DROP_MARKER_V1,
   HOME_ROOM_PREFIX,
   HOME_ROOM_RADIUS,
   HOME_STORAGE_MAX_ITEMS,
@@ -24,6 +25,12 @@ import {
   unloadPocketIntoHome,
   getHomeItems,
   _setHomeItemsForTest,
+  normalizeFloorItems,
+  mergeFloorItems,
+  dropOnFloor,
+  pickupFromFloor,
+  getFloorItems,
+  _setFloorItemsForTest,
 } from '../src/village/homeStorage.js';
 
 const trash = (over = {}) => ({
@@ -211,5 +218,81 @@ describe('create home v1.1', () => {
     expect(first.status).toBe('ready');
     const second = homeCreateState({ location: { latitude: 29.8, longitude: -95.5 }, profile, rooms: [homeRoom] });
     expect(second.status).toBe('already-exists');
+  });
+});
+
+describe('drop on the home floor v1', () => {
+  it('carries the drop marker', () => {
+    expect(HOME_DROP_MARKER_V1).toBe('sq-home-drop-v1');
+  });
+
+  it('drops an item on the floor at the given position', () => {
+    const res = dropOnFloor([], trash(), 800, 450);
+    expect(res.ok).toBe(true);
+    expect(res.item.x).toBe(800);
+    expect(res.item.y).toBe(450);
+    expect(res.list).toHaveLength(1);
+  });
+
+  it('refuses puzzle pieces on the floor, like the chest', () => {
+    const res = dropOnFloor([], piece(), 800, 450);
+    expect(res.ok).toBe(false);
+    expect(res.reason).toBe('puzzle-piece-no-drop');
+    expect(res.list).toEqual([]);
+  });
+
+  it('refuses a duplicate drop and a bad item', () => {
+    const first = dropOnFloor([], trash(), 800, 450);
+    expect(first.ok).toBe(true);
+    expect(dropOnFloor(first.list, trash(), 810, 460).reason).toBe('already-dropped');
+    expect(dropOnFloor([], { type: 'unknown-thing' }, 800, 450).reason).toBe('bad-item');
+    expect(dropOnFloor([], null, 800, 450).reason).toBe('bad-item');
+  });
+
+  it('picks a dropped item back up, and reports a miss', () => {
+    const dropped = dropOnFloor([], food(), 500, 300);
+    const picked = pickupFromFloor(dropped.list, 'food-1');
+    expect(picked.item.id).toBe('food-1');
+    expect(picked.item.x).toBe(500);
+    expect(picked.list).toEqual([]);
+    expect(pickupFromFloor(dropped.list, 'nope').item).toBe(null);
+  });
+
+  it('normalize drops items with no usable position and clamps the rest', () => {
+    const out = normalizeFloorItems([
+      trash({ id: 'a', x: 100, y: 100 }),
+      trash({ id: 'b' }), // no position — dropped
+      trash({ id: 'c', x: 99999, y: -50 }), // clamped to the room
+      { id: 'd', type: 'nope', x: 1, y: 1 }, // unknown type — dropped
+    ]);
+    expect(out.map((it) => it.id)).toEqual(['a', 'c']);
+    expect(out[1].x).toBe(1600);
+    expect(out[1].y).toBe(0);
+  });
+
+  it('merges floor lists add-only by id, first list wins', () => {
+    const a = dropOnFloor([], trash(), 100, 100).list;
+    const b = dropOnFloor([], food(), 200, 200).list;
+    const merged = mergeFloorItems(a, b);
+    expect(merged.map((it) => it.id)).toEqual(['trash-1', 'food-1']);
+    // A re-sync never resurrects a picked-up item when both sides
+    // agree it is gone, but a stale side still wins the union.
+    expect(mergeFloorItems([], b).map((it) => it.id)).toEqual(['food-1']);
+  });
+
+  it('the floor record round-trips through local storage', () => {
+    _setFloorItemsForTest([trash({ x: 700, y: 500 })]);
+    expect(getFloorItems().map((it) => it.id)).toEqual(['trash-1']);
+    expect(getFloorItems()[0].x).toBe(700);
+    _setFloorItemsForTest([]);
+    expect(getFloorItems()).toEqual([]);
+  });
+
+  it('a drop followed by a pickup leaves the floor empty', () => {
+    const res = dropOnFloor(getFloorItems(), trash(), 800, 450);
+    expect(res.ok).toBe(true);
+    const after = pickupFromFloor(res.list, 'trash-1');
+    expect(after.list).toEqual([]);
+    expect(after.item.type).toBe('trash');
   });
 });

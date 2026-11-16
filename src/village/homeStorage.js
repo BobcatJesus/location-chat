@@ -42,8 +42,41 @@
 //     anonymous sessions, as in v1.
 //
 
+// DROP ON THE HOME FLOOR (v1, `sq-home-drop-v1`):
+//   - The user asked for a method to drop items from his bag onto
+//     the floor of his home. Dropping works ONLY in your own home
+//     room: the Drop button in the inventory popup (which already
+//     dropped session-only litter anywhere) now drops a PERSISTED
+//     floor item at home, and keeps dropping session litter
+//     everywhere else. The routing lives in VillageCanvas.jsx.
+//   - A dropped item is VISIBLE on the home floor (its emoji, like
+//     the litter in ItemsSystem) and is picked back up by clicking
+//     it or pressing E near it — refused with the standard
+//     full-pocket message when there is no room.
+//   - Floor items are part of your home state on the server
+//     (per-player store, same authoritative + localStorage re-sync
+//     pattern as home storage), so they survive a restart and a
+//     reload. A drop never loses an item: the floor list is
+//     persisted locally BEFORE the item leaves the pocket, and the
+//     server gets it on the next sync even if the socket is down.
+//   - Puzzle pieces CANNOT be dropped on the floor (same rule as
+//     the chest — they belong on the puzzle board; round-scoped).
+//     Builder decision, not a user decision — say so if questioned.
+//
+
 export const HOME_STORAGE_MARKER_V1 = 'sq-your-place-v1';
 export const HOME_STORAGE_MARKER_V1_1 = 'sq-your-place-v1-1';
+export const HOME_DROP_MARKER_V1 = 'sq-home-drop-v1';
+
+// How close a click must land to a floor item to pick it up, and how
+// close the player must stand — same numbers as the visible litter
+// in items.js (LITTER_CLICK_RANGE / LITTER_PICKUP_RANGE).
+export const HOME_FLOOR_CLICK_RANGE = 44;
+export const HOME_FLOOR_PICKUP_RANGE = 90;
+// Loose bounds for validating a dropped item's floor position (the
+// home room is 1600x900; the scene clamps to the real room).
+export const HOME_FLOOR_W = 1600;
+export const HOME_FLOOR_H = 900;
 
 // GPS radius of a home room on the map (same as a created place).
 export const HOME_ROOM_RADIUS = 60;
@@ -242,6 +275,100 @@ export function _setHomeItemsForTest(items) {
   setHomeItems(items);
 }
 
+// --- dropped floor items (Drop on the home floor v1) ----------------------
+// A floor item is a stored item shape (see normalizeHomeItems) PLUS
+// its floor position { x, y }. Same per-profile localStorage record
+// pattern as the chest store, same server re-sync.
+const HOME_FLOOR_PREFIX = 'sidequest-home-floor';
+
+function homeFloorKey() {
+  return `${HOME_FLOOR_PREFIX}:${currentOwner()}`;
+}
+
+/** The items dropped on the floor of your home, with positions. */
+export function getFloorItems() {
+  try {
+    const raw = _get(homeFloorKey());
+    const parsed = raw ? JSON.parse(raw) : null;
+    return normalizeFloorItems(parsed);
+  } catch {
+    return [];
+  }
+}
+
+/** Replace the whole floor record (the system persists after every
+ *  drop / pickup, and after applying a server state). */
+export function setFloorItems(items) {
+  try {
+    _set(homeFloorKey(), JSON.stringify(normalizeFloorItems(items)));
+  } catch {}
+}
+
+/** Test/support hook: replace the whole floor record (used by tests). */
+export function _setFloorItemsForTest(items) {
+  setFloorItems(items);
+}
+
+/** Clean any wire-shaped value into a floor-items list. Same item
+ *  validation as normalizeHomeItems, plus a floor position — an item
+ *  with no usable x/y is dropped (a bad client cannot place items
+ *  off the floor), and positions are clamped to the room. */
+export function normalizeFloorItems(input) {
+  const out = [];
+  if (!Array.isArray(input)) return out;
+  const seen = new Set();
+  for (const raw of input) {
+    if (!raw || typeof raw !== 'object') continue;
+    const id = typeof raw.id === 'string' ? raw.id.trim() : '';
+    const type = typeof raw.type === 'string' ? raw.type.trim() : '';
+    if (!id || !HOME_ITEM_TYPE_SET.has(type)) continue;
+    // Floor items are never puzzle pieces (they belong on the
+    // puzzle board) — the rule lives here so BOTH the client and
+    // the server enforce it, not just the drop button: a bad client
+    // cannot smuggle a piece onto the floor with a raw socket emit.
+    if (type === 'puzzle-piece') continue;
+    if (seen.has(id)) continue;
+    const x = Number(raw.x);
+    const y = Number(raw.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
+    seen.add(id);
+    out.push({
+      id,
+      type,
+      label: typeof raw.label === 'string' ? raw.label : null,
+      blurb: typeof raw.blurb === 'string' ? raw.blurb : null,
+      text: typeof raw.text === 'string' ? raw.text : null,
+      title: typeof raw.title === 'string' ? raw.title : null,
+      pieceId: typeof raw.pieceId === 'number' ? raw.pieceId : null,
+      createdAt: Number.isFinite(Number(raw.createdAt)) && Number(raw.createdAt) > 0
+        ? Number(raw.createdAt)
+        : null,
+      x: Math.max(0, Math.min(HOME_FLOOR_W, x)),
+      y: Math.max(0, Math.min(HOME_FLOOR_H, y)),
+    });
+    if (out.length >= HOME_STORAGE_MAX_ITEMS) break;
+  }
+  return out;
+}
+
+/** Union of two floor-items lists, by id — first list wins on a
+ *  conflict. Same add-only re-sync rule as mergeHomeItems: removals
+ *  only happen via explicit drop / pickup events, so a stale
+ *  reconnect can resurrect a picked-up item (same honest edge as
+ *  the chest store — a resurrected item is annoying, a vanished
+ *  one is worse). */
+export function mergeFloorItems(a, b) {
+  const merged = normalizeFloorItems(a);
+  const seen = new Set(merged.map((it) => it.id));
+  for (const it of normalizeFloorItems(b)) {
+    if (seen.has(it.id)) continue;
+    seen.add(it.id);
+    merged.push(it);
+    if (merged.length >= HOME_STORAGE_MAX_ITEMS) break;
+  }
+  return merged;
+}
+
 // --- wire shape -----------------------------------------------------------
 // A stored item is the same shape the inventory keeps: { id, type,
 // label, blurb, text, title, pieceId, createdAt }. normalize drops
@@ -325,6 +452,41 @@ export function takeFromHome(homeList, itemId) {
   if (idx < 0) return { list: home, item: null };
   const [item] = home.splice(idx, 1);
   return { list: home, item };
+}
+
+/** Drop one item on the floor of your home, at (x, y). Puzzle
+ *  pieces are refused (they belong on the puzzle board — see the
+ *  header). Returns { list, ok, item?, reason? } — reason is
+ *  'puzzle-piece-no-drop', 'already-dropped', 'bad-item' or
+ *  'home-full'. The caller persists the floor list BEFORE removing
+ *  the item from the pocket, so a failed save never loses it. */
+export function dropOnFloor(floorList, item, x, y) {
+  const floor = normalizeFloorItems(floorList);
+  if (!item || typeof item !== 'object' || typeof item.type !== 'string') {
+    return { list: floor, ok: false, reason: 'bad-item' };
+  }
+  if (item.type === 'puzzle-piece') {
+    return { list: floor, ok: false, reason: 'puzzle-piece-no-drop' };
+  }
+  const clean = normalizeFloorItems([{ ...item, x, y }]);
+  if (!clean.length) return { list: floor, ok: false, reason: 'bad-item' };
+  if (floor.some((it) => it.id === clean[0].id)) {
+    return { list: floor, ok: false, reason: 'already-dropped' };
+  }
+  if (floor.length >= HOME_STORAGE_MAX_ITEMS) {
+    return { list: floor, ok: false, reason: 'home-full' };
+  }
+  return { list: [...floor, clean[0]], ok: true, item: clean[0] };
+}
+
+/** Pick one dropped item back up off the floor. Returns
+ *  { list, item } — item is null when the id is not on the floor. */
+export function pickupFromFloor(floorList, itemId) {
+  const floor = normalizeFloorItems(floorList);
+  const idx = floor.findIndex((it) => it.id === itemId);
+  if (idx < 0) return { list: floor, item: null };
+  const [item] = floor.splice(idx, 1);
+  return { list: floor, item };
 }
 
 /** Unload a whole pocket/bag into home storage at once — the user's
