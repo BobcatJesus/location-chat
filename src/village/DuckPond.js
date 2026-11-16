@@ -122,6 +122,10 @@ function makeDuckBody(scene) {
 export class DuckPond {
   constructor(scene) {
     this.scene = scene;
+    // Called (no args) whenever a duck is petted past its cooldown —
+    // VillageScene wires this to the quest loop (a pet counts toward
+    // the duck quest, same as a feed).
+    this.onDuckPet = null;
     this.ducks = [];   // { container, pond, x, y, tx, ty, state, idleMs, eatMs }
     this.pellets = []; // { x, y, bites, circle }
     this.ponds = [];
@@ -202,6 +206,8 @@ export class DuckPond {
     if (duck.petCooldown && now < duck.petCooldown) return;
     duck.petCooldown = now + PET_COOLDOWN_MS;
     playQuack();
+    // Quest hook: a pet counts as a duck interaction.
+    try { this.onDuckPet?.(); } catch {}
     // Happy hop: timer-driven so the wander loop doesn't override it.
     duck.hopMs = 320;
     // Floating heart.

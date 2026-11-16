@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { DEPTH } from './depth.js';
 import { DuckPond } from './DuckPond.js';
 import { CafeCat } from './CafeCat.js';
+import { QuestManager } from './QuestManager.js';
 import { io } from 'socket.io-client';
 import { RoomLayout } from './RoomLayout.js';
 import { pickLayout } from './layoutPicker.js';
@@ -585,6 +586,12 @@ export class VillageScene extends Phaser.Scene {
     // Cafe cat (Agora only — CafeCat itself no-ops in every other room).
     this.cafeCat = new CafeCat(this);
     this.cafeCat.refresh();
+    // Quest loop (Quest Wrapper v1): auto-starts the quest for this
+    // room, tracks it in the corner, toasts + pays coins on completion.
+    // Petting a duck counts toward the duck quest, same as feeding one.
+    this.questManager = new QuestManager(this);
+    this.questManager.refresh();
+    this.duckPond.onDuckPet = () => this.questManager?.recordEvent('duck-fed');
     // Seasonal: pumpkins, bats, spooky tint in October.
     this.halloween = new HalloweenMode(this);
     this.halloween.start();
@@ -1563,6 +1570,8 @@ export class VillageScene extends Phaser.Scene {
     if (this.duckPond.feed(fx, fy)) {
       this._feedCooldownMs = 2500;
       this.socket?.emit('feed_ducks', { roomId: this.roomId, x: Math.round(fx), y: Math.round(fy) });
+      // Quest step: feeding a duck counts toward the duck quest.
+      this.questManager?.recordEvent('duck-fed');
     }
   }
 
@@ -1603,6 +1612,7 @@ export class VillageScene extends Phaser.Scene {
       socket.emit('get_jukebox', { roomId: this.roomId });
       socket.emit('get_pumpkins', { roomId: this.roomId });
       socket.emit('get_cat', { roomId: this.roomId });
+      socket.emit('get_quest_state', { roomId: this.roomId });
       socket.emit('get_time_phase', {});
       const now = Date.now();
       this._lastPresenceSyncAt = now;
@@ -1778,6 +1788,17 @@ export class VillageScene extends Phaser.Scene {
     // we join and whenever it changes.
     socket.on('cat_state', (payload = {}) => {
       this.cafeCat?.applyState(payload);
+    });
+
+    // Quest state (your progress + the room's shared total), sent when
+    // we join and whenever it changes.
+    socket.on('quest_state', (payload = {}) => {
+      this.questManager?.applyServerState(payload);
+    });
+
+    // Somebody in the room finished a quest.
+    socket.on('quest_completed', (payload = {}) => {
+      this.questManager?.onRemoteCompleted(payload);
     });
 
     // The server's canonical day/night phase (outdoor venues render
@@ -2301,6 +2322,7 @@ export class VillageScene extends Phaser.Scene {
     this._drinkCooldownMs = Math.max(0, (this._drinkCooldownMs || 0) - delta);
     this.duckPond?.update(delta);
     this.cafeCat?.update(delta);
+    this.questManager?.update(delta);
     this.halloween?.update(delta);
     this.dayNight?.update(delta);
     const nearPond = this.duckPond?.nearestFeedablePond(this.player.gx, this.player.gy);
@@ -2608,6 +2630,8 @@ export class VillageScene extends Phaser.Scene {
     this.duckPond = null;
     this.cafeCat?.destroy();
     this.cafeCat = null;
+    this.questManager?.destroy();
+    this.questManager = null;
     this.catPrompt?.destroy();
     this.halloween?.destroy();
     this.halloween = null;
@@ -2643,6 +2667,7 @@ export class VillageScene extends Phaser.Scene {
     this.roomLayout.drawFloor(floorIndex);
     this.duckPond?.refresh();
     this.cafeCat?.refresh();
+    this.questManager?.refresh();
     this._emitFloorStatus();
     this.roomLayout.setDynamicSolids(this.customZones);
     this.roomLayout.setCollisionDebug(this.showCollisionDebug);

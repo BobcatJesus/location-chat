@@ -354,6 +354,17 @@ const pumpkinLit = {};
 // to sleep in a sunbeam; a new player walking in wakes it back up.
 const catState = {};
 const CATS_PETS_TO_SLEEP = 3;
+// Quests (Quest Wrapper v1): per-room state
+//   questState[roomId][questId] = { shared, users: { [userId]: { count, completed } } }
+// `shared` is the room-wide total (everyone's events added up); each
+// player's own count/completion is tracked separately, so one player
+// finishing doesn't finish it for everyone else. In-memory only, like
+// pumpkins and the cat — a server restart resets quest progress (the
+// client keeps its own localStorage copy and takes the higher count).
+// The server only knows the quest ids in QUEST_DEFS, so a bad client
+// can't invent quests or rewards.
+const questState = {};
+const QUEST_DEFS = { 'duck-roundup': { target: 3, rewardCoins: 5 } };
 // Matches youtube.com/watch?v=, youtu.be/, youtube.com/embed/, youtube.com/shorts/
 const YOUTUBE_ID_RE = /(?:(?:www\.|music\.)?youtube\.com\/(?:watch\?[^#]*v=|embed\/|shorts\/|v\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/;
 function extractYouTubeId(url) {
@@ -993,6 +1004,43 @@ io.on('connection', (socket) => {
     if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
     const state = catState[roomId] || { pets: 0, asleep: false };
     socket.emit('cat_state', { pets: state.pets, asleep: state.asleep });
+  });
+
+  // QUEST PROGRESS (Quest Wrapper v1 — one quest event from a player:
+  // counts toward their own progress AND the room's shared total)
+  socket.on('quest_progress', ({ roomId, questId } = {}) => {
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const userId = socketUserMap[socket.id] || socket.id;
+    const rate = checkRateLimit(userId);
+    if (!rate.allowed) return;
+    const def = QUEST_DEFS[questId];
+    if (!def) return;
+    if (!questState[roomId]) questState[roomId] = {};
+    if (!questState[roomId][questId]) questState[roomId][questId] = { shared: 0, users: {} };
+    const q = questState[roomId][questId];
+    if (!q.users[userId]) q.users[userId] = { count: 0, completed: false };
+    const mine = q.users[userId];
+    if (mine.completed) return;
+    mine.count += 1;
+    q.shared += 1;
+    socket.emit('quest_state', { questId, count: mine.count, shared: q.shared, completed: mine.count >= def.target });
+    if (mine.count >= def.target) {
+      mine.completed = true;
+      io.to(roomId).emit('quest_completed', { questId, userId, shared: q.shared });
+    }
+  });
+
+  // QUEST STATE (your progress + the room's shared total, sent when
+  // you join — one message per quest the room has any progress on)
+  socket.on('get_quest_state', ({ roomId } = {}) => {
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const userId = socketUserMap[socket.id] || socket.id;
+    const room = questState[roomId] || {};
+    for (const questId of Object.keys(room)) {
+      const q = room[questId];
+      const mine = q.users[userId] || { count: 0, completed: false };
+      socket.emit('quest_state', { questId, count: mine.count, shared: q.shared, completed: mine.completed });
+    }
   });
 
   // DAY/NIGHT: answer with the canonical phase (see currentTimePhase
