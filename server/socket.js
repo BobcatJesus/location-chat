@@ -732,6 +732,28 @@ async function reviewLayoutSubmission(id, approve, reviewer) {
   return rec;
 }
 
+// agora-clear-approved-v1: revoke the approved layout(s) for a room so the
+// built-in layout shows again. History is kept (status 'revoked'), nothing
+// is deleted, and only currently-approved rows for that room are touched.
+async function clearApprovedLayout(roomId, reviewer) {
+  const room = String(roomId || '');
+  if (pool) {
+    const { rows } = await pool.query(
+      `UPDATE layout_submissions SET status = $2, reviewed_at = NOW(), reviewed_by = $3
+       WHERE room_id = $1 AND status = 'approved' RETURNING id, room_id AS "roomId", data AS "layout", submitter, submitter_name AS "submitterName"`,
+      [room, 'revoked', String(reviewer || '')]
+    );
+    return rows;
+  }
+  const cleared = memoryLayoutSubmissions.filter((r) => r.roomId === room && r.status === 'approved');
+  cleared.forEach((rec) => {
+    rec.status = 'revoked';
+    rec.reviewedAt = new Date().toISOString();
+    rec.reviewedBy = String(reviewer || '');
+  });
+  return cleared;
+}
+
 function isGlobalModerator(actorId) {
   return moderatorEmails.has(normalizeActorId(actorId));
 }
@@ -1577,6 +1599,24 @@ app.get('/api/room-layout/:roomId', async (req, res) => {
   } catch (err) {
     console.warn('approved layout fetch failed:', err && err.message);
     res.status(500).json({ error: 'Could not load approved layout.' });
+  }
+});
+
+// agora-clear-approved-v1: moderator-only. Revoke the approved layout for a
+// room (status 'revoked', history kept) so the built-in layout renders again.
+app.post('/api/room-layout/:roomId/clear', async (req, res) => {
+  try {
+    const actorId = String((req.body && req.body.actorId) || req.query.actorId || '');
+    if (!isGlobalModerator(actorId)) return res.status(403).json({ error: 'Moderators only.' });
+    const cleared = await clearApprovedLayout(req.params.roomId, actorId);
+    if (!cleared || cleared.length === 0) {
+      return res.status(404).json({ error: 'No approved layout for this room.' });
+    }
+    console.log(`🧹 Approved layout cleared for ${req.params.roomId} by ${actorId} (${cleared.length} submission(s) revoked)`);
+    res.json({ ok: true, roomId: req.params.roomId, cleared: cleared.length, submissions: cleared });
+  } catch (err) {
+    console.warn('approved layout clear failed:', err && err.message);
+    res.status(500).json({ error: 'Could not clear approved layout.' });
   }
 });
 
