@@ -1,14 +1,18 @@
 // PuzzleBoard.jsx — the zoomed-in group puzzle board (Shared Puzzle
-// Quest v1, `group-puzzle-v1`).
+// Quest v1.1, `group-puzzle-v1-1-free-place`).
 //
 // Opens when you click the puzzle table in Agora. DOM overlay (not
 // Phaser): a 3x3 grid of the cat picture (cat-threequarter.png, sliced
 // with background-position) plus a tray of the pieces the room has
-// found but not placed yet. Drag a piece onto its cell, or click a
-// piece then click a cell. A piece only locks in on its HOME cell —
-// a wrong cell shakes and bounces back to the tray. The board is
-// shared: placements by anyone in the room show up for everyone
-// (the parent polls getBoardState while the board is open).
+// found but not placed yet. Drag a piece onto ANY cell, or click a
+// piece then click a cell. v1.1 FREE PLACEMENT: a wrong cell does NOT
+// shake or bounce back — the piece stays there until someone moves
+// it, and a placed piece can be picked up again (click it, or drag
+// it) and moved anywhere else. Completion only counts when all 9 are
+// in their home cells at the same time, so the header counts pieces
+// in the RIGHT place, not pieces on the board. The board is shared:
+// placements by anyone in the room show up for everyone (the parent
+// polls getBoardState while the board is open).
 //
 // Props:
 //   getBoardState() — () => { round, collected, placed, placedCount,
@@ -35,8 +39,7 @@ export default function PuzzleBoard({ getBoardState, onPlace, onClose }) {
   const [board, setBoard] = useState(() => {
     try { return getBoardState ? getBoardState() : null; } catch { return null; }
   });
-  const [selected, setSelected] = useState(null); // pieceId, click-to-place
-  const [shake, setShake] = useState(null); // "col,row" of a wrong cell
+  const [selected, setSelected] = useState(null); // pieceId, click-to-place (tray OR board)
   const [notice, setNotice] = useState('');
 
   // The board is shared: poll for other players' finds/placements
@@ -74,13 +77,9 @@ export default function PuzzleBoard({ getBoardState, onPlace, onClose }) {
       } catch {}
       return;
     }
-    if (res && res.reason === 'wrong-cell') {
-      setShake(`${col},${row}`);
-      setNotice("That piece doesn't go there — try another spot.");
-      setTimeout(() => setShake(null), 500);
-    } else if (res && res.reason === 'already-placed') {
-      setNotice('That piece is already in the puzzle.');
-    } else if (res && res.reason === 'not-found') {
+    // v1.1: there is no 'wrong-cell' anymore — any cell takes the
+    // piece. A failure here is a real error, not a wrong guess.
+    if (res && res.reason === 'not-found') {
       setNotice("That piece hasn't been found yet.");
     } else {
       setNotice('Could not place that piece.');
@@ -126,7 +125,7 @@ export default function PuzzleBoard({ getBoardState, onPlace, onClose }) {
           </button>
         </div>
         <div style={{ fontSize: 13, marginTop: 4, color: '#3d6a8a' }}>
-          Group puzzle · Agora · {placedCount}/{total} pieces placed
+          Group puzzle · Agora · {placedCount}/{total} in the right place
           {board.contributors ? ` · ${board.contributors.length} ${board.contributors.length === 1 ? 'person' : 'people'} helped` : ''}
         </div>
 
@@ -141,7 +140,8 @@ export default function PuzzleBoard({ getBoardState, onPlace, onClose }) {
         ) : (
           <div style={{ fontSize: 13, marginTop: 6, color: '#3d6a8a' }}>
             Find pieces around Agora — under tables, on the bar, under the sleeping cat,
-            or ask the barista about the puzzle — then drag them home.
+            or ask the barista about the puzzle — then drag them onto the board.
+            Pieces can go anywhere: a wrong spot stays put until someone moves it.
           </div>
         )}
 
@@ -155,32 +155,46 @@ export default function PuzzleBoard({ getBoardState, onPlace, onClose }) {
           {Array.from({ length: PUZZLE_SIZE }, (_, row) => (
             Array.from({ length: PUZZLE_SIZE }, (_, col) => {
               const pieceId = cellFor(col, row);
-              const isShake = shake === `${col},${row}`;
+              const isSelected = selected != null && selected === pieceId;
               return (
                 <div
                   key={`${col}-${row}`}
-                  onClick={() => { if (selected != null && pieceId == null) attemptPlace(selected, col, row); }}
+                  draggable={pieceId != null}
+                  onDragStart={(e) => {
+                    if (pieceId != null) e.dataTransfer.setData('text/puzzle-piece', String(pieceId));
+                  }}
+                  onClick={() => {
+                    if (selected != null) {
+                      // A piece is picked up (from tray or board): drop it here, right or wrong.
+                      attemptPlace(selected, col, row);
+                    } else if (pieceId != null) {
+                      // Pick up a placed piece to move it again.
+                      setSelected(pieceId);
+                      setNotice('');
+                    }
+                  }}
                   onDragOver={(e) => { e.preventDefault(); }}
                   onDrop={(e) => {
                     e.preventDefault();
                     const raw = e.dataTransfer.getData('text/puzzle-piece');
-                    if (raw !== '' && pieceId == null) attemptPlace(Number(raw), col, row);
+                    if (raw !== '') attemptPlace(Number(raw), col, row);
                   }}
                   style={{
                     width: TILE_PX, height: TILE_PX, borderRadius: 6,
-                    border: pieceId != null ? '2px solid #f59e0b' : '2px dashed #b45309',
+                    border: isSelected
+                      ? '3px solid #1a4971'
+                      : pieceId != null ? '2px solid #f59e0b' : '2px dashed #b45309',
                     background: pieceId != null ? '#fef3c7' : 'rgba(180,83,9,0.08)',
-                    cursor: pieceId == null && selected != null ? 'pointer' : 'default',
-                    animation: isShake ? 'puzzle-shake 0.4s' : undefined,
+                    cursor: pieceId != null || selected != null ? 'pointer' : 'default',
+                    boxShadow: isSelected ? '0 0 0 2px #93c5fd' : undefined,
                     ...(pieceId != null ? tileStyle(pieceId) : {}),
                   }}
-                  title={pieceId != null ? 'Placed!' : 'Empty — drag a piece here'}
+                  title={pieceId != null ? 'Placed — click to pick it up and move it' : 'Empty — drag a piece here'}
                 />
               );
             })
           ))}
         </div>
-        <style>{'@keyframes puzzle-shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }'}</style>
 
         {/* The tray: found but not yet placed. Click to select, or drag. */}
         <div style={{ marginTop: 14, fontWeight: 'bold', fontSize: 14 }}>
@@ -213,7 +227,7 @@ export default function PuzzleBoard({ getBoardState, onPlace, onClose }) {
         )}
         {selected != null && (
           <div style={{ fontSize: 13, marginTop: 8, color: '#1a4971' }}>
-            Piece selected — now click the grid cell it belongs in.
+            Piece selected — now click any grid cell. Wrong spots are allowed, they just stay until someone moves them.
           </div>
         )}
         {notice && (

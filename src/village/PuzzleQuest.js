@@ -33,13 +33,14 @@
 
 import { DEPTH } from './depth.js';
 import {
-  PUZZLE_MARKER,
+  PUZZLE_MARKER_V11,
   PUZZLE_TOTAL,
   PUZZLE_REWARD_COINS,
   PUZZLE_SPOTS,
   createPuzzleState,
   collectPiece,
   placePiece,
+  pieceHome,
   placedCount,
   serializePuzzleState,
   parsePuzzleState,
@@ -81,8 +82,8 @@ function loadPaidRounds() {
 export class PuzzleQuest {
   constructor(scene) {
     this.scene = scene;
-    // group-puzzle-v1 — marker for the landing check (Select-String).
-    this.marker = PUZZLE_MARKER;
+    // group-puzzle-v1-1-free-place — marker for the v1.1 landing check.
+    this.marker = PUZZLE_MARKER_V11;
     this.state = createPuzzleState();
     this.myFound = new Set(); // piece ids *I* found this round
     this.myPlaced = new Set(); // piece ids *I* placed this round
@@ -242,8 +243,9 @@ export class PuzzleQuest {
   /** Try to place a found piece at (col, row) on the board. */
   placePiece(pieceId, col, row) {
     const id = Number(pieceId);
-    // Instant feedback, before anything goes to the server: a wrong
-    // cell bounces back to the tray, it is never placed wrong.
+    // v1.1 FREE PLACEMENT: instant feedback, before anything goes to
+    // the server — any cell accepts the piece and it stays there,
+    // wrong or right, and it can be moved again later.
     const res = placePiece(this.state, id, col, row, this._myUserId());
     if (!res.ok) return res;
     this.myPlaced.add(id);
@@ -297,21 +299,28 @@ export class PuzzleQuest {
     return candidates[0];
   }
 
-  /** The table itself: a wooden top with the mini 3x3 puzzle on it. */
+  /** The table itself (v1.1): an ordinary Agora cafe table — the
+   * exact look the room's other tables use (RoomLayout 'cafe_table':
+   * dark-brown circle, fill 0x4a3728, r=30, stroke 0x2b2b33), with
+   * only a SMALL 3x3 puzzle thumbnail on top (9px cells, 27px
+   * across — v1's table was 170x110 with a 72px puzzle). The big
+   * enlarged board only appears when you click the table. Only
+   * CORRECTLY placed cells fill amber on the thumbnail; a wrongly
+   * placed piece stays outlined, like an empty cell, until someone
+   * moves it home — the tracker counts correct cells only. */
   _drawTable() {
     this._clearTable();
     if (!this.enabled || !this._tablePos) return;
     const scene = this.scene;
     const { x, y } = this._tablePos;
     const g = scene.add.graphics();
-    // Table top.
-    g.fillStyle(0xa06a35, 1);
-    g.fillRoundedRect(-85, -55, 170, 110, 12);
-    g.lineStyle(2, 0x5d3a17, 1);
-    g.strokeRoundedRect(-85, -55, 170, 110, 12);
-    // Mini puzzle: 3x3 cells on the tabletop. Placed cells are filled
-    // amber (the picture coming together); empty cells are outlined.
-    const cell = 24;
+    // Same table as every other Agora cafe table.
+    g.fillStyle(0x4a3728, 1);
+    g.fillCircle(0, 0, 30);
+    g.lineStyle(1.5, 0x2b2b33, 1);
+    g.strokeCircle(0, 0, 30);
+    // Small puzzle thumbnail on the tabletop.
+    const cell = 9;
     const ox = -cell * 1.5;
     const oy = -cell * 1.5;
     for (let row = 0; row < 3; row++) {
@@ -319,28 +328,28 @@ export class PuzzleQuest {
         const id = row * 3 + col;
         const cx = ox + col * cell;
         const cy = oy + row * cell;
-        if (this.state.placed[id]) {
+        const pos = this.state.placed[id];
+        const home = pieceHome(id);
+        if (pos && pos.col === home.col && pos.row === home.row) {
           g.fillStyle(0xfbbf24, 1);
           g.fillRect(cx + 1, cy + 1, cell - 2, cell - 2);
-          g.fillStyle(0x92400e, 1);
-          g.fillCircle(cx + cell / 2, cy + cell / 2, 3);
         } else {
-          g.lineStyle(1.5, 0xfff7e6, 0.9);
+          g.lineStyle(1, 0xfff7e6, 0.9);
           g.strokeRect(cx + 1, cy + 1, cell - 2, cell - 2);
         }
       }
     }
     const progress = scene.add.text(
-      0, -72,
+      0, -42,
       this.state.completed
         ? '🧩 Puzzle complete!'
-        : `🧩 Group Puzzle  ${placedCount(this.state)}/${PUZZLE_TOTAL}`,
-      { fontSize: '17px', color: '#1a4971', backgroundColor: 'rgba(255,255,255,0.92)', padding: { x: 8, y: 4 } },
+        : `🧩 ${placedCount(this.state)}/${PUZZLE_TOTAL}`,
+      { fontSize: '12px', color: '#1a4971', backgroundColor: 'rgba(255,255,255,0.92)', padding: { x: 6, y: 3 } },
     );
     progress.setOrigin(0.5, 0.5);
     const container = scene.add.container(x, y, [g, progress]);
     container.setDepth(DEPTH.ACTOR_MIN + Math.round(y));
-    container.setSize(180, 150);
+    container.setSize(70, 84);
     container.setInteractive({ useHandCursor: true });
     container.on('pointerdown', () => this.openBoard());
     this.table = container;

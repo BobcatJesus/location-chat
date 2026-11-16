@@ -4,7 +4,7 @@
 // Pure logic, no Phaser and no Node APIs, so BOTH sides import it:
 //   - server/socket.js (canonical room state, validates every move)
 //   - src/village/PuzzleQuest.js (local fallback + instant feedback
-//     when the socket is down, and client-side wrong-cell checks)
+//     when the socket is down)
 //
 // The picture is the calico cat (Agora's mascot, cat-threequarter.png),
 // cut 3x3. Piece N belongs at cell (col = N % 3, row = floor(N / 3)).
@@ -21,6 +21,9 @@
 
 export const PUZZLE_ID = 'group-puzzle';
 export const PUZZLE_MARKER = 'group-puzzle-v1';
+// v1.1 (`group-puzzle-v1-1-free-place`): free placement — any piece
+// may sit in any cell, wrong spots stay until someone moves them.
+export const PUZZLE_MARKER_V11 = 'group-puzzle-v1-1-free-place';
 export const PUZZLE_SIZE = 3; // 3x3 grid
 export const PUZZLE_TOTAL = 9;
 export const PUZZLE_REWARD_COINS = 5;
@@ -50,15 +53,33 @@ export function createPuzzleState() {
   return {
     round: 1,
     collected: [], // piece ids found by the room, in find order
-    placed: {}, // pieceId -> { col, row } (only correct cells ever land here)
+    // pieceId -> { col, row }. v1.1 FREE PLACEMENT: a piece may sit in
+    // ANY cell, right or wrong — wrong spots stay put until someone
+    // moves the piece. Only the count of CORRECT cells is progress.
+    placed: {},
     contributors: [], // user ids who found at least one piece this round
     completed: false,
     completedAt: 0, // Date.now() when the last piece was placed, 0 if open
   };
 }
 
-/** How many pieces are correctly placed (0..9). */
+/** Is piece `pieceId` in its home cell right now? */
+export function isPieceCorrect(state, pieceId) {
+  const pos = state?.placed?.[pieceId];
+  if (!pos) return false;
+  const home = pieceHome(Number(pieceId));
+  return pos.col === home.col && pos.row === home.row;
+}
+
+/** How many pieces are in their CORRECT cell (0..9). This is the
+ * tracker's number — a wrongly placed piece does not inflate it. */
 export function placedCount(state) {
+  const placed = state?.placed || {};
+  return Object.keys(placed).filter((id) => isPieceCorrect(state, id)).length;
+}
+
+/** How many pieces are on the board at all, right or wrong. */
+export function placedAnyCount(state) {
   return Object.keys(state?.placed || {}).length;
 }
 
@@ -98,10 +119,8 @@ export function parsePuzzleState(raw) {
       if (!Number.isInteger(id) || id < 0 || id >= PUZZLE_TOTAL) continue;
       if (!v || !Number.isInteger(v.col) || !Number.isInteger(v.row)) continue;
       if (v.col < 0 || v.col >= PUZZLE_SIZE || v.row < 0 || v.row >= PUZZLE_SIZE) continue;
-      const home = pieceHome(id);
-      // A placed piece is only ever in its home cell — anything else
-      // is a bad payload, not a move.
-      if (v.col !== home.col || v.row !== home.row) continue;
+      // v1.1: a placed piece may be in ANY in-bounds cell, right or
+      // wrong — wrong spots are real board state, not a bad payload.
       s.placed[id] = { col: v.col, row: v.row };
     }
   }
@@ -133,22 +152,38 @@ export function collectPiece(state, pieceId, userId) {
 
 /**
  * Try to place a found piece at (col, row). Returns { ok, reason? }.
- * A piece only locks in when it is in its HOME cell — a wrong cell
- * bounces back to the tray (reason 'wrong-cell'), it is never
- * placed wrong. A placed piece can't be moved (v1).
+ * v1.1 FREE PLACEMENT: any in-bounds cell accepts the piece and it
+ * STAYS there — wrong spots are allowed, that's the group figuring
+ * it out. A placed piece can always be moved again. If the target
+ * cell is occupied, the two pieces swap (or the occupant goes back
+ * to the tray when the moved piece came from the tray), so no piece
+ * is ever lost and one cell never holds two pieces. Completion only
+ * counts when all 9 are in their home cells at the same time.
  */
 export function placePiece(state, pieceId, col, row, userId) {
   const id = Number(pieceId);
   if (!Number.isInteger(id) || id < 0 || id >= PUZZLE_TOTAL) return { ok: false, reason: 'bad-piece' };
   if (state.completed) return { ok: false, reason: 'already-complete' };
   if (!state.collected.includes(id)) return { ok: false, reason: 'not-found' };
-  if (state.placed[id]) return { ok: false, reason: 'already-placed' };
   if (!Number.isInteger(col) || !Number.isInteger(row)
     || col < 0 || col >= PUZZLE_SIZE || row < 0 || row >= PUZZLE_SIZE) {
     return { ok: false, reason: 'bad-cell' };
   }
-  const home = pieceHome(id);
-  if (col !== home.col || row !== home.row) return { ok: false, reason: 'wrong-cell' };
+  // Who is sitting in the target cell (if anyone but this piece)?
+  let occupant = null;
+  for (const [k, v] of Object.entries(state.placed)) {
+    if (Number(k) !== id && v.col === col && v.row === row) { occupant = Number(k); break; }
+  }
+  const wasPlaced = state.placed[id] ? { ...state.placed[id] } : null;
+  if (occupant != null) {
+    if (wasPlaced) {
+      // Swap: the occupant takes the moved piece's old cell.
+      state.placed[occupant] = { col: wasPlaced.col, row: wasPlaced.row };
+    } else {
+      // Moved piece came from the tray: occupant goes back to the tray.
+      delete state.placed[occupant];
+    }
+  }
   state.placed[id] = { col, row };
   if (userId && !state.contributors.includes(String(userId))) {
     state.contributors.push(String(userId));
@@ -157,7 +192,7 @@ export function placePiece(state, pieceId, col, row, userId) {
     state.completed = true;
     state.completedAt = Date.now();
   }
-  return { ok: true, completed: state.completed };
+  return { ok: true, completed: state.completed, swapped: occupant };
 }
 
 /** Fresh round, same picture: round number goes up, everything else clears. */

@@ -1090,10 +1090,12 @@ io.on('connection', (socket) => {
   });
 
   // GROUP PUZZLE PLACEMENT: one player put a found piece on the board.
-  // The server re-validates (found? right home cell?) — a wrong cell
-  // is rejected and the piece stays in the tray. On the 9th correct
-  // placement the room completes: everyone hears about it, and a
-  // fresh puzzle starts automatically after PUZZLE_RESET_MS.
+  // The server re-validates (found? in-bounds?) — v1.1 FREE PLACEMENT:
+  // any cell accepts the piece and it stays there, wrong or right;
+  // a placed piece can be moved again, and an occupied cell swaps.
+  // The room only completes when all 9 are in their home cells at
+  // the same time: everyone hears about it, and a fresh puzzle
+  // starts automatically after PUZZLE_RESET_MS.
   socket.on('puzzle_place', ({ roomId, pieceId, col, row } = {}) => {
     if (!roomId || roomId !== 'agora-houston') return;
     if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
