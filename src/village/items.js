@@ -351,6 +351,48 @@ export function clearPuzzlePieces(inv = getInventory()) {
   return dropped;
 }
 
+// --- puzzle v1.3 (`sq-puzzle-v1-3`) ------------------------------------------
+// The server's puzzle is in-memory and resets to round 1 on every
+// restart, so a carried piece can go stale: the server no longer
+// knows it, the board tray (server-driven) shows nothing, and the
+// piece can never be placed. These helpers keep the pocket honest.
+
+/** Drop carried pieces the server does NOT know for the current
+ * round. Returns how many were dropped. Never drops pieces the
+ * server DOES know. Used by the applyState reconcile backstop
+ * (PuzzleQuest.js) — the server is canonical, so a piece missing
+ * from its `collected` list is stale. */
+export function dropStalePuzzlePieces(knownCollectedIds, inv = getInventory()) {
+  const known = new Set((knownCollectedIds || []).map((n) => Number(n)));
+  const before = inv.items.length;
+  inv.items = inv.items.filter(
+    (it) => !(it.type === ITEM_TYPES.PUZZLE_PIECE && !known.has(Number(it.pieceId))),
+  );
+  const dropped = before - inv.items.length;
+  if (dropped > 0) saveInventory(inv);
+  return dropped;
+}
+
+// Puzzle pieces belong to one browser session. A fresh tab has no
+// sessionStorage marker, so this is a new session (tab closed =
+// logged out, or a second tab) — drop pieces carried over from the
+// previous session. A refresh in the SAME tab keeps the marker, so
+// legitimately-found pieces survive a reload and only the applyState
+// reconcile drops stale ones. Returns how many were dropped
+// (0 when the marker was already set). Idempotent: safe to call on
+// every app boot, including dev double-mounts.
+const PUZZLE_SESSION_KEY = 'sidequest-puzzle-session-v1';
+export function clearPuzzlePiecesForNewSession() {
+  try {
+    if (typeof sessionStorage === 'undefined') return 0;
+    if (sessionStorage.getItem(PUZZLE_SESSION_KEY)) return 0;
+    sessionStorage.setItem(PUZZLE_SESSION_KEY, '1');
+    return clearPuzzlePieces();
+  } catch {
+    return 0;
+  }
+}
+
 // --- bag upgrade ------------------------------------------------------------
 /**
  * Buy the bag (20 coins, button inside the inventory popup). The bag

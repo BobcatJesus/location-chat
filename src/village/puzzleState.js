@@ -40,6 +40,13 @@ export const PUZZLE_MARKER_V11 = 'group-puzzle-v1-1-free-place';
 // and one piece (id 8) turns up at random in a coffee you buy
 // (PUZZLE_COFFEE_CHANCE per coffee).
 export const PUZZLE_MARKER_V12 = 'group-puzzle-v1-2-hidden-search';
+// v1.3 (`sq-puzzle-v1-3`): carried pieces disappear the moment you
+// leave the venue or log out (user decision, 2026-11-16), and the
+// pocket reconciles against the server on every state update, so a
+// piece the server no longer knows (e.g. found before a server
+// restart reset the round to 1) can never strand the tray empty while
+// the pocket still lists it.
+export const PUZZLE_MARKER_V13 = 'sq-puzzle-v1-3';
 // Clicks on a hiding piece of furniture needed to reveal its piece.
 // Deliberately more than one, so finding a piece takes a little
 // hunting — and so one player cannot sweep all 9 at a glance.

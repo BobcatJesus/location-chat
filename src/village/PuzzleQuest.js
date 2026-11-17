@@ -51,6 +51,7 @@
 import { DEPTH } from './depth.js';
 import {
   PUZZLE_MARKER_V12,
+  PUZZLE_MARKER_V13,
   PUZZLE_TOTAL,
   PUZZLE_REWARD_COINS,
   PUZZLE_SEARCH_CLICKS,
@@ -75,6 +76,7 @@ import {
   removePuzzlePiece,
   carriedPuzzlePieces,
   clearPuzzlePieces,
+  dropStalePuzzlePieces,
 } from './items.js';
 
 const AGORA_ROOM_ID = 'agora-houston';
@@ -113,6 +115,8 @@ export class PuzzleQuest {
     this.scene = scene;
     // group-puzzle-v1-2-hidden-search — marker for the v1.2 landing check.
     this.marker = PUZZLE_MARKER_V12;
+    // sq-puzzle-v1-3 — live reference so the v1.3 marker survives minification.
+    this.markerV13 = PUZZLE_MARKER_V13;
     this.state = createPuzzleState();
     this.myFound = new Set(); // piece ids *I* found this round
     this.myPlaced = new Set(); // piece ids *I* placed this round
@@ -230,6 +234,33 @@ export class PuzzleQuest {
       this._pendingFind.clear();
       // Carried pieces belong to the old round — free those slots.
       try { clearPuzzlePieces(); } catch {}
+    }
+    // v1.3 (`sq-puzzle-v1-3`) reconcile backstop: the pocket must
+    // never hold pieces the server doesn't know for THIS round. A
+    // server restart resets the round to 1 with nothing collected,
+    // and the round number alone can't detect that (1 vs 1) — so
+    // drop carried pieces missing from the server's collected list.
+    // Never drops pieces the server DOES know. Only runs on a real
+    // server payload (a `collected` array on the wire); a bare or
+    // empty payload skips it, so an offline fallback can never nuke
+    // legit pieces. One toast, only when something was actually
+    // dropped.
+    if (Array.isArray(payload?.collected)) {
+      let dropped = 0;
+      try { dropped = dropStalePuzzlePieces(next.collected || []); } catch {}
+      // My own find/place records are round-scoped too — prune them
+      // to what the server knows, so "You found X pieces this
+      // round" and the completion pay can't count ghosts.
+      const known = new Set((next.collected || []).map(Number));
+      for (const id of [...this.myFound]) if (!known.has(id)) this.myFound.delete(id);
+      for (const id of [...this.myPlaced]) if (!known.has(id)) this.myPlaced.delete(id);
+      if (dropped > 0) {
+        try {
+          this.scene?.onSystemNotice?.(
+            '🧩 Your old puzzle pieces from an earlier round expired.',
+          );
+        } catch {}
+      }
     }
     this.state = next;
     this._drawTable();

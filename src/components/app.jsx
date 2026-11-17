@@ -10,6 +10,7 @@ import { deriveLocationPalette } from '../utils/locationPalette';
 import { signOut } from '../lib/authClient';
 import { getRoomAccessRadius, isOpenAccessRoom } from '../accessPolicy';
 import { homeRoomIdFor, findHomeRoom, homeCreateState, HOME_ROOM_RADIUS } from '../village/homeStorage.js';
+import { clearPuzzlePieces, clearPuzzlePiecesForNewSession } from '../village/items.js';
 
 const VillageCanvas = lazy(() => import('../village/VillageCanvas.jsx'));
 const MapView = lazy(() => import('./MapView.jsx'));
@@ -835,6 +836,9 @@ function App() {
     }
     localStorage.removeItem('sidequest_profile');
     localStorage.removeItem('sidequest_signup_draft_v1');
+    // Shared Puzzle Quest v1.3 (`sq-puzzle-v1-3`): puzzle pieces
+    // disappear as soon as you log out (user decision, 2026-11-16).
+    try { clearPuzzlePieces(); } catch {}
     setIsLoggedIn(false);
     setProfile(null);
     setShowLanding(true);
@@ -1161,6 +1165,36 @@ function App() {
       .catch(() => { if (!cancelled) setVenuePermissions({ canManage: false }); });
     return () => { cancelled = true; };
   }, [activeScene, activeRoom?.id, profile, SOCKET_SERVER_URL]);
+
+  // Shared Puzzle Quest v1.3 (`sq-puzzle-v1-3`): puzzle pieces belong
+  // to one browser session. A fresh tab has no sessionStorage marker,
+  // so this is a new session (tab closed = logged out, or a second
+  // tab) — drop pieces carried over from the previous session. A
+  // refresh in the SAME tab keeps the marker, so legit pieces survive
+  // a reload and only the applyState reconcile drops stale ones.
+  // Runs once, on app boot, before any room is entered.
+  useEffect(() => {
+    try { clearPuzzlePiecesForNewSession(); } catch {}
+  }, []);
+
+  // Shared Puzzle Quest v1.3 (`sq-puzzle-v1-3`): puzzle pieces
+  // disappear the moment you leave the venue (user decision,
+  // 2026-11-16). Tracked here, at the room-change path — NOT in the
+  // scene's destroy(): the scene is also destroyed when the camera
+  // mode toggles or an approved layout lands mid-session, and that
+  // must NOT wipe pieces. Floor switches never reach this effect
+  // (same room id). Leaving to the map, entering another room, and
+  // going home all funnel through activeScene / osmRoom, so one
+  // watch covers them.
+  const prevPuzzleRoomRef = useRef(null);
+  useEffect(() => {
+    const inRoom = activeScene === 'room' ? (osmRoom?.id || activeRoom?.id || null) : null;
+    const prev = prevPuzzleRoomRef.current;
+    prevPuzzleRoomRef.current = inRoom;
+    if (prev === 'agora-houston' && inRoom !== 'agora-houston') {
+      try { clearPuzzlePieces(); } catch {}
+    }
+  }, [activeScene, osmRoom?.id, activeRoom?.id]);
 
   const openCreateEvent = () => {
     const start = new Date(Date.now() + 60 * 60 * 1000);
