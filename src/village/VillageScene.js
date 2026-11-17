@@ -4,6 +4,7 @@ import { DuckPond } from './DuckPond.js';
 import { CafeCat } from './CafeCat.js';
 import { HiddenKey } from './HiddenKey.js';
 import { PuzzleQuest } from './PuzzleQuest.js';
+import { TrimTreeQuest } from './TrimTreeQuest.js';
 import { QuestManager } from './QuestManager.js';
 import { ItemsSystem } from './ItemsSystem.js';
 import { NoticeBoardSystem } from './NoticeBoardSystem.js';
@@ -635,6 +636,10 @@ export class VillageScene extends Phaser.Scene {
     // elsewhere): the puzzle table + hidden pieces in the room.
     this.puzzleQuest = new PuzzleQuest(this);
     this.puzzleQuest.refresh();
+    // Trim the Tree (Agora only — TrimTreeQuest itself no-ops
+    // elsewhere): the big Christmas tree(s) + the free ornament box.
+    this.trimTreeQuest = new TrimTreeQuest(this);
+    this.trimTreeQuest.refresh();
     // Items + inventory v1 (Agora hidden search; ground litter also
     // by any pond): pocket/bag, trash, flyers, notes, diary, food,
     // cigarette box. Puzzle pieces live in this inventory too.
@@ -686,6 +691,14 @@ export class VillageScene extends Phaser.Scene {
 
     // Group puzzle interaction (Agora): piece on the floor / table.
     this.puzzlePrompt = this.add.text(0, 0, '🧩 Puzzle [E]', {
+      fontSize: '15px',
+      color: '#7c2d12',
+      backgroundColor: 'rgba(255,255,255,0.85)',
+      padding: { x: 8, y: 4 },
+    }).setOrigin(0.5, 1).setDepth(DEPTH.UI).setAlpha(0);
+
+    // Trim the Tree interaction (Agora): ornament box / tree.
+    this.treePrompt = this.add.text(0, 0, '🎄 Take an ornament [E]', {
       fontSize: '15px',
       color: '#7c2d12',
       backgroundColor: 'rgba(255,255,255,0.85)',
@@ -870,6 +883,12 @@ export class VillageScene extends Phaser.Scene {
           this.onSystemNotice?.(`🎒 ${INVENTORY_FULL_MESSAGE}`);
         }
       } catch {}
+      // Trim the Tree v1: a click on the ornament box takes one
+      // (free), a click on the active tree hangs the one you are
+      // carrying. Tap-to-move still happens below, so clicking the
+      // box or the tree both walks you there and acts on it.
+      try { this.trimTreeQuest?.boxTapAt(ptr.worldX, ptr.worldY); } catch {}
+      try { this.trimTreeQuest?.treeTapAt(ptr.worldX, ptr.worldY); } catch {}
       // Items + inventory v1: the same click can also count toward a
       // hidden item (trash can, Table 4, plant, couch, portrait) or
       // pick up visible ground litter you are standing next to.
@@ -1207,6 +1226,12 @@ export class VillageScene extends Phaser.Scene {
     } else if (kind === 'puzzle-table') {
       // Group puzzle quest: open the zoomed-in board.
       this.puzzleQuest?.openBoard();
+    } else if (kind === 'tree-box') {
+      // Trim the Tree v1: take a free ornament from the box.
+      this.trimTreeQuest?.takeOrnament();
+    } else if (kind === 'trim-tree') {
+      // Trim the Tree v1: hang the ornament I am carrying.
+      this.trimTreeQuest?.hangOrnament();
     } else if (kind === 'notice-board') {
       // Notice board v1: open the pinned-flyers board.
       this.noticeBoardSystem?.openBoard();
@@ -1241,6 +1266,8 @@ export class VillageScene extends Phaser.Scene {
     if (this.cafeCat?.nearestCat(this.player.gx, this.player.gy)) return 'cat';
     if (this.cafeCat?.nearestSleepingCat(this.player.gx, this.player.gy)) return 'cat-asleep';
     if (this.puzzleQuest?.nearestTable(this.player.gx, this.player.gy)) return 'puzzle-table';
+    if (this.trimTreeQuest?.nearestBox(this.player.gx, this.player.gy)) return 'tree-box';
+    if (this.trimTreeQuest?.nearestTree(this.player.gx, this.player.gy)) return 'trim-tree';
     if (this.noticeBoardSystem?.nearestBoard(this.player.gx, this.player.gy)) return 'notice-board';
     if (this.homeStorageSystem?.nearestChest(this.player.gx, this.player.gy)) return 'storage-chest';
     if (this.homeStorageSystem?.nearestFloorItem(this.player.gx, this.player.gy)) return 'floor-item';
@@ -2078,6 +2105,11 @@ export class VillageScene extends Phaser.Scene {
       this.puzzleQuest?.applyState(payload);
     });
 
+    // Trim the Tree state (Agora, shared for the whole room).
+    socket.on('tree_state', (payload = {}) => {
+      this.trimTreeQuest?.applyState(payload);
+    });
+
     // Notice board state (shared for the whole room — one board
     // per room, in-memory on the server like the puzzle).
     socket.on('board_state', (payload = {}) => {
@@ -2095,6 +2127,13 @@ export class VillageScene extends Phaser.Scene {
     // lives in PuzzleQuest.applyState, so it can only fire once.
     socket.on('puzzle_completed', () => {
       try { socket.emit('get_puzzle', { roomId: this.roomId }); } catch {}
+    });
+
+    // A tree finished trimming — re-ask for the canonical state
+    // (same missed-broadcast cover as the puzzle; completion
+    // handling lives in TrimTreeQuest.applyState).
+    socket.on('tree_completed', () => {
+      try { socket.emit('get_tree', { roomId: this.roomId }); } catch {}
     });
 
     // The server's canonical day/night phase (outdoor venues render
@@ -2700,6 +2739,7 @@ export class VillageScene extends Phaser.Scene {
     this.cafeCat?.update(delta);
     this.hiddenKey?.update(delta);
     this.puzzleQuest?.update(delta);
+    this.trimTreeQuest?.update(delta);
     this.itemsSystem?.update(delta);
     this.questManager?.update(delta);
     this.halloween?.update(delta);
@@ -2735,6 +2775,22 @@ export class VillageScene extends Phaser.Scene {
       this.puzzlePrompt.setText('🧩 Puzzle table [E]').setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
     } else {
       this.puzzlePrompt.setAlpha(0);
+    }
+
+    // Trim the Tree: prompt near the ornament box (take one) or near
+    // the active tree (hang the one you are carrying — or grab one
+    // from the box first). The hidden first-only rule is never
+    // hinted at here; the prompt only ever says what to do next.
+    const nearBox = this.trimTreeQuest?.nearestBox(this.player.gx, this.player.gy);
+    const nearTree = this.trimTreeQuest?.nearestTree(this.player.gx, this.player.gy);
+    if (nearBox && !nearPond && !nearCat && !nearTable) {
+      this.treePrompt.setText('🎄 Take an ornament [E]').setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
+    } else if (nearTree && !nearPond && !nearCat && !nearTable) {
+      this.treePrompt.setText(
+        this.trimTreeQuest?.carrying ? '🎄 Hang the ornament [E]' : '🎄 Grab an ornament from the box first',
+      ).setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
+    } else {
+      this.treePrompt.setAlpha(0);
     }
 
     // Bookshelf: prompt near interactable shelves (duck prompt takes priority).
@@ -3034,6 +3090,8 @@ export class VillageScene extends Phaser.Scene {
     this.hiddenKey = null;
     this.puzzleQuest?.destroy();
     this.puzzleQuest = null;
+    this.trimTreeQuest?.destroy();
+    this.trimTreeQuest = null;
     this.itemsSystem?.destroy();
     this.itemsSystem = null;
     this.noticeBoardSystem?.destroy();
@@ -3044,6 +3102,7 @@ export class VillageScene extends Phaser.Scene {
     this.questManager = null;
     this.catPrompt?.destroy();
     this.puzzlePrompt?.destroy();
+    this.treePrompt?.destroy();
     this.halloween?.destroy();
     this.halloween = null;
     this.dayNight?.destroy();
@@ -3082,6 +3141,7 @@ export class VillageScene extends Phaser.Scene {
     this.questManager?.refresh();
     this.hiddenKey?.refresh();
     this.puzzleQuest?.refresh();
+    this.trimTreeQuest?.refresh();
     this.itemsSystem?.refresh();
     // Notice board everywhere v1: re-resolve the board for this
     // floor (upper floors have no board — _board goes null, so the

@@ -68,6 +68,7 @@ import {
   BADGES_MARKER_V1,
   BADGES_BACKFILL_MARKER_V1_1,
   GROUP_PUZZLE_BADGE,
+  TRIM_TREE_BADGE,
   badgeListFrom,
   completionsFromSaved,
   mergeBadgeMaps,
@@ -379,6 +380,31 @@ export class QuestManager {
     return true;
   }
 
+  /** Record the Trim the Tree badge: I helped finish a Christmas
+   *  tree in Agora (TrimTreeQuest calls this from _onTreeCompleted).
+   *  Once ever — finishing the second tree does not re-earn it, and
+   *  the server awards the same badge to every contributor, so both
+   *  paths converge on one entry. */
+  recordTreeCompletion() {
+    const entry = this.saved[TRIM_TREE_BADGE.id] || { count: 0, completed: false };
+    if (entry.completed) return false;
+    entry.completed = true;
+    entry.count = 1;
+    entry.completedAt = Date.now();
+    this.saved[TRIM_TREE_BADGE.id] = entry;
+    saveSaved(this.saved);
+    this._bumpHud();
+    return true;
+  }
+
+  /** Public banner for other systems (e.g. TrimTreeQuest): show the
+   *  big top-centre quest banner for a quest-like object
+   *  { id, emoji, title, description, rewardCoins }. Same once-per-
+   *  session guard as the room quests. */
+  showQuestBannerFor(quest) {
+    try { this._showQuestBanner(quest); } catch {}
+  }
+
   /** Merge the server's badge record for me (its reply to
    *  badges_sync / get_badges) into my list. Display-only: this
    *  never pays coins — quest completion / rewards still go through
@@ -657,6 +683,19 @@ export class QuestManager {
         puzzle.completed
           ? `🧩 Group Puzzle  ${puzzle.placed}/${puzzle.total} — complete!`
           : `🧩 Group Puzzle  ${puzzle.placed}/${puzzle.total}`,
+      );
+    }
+    // Trim the Tree v1 (`sq-trim-tree-v1`): the shared Christmas
+    // trees ride along under the room quest too — "🎄 Trim the Tree
+    // (Tree 1) X/25". Only the ACTIVE tree's count shows (the hidden
+    // first-only rule is never explained here — the tracker just
+    // shows X/25). Both trees done reads as complete.
+    const tree = this.scene?.trimTreeQuest?.getProgress?.();
+    if (tree) {
+      room.push(
+        tree.allDone
+          ? '🎄 Trim the Tree — both trees complete! 🎉'
+          : `🎄 Trim the Tree (Tree ${tree.tree})  ${tree.counted}/${tree.total}`,
       );
     }
     for (const q of this.anywhereQuests()) {

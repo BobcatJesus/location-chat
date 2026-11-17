@@ -30,6 +30,12 @@ import {
   serializePuzzleState,
 } from '../src/village/puzzleState.js';
 import {
+  TREE_MARKER_V1,
+  createTreeState,
+  hangOrnament,
+  serializeTreeState,
+} from '../src/village/treeState.js';
+import {
   NOTICE_BOARD_MAX_FLYERS,
   createNoticeBoardState,
   pinFlyer,
@@ -422,7 +428,7 @@ const QUEST_DEFS = {
 // completions can't be recovered: no persistent record of past
 // puzzle contributors exists anywhere (the puzzle state resets
 // every round).
-const BADGE_QUEST_IDS = new Set([...Object.keys(QUEST_DEFS), 'group-puzzle']);
+const BADGE_QUEST_IDS = new Set([...Object.keys(QUEST_DEFS), 'group-puzzle', 'trim-tree']);
 const userBadges = {};
 function badgeMapFor(userId) {
   if (!userBadges[userId]) userBadges[userId] = {};
@@ -544,6 +550,21 @@ const puzzleState = {};
 function puzzleRoom(roomId) {
   if (!puzzleState[roomId]) puzzleState[roomId] = { state: createPuzzleState(), resetTimer: null };
   return puzzleState[roomId];
+}
+// Trim the Tree (Trim the Tree v1, `sq-trim-tree-v1`): per-room
+// state treeRooms[roomId] = { state }. Agora only. In-memory like
+// the puzzle — a server restart wipes the trees (tree 1 bare again,
+// tree 2 gone until tree 1 finishes again). Unlike the puzzle there
+// is NO auto-reset: a finished tree stays finished (it is decor),
+// and tree 2 appears the moment tree 1 finishes. The server
+// enforces the hidden first-only rule (hangOrnament counts only a
+// player's first hang per tree), room membership, and rate limits;
+// it does not verify the box take or the walk to the tree — same
+// trust level as the puzzle's hidden-search clicks.
+const treeRooms = {};
+function treeRoom(roomId) {
+  if (!treeRooms[roomId]) treeRooms[roomId] = { state: createTreeState() };
+  return treeRooms[roomId];
 }
 // Notice board (Notice Board v1, `sq-notice-board-v1`): per-room
 // pinned flyers, Agora only. In-memory like the puzzle — a server
@@ -1483,6 +1504,51 @@ io.on('connection', (socket) => {
     if (!roomId || roomId !== 'agora-houston') return;
     if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
     socket.emit('puzzle_state', serializePuzzleState(puzzleRoom(roomId).state));
+  });
+
+  // TRIM THE TREE (Trim the Tree v1, `sq-trim-tree-v1` — Agora
+  // only). One player hung an ornament on the ACTIVE tree: the
+  // server enforces the hidden first-only rule (only a player's
+  // first hang per tree counts toward the 25 — later hangs still
+  // succeed and render as extras, they just don't count), then
+  // broadcasts the new state to the room. When the 25th counted
+  // ornament lands, the tree finishes: everyone hears about it,
+  // every counted contributor earns the Trim the Tree badge (once
+  // ever), and tree 2 appears in the same room (or the quest ends
+  // here, if tree 2 just finished — max 2 trees per venue).
+  socket.on('tree_hang', ({ roomId } = {}) => {
+    if (!roomId || roomId !== 'agora-houston') return;
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const userId = socketUserMap[socket.id] || socket.id;
+    const rate = checkRateLimit(userId);
+    if (!rate.allowed) return;
+    const room = treeRoom(roomId);
+    const res = hangOrnament(room.state, userId);
+    if (!res.ok) return;
+    io.to(roomId).emit('tree_state', serializeTreeState(room.state));
+    if (res.treeFinished) {
+      io.to(roomId).emit('tree_completed', {
+        tree: res.tree,
+        contributors: [...res.contributors],
+      });
+      // Quest badges v1: every counted contributor earns the Trim
+      // the Tree badge, once ever — tell the room about each of them.
+      for (const contributorId of [...res.contributors]) {
+        if (awardBadge(contributorId, 'trim-tree', Date.now())) {
+          const sid = socketIdForUser(contributorId);
+          if (sid) {
+            io.to(roomId).emit('player_badges', { socketId: sid, userId: contributorId, badges: badgesArrayFor(contributorId) });
+          }
+        }
+      }
+    }
+  });
+
+  // TRIM THE TREE STATE: the room's trees, sent when you join (or ask).
+  socket.on('get_tree', ({ roomId } = {}) => {
+    if (!roomId || roomId !== 'agora-houston') return;
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    socket.emit('tree_state', serializeTreeState(treeRoom(roomId).state));
   });
 
   // NOTICE BOARD (Notice Board v1, `sq-notice-board-v1`; boards in

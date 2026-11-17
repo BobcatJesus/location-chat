@@ -55,10 +55,22 @@ export const GROUP_PUZZLE_BADGE = {
   emoji: '🧩',
 };
 
-/** Every quest id that can earn a badge (solo quests + group puzzle). */
+/** The Trim the Tree badge — not a QuestManager quest either (the
+ *  tree is a shared group quest like the puzzle, so its def lives
+ *  here). id must match what TrimTreeQuest and the server use
+ *  ('trim-tree'). Earned once ever for helping finish either tree. */
+export const TRIM_TREE_BADGE = {
+  id: 'trim-tree',
+  title: 'Trim the Tree',
+  description: 'Help trim a Christmas tree in Agora.',
+  emoji: '🎄',
+};
+
+/** Every quest id that can earn a badge (solo quests + group puzzle + trim the tree). */
 export const BADGE_QUEST_IDS = [
   ...QUESTS.map((q) => q.id),
   GROUP_PUZZLE_BADGE.id,
+  TRIM_TREE_BADGE.id,
 ];
 
 const BADGE_ID_SET = new Set(BADGE_QUEST_IDS);
@@ -73,6 +85,7 @@ export function isBadgeQuestId(questId) {
  *  null for an unknown id. */
 export function getBadgeDef(questId) {
   if (questId === GROUP_PUZZLE_BADGE.id) return { ...GROUP_PUZZLE_BADGE };
+  if (questId === TRIM_TREE_BADGE.id) return { ...TRIM_TREE_BADGE };
   const q = getQuest(questId);
   if (!q) return null;
   return {

@@ -6,6 +6,7 @@ import {
   BADGES_MARKER_V1,
   BADGES_BACKFILL_MARKER_V1_1,
   GROUP_PUZZLE_BADGE,
+  TRIM_TREE_BADGE,
   BADGE_QUEST_IDS,
   isBadgeQuestId,
   getBadgeDef,
@@ -35,12 +36,19 @@ describe('badge defs', () => {
     expect(BADGE_QUEST_IDS).toContain('wanderer');
     expect(BADGE_QUEST_IDS).toContain('bartenders-errand');
     expect(BADGE_QUEST_IDS).toContain('group-puzzle');
+    expect(BADGE_QUEST_IDS).toContain('trim-tree');
   });
 
   it('resolves the group puzzle def (not a QuestManager quest)', () => {
     const def = getBadgeDef('group-puzzle');
     expect(def).toMatchObject({ id: 'group-puzzle', emoji: '🧩' });
     expect(def.title).toBe(GROUP_PUZZLE_BADGE.title);
+  });
+
+  it('resolves the trim the tree def (not a QuestManager quest)', () => {
+    const def = getBadgeDef('trim-tree');
+    expect(def).toMatchObject({ id: 'trim-tree', emoji: '🎄' });
+    expect(def.title).toBe(TRIM_TREE_BADGE.title);
   });
 
   it('resolves a solo quest def from quests.js', () => {
