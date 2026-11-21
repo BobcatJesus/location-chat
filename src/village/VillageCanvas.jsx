@@ -953,6 +953,8 @@ export default function VillageCanvas({ room, profile, onLeave, onGoHome = null,
         alignItems: 'center',
         paddingBottom: 4,
       }}>
+        {/* Leave rename v1 (sq-leave-rename-v1): the button says what it
+            does now — "Return to map". Same onLeave, same spot, same style. */}
         <button
           onClick={onLeave}
           style={{
@@ -967,7 +969,7 @@ export default function VillageCanvas({ room, profile, onLeave, onGoHome = null,
             whiteSpace: 'nowrap',
           }}
         >
-          ← Leave
+          ← Return to map
         </button>
         {/* Your Place v1: 🏠 Home goes to your own home room
             (home-<owner>). Shown whenever the app can take you there
