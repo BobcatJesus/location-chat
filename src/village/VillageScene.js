@@ -8,6 +8,7 @@ import { TrimTreeQuest } from './TrimTreeQuest.js';
 import { QuestManager } from './QuestManager.js';
 import { ItemsSystem } from './ItemsSystem.js';
 import { NoticeBoardSystem } from './NoticeBoardSystem.js';
+import { DecorSystem } from './DecorSystem.js';
 import { HomeStorageSystem } from './HomeStorageSystem.js';
 import { hasBag as inventoryHasBag, INVENTORY_FULL_MESSAGE } from './items.js';
 import { badgeListFrom, normalizeBadgeMap, formatBadgeDate } from './badges.js';
@@ -459,6 +460,9 @@ export class VillageScene extends Phaser.Scene {
     this.explicitLayout = d.explicitLayout ?? null;
     this.profile    = d.profile    ?? {};
     this.canManageVenue = Boolean(d.canManageVenue);
+    // Decoration Shop v1: moderators can take down ANY placed
+    // decoration (the scene needs this for the pickup check).
+    this.isModerator = Boolean(d.isModerator);
     this.userLocation = d.userLocation ?? null;
     this.onLeave    = d.onLeave    ?? (() => {});
     this.onOpenShelf = d.onOpenShelf ?? (() => {});
@@ -468,6 +472,8 @@ export class VillageScene extends Phaser.Scene {
     this.onOpenNoticeBoard = d.onOpenNoticeBoard ?? (() => {});
     // Your Place v1: opens the storage chest panel (DOM).
     this.onOpenHomeStorage = d.onOpenHomeStorage ?? (() => {});
+    // Decoration Shop v1: opens the coffee-bar shop panel (DOM).
+    this.onOpenDecorShop = d.onOpenDecorShop ?? (() => {});
     // Quest badges v1: opens another player's badges panel (DOM).
     this.onOpenPlayerBadges = d.onOpenPlayerBadges ?? (() => {});
     this.preferredCameraMode = ['ultra-close-follow', 'close-follow', 'follow', 'wide-follow', 'overview'].includes(d.preferredCameraMode)
@@ -651,6 +657,12 @@ export class VillageScene extends Phaser.Scene {
     // Each room's board is separate.
     this.noticeBoardSystem = new NoticeBoardSystem(this);
     this.noticeBoardSystem.refresh();
+    // Decoration Shop v1 (`sq-dec-shop-v1`): buy decorations at the
+    // Agora bar, place them anywhere — server-synced, everyone in
+    // the room sees them. Placing works in every room; the shop
+    // itself is Agora only (DecorSystem enforces that).
+    this.decorSystem = new DecorSystem(this);
+    this.decorSystem.refresh();
     // Your Place v1 (`sq-your-place-v1`): the storage chest in your
     // own home room — Store / Take / Unload All. Home-room only;
     // the system itself no-ops everywhere else.
@@ -699,6 +711,14 @@ export class VillageScene extends Phaser.Scene {
 
     // Trim the Tree interaction (Agora): ornament box / tree.
     this.treePrompt = this.add.text(0, 0, '🎄 Take an ornament [E]', {
+      fontSize: '15px',
+      color: '#7c2d12',
+      backgroundColor: 'rgba(255,255,255,0.85)',
+      padding: { x: 8, y: 4 },
+    }).setOrigin(0.5, 1).setDepth(DEPTH.UI).setAlpha(0);
+
+    // Decoration Shop v1: prompt near a placed decoration (pick it up).
+    this.decorPrompt = this.add.text(0, 0, '🎄 Decoration [E]', {
       fontSize: '15px',
       color: '#7c2d12',
       backgroundColor: 'rgba(255,255,255,0.85)',
@@ -927,6 +947,11 @@ export class VillageScene extends Phaser.Scene {
           this.onSystemNotice?.(`🎒 ${INVENTORY_FULL_MESSAGE}`);
         }
       } catch {}
+      // Decoration Shop v1: a click on a placed decoration picks
+      // it back up (if you are standing close enough and it is
+      // yours — or you are a moderator). Tap-to-move still happens
+      // below, as before.
+      try { this.decorSystem?.decorTapAt(ptr.worldX, ptr.worldY); } catch {}
       this.target = target;
       this.tapDot.setPosition(ptr.worldX, ptr.worldY).setAlpha(0.7);
       this.tweens.add({ targets: this.tapDot, alpha: 0, duration: 400 });
@@ -1246,6 +1271,11 @@ export class VillageScene extends Phaser.Scene {
       if (res && res.reason === 'inventory-full') {
         this.onSystemNotice?.(`🎒 ${INVENTORY_FULL_MESSAGE}`);
       }
+    } else if (kind === 'decoration') {
+      // Decoration Shop v1: pick up the nearest placed decoration
+      // (yours comes back to your pocket; a moderator can take down
+      // anyone's; someone else's just says whose it is).
+      this.decorSystem?.pickupNearest();
     } else if (kind === 'bar') {
       this._tryBuyDrink();
     }
@@ -1271,6 +1301,7 @@ export class VillageScene extends Phaser.Scene {
     if (this.noticeBoardSystem?.nearestBoard(this.player.gx, this.player.gy)) return 'notice-board';
     if (this.homeStorageSystem?.nearestChest(this.player.gx, this.player.gy)) return 'storage-chest';
     if (this.homeStorageSystem?.nearestFloorItem(this.player.gx, this.player.gy)) return 'floor-item';
+    if (this.decorSystem?.nearestDecoration(this.player.gx, this.player.gy)) return 'decoration';
     if (this._nearestShelf()) return 'shelf';
     if (this._nearestJukebox()) return 'jukebox';
     if (this._nearestBar()) return 'bar';
@@ -1324,6 +1355,9 @@ export class VillageScene extends Phaser.Scene {
   // Order a drink at the bar counter. The bartender NPC serves it:
   // coins are charged when the drink is handed over, not when ordered.
   // Rooms with a bar counter but no bartender keep the old instant buy.
+  // Agora is the exception: the coffee bar there opens the shop
+  // panel (Decoration Shop v1) — coffee OR a decoration — instead
+  // of buying a coffee on the spot.
   async _tryBuyDrink() {
     if (this._drinkCooldownMs > 0) return;
     const avatar = this.player?.avatar;
@@ -1340,20 +1374,43 @@ export class VillageScene extends Phaser.Scene {
       }
       return;
     }
+    // Agora coffee bar: the shop panel offers coffee or a
+    // decoration — no instant buy from E anymore.
+    if (this.roomId === 'agora-houston') {
+      this.onOpenDecorShop?.();
+      return;
+    }
+    await this._buyCoffeeInstant();
+  }
+
+  /** The shop panel's coffee button: the same instant buy E at the
+   * bar used to do in Agora. Returns { ok, reason? } for the panel. */
+  async buyCoffeeFromShop() {
+    return this._buyCoffeeInstant();
+  }
+
+  /** Instant coffee/drink buy at a bar with no bartender on shift:
+   * -2 coins, drink animation, puzzle coffee roll in Agora.
+   * Returns { ok, reason? } — 'not-enough-coins' flashes the
+   * "need coins" prompt instead. */
+  async _buyCoffeeInstant() {
+    if (this._drinkCooldownMs > 0) return { ok: false, reason: 'cooldown' };
+    const avatar = this.player?.avatar;
+    if (!avatar || typeof avatar.playDrink !== 'function') return { ok: false, reason: 'error' };
     let wallet;
     try {
       wallet = await import('./CoinWallet.js');
     } catch {
-      return;
+      return { ok: false, reason: 'error' };
     }
     if (wallet.getCoins() < wallet.BAR_DRINK_COST) {
       this._drinkBrokeUntil = this.time.now + 1300;
-      return;
+      return { ok: false, reason: 'not-enough-coins' };
     }
     // No bartender on shift here: instant buy, as before.
     if (!wallet.spendCoins(wallet.BAR_DRINK_COST)) {
       this._drinkBrokeUntil = this.time.now + 1300;
-      return;
+      return { ok: false, reason: 'not-enough-coins' };
     }
     this._drinkCooldownMs = 3000;
     this._drinkAnimUntil = this.time.now + 2600;
@@ -1377,6 +1434,7 @@ export class VillageScene extends Phaser.Scene {
       } catch {}
     }
     this.socket?.emit('buy_drink', { roomId: this.roomId });
+    return { ok: true };
   }
 
   // Index of the player's remembered usual in BEER_MENU (0 if none yet).
@@ -2116,6 +2174,12 @@ export class VillageScene extends Phaser.Scene {
       this.noticeBoardSystem?.applyState(payload);
     });
 
+    // Placed decorations (shared for the whole room — one set per
+    // room, in-memory on the server like the notice board).
+    socket.on('decor_state', (payload = {}) => {
+      this.decorSystem?.applyState(payload);
+    });
+
     // Your Place state (per player — only your own stored items,
     // in-memory on the server like badges).
     socket.on('home_state', (payload = {}) => {
@@ -2801,6 +2865,19 @@ export class VillageScene extends Phaser.Scene {
       this.shelfPrompt.setAlpha(0);
     }
 
+    // Decoration Shop v1: prompt near a placed decoration (pick it
+    // up if it is yours; someone else's just says whose it is).
+    const nearDecor = this.decorSystem?.nearestDecoration(this.player.gx, this.player.gy);
+    if (nearDecor && !nearPond && !nearCat && !nearTable && !nearBox && !nearTree) {
+      this.decorPrompt.setText(
+        nearDecor.mine
+          ? `🎄 Pick up your ${nearDecor.label} [E]`
+          : `🎄 ${nearDecor.addedByName}'s ${nearDecor.label}`,
+      ).setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
+    } else {
+      this.decorPrompt.setAlpha(0);
+    }
+
     // Jukebox: prompt near jukeboxes (pond and shelf prompts take priority).
     // Client-side audio: play CC-licensed tracks when near any jukebox.
     const nearJukebox = this._nearestJukebox();
@@ -2835,8 +2912,10 @@ export class VillageScene extends Phaser.Scene {
     } else if (canOrder && !nearPond && !nearShelf && !nearJukebox) {
       // Agora's coffee bar gets a coffee prompt (not a beer one) — the
       // Barista serves coffee via the instant-buy path, -2 coins.
+      // Decoration Shop v1: E at the Agora bar opens the shop
+      // (coffee or a decoration), so the prompt says so.
       const isCoffeeBar = /coffee/i.test(nearBar?.label || '');
-      this.drinkPrompt.setText(bartender ? '🍺 Talk to the bartender to order · 2 coins' : (isCoffeeBar ? '☕ Buy a coffee · 2 coins [E]' : '🍺 Buy a drink · 2 coins [E]')).setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
+      this.drinkPrompt.setText(bartender ? '🍺 Talk to the bartender to order · 2 coins' : (isCoffeeBar ? '🎄☕ Coffee bar — coffee or decorations [E]' : '🍺 Buy a drink · 2 coins [E]')).setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
     } else if (nearBar && bartender && !nearBartender && !myOrderActive && !nearPond && !nearShelf && !nearJukebox) {
       this.drinkPrompt.setText('🍺 Get closer to the bartender to order').setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
     } else {
@@ -3096,6 +3175,8 @@ export class VillageScene extends Phaser.Scene {
     this.itemsSystem = null;
     this.noticeBoardSystem?.destroy();
     this.noticeBoardSystem = null;
+    this.decorSystem?.destroy();
+    this.decorSystem = null;
     this.homeStorageSystem?.destroy();
     this.homeStorageSystem = null;
     this.questManager?.destroy();
@@ -3103,6 +3184,7 @@ export class VillageScene extends Phaser.Scene {
     this.catPrompt?.destroy();
     this.puzzlePrompt?.destroy();
     this.treePrompt?.destroy();
+    this.decorPrompt?.destroy();
     this.halloween?.destroy();
     this.halloween = null;
     this.dayNight?.destroy();
@@ -3147,6 +3229,9 @@ export class VillageScene extends Phaser.Scene {
     // floor (upper floors have no board — _board goes null, so the
     // ground-floor board cannot be opened from upstairs).
     this.noticeBoardSystem?.refresh();
+    // Decoration Shop v1: re-resolve the room's decorations for
+    // this floor (placed decorations re-draw after the switch).
+    this.decorSystem?.refresh();
     this.questManager?.noteRoomVisit();
     this._emitFloorStatus();
     this.roomLayout.setDynamicSolids(this.customZones);

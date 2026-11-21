@@ -6,6 +6,7 @@ import ShelfPanel from './ShelfPanel.jsx';
 import JukeboxPanel from './JukeboxPanel.jsx';
 import PuzzleBoard from './PuzzleBoard.jsx';
 import InventoryPanel from './InventoryPanel.jsx';
+import DecorShopPanel from './DecorShopPanel.jsx';
 import NoticeBoardPanel from './NoticeBoardPanel.jsx';
 import HomeStoragePanel from './HomeStoragePanel.jsx';
 import PlayerBadgesPanel from './PlayerBadgesPanel.jsx';
@@ -255,6 +256,8 @@ export default function VillageCanvas({ room, profile, onLeave, onGoHome = null,
   const [openPuzzle, setOpenPuzzle] = useState(false);
   const [openInventory, setOpenInventory] = useState(false);
   const [openNoticeBoard, setOpenNoticeBoard] = useState(false);
+  // Decoration Shop v1 (`sq-dec-shop-v1`): the Agora coffee-bar shop.
+  const [openDecorShop, setOpenDecorShop] = useState(false);
   // Your Place v1: the storage chest panel, opened from the chest
   // in your home room (E key / click / interact button).
   const [openHomeStorage, setOpenHomeStorage] = useState(false);
@@ -626,6 +629,9 @@ export default function VillageCanvas({ room, profile, onLeave, onGoHome = null,
       explicitLayout,
       profile,
       canManageVenue,
+      // Decoration Shop v1: the scene needs to know moderators (they
+      // can take down any placed decoration) and how to open the shop.
+      isModerator,
       userLocation: location || null,
       onLeave,
       preferredCameraMode,
@@ -637,6 +643,8 @@ export default function VillageCanvas({ room, profile, onLeave, onGoHome = null,
       onOpenInventory: () => setOpenInventory(true),
       onOpenNoticeBoard: () => setOpenNoticeBoard(true),
       onOpenHomeStorage: () => setOpenHomeStorage(true),
+      // Decoration Shop v1: opens the coffee-bar shop panel (DOM).
+      onOpenDecorShop: () => setOpenDecorShop(true),
       onOpenPlayerBadges: (info) => setOpenPlayerBadges(info),
       onNearbyNpcChange: setNearbyNpc,
       onNpcConversationClear: ({ npcId } = {}) => {
@@ -835,6 +843,7 @@ export default function VillageCanvas({ room, profile, onLeave, onGoHome = null,
           onBuyBag={() => gameRef.current?.scene?.getScene('VillageScene')?.itemsSystem?.buyBag?.() || { ok: false, reason: 'error' }}
           onMakeFlyer={(title, text) => gameRef.current?.scene?.getScene('VillageScene')?.itemsSystem?.makeFlyer?.(title, text) || { ok: false, reason: 'error' }}
           onPinFlyer={(id) => gameRef.current?.scene?.getScene('VillageScene')?.itemsSystem?.pinFlyerToBoard?.(id) || { ok: false, reason: 'error' }}
+          onPlaceDecoration={(id) => gameRef.current?.scene?.getScene('VillageScene')?.decorSystem?.placeDecoration?.(id) || { ok: false, reason: 'error' }}
           onOpenPuzzle={() => { setOpenInventory(false); setOpenPuzzle(true); }}
           onClose={() => { setOpenInventory(false); setCoinBalance(getCoins()); }}
         />
@@ -854,6 +863,14 @@ export default function VillageCanvas({ room, profile, onLeave, onGoHome = null,
           onTake={(id) => gameRef.current?.scene?.getScene('VillageScene')?.homeStorageSystem?.takeItem?.(id) || { ok: false, reason: 'error' }}
           onUnloadAll={() => gameRef.current?.scene?.getScene('VillageScene')?.homeStorageSystem?.unloadAll?.() || { ok: false, reason: 'error' }}
           onClose={() => setOpenHomeStorage(false)}
+        />
+      )}
+      {openDecorShop && (
+        <DecorShopPanel
+          getState={() => gameRef.current?.scene?.getScene('VillageScene')?.decorSystem?.getShopState?.()}
+          onBuyCoffee={() => gameRef.current?.scene?.getScene('VillageScene')?.buyCoffeeFromShop?.() || { ok: false, reason: 'error' }}
+          onBuyDecoration={(kind) => gameRef.current?.scene?.getScene('VillageScene')?.decorSystem?.buyDecoration?.(kind) || { ok: false, reason: 'error' }}
+          onClose={() => setOpenDecorShop(false)}
         />
       )}
       {openPlayerBadges && (

@@ -18,6 +18,9 @@
 //   onPinFlyer(id) — pin a flyer to this room's notice board (Notice
 //     Board v1); returns { ok, pending?, reason? } — the flyer
 //     leaves the pocket when the server confirms the pin
+//   onPlaceDecoration(id) — place a decoration where you stand
+//     (Decoration Shop v1); returns { ok, pending?, reason? } — the
+//     decoration leaves the pocket when the server confirms it
 //   onOpenPuzzle() — close this panel and open the puzzle board
 //   getBadges() — () => [{ questId, emoji, title, description,
 //     completedAt, completedLabel }] (QuestManager.getCompletions,
@@ -39,6 +42,9 @@ const REASON_TEXT = {
   'puzzle-piece-use-board': 'Place it on the puzzle board — that frees the slot.',
   'puzzle-piece-no-drop': 'Puzzle pieces can’t be dropped — place them on the puzzle board.',
   'not-flyer': 'Only flyers can be pinned to the notice board.',
+  'not-decoration': 'Only decorations can be placed like that.',
+  'room-full': 'This room is full of decorations — pick one up first.',
+  'not-yours': 'That decoration belongs to someone else — only they can move it.',
   offline: 'You seem to be offline — try again when you’re connected.',
   'not-available': 'The notice board is only in Agora.',
   'not-found': 'That item is no longer in your pocket.',
@@ -46,7 +52,7 @@ const REASON_TEXT = {
 };
 
 export default function InventoryPanel({
-  getState, onUse, onDrop, onDispose, onBuyBag, onMakeFlyer, onPinFlyer, onOpenPuzzle, getBadges, onClose,
+  getState, onUse, onDrop, onDispose, onBuyBag, onMakeFlyer, onPinFlyer, onPlaceDecoration, onOpenPuzzle, getBadges, onClose,
 }) {
   const [state, setState] = useState(() => {
     try { return getState ? getState() : null; } catch { return null; }
@@ -287,6 +293,18 @@ export default function InventoryPanel({
                           Pin to board 📌
                         </button>
                       )}
+                      {item.type === 'decoration' && (
+                        <button
+                          onClick={() => run(
+                            () => onPlaceDecoration && onPlaceDecoration(item.id),
+                            '🎄 Placing it where you stand…',
+                          )}
+                          title="Place this decoration where you're standing — everyone in the room will see it. It leaves your pocket once the room confirms it"
+                          style={btnStyle}
+                        >
+                          Place 🎄
+                        </button>
+                      )}
                       {item.disposable && (
                         <button
                           onClick={() => run(() => onDispose && onDispose(item.id), '🗑️ Tossed! The cafe stays tidy.')}
@@ -321,6 +339,11 @@ export default function InventoryPanel({
                     {item.type === 'puzzle-piece' && (
                       <div style={{ fontSize: 12, color: '#92400e', marginTop: 6 }}>
                         Placing it on the puzzle board frees this slot.
+                      </div>
+                    )}
+                    {item.type === 'decoration' && (
+                      <div style={{ fontSize: 12, color: '#92400e', marginTop: 6 }}>
+                        Placing it where you stand frees this slot — everyone in the room will see it.
                       </div>
                     )}
                   </div>

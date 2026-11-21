@@ -1,0 +1,492 @@
+// DecorSystem.js — the in-room side of the Decoration Shop
+// (`sq-dec-shop-v1`).
+//
+// Owned by VillageScene, same shape as NoticeBoardSystem /
+// TrimTreeQuest: constructed in create(), refreshed on floor
+// switches, destroyed in shutdown(). Two jobs:
+//
+//   1. THE SHOP (Agora only): buy Christmas decorations at the
+//      coffee bar. The bar offers coffee (-2 coins, existing) or a
+//      decoration — ornament 5, lights 10, snowman 15, tree 25,
+//      Santa 20 (tree and Santa are builder picks; Krampus is NOT
+//      sold — the user deferred him). Buying is local (coins +
+//      pocket, see items.buyDecoration): a full pocket refuses the
+//      sale BEFORE any coins are taken.
+//   2. PLACED DECORATIONS (every room): a bought decoration goes
+//      into the pocket; "Place" in the inventory puts it where you
+//      are standing, and EVERYONE in the room sees it. State is
+//      SERVER state (server/socket.js, in-memory per room like the
+//      notice board): placing and taking back go through the socket
+//      and every player in the room sees the same decorations. Each
+//      room's decorations are separate.
+//
+// PLACING (from the inventory — a decoration's "Place" button): the
+// decoration leaves the pocket ONLY when the server confirms the
+// place (same pending pattern as pinning a flyer). If the place
+// never lands (offline, rate-limited, room full), the decoration
+// simply stays in the pocket — nothing is ever lost by placing.
+//
+// TAKING BACK: tap a placed decoration (or press E near it). Your
+// OWN decoration comes back to your pocket if there is room —
+// otherwise it stays placed and the pocket-full message shows. A
+// moderator can take down ANY decoration; a moderator removal
+// always discards it (same rule as the notice board). Someone
+// else's decoration just says whose it is.
+
+import { DEPTH } from './depth.js';
+import {
+  DEC_SHOP_MARKER_V1,
+  DECOR_KINDS,
+  DECOR_KIND_IDS,
+  DECOR_MAX_PER_ROOM,
+  createDecorState,
+  parseDecorState,
+} from './decorState.js';
+import { getCoins } from './CoinWallet.js';
+import {
+  INVENTORY_FULL_GENERIC,
+  getItem,
+  isFull,
+  buyDecoration,
+} from './items.js';
+
+const AGORA_ROOM_ID = 'agora-houston';
+
+// How close a click must land to a placed decoration to grab it,
+// and how close the player must stand (same numbers as ground
+// litter: 44px click, 90px stand — decorations use 42 / 110, a
+// touch more forgiving because the shapes are small).
+const DECOR_CLICK_RANGE = 42;
+const DECOR_STAND_RANGE = 110;
+// Where a placed decoration lands relative to the player: just
+// below them, so it never sits exactly under the avatar.
+const PLACE_OFFSET_Y = 52;
+
+const ORNAMENT_COLORS = ['#ef4444', '#f59e0b', '#3b82f6', '#22c55e', '#a855f7'];
+const LIGHT_COLORS = ['#ef4444', '#fbbf24', '#22c55e', '#3b82f6', '#f59e0b'];
+
+function hashId(id) {
+  let h = 0;
+  const s = String(id || '');
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h;
+}
+
+export class DecorSystem {
+  constructor(scene) {
+    this.scene = scene;
+    // sq-dec-shop-v1 — marker for the v1 landing check.
+    this.marker = DEC_SHOP_MARKER_V1;
+    this.state = createDecorState();
+    this._containers = new Map(); // decor id -> Phaser container
+    this._pendingPlace = null; // { id, itemId } awaiting the decor_state that confirms it
+    this._pendingPickup = null; // { decorId, decor } awaiting the broadcast that confirms it
+    this._lastCheckMs = 0;
+  }
+
+  // Placing works in every room; the SHOP (buying) is Agora only.
+  get enabled() {
+    return Boolean(this.scene?.roomId);
+  }
+
+  get shopEnabled() {
+    return this.scene?.roomId === AGORA_ROOM_ID;
+  }
+
+  _myUserId() {
+    return this.scene?.userId || this.scene?.socket?.id || '__local__';
+  }
+
+  /** Plain-data state for the shop panel (polls this ~2x/sec). */
+  getShopState() {
+    return {
+      items: DECOR_KIND_IDS.map((id) => ({ ...DECOR_KINDS[id] })),
+      coins: getCoins(),
+      full: isFull(),
+      roomId: this.scene?.roomId || '',
+    };
+  }
+
+  /** Plain-data state for anything that wants the room's decorations. */
+  getState() {
+    return {
+      decorations: (this.state.decorations || []).map((d) => ({ ...d })),
+      count: (this.state.decorations || []).length,
+      max: DECOR_MAX_PER_ROOM,
+      myUserId: this._myUserId(),
+      roomId: this.scene?.roomId || '',
+    };
+  }
+
+  /** (Re)build the decorations for this room; clear elsewhere. */
+  refresh() {
+    this._clearEntities();
+    if (!this.enabled) return;
+    this._drawAll();
+    this._requestState();
+  }
+
+  _requestState() {
+    try {
+      if (this.scene?.socket?.connected) {
+        this.scene.socket.emit('get_decor', { roomId: this.scene.roomId });
+      }
+    } catch {}
+  }
+
+  /** Apply the server's canonical state. Also settles the pending
+   * place / pickup: a place is confirmed when the broadcast shows
+   * our id (the decoration leaves the pocket then), and a pickup
+   * is confirmed when the decoration is gone (it comes back to the
+   * pocket if there is room, otherwise it is discarded). */
+  applyState(payload = {}) {
+    const next = parseDecorState(payload);
+    this.state = next;
+    if (this._pendingPlace) {
+      const confirmed = next.decorations.some((d) => d.id === this._pendingPlace.id);
+      if (confirmed) {
+        const { itemId } = this._pendingPlace;
+        this._pendingPlace = null;
+        try { this.scene?.itemsSystem?.confirmPlacedDecoration?.(itemId); } catch {}
+        try { this.scene?.onSystemNotice?.('🎄 Placed! Everyone here can see it.'); } catch {}
+      }
+    }
+    if (this._pendingPickup) {
+      const stillThere = next.decorations.some((d) => d.id === this._pendingPickup.decorId);
+      if (!stillThere) {
+        const { decor } = this._pendingPickup;
+        this._pendingPickup = null;
+        try {
+          const res = this.scene?.itemsSystem?.returnDecorationToPocket?.(decor);
+          if (res && res.ok) {
+            this.scene?.onSystemNotice?.(`🎄 Picked your ${decorLabel(decor)} back up.`);
+          } else {
+            this.scene?.onSystemNotice?.('🎄 Picked it up — but your pocket was full, so it was discarded.');
+          }
+        } catch {}
+      }
+    }
+    this._drawAll();
+  }
+
+  // ---- the shop (Agora bar only) ----------------------------------------
+
+  /** Buy a decoration: pay its price, it goes into your pocket.
+   * The pocket-full check happens BEFORE any coins move (see
+   * items.buyDecoration) — a refused sale costs nothing. */
+  buyDecoration(kind) {
+    if (!this.shopEnabled) return { ok: false, reason: 'not-available' };
+    const res = buyDecoration(kind);
+    if (res && res.ok) {
+      try {
+        this.scene?.onSystemNotice?.(`🎄 You bought a ${res.item.label} for ${res.price} coins — it's in your pocket. Place it from the 🎒 panel!`);
+      } catch {}
+    }
+    return res;
+  }
+
+  // ---- placing (from the inventory) --------------------------------------
+
+  /** Place a decoration from the pocket where you are standing.
+   * The decoration stays in the pocket until the server confirms
+   * the place (see applyState) — if the place never lands, nothing
+   * is lost. Returns { ok, pending?, reason? }. */
+  placeDecoration(itemId) {
+    if (!this.enabled) return { ok: false, reason: 'not-available' };
+    const item = getItem(itemId);
+    if (!item) return { ok: false, reason: 'not-found' };
+    if (item.type !== 'decoration') return { ok: false, reason: 'not-decoration' };
+    const player = this.scene?.player;
+    if (!player) return { ok: false, reason: 'no-player' };
+    if (!this.scene?.socket?.connected) return { ok: false, reason: 'offline' };
+    // Client-side cap check: refuse before emitting, so a refused
+    // place never leaves a pending place hanging (the server
+    // re-validates the cap anyway).
+    if ((this.state.decorations || []).length >= DECOR_MAX_PER_ROOM) {
+      return { ok: false, reason: 'room-full' };
+    }
+    const raw = { x: player.gx, y: player.gy + PLACE_OFFSET_Y };
+    let pos = raw;
+    try {
+      if (this.scene?.roomLayout?.clampPointToRoom) {
+        pos = this.scene.roomLayout.clampPointToRoom(raw.x, raw.y, 24) || raw;
+      }
+    } catch {}
+    const id = `decor-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+    this._pendingPlace = { id, itemId };
+    try {
+      this.scene.socket.emit('decor_place', {
+        roomId: this.scene.roomId, id, kind: item.decorKind, x: pos.x, y: pos.y,
+      });
+    } catch {
+      this._pendingPlace = null;
+      return { ok: false, reason: 'error' };
+    }
+    return { ok: true, pending: true, id };
+  }
+
+  // ---- taking back ---------------------------------------------------------
+
+  /** Take a placed decoration down. Your own comes back to your
+   * pocket (see applyState); a moderator taking down someone
+   * else's discards it. The server re-validates ownership /
+   * moderator status, so a bad client cannot remove what is not
+   * theirs. */
+  pickupDecoration(decorId) {
+    if (!this.enabled) return { ok: false, reason: 'not-available' };
+    const decor = (this.state.decorations || []).find((d) => d.id === String(decorId));
+    if (!decor) return { ok: false, reason: 'not-found' };
+    const myUserId = this._myUserId();
+    const isMine = String(decor.addedBy) === String(myUserId);
+    const isModerator = Boolean(this.scene?.isModerator);
+    if (!isMine && !isModerator) return { ok: false, reason: 'not-yours', decor };
+    // Taking my own back needs a free pocket slot — refuse now,
+    // while it is still placed, instead of removing it from the
+    // world and then having nowhere to put it.
+    if (isMine && isFull()) return { ok: false, reason: 'inventory-full', decor };
+    if (!this.scene?.socket?.connected) return { ok: false, reason: 'offline' };
+    // Only the owner's take-down returns the decoration to a pocket.
+    if (isMine) this._pendingPickup = { decorId: decor.id, decor: { ...decor } };
+    try {
+      this.scene.socket.emit('decor_remove', { roomId: this.scene.roomId, decorId: decor.id });
+    } catch {
+      this._pendingPickup = null;
+      return { ok: false, reason: 'error' };
+    }
+    return { ok: true, pending: true };
+  }
+
+  /** One click at world (wx, wy): on a placed decoration, pick it
+   * up (if standing close enough). Silent unless it acts — clicks
+   * elsewhere do nothing. Returns { ok, picked?, reason? }. */
+  decorTapAt(wx, wy) {
+    if (!this.enabled) return { ok: false, reason: 'not-available' };
+    const player = this.scene?.player;
+    if (!player) return { ok: false, reason: 'no-player' };
+    const decor = this._decorAt(wx, wy);
+    if (!decor) return { ok: false, reason: 'no-decor' };
+    if (Math.hypot(player.gx - decor.x, player.gy - decor.y) > DECOR_STAND_RANGE) {
+      return { ok: false, reason: 'too-far' };
+    }
+    const res = this.pickupDecoration(decor.id);
+    if (res && res.reason === 'not-yours') {
+      try {
+        this.scene?.onSystemNotice?.(`🎄 That's ${decor.addedByName || 'someone'}'s ${decorLabel(decor)} — only they can move it.`);
+      } catch {}
+    }
+    if (res && res.reason === 'inventory-full') {
+      try { this.scene?.onSystemNotice?.(`🎒 ${INVENTORY_FULL_GENERIC}`); } catch {}
+    }
+    return { ...res, picked: res.ok };
+  }
+
+  /** The placed decoration within stand range of (px, py) — or null (E key). */
+  nearestDecoration(px, py) {
+    if (!this.enabled) return null;
+    let best = null;
+    let bestD = DECOR_STAND_RANGE;
+    for (const decor of this.state.decorations || []) {
+      const d = Math.hypot(px - decor.x, py - decor.y);
+      if (d < bestD) { bestD = d; best = decor; }
+    }
+    if (!best) return null;
+    return {
+      id: best.id, kind: best.kind, label: decorLabel(best),
+      mine: String(best.addedBy) === String(this._myUserId()),
+      addedByName: best.addedByName || 'Someone',
+      x: best.x, y: best.y,
+    };
+  }
+
+  /** E key: pick up the nearest placed decoration (or say whose it is). */
+  pickupNearest() {
+    const near = this.nearestDecoration(this.scene?.player?.gx ?? 0, this.scene?.player?.gy ?? 0);
+    if (!near) return { ok: false, reason: 'no-decor' };
+    const res = this.pickupDecoration(near.id);
+    if (res && res.reason === 'not-yours') {
+      try {
+        this.scene?.onSystemNotice?.(`🎄 That's ${near.addedByName}'s ${near.label} — only they can move it.`);
+      } catch {}
+    }
+    if (res && res.reason === 'inventory-full') {
+      try { this.scene?.onSystemNotice?.(`🎒 ${INVENTORY_FULL_GENERIC}`); } catch {}
+    }
+    return res;
+  }
+
+  _decorAt(wx, wy) {
+    for (const decor of this.state.decorations || []) {
+      if (Math.hypot(wx - decor.x, wy - decor.y) <= DECOR_CLICK_RANGE) return decor;
+    }
+    return null;
+  }
+
+  // ---- drawing -------------------------------------------------------------
+
+  _drawAll() {
+    this._clearEntities();
+    if (!this.enabled) return;
+    for (const decor of this.state.decorations || []) {
+      this._drawDecoration(decor);
+    }
+  }
+
+  _drawDecoration(decor) {
+    const scene = this.scene;
+    const g = scene.add.graphics();
+    const def = DECOR_KINDS[decor.kind] || DECOR_KINDS.ornament;
+    const colorIdx = hashId(decor.id) % ORNAMENT_COLORS.length;
+    if (decor.kind === 'ornament') {
+      // A bauble on a short string.
+      const c = parseInt(ORNAMENT_COLORS[colorIdx].slice(1), 16);
+      g.lineStyle(1.5, 0x8b5a2b, 1);
+      g.lineBetween(0, -34, 0, -26);
+      g.fillStyle(0xfbbf24, 1);
+      g.fillRect(-4, -27, 8, 5);
+      g.fillStyle(c, 1);
+      g.fillCircle(0, -16, 10);
+      g.fillStyle(0xffffff, 0.55);
+      g.fillCircle(-3, -19, 3);
+    } else if (decor.kind === 'lights') {
+      // A sagging string with five coloured bulbs.
+      const pts = [[-34, -30], [-17, -20], [0, -16], [17, -20], [34, -30]];
+      g.lineStyle(1.5, 0x374151, 1);
+      for (let i = 0; i < pts.length - 1; i++) {
+        g.lineBetween(pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1]);
+      }
+      for (let i = 0; i < pts.length; i++) {
+        const c = parseInt(LIGHT_COLORS[(colorIdx + i) % LIGHT_COLORS.length].slice(1), 16);
+        g.fillStyle(c, 0.35);
+        g.fillCircle(pts[i][0], pts[i][1] + 4, 7);
+        g.fillStyle(c, 1);
+        g.fillCircle(pts[i][0], pts[i][1] + 4, 3.5);
+      }
+    } else if (decor.kind === 'snowman') {
+      // Two snowballs, carrot nose, coal eyes, black hat, stick arms.
+      g.fillStyle(0xffffff, 1);
+      g.fillCircle(0, -12, 14);
+      g.fillCircle(0, -34, 10);
+      g.fillStyle(0x1f2937, 1);
+      g.fillCircle(-4, -36, 1.5);
+      g.fillCircle(4, -36, 1.5);
+      g.fillStyle(0xea580c, 1);
+      g.beginPath();
+      g.moveTo(-2, -32);
+      g.lineTo(10, -30);
+      g.lineTo(-2, -28);
+      g.closePath();
+      g.fillPath();
+      g.fillStyle(0x1f2937, 1);
+      g.fillRect(-8, -50, 16, 10);
+      g.fillRect(-11, -41, 22, 4);
+      g.lineStyle(2, 0x6b4226, 1);
+      g.lineBetween(-13, -18, -26, -28);
+      g.lineBetween(13, -18, 26, -28);
+    } else if (decor.kind === 'tree') {
+      // A mini Christmas tree: trunk, two tiers, gold star.
+      g.fillStyle(0x6b4226, 1);
+      g.fillRect(-4, -8, 8, 10);
+      g.fillStyle(0x166534, 1);
+      g.beginPath();
+      g.moveTo(-26, 0);
+      g.lineTo(26, 0);
+      g.lineTo(0, -34);
+      g.closePath();
+      g.fillPath();
+      g.fillStyle(0x16a34a, 1);
+      g.beginPath();
+      g.moveTo(-18, -22);
+      g.lineTo(18, -22);
+      g.lineTo(0, -52);
+      g.closePath();
+      g.fillPath();
+      this._drawStar(g, 0, -58, 6, 0xfbbf24);
+      g.fillStyle(0xef4444, 1);
+      g.fillCircle(-10, -14, 3);
+      g.fillCircle(10, -20, 3);
+      g.fillStyle(0x3b82f6, 1);
+      g.fillCircle(0, -30, 3);
+    } else {
+      // Santa figure: red robe, white beard, face, red hat.
+      g.fillStyle(0xdc2626, 1);
+      g.beginPath();
+      g.moveTo(-16, 2);
+      g.lineTo(16, 2);
+      g.lineTo(0, -38);
+      g.closePath();
+      g.fillPath();
+      g.fillStyle(0x1f2937, 1);
+      g.fillRect(-16, -12, 32, 6);
+      g.fillStyle(0xfbbf24, 1);
+      g.fillRect(-3, -12, 6, 6);
+      g.fillStyle(0xffffff, 1);
+      g.fillCircle(0, -34, 9);
+      g.fillStyle(0xfcd9b8, 1);
+      g.fillCircle(0, -42, 8);
+      g.fillStyle(0x1f2937, 1);
+      g.fillCircle(-3, -43, 1.5);
+      g.fillCircle(3, -43, 1.5);
+      g.fillStyle(0xdc2626, 1);
+      g.beginPath();
+      g.moveTo(-8, -48);
+      g.lineTo(8, -48);
+      g.lineTo(0, -60);
+      g.closePath();
+      g.fillPath();
+      g.fillStyle(0xffffff, 1);
+      g.fillRect(-9, -50, 18, 4);
+      g.fillCircle(0, -60, 3);
+    }
+    const container = scene.add.container(decor.x, decor.y, [g]);
+    container.setDepth(DEPTH.ACTOR_MIN + Math.round(decor.y));
+    container.setSize(80, 90);
+    this._containers.set(decor.id, container);
+  }
+
+  /** A 5-point star centred at (x, y), outer radius r. */
+  _drawStar(g, x, y, r, color) {
+    const inner = r * 0.45;
+    g.fillStyle(color, 1);
+    g.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const rad = i % 2 === 0 ? r : inner;
+      const a = -Math.PI / 2 + (i * Math.PI) / 5;
+      const px = x + Math.cos(a) * rad;
+      const py = y + Math.sin(a) * rad;
+      if (i === 0) g.moveTo(px, py);
+      else g.lineTo(px, py);
+    }
+    g.closePath();
+    g.fillPath();
+  }
+
+  update() {
+    if (!this.enabled) return;
+    const now = Date.now();
+    if (now - (this._lastCheckMs || 0) < 1000) return;
+    this._lastCheckMs = now;
+    // The decorations re-spawn if a floor switch cleared them.
+    if ((this.state.decorations || []).length > 0 && this._containers.size === 0) {
+      this._drawAll();
+    }
+  }
+
+  _clearEntities() {
+    for (const c of this._containers.values()) {
+      try { c?.destroy(); } catch {}
+    }
+    this._containers.clear();
+  }
+
+  destroy() {
+    this._clearEntities();
+    this._pendingPlace = null;
+    this._pendingPickup = null;
+    this.scene = null;
+  }
+}
+
+function decorLabel(decor) {
+  const def = DECOR_KINDS[decor?.kind];
+  return def ? def.label : 'Christmas decoration';
+}

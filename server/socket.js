@@ -42,6 +42,12 @@ import {
   removeFlyer,
   serializeNoticeBoardState,
 } from '../src/village/noticeBoardState.js';
+import {
+  createDecorState,
+  placeDecoration,
+  removeDecoration,
+  serializeDecorState,
+} from '../src/village/decorState.js';
 import { backfilledBadgesFromQuestState } from '../src/village/badges.js';
 import {
   isHomeRoom,
@@ -574,6 +580,16 @@ const noticeBoards = {};
 function noticeBoardRoom(roomId) {
   if (!noticeBoards[roomId]) noticeBoards[roomId] = { state: createNoticeBoardState() };
   return noticeBoards[roomId];
+}
+// Decoration Shop v1 (`sq-dec-shop-v1`): per-room placed
+// decorations, EVERY room (not just Agora — decorations are
+// placeable anywhere). In-memory like the notice board — a server
+// restart wipes placed decorations clean, including at home.
+// decorRooms[roomId] = { state }.
+const decorRooms = {};
+function decorRoom(roomId) {
+  if (!decorRooms[roomId]) decorRooms[roomId] = { state: createDecorState() };
+  return decorRooms[roomId];
 }
 // Matches youtube.com/watch?v=, youtu.be/, youtube.com/embed/, youtube.com/shorts/
 const YOUTUBE_ID_RE = /(?:(?:www\.|music\.)?youtube\.com\/(?:watch\?[^#]*v=|embed\/|shorts\/|v\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/;
@@ -1601,6 +1617,57 @@ io.on('connection', (socket) => {
     if (!roomId) return;
     if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
     socket.emit('board_state', serializeNoticeBoardState(noticeBoardRoom(roomId).state));
+  });
+
+  // DECORATION SHOP (Decoration Shop v1, `sq-dec-shop-v1`). Place a
+  // decoration from your pocket: the server validates the kind and
+  // position, caps the room at DECOR_MAX_PER_ROOM (30 — a full room
+  // REFUSES the place, so the bought item stays in the pocket), and
+  // broadcasts the room so every player sees it. Each room has its
+  // own decorations (decorRooms[roomId]). Buying itself is local
+  // (coins + pocket on the client) — the server only owns placement.
+  socket.on('decor_place', ({ roomId, id, kind, x, y } = {}) => {
+    if (!roomId) return;
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const userId = socketUserMap[socket.id] || socket.id;
+    const rate = checkRateLimit(userId);
+    if (!rate.allowed) return;
+    const room = decorRoom(roomId);
+    const res = placeDecoration(room.state, {
+      id,
+      kind,
+      x,
+      y,
+      addedBy: userId,
+      addedByName: rooms[roomId][socket.id]?.name || 'Someone',
+    });
+    if (!res.ok) return;
+    io.to(roomId).emit('decor_state', serializeDecorState(room.state));
+  });
+
+  // DECORATION REMOVAL: your own decoration, or any decoration if
+  // you are a moderator (same global moderator list as the layout
+  // review endpoints). The decor broadcast carries the result; what
+  // happens to the decoration afterwards is the client's call (back
+  // to the owner's pocket if they took it down and have room,
+  // discarded otherwise — a moderator removal always discards it).
+  socket.on('decor_remove', ({ roomId, decorId } = {}) => {
+    if (!roomId) return;
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const userId = socketUserMap[socket.id] || socket.id;
+    const rate = checkRateLimit(userId);
+    if (!rate.allowed) return;
+    const room = decorRoom(roomId);
+    const res = removeDecoration(room.state, decorId, userId, isGlobalModerator(userId));
+    if (!res.ok) return;
+    io.to(roomId).emit('decor_state', serializeDecorState(room.state));
+  });
+
+  // DECORATION STATE: the room's decorations, sent when you join (or ask).
+  socket.on('get_decor', ({ roomId } = {}) => {
+    if (!roomId) return;
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    socket.emit('decor_state', serializeDecorState(decorRoom(roomId).state));
   });
 
   // DAY/NIGHT: answer with the canonical phase (see currentTimePhase

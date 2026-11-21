@@ -14,6 +14,12 @@
 //     room (same feel as the puzzle board zoom).
 //   - v1 items — ONLY the user's own list:
 //       trash, flyers, notes, diary, bits of food, half-empty cigarette box.
+//   - Decoration Shop v1 (`sq-dec-shop-v1`) adds ONE more item type:
+//     Christmas decorations, bought at the Agora bar (ornament 5,
+//     lights 10, snowman 15, tree 25, santa 20 — tree and Santa are
+//     builder picks, the rest are the user's prices). A decoration
+//     is a pocket item until placed; placing puts it in the room
+//     for everyone to see (server-synced, like the notice board).
 //   - Finding reuses the puzzle v1.2 pattern: scene-level pointerdown +
 //     distance checks, 3 clicks on hiding furniture for hidden things,
 //     1 click on visible ground litter.
@@ -40,7 +46,8 @@
 // Storage is PER PROFILE (same scoping as CoinWallet) and client-side
 // only (localStorage). No server change in v1.
 
-import { getCoins, spendCoins } from './CoinWallet.js';
+import { getCoins, spendCoins, earnCoins } from './CoinWallet.js';
+import { DECOR_KINDS } from './decorState.js';
 
 export const ITEMS_MARKER_V1 = 'sq-items-inventory-v1';
 
@@ -69,6 +76,7 @@ export const ITEM_TYPES = {
   FOOD: 'food',
   CIGARETTES: 'cigarettes',
   PUZZLE_PIECE: 'puzzle-piece',
+  DECORATION: 'decoration',
 };
 
 // label / emoji / one-line blurb per type. `readable` items open a
@@ -107,6 +115,15 @@ export const ITEM_DEFS = {
   [ITEM_TYPES.PUZZLE_PIECE]: {
     emoji: '🧩', label: 'Puzzle piece',
     blurb: 'A piece of the cat puzzle. Place it on the puzzle board to free this slot.',
+    readable: false, usable: false, disposable: false,
+  },
+  // Decoration Shop v1 (`sq-dec-shop-v1`): bought at the Agora bar,
+  // placed anywhere from the pocket. The per-kind label / emoji /
+  // blurb come from DECOR_KINDS (see describeItem) — this is only
+  // the fallback when a stored item has no kind.
+  [ITEM_TYPES.DECORATION]: {
+    emoji: '🎄', label: 'Christmas decoration',
+    blurb: 'Bought at the Agora bar. Place it anywhere — everyone in the room will see it.',
     readable: false, usable: false, disposable: false,
   },
 };
@@ -246,13 +263,21 @@ export function makeItemId(type) {
 
 function describeItem(item) {
   const def = ITEM_DEFS[item?.type] || {};
+  // Decoration Shop v1: a decoration's label / emoji / blurb come
+  // from its kind (ornament, lights, snowman, tree, santa) — the
+  // generic def above is only the fallback for a kindless item.
+  const kindDef = item?.type === ITEM_TYPES.DECORATION
+    ? (DECOR_KINDS[item?.decorKind] || null)
+    : null;
   return {
     id: item.id,
     type: item.type,
     pieceId: typeof item.pieceId === 'number' ? item.pieceId : null,
-    emoji: def.emoji || '📦',
-    label: item.label || def.label || 'Item',
-    blurb: item.blurb || def.blurb || '',
+    decorKind: item?.type === ITEM_TYPES.DECORATION ? (item.decorKind || null) : null,
+    decorPrice: kindDef ? kindDef.price : null,
+    emoji: kindDef?.emoji || def.emoji || '📦',
+    label: item.label || kindDef?.label || def.label || 'Item',
+    blurb: item.blurb || kindDef?.blurb || def.blurb || '',
     text: item.text || null,
     title: item.title || null,
     readable: Boolean(def.readable),
@@ -299,6 +324,9 @@ export function addItem(item, inv = getInventory()) {
     text: item.text || null,
     title: item.title || null,
     pieceId: typeof item.pieceId === 'number' ? item.pieceId : null,
+    // Decoration Shop v1: which decoration this pocket item is
+    // (ornament / lights / snowman / tree / santa).
+    decorKind: typeof item.decorKind === 'string' ? item.decorKind : null,
     createdAt: Date.now(),
   };
   inv.items = [...inv.items, stored];
@@ -423,6 +451,29 @@ export function createFlyer(title, text, inv = getInventory()) {
   if (getCoins() < FLYER_CREATE_COST) return { ok: false, reason: 'not-enough-coins' };
   if (!spendCoins(FLYER_CREATE_COST)) return { ok: false, reason: 'not-enough-coins' };
   return addItem({ type: ITEM_TYPES.FLYER, title: cleanTitle, text: cleanText }, getInventory());
+}
+
+// --- decorations (Decoration Shop v1, `sq-dec-shop-v1`) -------------------
+/**
+ * Buy a decoration at the Agora bar: pay its price, and it goes
+ * into your pocket (one slot, same as any item). The pocket-full
+ * check comes FIRST, so a full pocket never takes your coins.
+ * If the add somehow fails after paying (it cannot — capacity was
+ * just checked), the coins are refunded. Returns { ok, item?,
+ * reason? } — 'bad-kind', 'inventory-full', 'not-enough-coins'.
+ */
+export function buyDecoration(kind, inv = getInventory()) {
+  const def = DECOR_KINDS[String(kind || '').trim()];
+  if (!def) return { ok: false, reason: 'bad-kind' };
+  if (inv.items.length >= capacity(inv)) return { ok: false, reason: 'inventory-full' };
+  if (getCoins() < def.price) return { ok: false, reason: 'not-enough-coins' };
+  if (!spendCoins(def.price)) return { ok: false, reason: 'not-enough-coins' };
+  const res = addItem({ type: ITEM_TYPES.DECORATION, decorKind: def.kind }, getInventory());
+  if (!res.ok) {
+    try { earnCoins(def.price, `decor-refund-${def.kind}`); } catch {}
+    return { ok: false, reason: res.reason || 'error' };
+  }
+  return { ok: true, item: res.item, price: def.price };
 }
 
 // --- one-time seeded finds --------------------------------------------------

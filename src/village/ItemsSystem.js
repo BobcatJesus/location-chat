@@ -516,6 +516,26 @@ export class ItemsSystem {
     return { ok: true, item: res.item };
   }
 
+  /** The server confirmed a place: the decoration leaves the pocket
+   * (the slot frees up). Called by DecorSystem on the decor_state
+   * broadcast that shows the decoration. */
+  confirmPlacedDecoration(itemId) {
+    const removed = removeItem(itemId);
+    return { ok: Boolean(removed), item: removed };
+  }
+
+  /** A decoration taken back down comes back to the pocket — if
+   * there is room. Returns { ok, reason? } — 'inventory-full'
+   * means the decoration was discarded instead (the room already
+   * let it go). Called by DecorSystem on the broadcast that
+   * confirms the owner's take-down. */
+  returnDecorationToPocket(decor) {
+    if (!decor || !decor.kind) return { ok: false, reason: 'not-found' };
+    const res = addItem({ type: ITEM_TYPES.DECORATION, decorKind: decor.kind });
+    if (!res.ok) return { ok: false, reason: res.reason || 'error' };
+    return { ok: true, item: res.item };
+  }
+
   /** Make a flyer (5 coins, title + text) — see items.createFlyer. */
   makeFlyer(title, text) {
     return createFlyer(title, text);
