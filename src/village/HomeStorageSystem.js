@@ -347,6 +347,13 @@ export class HomeStorageSystem {
     if (item.type === ITEM_TYPES.PUZZLE_PIECE) {
       return { ok: false, reason: 'puzzle-piece-no-drop' };
     }
+    // Santa Hat v1: the hat is a shared room item with server state
+    // — dropping it on the home floor would fork it (the server
+    // would say "carried" while it sat on your floor). It leaves
+    // the pocket only by going on the cat.
+    if (item.type === ITEM_TYPES.SANTA_HAT) {
+      return { ok: false, reason: 'santa-hat-no-drop' };
+    }
     const pos = this._dropPosition();
     const res = dropOnFloor(getFloorItems(), item, pos.x, pos.y);
     if (!res.ok) return { ok: false, reason: res.reason || 'error' };

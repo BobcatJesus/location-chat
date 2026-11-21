@@ -120,16 +120,32 @@ export class ItemsSystem {
     // is open.
     let decorNotice = { text: '', seq: 0 };
     try { decorNotice = this.scene?.decorSystem?.getPlaceNotice?.() || decorNotice; } catch {}
+    // Santa Hat v1 (`sq-santa-hat-v1`): same notice channel as
+    // decorations — the latest hat news (timeout, or a late confirm)
+    // for the pocket panel's own notice line.
+    let hatNotice = { text: '', seq: 0 };
+    try { hatNotice = this.scene?.santaHatSystem?.getHatNotice?.() || hatNotice; } catch {}
     return {
       ...state,
       decorNotice: decorNotice.text || '',
       decorNoticeSeq: decorNotice.seq || 0,
+      hatNotice: hatNotice.text || '',
+      hatNoticeSeq: hatNotice.seq || 0,
       roomId: this.scene?.roomId || '',
       // Drop on the home floor v1: the panel shows a different
       // success line when Drop puts a persisted item on the home
       // floor instead of session litter.
       atHome: Boolean(this.scene?.homeStorageSystem?.enabled),
       canDispose: this.nearTrashCan(),
+      // Santa Hat v1: standing by the cafe cat (awake or asleep) —
+      // the pocket's "Put on the cat" button enables then.
+      canHatCat: Boolean(
+        this.scene?.cafeCat?.nearestCat?.(
+          this.scene?.player?.gx ?? 0, this.scene?.player?.gy ?? 0,
+        ) || this.scene?.cafeCat?.nearestSleepingCat?.(
+          this.scene?.player?.gx ?? 0, this.scene?.player?.gy ?? 0,
+        ),
+      ),
       canFeedDucks: Boolean(this.scene?.duckPond?.nearestFeedablePond?.(
         this.scene?.player?.gx ?? 0, this.scene?.player?.gy ?? 0,
       )),
@@ -419,12 +435,19 @@ export class ItemsSystem {
 
   /** Drop an item on the ground where you stand (visible litter in
    * this room, this session). Puzzle pieces cannot be dropped — they
-   * belong on the puzzle board. */
+   * belong on the puzzle board. The Santa hat cannot be dropped
+   * either (Santa Hat v1): it is a shared room item with server
+   * state, and dropping it as session litter would strand it — the
+   * server would say "carried" while the hat sat somewhere nobody
+   * can see once the litter despawns. */
   dropItem(id) {
     const item = getItem(id);
     if (!item) return { ok: false, reason: 'not-found' };
     if (item.type === ITEM_TYPES.PUZZLE_PIECE) {
       return { ok: false, reason: 'puzzle-piece-no-drop' };
+    }
+    if (item.type === ITEM_TYPES.SANTA_HAT) {
+      return { ok: false, reason: 'santa-hat-no-drop' };
     }
     const removed = removeItem(id);
     if (!removed) return { ok: false, reason: 'not-found' };
@@ -533,6 +556,25 @@ export class ItemsSystem {
   confirmPlacedDecoration(itemId) {
     const removed = removeItem(itemId);
     return { ok: Boolean(removed), item: removed };
+  }
+
+  /** The server confirmed the hat is on the cat: the hat leaves
+   * the pocket (the slot frees up). Called by SantaHatSystem on
+   * the hat_state broadcast that shows it on the cat. */
+  confirmPlacedHat(itemId) {
+    const removed = removeItem(itemId);
+    return { ok: Boolean(removed), item: removed };
+  }
+
+  /** The server confirmed a ground pickup: the hat comes back to
+   * the pocket — if there is room. Returns { ok, reason? } —
+   * 'inventory-full' means the pickup was given back instead (the
+   * hat goes back on the ground). Called by SantaHatSystem on the
+   * broadcast that confirms the pickup. */
+  returnHatToPocket() {
+    const res = addItem({ type: ITEM_TYPES.SANTA_HAT });
+    if (!res.ok) return { ok: false, reason: res.reason || 'error' };
+    return { ok: true, item: res.item };
   }
 
   /** A decoration taken back down comes back to the pocket — if

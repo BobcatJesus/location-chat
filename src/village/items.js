@@ -77,6 +77,9 @@ export const ITEM_TYPES = {
   CIGARETTES: 'cigarettes',
   PUZZLE_PIECE: 'puzzle-piece',
   DECORATION: 'decoration',
+  // Santa Hat v1 (`sq-santa-hat-v1`): one hat, hidden behind the
+  // Christmas tree in Agora. Found -> pocket -> put on the cafe cat.
+  SANTA_HAT: 'santa-hat',
 };
 
 // label / emoji / one-line blurb per type. `readable` items open a
@@ -124,6 +127,16 @@ export const ITEM_DEFS = {
   [ITEM_TYPES.DECORATION]: {
     emoji: '🎄', label: 'Christmas decoration',
     blurb: 'Bought at the Agora bar. Place it anywhere — everyone in the room will see it.',
+    readable: false, usable: false, disposable: false,
+  },
+  // Santa Hat v1 (`sq-santa-hat-v1`): found behind the Christmas
+  // tree, put on the cafe cat. It slips off after a while and lands
+  // on the ground — pick it up and put it back on her. Cannot be
+  // dropped (the hat is a shared room item with server state;
+  // dropping it as session litter would strand it).
+  [ITEM_TYPES.SANTA_HAT]: {
+    emoji: '🎅', label: 'Santa hat',
+    blurb: 'A Santa hat, found behind the Christmas tree. It belongs on the cat — until it slips off again.',
     readable: false, usable: false, disposable: false,
   },
 };

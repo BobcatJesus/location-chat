@@ -36,6 +36,16 @@ import {
   serializeTreeState,
 } from '../src/village/treeState.js';
 import {
+  HAT_MARKER_V1,
+  createHatState,
+  findHat,
+  placeHat,
+  slipHat,
+  pickupHat,
+  releaseHat,
+  serializeHatState,
+} from '../src/village/hatState.js';
+import {
   NOTICE_BOARD_MAX_FLYERS,
   createNoticeBoardState,
   pinFlyer,
@@ -571,6 +581,20 @@ const treeRooms = {};
 function treeRoom(roomId) {
   if (!treeRooms[roomId]) treeRooms[roomId] = { state: createTreeState() };
   return treeRooms[roomId];
+}
+// Santa Hat (Santa Hat v1, `sq-santa-hat-v1`): ONE hat hidden
+// behind the Christmas tree in Agora. In-memory like the puzzle —
+// a server restart hides it behind the tree again. hatRooms[roomId]
+// = { state }. The server validates every move (one hat only, room
+// membership, rate limits); it does not verify the 3 search clicks
+// or the walk to the cat — same trust level as the puzzle's
+// hidden-search clicks. The slip-off runs on the server's clock
+// (slipAt in the state): the first client to notice reports it,
+// with its own local cat position for where the hat lands.
+const hatRooms = {};
+function hatRoom(roomId) {
+  if (!hatRooms[roomId]) hatRooms[roomId] = { state: createHatState() };
+  return hatRooms[roomId];
 }
 // Notice board (Notice Board v1, `sq-notice-board-v1`): per-room
 // pinned flyers, Agora only. In-memory like the puzzle — a server
@@ -1565,6 +1589,93 @@ io.on('connection', (socket) => {
     if (!roomId || roomId !== 'agora-houston') return;
     if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
     socket.emit('tree_state', serializeTreeState(treeRoom(roomId).state));
+  });
+
+  // SANTA HAT (Santa Hat v1, `sq-santa-hat-v1`): one hat hidden
+  // behind the Christmas tree in Agora. The client counts 3 search
+  // clicks behind the tree, then asks here — the server decides who
+  // gets it (one hat per room). The hat goes into the finder's
+  // pocket on the hat_state broadcast; a full pocket makes the
+  // client give it straight back (hat_release).
+  socket.on('hat_find', ({ roomId } = {}) => {
+    if (!roomId || roomId !== 'agora-houston') return;
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const userId = socketUserMap[socket.id] || socket.id;
+    const rate = checkRateLimit(userId);
+    if (!rate.allowed) return;
+    const room = hatRoom(roomId);
+    const res = findHat(room.state, userId);
+    if (!res.ok) return;
+    io.to(roomId).emit('hat_state', serializeHatState(room.state));
+  });
+
+  // SANTA HAT PLACE: the carrier puts the hat on the cafe cat. The
+  // server sets the slip-off time (4 minutes from now); the hat
+  // leaves the carrier's pocket on the hat_state broadcast.
+  socket.on('hat_place', ({ roomId } = {}) => {
+    if (!roomId || roomId !== 'agora-houston') return;
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const userId = socketUserMap[socket.id] || socket.id;
+    const rate = checkRateLimit(userId);
+    if (!rate.allowed) return;
+    const room = hatRoom(roomId);
+    const res = placeHat(room.state, userId);
+    if (!res.ok) return;
+    io.to(roomId).emit('hat_state', serializeHatState(room.state));
+  });
+
+  // SANTA HAT PICKUP: anyone picks the hat up off the ground. The
+  // hat goes into the picker's pocket on the hat_state broadcast.
+  socket.on('hat_pickup', ({ roomId } = {}) => {
+    if (!roomId || roomId !== 'agora-houston') return;
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const userId = socketUserMap[socket.id] || socket.id;
+    const rate = checkRateLimit(userId);
+    if (!rate.allowed) return;
+    const room = hatRoom(roomId);
+    const res = pickupHat(room.state, userId);
+    if (!res.ok) return;
+    io.to(roomId).emit('hat_state', serializeHatState(room.state));
+  });
+
+  // SANTA HAT SLIP: the hat falls off the cat. The first client to
+  // notice the due slip time reports it, with its own local cat
+  // position for where the hat lands — the server only accepts the
+  // transition once the slip time has come, so a client cannot
+  // knock it off early.
+  socket.on('hat_slip', ({ roomId, x, y } = {}) => {
+    if (!roomId || roomId !== 'agora-houston') return;
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const userId = socketUserMap[socket.id] || socket.id;
+    const rate = checkRateLimit(userId);
+    if (!rate.allowed) return;
+    const room = hatRoom(roomId);
+    const res = slipHat(room.state, x, y);
+    if (!res.ok) return;
+    io.to(roomId).emit('hat_state', serializeHatState(room.state));
+  });
+
+  // SANTA HAT RELEASE: the carrier gives the hat back to the tree.
+  // Safety valve for a client whose pocket filled in the instant
+  // between check and confirm — the hat goes back to hidden
+  // instead of vanishing.
+  socket.on('hat_release', ({ roomId } = {}) => {
+    if (!roomId || roomId !== 'agora-houston') return;
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const userId = socketUserMap[socket.id] || socket.id;
+    const rate = checkRateLimit(userId);
+    if (!rate.allowed) return;
+    const room = hatRoom(roomId);
+    const res = releaseHat(room.state, userId);
+    if (!res.ok) return;
+    io.to(roomId).emit('hat_state', serializeHatState(room.state));
+  });
+
+  // SANTA HAT STATE: the room's hat, sent when you join (or ask).
+  socket.on('get_hat', ({ roomId } = {}) => {
+    if (!roomId || roomId !== 'agora-houston') return;
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    socket.emit('hat_state', serializeHatState(hatRoom(roomId).state));
   });
 
   // NOTICE BOARD (Notice Board v1, `sq-notice-board-v1`; boards in

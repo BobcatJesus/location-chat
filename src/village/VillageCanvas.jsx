@@ -844,6 +844,7 @@ export default function VillageCanvas({ room, profile, onLeave, onGoHome = null,
           onMakeFlyer={(title, text) => gameRef.current?.scene?.getScene('VillageScene')?.itemsSystem?.makeFlyer?.(title, text) || { ok: false, reason: 'error' }}
           onPinFlyer={(id) => gameRef.current?.scene?.getScene('VillageScene')?.itemsSystem?.pinFlyerToBoard?.(id) || { ok: false, reason: 'error' }}
           onPlaceDecoration={(id) => gameRef.current?.scene?.getScene('VillageScene')?.decorSystem?.placeDecoration?.(id) || { ok: false, reason: 'error' }}
+          onPutHatOnCat={(id) => gameRef.current?.scene?.getScene('VillageScene')?.santaHatSystem?.placeOnCat?.(id) || { ok: false, reason: 'error' }}
           onOpenPuzzle={() => { setOpenInventory(false); setOpenPuzzle(true); }}
           onClose={() => { setOpenInventory(false); setCoinBalance(getCoins()); }}
         />

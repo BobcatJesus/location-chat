@@ -104,6 +104,34 @@ function makeCatBody(scene) {
   return g;
 }
 
+// Santa Hat v1 (`sq-santa-hat-v1`): a little red Santa hat for the
+// cat's head — triangle + white brim + pompom. Two versions, one
+// per body: awake (head top-right, facing right) and asleep (head
+// tucked on the left). The hat rides on the cat's container, so it
+// follows her while she wanders, follows you, and sleeps — and it
+// flips with her when she turns around.
+function makeSantaHatAwake(scene) {
+  const g = scene.add.graphics();
+  // Brim across the top of the head, triangle flopping right.
+  g.fillStyle(0xdc2626, 1);
+  g.fillTriangle(3, -18, 17, -18, 13, -30);
+  g.fillStyle(0xffffff, 1);
+  g.fillRoundedRect(1, -19, 18, 5, 2);
+  g.fillCircle(14, -31, 2.5);
+  return g;
+}
+
+function makeSantaHatAsleep(scene) {
+  const g = scene.add.graphics();
+  // Brim across the tucked head, triangle flopping left.
+  g.fillStyle(0xdc2626, 1);
+  g.fillTriangle(-20, -14, -5, -14, -9, -26);
+  g.fillStyle(0xffffff, 1);
+  g.fillRoundedRect(-22, -15, 18, 5, 2);
+  g.fillCircle(-8, -27, 2.5);
+  return g;
+}
+
 // Curled up asleep — the user's exact sleeping-cat image, Z bubble
 // and all. The floating 💤 stays too, so the zzzs are unmistakable.
 function makeCurledBody(scene) {
@@ -149,6 +177,7 @@ export class CafeCat {
     this.zzz = null;      // floating "Z z z" text
     this.pets = 0;
     this.asleep = false;
+    this.hatWorn = false; // Santa Hat v1: she is wearing the hat
     this.petCooldown = 0;
     this.followUntil = 0;
     this.onCatPet = null; // quest hook (Cat Cuddles): set by VillageScene
@@ -203,13 +232,20 @@ export class CafeCat {
     const body = makeCatBody(scene);
     const curled = makeCurledBody(scene);
     curled.setVisible(false);
-    const container = scene.add.container(start.x, start.y, [body, curled]);
+    // Santa Hat v1: the hat rides on the container (after body /
+    // curled, so it draws on top), one version per body. Hidden
+    // until SantaHatSystem says she wears it.
+    const hatAwake = makeSantaHatAwake(scene);
+    const hatAsleep = makeSantaHatAsleep(scene);
+    hatAwake.setVisible(false);
+    hatAsleep.setVisible(false);
+    const container = scene.add.container(start.x, start.y, [body, curled, hatAwake, hatAsleep]);
     container.setDepth(DEPTH.ACTOR_MIN + Math.round(start.y));
     container.setSize(36, 34);
     container.setInteractive({ useHandCursor: true });
     const target = this._randomWanderPoint();
     const catRef = {
-      container, body, curled,
+      container, body, curled, hatAwake, hatAsleep,
       x: start.x, y: start.y,
       tx: target.x, ty: target.y,
       state: 'wander',
@@ -218,6 +254,7 @@ export class CafeCat {
     };
     container.on('pointerdown', () => this.petCat(true));
     this.cat = catRef;
+    this._applyHatVisibility();
     // If we re-spawned while the server says the cat is asleep, show that.
     if (this.asleep) this._showAsleep();
   }
@@ -276,6 +313,20 @@ export class CafeCat {
     else this._showAwake();
   }
 
+  /** Santa Hat v1: she is wearing the hat (or not). The hat rides
+   * on her container, so it follows her while she wanders, follows
+   * you, and sleeps — awake and asleep versions swap with the body. */
+  setHatWorn(worn) {
+    this.hatWorn = Boolean(worn);
+    this._applyHatVisibility();
+  }
+
+  _applyHatVisibility() {
+    if (!this.cat) return;
+    try { this.cat.hatAwake?.setVisible(Boolean(this.hatWorn) && !this.asleep); } catch {}
+    try { this.cat.hatAsleep?.setVisible(Boolean(this.hatWorn) && this.asleep); } catch {}
+  }
+
   _showAsleep() {
     if (!this.cat) return;
     this.followUntil = 0;
@@ -294,6 +345,7 @@ export class CafeCat {
     this.cat.body.setVisible(false);
     this.cat.curled.setVisible(true);
     this.cat.container.setDepth(DEPTH.ACTOR_MIN + Math.round(this.cat.y));
+    this._applyHatVisibility();
     this._showZzz();
   }
 
@@ -302,6 +354,7 @@ export class CafeCat {
     this._hideZzz();
     this.cat.curled.setVisible(false);
     this.cat.body.setVisible(true);
+    this._applyHatVisibility();
     const target = this._randomWanderPoint();
     this.cat.tx = target.x; this.cat.ty = target.y;
     this.cat.state = 'wander';

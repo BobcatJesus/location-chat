@@ -11,10 +11,15 @@
 // Props:
 //   getState() — () => { items, count, capacity, hasBag, coins,
 //     bagPrice, flyerCost, full, roomId, canDispose, canFeedDucks,
-//     canFeedCat, decorNotice, decorNoticeSeq } (ItemsSystem.getState)
+//     canFeedCat, decorNotice, decorNoticeSeq, hatNotice,
+//     hatNoticeSeq, canHatCat } (ItemsSystem.getState)
 //     — decorNotice/decorNoticeSeq are Decoration Shop v1.1
 //     (`sq-dec-shop-v1-1`): the latest place/pickup news, shown in
 //     this panel's own notice line when the seq changes.
+//     hatNotice/hatNoticeSeq are Santa Hat v1 (`sq-santa-hat-v1`):
+//     the same channel for hat news. canHatCat says whether the
+//     player is standing by the cafe cat (the "Put on the cat"
+//     button enables then).
 //   onUse(id) / onDrop(id) / onDispose(id) — return { ok, reason? }
 //   onBuyBag() — returns { ok, reason? }
 //   onMakeFlyer(title, text) — returns { ok, reason? }
@@ -24,6 +29,9 @@
 //   onPlaceDecoration(id) — place a decoration where you stand
 //     (Decoration Shop v1); returns { ok, pending?, reason? } — the
 //     decoration leaves the pocket when the server confirms it
+//   onPutHatOnCat(id) — put the Santa hat on the cafe cat (Santa
+//     Hat v1); returns { ok, pending?, reason? } — the hat leaves
+//     the pocket when the server confirms it is on the cat
 //   onOpenPuzzle() — close this panel and open the puzzle board
 //   getBadges() — () => [{ questId, emoji, title, description,
 //     completedAt, completedLabel }] (QuestManager.getCompletions,
@@ -46,6 +54,9 @@ const REASON_TEXT = {
   'puzzle-piece-no-drop': 'Puzzle pieces can’t be dropped — place them on the puzzle board.',
   'not-flyer': 'Only flyers can be pinned to the notice board.',
   'not-decoration': 'Only decorations can be placed like that.',
+  'not-hat': 'Only the Santa hat goes on the cat.',
+  'not-near-cat': 'Walk up to the cat to put the hat on her.',
+  'santa-hat-no-drop': 'The Santa hat belongs on the cat — put it on her instead of dropping it.',
   'room-full': 'This room is full of decorations — pick one up first.',
   'not-yours': 'That decoration belongs to someone else — only they can move it.',
   // Decoration Shop v1.1 (`sq-dec-shop-v1-1`): placing (or taking
@@ -58,7 +69,7 @@ const REASON_TEXT = {
 };
 
 export default function InventoryPanel({
-  getState, onUse, onDrop, onDispose, onBuyBag, onMakeFlyer, onPinFlyer, onPlaceDecoration, onOpenPuzzle, getBadges, onClose,
+  getState, onUse, onDrop, onDispose, onBuyBag, onMakeFlyer, onPinFlyer, onPlaceDecoration, onPutHatOnCat, onOpenPuzzle, getBadges, onClose,
 }) {
   const [state, setState] = useState(() => {
     try { return getState ? getState() : null; } catch { return null; }
@@ -79,6 +90,8 @@ export default function InventoryPanel({
   // is hidden under this panel, so this is the only place the
   // player will see it while the pocket is open.
   const lastDecorNoticeSeqRef = useRef(0);
+  // Santa Hat v1 (`sq-santa-hat-v1`): same channel for hat news.
+  const lastHatNoticeSeqRef = useRef(0);
   const [reader, setReader] = useState(null); // item being read, or null
   const [flyerTitle, setFlyerTitle] = useState('');
   const [flyerText, setFlyerText] = useState('');
@@ -98,6 +111,13 @@ export default function InventoryPanel({
             && next.decorNoticeSeq !== lastDecorNoticeSeqRef.current) {
             lastDecorNoticeSeqRef.current = next.decorNoticeSeq;
             if (next.decorNotice) setNotice(next.decorNotice);
+          }
+          // Santa Hat v1: same channel for hat news (timeout, or a
+          // late confirm that the hat is on the cat / back in hand).
+          if (typeof next.hatNoticeSeq === 'number'
+            && next.hatNoticeSeq !== lastHatNoticeSeqRef.current) {
+            lastHatNoticeSeqRef.current = next.hatNoticeSeq;
+            if (next.hatNotice) setNotice(next.hatNotice);
           }
         }
       } catch {}
@@ -330,6 +350,23 @@ export default function InventoryPanel({
                           Place 🎄
                         </button>
                       )}
+                      {item.type === 'santa-hat' && (
+                        <button
+                          onClick={() => run(
+                            () => onPutHatOnCat && onPutHatOnCat(item.id),
+                            '🎅 Putting the hat on the cat…',
+                          )}
+                          disabled={!state.canHatCat}
+                          title={state.canHatCat ? 'Put the Santa hat on the cafe cat — she’ll wear it until it slips off' : 'Walk up to the cafe cat to put the hat on her'}
+                          style={{
+                            ...btnStyle,
+                            opacity: state.canHatCat ? 1 : 0.55,
+                            cursor: state.canHatCat ? 'pointer' : 'not-allowed',
+                          }}
+                        >
+                          Put on the cat 🎅
+                        </button>
+                      )}
                       {item.disposable && (
                         <button
                           onClick={() => run(() => onDispose && onDispose(item.id), '🗑️ Tossed! The cafe stays tidy.')}
@@ -340,7 +377,7 @@ export default function InventoryPanel({
                           Throw away 🗑️
                         </button>
                       )}
-                      {item.type !== 'puzzle-piece' && (
+                      {item.type !== 'puzzle-piece' && item.type !== 'santa-hat' && (
                         <button
                           onClick={() => run(
                             () => onDrop && onDrop(item.id),
@@ -369,6 +406,11 @@ export default function InventoryPanel({
                     {item.type === 'decoration' && (
                       <div style={{ fontSize: 12, color: '#92400e', marginTop: 6 }}>
                         Placing it where you stand frees this slot — everyone in the room will see it.
+                      </div>
+                    )}
+                    {item.type === 'santa-hat' && (
+                      <div style={{ fontSize: 12, color: '#92400e', marginTop: 6 }}>
+                        Put it on the cat — she’ll wear it until it slips off.
                       </div>
                     )}
                   </div>

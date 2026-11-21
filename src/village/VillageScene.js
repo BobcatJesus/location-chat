@@ -5,6 +5,7 @@ import { CafeCat } from './CafeCat.js';
 import { HiddenKey } from './HiddenKey.js';
 import { PuzzleQuest } from './PuzzleQuest.js';
 import { TrimTreeQuest } from './TrimTreeQuest.js';
+import { SantaHatSystem } from './SantaHatSystem.js';
 import { QuestManager } from './QuestManager.js';
 import { ItemsSystem } from './ItemsSystem.js';
 import { NoticeBoardSystem } from './NoticeBoardSystem.js';
@@ -668,6 +669,12 @@ export class VillageScene extends Phaser.Scene {
     // the system itself no-ops everywhere else.
     this.homeStorageSystem = new HomeStorageSystem(this);
     this.homeStorageSystem.refresh();
+    // Santa Hat v1 (`sq-santa-hat-v1`): one Santa hat hidden behind
+    // the Christmas tree in Agora — find it, put it on the cafe cat,
+    // pick it up again when it slips off. Agora only; the system
+    // itself no-ops everywhere else.
+    this.santaHatSystem = new SantaHatSystem(this);
+    this.santaHatSystem.refresh();
     // Wanderer quest: this room entry counts (after refresh, not in it).
     this.questManager?.noteRoomVisit();
     // Seasonal: pumpkins, bats, spooky tint in October.
@@ -695,6 +702,14 @@ export class VillageScene extends Phaser.Scene {
 
     // Cafe cat interaction (Agora).
     this.catPrompt = this.add.text(0, 0, '🐱 Pet the cat [E]', {
+      fontSize: '15px',
+      color: '#7c2d12',
+      backgroundColor: 'rgba(255,255,255,0.85)',
+      padding: { x: 8, y: 4 },
+    }).setOrigin(0.5, 1).setDepth(DEPTH.UI).setAlpha(0);
+
+    // Santa Hat v1: prompt near the hat on the ground (pick it up).
+    this.hatPrompt = this.add.text(0, 0, '🎅 Pick up the Santa hat [E]', {
       fontSize: '15px',
       color: '#7c2d12',
       backgroundColor: 'rgba(255,255,255,0.85)',
@@ -909,6 +924,19 @@ export class VillageScene extends Phaser.Scene {
       // box or the tree both walks you there and acts on it.
       try { this.trimTreeQuest?.boxTapAt(ptr.worldX, ptr.worldY); } catch {}
       try { this.trimTreeQuest?.treeTapAt(ptr.worldX, ptr.worldY); } catch {}
+      // Santa Hat v1: a click behind the Christmas tree counts as
+      // one search tap (3 taps finds the hat). Silent unless it
+      // finds it — no hint about where the hat hides. A FULL pocket
+      // refuses the find (taps stay counted, so one more click
+      // after making room tries again); offline, the find refuses.
+      try {
+        const hr = this.santaHatSystem?.searchTapAt(ptr.worldX, ptr.worldY);
+        if (hr && hr.reason === 'inventory-full') {
+          this.onSystemNotice?.(`🎒 ${INVENTORY_FULL_MESSAGE}`);
+        } else if (hr && hr.reason === 'offline') {
+          this.onSystemNotice?.('You seem to be offline — try again when you’re connected.');
+        }
+      } catch {}
       // Items + inventory v1: the same click can also count toward a
       // hidden item (trash can, Table 4, plant, couch, portrait) or
       // pick up visible ground litter you are standing next to.
@@ -952,6 +980,17 @@ export class VillageScene extends Phaser.Scene {
       // yours — or you are a moderator). Tap-to-move still happens
       // below, as before.
       try { this.decorSystem?.decorTapAt(ptr.worldX, ptr.worldY); } catch {}
+      // Santa Hat v1: a click on the hat on the ground picks it back
+      // up (if you are standing close enough). A full pocket
+      // refuses it — the hat stays on the ground.
+      try {
+        const gr = this.santaHatSystem?.groundTapAt(ptr.worldX, ptr.worldY);
+        if (gr && gr.reason === 'inventory-full') {
+          this.onSystemNotice?.(`🎒 ${INVENTORY_FULL_MESSAGE}`);
+        } else if (gr && gr.reason === 'offline') {
+          this.onSystemNotice?.('You seem to be offline — try again when you’re connected.');
+        }
+      } catch {}
       this.target = target;
       this.tapDot.setPosition(ptr.worldX, ptr.worldY).setAlpha(0.7);
       this.tweens.add({ targets: this.tapDot, alpha: 0, duration: 400 });
@@ -1234,6 +1273,14 @@ export class VillageScene extends Phaser.Scene {
       if (duck) this.duckPond.petDuck(duck);
     } else if (kind === 'ducks') {
       this._tryFeedDucks();
+    } else if (kind === 'santa-hat-ground') {
+      // Santa Hat v1: pick the hat on the ground back up (a full
+      // pocket refuses it — the scene shows the standard message,
+      // same as the litter pickup).
+      const res = this.santaHatSystem?.pickupNearest();
+      if (res && res.reason === 'inventory-full') {
+        this.onSystemNotice?.(`🎒 ${INVENTORY_FULL_MESSAGE}`);
+      }
     } else if (kind === 'cat') {
       this.cafeCat?.petCat(true);
     } else if (kind === 'cat-asleep') {
@@ -1293,6 +1340,9 @@ export class VillageScene extends Phaser.Scene {
     if (this.hiddenKey?.nearestKey(this.player.gx, this.player.gy)) return 'key';
     const nearPond = this.duckPond?.nearestFeedablePond(this.player.gx, this.player.gy);
     if (nearPond && this._feedCooldownMs <= 0) return 'ducks';
+    // Santa Hat v1: the hat on the ground wins over petting the cat
+    // — it fell right beside her, so E picks it up first.
+    if (this.santaHatSystem?.nearestGroundHat(this.player.gx, this.player.gy)) return 'santa-hat-ground';
     if (this.cafeCat?.nearestCat(this.player.gx, this.player.gy)) return 'cat';
     if (this.cafeCat?.nearestSleepingCat(this.player.gx, this.player.gy)) return 'cat-asleep';
     if (this.puzzleQuest?.nearestTable(this.player.gx, this.player.gy)) return 'puzzle-table';
@@ -1956,6 +2006,9 @@ export class VillageScene extends Phaser.Scene {
       socket.emit('get_jukebox', { roomId: this.roomId });
       socket.emit('get_pumpkins', { roomId: this.roomId });
       socket.emit('get_cat', { roomId: this.roomId });
+      // Santa Hat v1: re-request the hat's state on (re)connect, so
+      // a hat placed / slipped during a disconnect window comes back.
+      socket.emit('get_hat', { roomId: this.roomId });
       socket.emit('get_quest_state', { roomId: this.roomId });
       socket.emit('get_puzzle', { roomId: this.roomId });
       socket.emit('get_board', { roomId: this.roomId });
@@ -2215,6 +2268,12 @@ export class VillageScene extends Phaser.Scene {
     // room, in-memory on the server like the notice board).
     socket.on('decor_state', (payload = {}) => {
       this.decorSystem?.applyState(payload);
+    });
+
+    // Santa Hat state (Agora, shared for the whole room — one hat,
+    // in-memory on the server like the puzzle).
+    socket.on('hat_state', (payload = {}) => {
+      this.santaHatSystem?.applyState(payload);
     });
 
     // Your Place state (per player — only your own stored items,
@@ -2841,6 +2900,7 @@ export class VillageScene extends Phaser.Scene {
     this.hiddenKey?.update(delta);
     this.puzzleQuest?.update(delta);
     this.trimTreeQuest?.update(delta);
+    this.santaHatSystem?.update(delta);
     this.itemsSystem?.update(delta);
     this.questManager?.update(delta);
     this.halloween?.update(delta);
@@ -2860,12 +2920,23 @@ export class VillageScene extends Phaser.Scene {
       this.feedPrompt.setAlpha(0);
     }
 
+    // Santa Hat v1: the hat on the ground wins over petting the cat
+    // (it fell right beside her) — checked first, used below.
+    const nearHat = this.santaHatSystem?.nearestGroundHat(this.player.gx, this.player.gy);
+
     // Cafe cat: prompt near the cat (duck prompt takes priority).
     const nearCat = this.cafeCat?.nearestCat(this.player.gx, this.player.gy);
-    if (nearCat && !nearPond) {
+    if (nearCat && !nearPond && !nearHat) {
       this.catPrompt.setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
     } else {
       this.catPrompt.setAlpha(0);
+    }
+
+    // Santa Hat v1: prompt near the hat on the ground.
+    if (nearHat && !nearPond) {
+      this.hatPrompt.setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
+    } else {
+      this.hatPrompt.setAlpha(0);
     }
 
     // Group puzzle: prompt near the table only. v1.2 pieces are
@@ -3214,11 +3285,14 @@ export class VillageScene extends Phaser.Scene {
     this.noticeBoardSystem = null;
     this.decorSystem?.destroy();
     this.decorSystem = null;
+    this.santaHatSystem?.destroy();
+    this.santaHatSystem = null;
     this.homeStorageSystem?.destroy();
     this.homeStorageSystem = null;
     this.questManager?.destroy();
     this.questManager = null;
     this.catPrompt?.destroy();
+    this.hatPrompt?.destroy();
     this.puzzlePrompt?.destroy();
     this.treePrompt?.destroy();
     this.decorPrompt?.destroy();
