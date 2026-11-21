@@ -111,8 +111,19 @@ export class ItemsSystem {
   /** Plain-data state for the inventory panel (polls this ~2x/sec). */
   getState() {
     const state = getInventoryState();
+    // Decoration Shop v1.1 (`sq-dec-shop-v1-1`): the latest
+    // place/pickup news from DecorSystem (timeout, or a late
+    // confirm). The pocket panel polls getState() every 500ms and
+    // shows a fresh decorNotice in its own notice line — the scene
+    // toast sits UNDER the panel (zIndex 1002 vs 1100), so without
+    // this the player would never see a timeout while the pocket
+    // is open.
+    let decorNotice = { text: '', seq: 0 };
+    try { decorNotice = this.scene?.decorSystem?.getPlaceNotice?.() || decorNotice; } catch {}
     return {
       ...state,
+      decorNotice: decorNotice.text || '',
+      decorNoticeSeq: decorNotice.seq || 0,
       roomId: this.scene?.roomId || '',
       // Drop on the home floor v1: the panel shows a different
       // success line when Drop puts a persisted item on the home

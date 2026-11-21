@@ -11,7 +11,10 @@
 // Props:
 //   getState() — () => { items, count, capacity, hasBag, coins,
 //     bagPrice, flyerCost, full, roomId, canDispose, canFeedDucks,
-//     canFeedCat } (ItemsSystem.getState)
+//     canFeedCat, decorNotice, decorNoticeSeq } (ItemsSystem.getState)
+//     — decorNotice/decorNoticeSeq are Decoration Shop v1.1
+//     (`sq-dec-shop-v1-1`): the latest place/pickup news, shown in
+//     this panel's own notice line when the seq changes.
 //   onUse(id) / onDrop(id) / onDispose(id) — return { ok, reason? }
 //   onBuyBag() — returns { ok, reason? }
 //   onMakeFlyer(title, text) — returns { ok, reason? }
@@ -27,7 +30,7 @@
 //     Quest Badges v1) — the Badges tab
 //   onClose()
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 const REASON_TEXT = {
   'inventory-full': 'Your pocket is full — use, drop, or throw something away to make room.',
@@ -45,6 +48,9 @@ const REASON_TEXT = {
   'not-decoration': 'Only decorations can be placed like that.',
   'room-full': 'This room is full of decorations — pick one up first.',
   'not-yours': 'That decoration belongs to someone else — only they can move it.',
+  // Decoration Shop v1.1 (`sq-dec-shop-v1-1`): placing (or taking
+  // back) before the server has confirmed the room join.
+  'not-joined': 'Still connecting to the room — try again in a second.',
   offline: 'You seem to be offline — try again when you’re connected.',
   'not-available': 'The notice board is only in Agora.',
   'not-found': 'That item is no longer in your pocket.',
@@ -65,6 +71,14 @@ export default function InventoryPanel({
     try { return getBadges ? getBadges() : []; } catch { return []; }
   });
   const [notice, setNotice] = useState('');
+  // Decoration Shop v1.1 (`sq-dec-shop-v1-1`): the seq of the last
+  // decor notice this panel already showed. The panel polls
+  // getState() every 500ms; when DecorSystem posts fresh place /
+  // pickup news (a timeout, or a late confirm) the seq changes and
+  // the panel copies it into its own notice line — the scene toast
+  // is hidden under this panel, so this is the only place the
+  // player will see it while the pocket is open.
+  const lastDecorNoticeSeqRef = useRef(0);
   const [reader, setReader] = useState(null); // item being read, or null
   const [flyerTitle, setFlyerTitle] = useState('');
   const [flyerText, setFlyerText] = useState('');
@@ -74,7 +88,18 @@ export default function InventoryPanel({
     const t = setInterval(() => {
       try {
         const next = getState ? getState() : null;
-        if (next) setState(next);
+        if (next) {
+          setState(next);
+          // Decoration Shop v1.1: a fresh decor notice (timeout or
+          // late confirm) replaces the stale "Placing it…" line.
+          // The seq check keeps the poll from stomping a newer
+          // notice an action just set via run().
+          if (typeof next.decorNoticeSeq === 'number'
+            && next.decorNoticeSeq !== lastDecorNoticeSeqRef.current) {
+            lastDecorNoticeSeqRef.current = next.decorNoticeSeq;
+            if (next.decorNotice) setNotice(next.decorNotice);
+          }
+        }
       } catch {}
       try {
         const nextBadges = getBadges ? getBadges() : null;

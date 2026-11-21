@@ -1879,9 +1879,26 @@ export class VillageScene extends Phaser.Scene {
     }
   }
 
+  /** Decoration Shop v1.1 (`sq-dec-shop-v1-1`): true once the server
+   * has confirmed this socket's room join (first room_state after
+   * connecting). DecorSystem gates decor_place / decor_remove on it:
+   * the server silently drops those emits when room membership is
+   * not registered yet, which used to leave a place stuck at
+   * "Placing it…" forever. */
+  isRoomJoined() {
+    return this._roomJoinConfirmed === true;
+  }
+
   _connectSocket() {
     const socket = io(SOCKET_SERVER_URL, { transports: ['websocket'] });
     this.socket = socket;
+    // Decoration Shop v1.1 (`sq-dec-shop-v1-1`): true once the server
+    // has confirmed this socket's room join (first room_state after
+    // connecting). DecorSystem gates decor_place / decor_remove on
+    // it — the server silently drops those emits before room
+    // membership is registered. Cleared on disconnect and on every
+    // (re)connect, before join_room goes out again.
+    this._roomJoinConfirmed = false;
     this._fallbackSyncTimer = null;
     this._lastDecorSyncAt = 0;
     this._lastPresenceSyncAt = 0;
@@ -1898,6 +1915,10 @@ export class VillageScene extends Phaser.Scene {
     });
 
     socket.on('connect', () => {
+      // Decoration Shop v1.1: a fresh (re)connect starts unjoined
+      // until the first room_state proves the server processed the
+      // join — see isRoomJoined().
+      this._roomJoinConfirmed = false;
       socket.emit('join_room', {
         roomId: this.roomId,
         lat: this.userLocation?.latitude ?? null,
@@ -1926,6 +1947,12 @@ export class VillageScene extends Phaser.Scene {
       });
       socket.emit('get_room_state', { roomId: this.roomId });
       socket.emit('get_room_decorations', { roomId: this.roomId });
+      // Decoration Shop v1.1 (`sq-dec-shop-v1-1`): re-request the
+      // room's placed decorations on (re)connect. The burst had
+      // every other get_* call but never get_decor, so a decoration
+      // the server stored during a disconnect window never came
+      // back until something else triggered a refresh.
+      socket.emit('get_decor', { roomId: this.roomId });
       socket.emit('get_jukebox', { roomId: this.roomId });
       socket.emit('get_pumpkins', { roomId: this.roomId });
       socket.emit('get_cat', { roomId: this.roomId });
@@ -1950,6 +1977,10 @@ export class VillageScene extends Phaser.Scene {
     });
 
     socket.on('disconnect', () => {
+      // Decoration Shop v1.1: the join confirmation belongs to this
+      // socket — a disconnect voids it until the next connect's
+      // room_state.
+      this._roomJoinConfirmed = false;
       if (this._fallbackSyncTimer) {
         clearInterval(this._fallbackSyncTimer);
         this._fallbackSyncTimer = null;
@@ -1957,6 +1988,12 @@ export class VillageScene extends Phaser.Scene {
     });
 
     socket.on('room_state', (state) => {
+      // Decoration Shop v1.1: the server emits room_state to the
+      // joiner at the END of join_room (after membership is
+      // registered), and answers get_room_state the same way — the
+      // burst sends join_room first, so any room_state received on
+      // this socket proves the join is confirmed.
+      this._roomJoinConfirmed = true;
       const groupedState = new Map();
       const canonicalState = new Map();
       const nextIds = new Set();

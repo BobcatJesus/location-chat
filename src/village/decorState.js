@@ -46,6 +46,12 @@ export const DEC_SHOP_MARKER_V1 = 'sq-dec-shop-v1';
 // Live reference so the marker survives minification (same pattern
 // as the puzzle / tree markers).
 export const DECOR_MARKER_V1 = 'sq-dec-shop-v1';
+// Decoration Shop v1.1 (`sq-dec-shop-v1-1`): the place flow no longer
+// waits forever for a server confirm that may never come — a pending
+// place/pickup times out (~5s), the client re-requests decor state,
+// and placing is gated on the room join being confirmed. Prices,
+// kinds, cap and take-back rules are exactly v1.
+export const DEC_SHOP_MARKER_V11 = 'sq-dec-shop-v1-1';
 
 export const DECOR_MAX_PER_ROOM = 30;
 
