@@ -6,6 +6,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   HAT_MARKER_V1,
+  HAT_MARKER_V11,
   HAT_REWARD_COINS,
   HAT_SLIP_MS,
   HAT_SEARCH_CLICKS,
@@ -27,6 +28,10 @@ describe('hat constants', () => {
     expect(HAT_MARKER_V1).toBe('sq-santa-hat-v1');
   });
 
+  it('carries the v1.1 marker (spot moved to the foot of the tree)', () => {
+    expect(HAT_MARKER_V11).toBe('sq-santa-hat-v1-1');
+  });
+
   it('pays 3 coins, slips off after 4 minutes, takes 3 search clicks', () => {
     expect(HAT_REWARD_COINS).toBe(3);
     expect(HAT_SLIP_MS).toBe(4 * 60 * 1000);
@@ -34,9 +39,15 @@ describe('hat constants', () => {
     expect(HAT_SEARCH_RANGE).toBe(140);
   });
 
-  it('hides behind tree 1 (east side), north of the apex', () => {
+  it('hides at the foot of tree 1 (east side), behind the trunk', () => {
+    // v1.1: trunk spans y 446–484 (fillRect(-14,-34,28,38) at spot
+    // 1400,480); the spot sits 16px north of its top edge, centred
+    // on the trunk's x — and inside the tree's own click zone
+    // (x 1285–1515, y 195–510), so clicks count for both.
     expect(HAT_HIDE_SPOT.x).toBe(1400);
-    expect(HAT_HIDE_SPOT.y).toBeLessThan(200);
+    expect(HAT_HIDE_SPOT.y).toBe(430);
+    expect(HAT_HIDE_SPOT.y).toBeLessThan(446);
+    expect(HAT_HIDE_SPOT.y).toBeGreaterThan(195);
   });
 });
 

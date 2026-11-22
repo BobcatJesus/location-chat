@@ -38,6 +38,7 @@
 import { DEPTH } from './depth.js';
 import {
   HAT_MARKER_V1,
+  HAT_MARKER_V11,
   HAT_REWARD_COINS,
   HAT_SLIP_MS,
   HAT_SEARCH_CLICKS,
@@ -94,6 +95,8 @@ export class SantaHatSystem {
     this.scene = scene;
     // sq-santa-hat-v1 — marker for the v1 landing check.
     this.marker = HAT_MARKER_V1;
+    // sq-santa-hat-v1-1 — marker for the v1.1 landing check.
+    this.markerV11 = HAT_MARKER_V11;
     this.state = createHatState();
     this._searchTaps = 0; // taps behind the tree this room visit
     this._groundContainer = null; // Phaser container for the hat on the floor

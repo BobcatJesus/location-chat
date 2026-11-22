@@ -23,6 +23,7 @@
 // may be more hats to find, or hats sold in a shop — NOT in v1.
 
 export const HAT_MARKER_V1 = 'sq-santa-hat-v1';
+export const HAT_MARKER_V11 = 'sq-santa-hat-v1-1'; // v1.1: hiding spot moved to the foot of the tree
 export const HAT_REWARD_COINS = 3; // a few coins, first placement only
 export const HAT_SLIP_MS = 4 * 60 * 1000; // 4 minutes on the cat, then it slips off
 export const HAT_SEARCH_CLICKS = 3; // clicks behind the tree to find it (puzzle pattern)
@@ -31,16 +32,25 @@ export const HAT_GROUND_CLICK_RANGE = 44; // px a click must land from the hat o
 export const HAT_GROUND_STAND_RANGE = 90; // px the player must stand from the hat on the floor
 export const HAT_PENDING_TIMEOUT_MS = 5000; // a place/pickup waits 5s for the server (decor pattern)
 
-// Hiding spot: BEHIND tree 1 (east side, 1400,480) — the far side
-// from the room centre, just north of the tree's apex, clear of the
-// coffee bar (which ends at x=1180) and the east plants. BUILDER
-// DECISION: fixed behind tree 1, not the active tree — tree 1 always
-// stands in the room (even finished), so the spot never moves when
-// tree 2 appears. The hat zone barely overlaps the tree's own click
-// zone (a sliver at y 195-215), so clicking there can count toward
-// both a hat tap and hanging an ornament — same accepted cross-talk
-// as the trash can (puzzle piece 5 + trash item share a click).
-export const HAT_HIDE_SPOT = { x: 1400, y: 165 };
+// Hiding spot (v1.1, `sq-santa-hat-v1-1`): at the FOOT of tree 1
+// (east side, 1400,480), BEHIND the trunk. Derived from _drawTree
+// in TrimTreeQuest.js: the trunk is fillRect(-14, -34, 28, 38)
+// relative to the tree spot, so in world coords it spans x 1386–
+// 1414, y 446–484. The spot sits 16px north of the trunk's top
+// edge (446), centred on the trunk's x — (1400, 430) — tucked under
+// the lowest tier's foliage at the foot of the tree. v1 hid it above
+// the apex at (1400, 165) and the user could not find it live (the
+// spot was a fiddly band above the tree, clicks landed on the tree
+// instead). BUILDER DECISION: fixed behind tree 1, not the active
+// tree — tree 1 always stands in the room (even finished), so the
+// spot never moves when tree 2 appears. The foot of the tree is
+// INSIDE the tree's own click zone (treeTapAt covers x 1285–1515,
+// y 195–510), so clicks here count toward BOTH a hat tap and hanging
+// an ornament — same accepted cross-talk as the trash can (puzzle
+// piece 5 + trash item share a click). Not prevented, by design:
+// the player is standing at the foot of the tree clicking the tree,
+// and the hat is right there behind the wood.
+export const HAT_HIDE_SPOT = { x: 1400, y: 430 };
 export const HAT_HIDE_RADIUS = 50; // click zone around the hiding spot
 
 // Where a slipped-off hat may land: clamped to the Agora floor.
