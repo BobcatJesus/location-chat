@@ -225,7 +225,7 @@ function createDecahedronRoomFootprint(room = {}) {
   return points;
 }
 
-export default function VillageCanvas({ room, profile, onLeave, onGoHome = null, location, venueEvents: providedVenueEvents = [], canManageVenue = false, isModerator = false }) {
+export default function VillageCanvas({ room, profile, onLeave, location, venueEvents: providedVenueEvents = [], canManageVenue = false, isModerator = false }) {
   const BASE_WIDTH = 1600;
   const BASE_HEIGHT = 900;
   const containerRef = useRef(null);
@@ -972,29 +972,11 @@ export default function VillageCanvas({ room, profile, onLeave, onGoHome = null,
         >
           ← Return to map
         </button>
-        {/* Your Place v1: 🏠 Home goes to your own home room
-            (home-<owner>). Shown whenever the app can take you there
-            (onGoHome), and hidden while you are already home — going
-            home from home is pointless. */}
-        {onGoHome && !isHomeRoom(roomId) && (
-          <button
-            onClick={onGoHome}
-            title="Go to your place — your home room, where you can store things"
-            style={{
-              background: 'rgba(0,0,0,0.55)', color: '#fff', border: 'none',
-              borderRadius: 8,
-              padding: '6px 14px',
-              minHeight: 44,
-              display: 'flex', alignItems: 'center',
-              cursor: 'pointer',
-              fontSize: 14,
-              flexShrink: 0,
-              whiteSpace: 'nowrap',
-            }}
-          >
-            🏠 Home
-          </button>
-        )}
+        {/* Two Places v1 (`sq-two-places-v1`): there is NO 🏠 Home
+            button any more. Your places are real locations — you
+            enter one from the map when you are next to it (GPS
+            proximity, like any other place). The teleport home is
+            gone entirely, so nothing here takes you to a place. */}
         <button
           onClick={toggleEditor}
           style={{

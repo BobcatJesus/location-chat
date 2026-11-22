@@ -41,6 +41,7 @@ import {
   HOME_STORAGE_MARKER_V1,
   HOME_STORAGE_MARKER_V1_1,
   HOME_DROP_MARKER_V1,
+  HOME_TWO_PLACES_MARKER_V1,
   HOME_CHEST_OPEN_RANGE,
   HOME_FLOOR_CLICK_RANGE,
   HOME_FLOOR_PICKUP_RANGE,
@@ -100,6 +101,9 @@ export class HomeStorageSystem {
     // sq-home-drop-v1 — marker for the Drop on the home floor v1
     // landing check (same live-reference reason as above).
     this.markerDrop = HOME_DROP_MARKER_V1;
+    // sq-two-places-v1 — marker for the Two Places v1 landing
+    // check (same live-reference reason as above).
+    this.markerTwoPlaces = HOME_TWO_PLACES_MARKER_V1;
     this._chest = null; // { x, y, w, h } of the chest, from the layout
     this._floor = []; // rendered floor items { id, type, item, emoji, label, x, y, textObj }
   }

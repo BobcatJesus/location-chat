@@ -23,4 +23,14 @@ describe('room access policy', () => {
     expect(requiresGpsProximity({ id: 'downtown-hub', radiusMeters: 200 })).toBe(true);
     expect(requiresGpsProximity({ id: 'no-radius' })).toBe(false);
   });
+
+  it('Two Places v1: personal places are GPS-gated like any other place', () => {
+    // The `home-` open-access exemption is gone: you can only enter
+    // your place by being next to it on the map. The server still
+    // refuses strangers at the door (owner-only join guard).
+    expect(isOpenAccessRoom('home-tfkelleher3-gmail-com')).toBe(false);
+    expect(isOpenAccessRoom('home-tfkelleher3-gmail-com_2')).toBe(false);
+    expect(requiresGpsProximity({ id: 'home-tfkelleher3-gmail-com', radiusMeters: 60 })).toBe(true);
+    expect(requiresGpsProximity({ id: 'home-tfkelleher3-gmail-com_2', radiusMeters: 60 })).toBe(true);
+  });
 });

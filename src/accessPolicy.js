@@ -10,12 +10,12 @@ const openAccessRoomIds = new Set(OPEN_ACCESS_ROOM_IDS);
 
 export function isOpenAccessRoom(roomId) {
   const id = String(roomId || '');
-  // Your Place (Your Place v1, `sq-your-place-v1`): a personal home
-  // room (`home-<owner>`) is always open to its owner — no GPS gate,
-  // no OSM strict block. The server still enforces owner-only access
-  // on join (join_denied for anyone else), so this only removes the
-  // client-side gates, never the access control itself.
-  if (id.startsWith('home-')) return true;
+  // Two Places v1 (`sq-two-places-v1`): the `home-` exemption is
+  // GONE. A personal place is a real location now — you can only
+  // enter it by being next to it on the map (GPS proximity, like
+  // any other place). The server still enforces owner-only access
+  // on join (join_denied for anyone else), so removing this only
+  // adds the client-side GPS gate, never weakens access control.
   return openAccessRoomIds.has(id);
 }
 

@@ -42,6 +42,39 @@
 //     anonymous sessions, as in v1.
 //
 
+// TWO PLACES (v1, `sq-two-places-v1`):
+//   - Up to TWO "your places" per player, both the SAME as the
+//     home above: a private room with a storage chest (Store / Take
+//     / Unload All) and drop-on-the-floor. The current single home
+//     becomes place #1; place #2 gets id `home-<owner>_2`.
+//   - Created from the map page's create-location flow ("+ Create
+//     room here" → the 📍 Create a Place modal), option labelled
+//     "🏠 Create your place here", WITH A NAME FIELD (the modal's
+//     existing name input — same as creating any location).
+//     Blank name defaults to "Your Place" (place #1) / "Your Place 2"
+//     (place #2). The name shows on the map pin and the room-list
+//     card. The option stays visible until the player has 2 places,
+//     then disappears entirely (same as Create Home at 1).
+//   - ACCESS RULE (the big change): you can ONLY enter your place
+//     by being next to it on the map — GPS proximity, tap its pin
+//     or card when in range, like any other place. NO TELEPORT.
+//     The 🏠 Home top-bar button that teleported you home from
+//     anywhere is GONE (removed from VillageCanvas + app.jsx).
+//     Concretely: the `home-` open-access exemption in
+//     accessPolicy.js is removed, so the normal GPS gate in
+//     handleEnterRoom applies to your places (pin tap, card,
+//     ?openRoom deep link — all pass the room with lat/lng).
+//     The server still refuses strangers at the door (join_denied,
+//     owner-only); the server-side GPS check can't apply to user
+//     rooms (the server doesn't know their coords — same as all
+//     user-created rooms), so the client gate is the enforcement.
+//   - Both places share the ONE per-player storage (chest store +
+//     floor items): your stuff is your stuff, accessible from
+//     either place. Builder decision — the server store is keyed
+//     by player, not by room, so nothing about the store changes.
+//   - Existing homes migrate as place #1 with their existing name
+//     preserved (place #1 keeps id `home-<owner>`).
+//
 // DROP ON THE HOME FLOOR (v1, `sq-home-drop-v1`):
 //   - The user asked for a method to drop items from his bag onto
 //     the floor of his home. Dropping works ONLY in your own home
@@ -67,6 +100,14 @@
 export const HOME_STORAGE_MARKER_V1 = 'sq-your-place-v1';
 export const HOME_STORAGE_MARKER_V1_1 = 'sq-your-place-v1-1';
 export const HOME_DROP_MARKER_V1 = 'sq-home-drop-v1';
+export const HOME_TWO_PLACES_MARKER_V1 = 'sq-two-places-v1';
+
+// Two Places v1 (`sq-two-places-v1`): how many personal places one
+// player can have. Place #1 keeps id `home-<owner>`; place #2 is
+// `home-<owner>_2` (see homePlaceIdFor — the `_2` suffix, not `-2`,
+// because an underscore can never appear in a sanitized owner key,
+// so parsing the owner back out of a place-2 id is unambiguous).
+export const HOME_MAX_PLACES = 2;
 
 // How close a click must land to a floor item to pick it up, and how
 // close the player must stand — same numbers as the visible litter
@@ -153,22 +194,60 @@ export function ownerKeyFromProfile(profile) {
 }
 
 /** The home room id for a player (`home-<ownerKey>`), or null when
- *  the player has no usable owner key (fully anonymous session). */
+ *  the player has no usable owner key (fully anonymous session).
+ *  This is place #1 — see homePlaceIdFor for both places. */
 export function homeRoomIdFor(profile) {
   const key = ownerKeyFromProfile(profile);
   if (!key) return null;
   return `${HOME_ROOM_PREFIX}${key}`;
 }
 
-/** Is this room id a personal home room? */
-export function isHomeRoom(roomId) {
-  return /^home-[a-z0-9][a-z0-9-]*$/.test(String(roomId || ''));
+/** The room id for one of a player's places (Two Places v1).
+ *  Index 1 is `home-<ownerKey>` (the original home); index 2 is
+ *  `home-<ownerKey>_2`. The `_2` suffix — not `-2` — because an
+ *  underscore can never appear in a sanitized owner key (the
+ *  sanitizer turns every non-alphanumeric into a dash), so the
+ *  owner can always be parsed back out of a place-2 id. A `-2`
+ *  suffix would collide with an owner key that itself ends in
+ *  `-2` (e.g. email `jane-2@…`). Returns null for a bad index or
+ *  no usable owner key. */
+export function homePlaceIdFor(profile, index = 1) {
+  const key = ownerKeyFromProfile(profile);
+  if (!key) return null;
+  if (index === 1) return `${HOME_ROOM_PREFIX}${key}`;
+  if (index === 2) return `${HOME_ROOM_PREFIX}${key}_2`;
+  return null;
 }
 
-/** The owner key of a home room id ('' when it is not a home room). */
+/** Which place number a room id is (1 or 2), or 0 when it is not a
+ *  personal home room. */
+export function homePlaceIndex(roomId) {
+  if (!isHomeRoom(roomId)) return 0;
+  return String(roomId).endsWith('_2') ? 2 : 1;
+}
+
+/** The default name for a place ("Your Place" / "Your Place 2") —
+ *  used when the player leaves the name field blank at creation. */
+export function defaultHomeName(index = 1) {
+  return index === 2 ? 'Your Place 2' : 'Your Place';
+}
+
+/** Is this room id a personal home room? Accepts both places
+ *  (`home-<owner>` and `home-<owner>_2`). */
+export function isHomeRoom(roomId) {
+  return /^home-[a-z0-9][a-z0-9-]*(?:_2)?$/.test(String(roomId || ''));
+}
+
+/** The owner key of a home room id ('' when it is not a home room).
+ *  Strips the place-2 `_2` suffix first, so place #2 reports the
+ *  same owner as place #1 — the server's join guard and store
+ *  handlers compare this against the actor key, so both places
+ *  stay owner-only with no changes on their side. */
 export function homeOwnerOf(roomId) {
   if (!isHomeRoom(roomId)) return '';
-  return String(roomId).slice(HOME_ROOM_PREFIX.length);
+  let suffix = String(roomId).slice(HOME_ROOM_PREFIX.length);
+  if (suffix.endsWith('_2')) suffix = suffix.slice(0, -2);
+  return suffix;
 }
 
 // --- create home (v1.1, pure — no storage access, so unit-testable) -----
@@ -178,7 +257,8 @@ export function homeOwnerOf(roomId) {
 // both read from the same source of truth: whether the home room
 // is in the list.
 /** The player's home room from a rooms list, or null when no home
- *  has been created yet. */
+ *  has been created yet. This is place #1 — see findHomeRooms for
+ *  both places. Kept for backwards compatibility. */
 export function findHomeRoom(rooms, profile) {
   const homeId = homeRoomIdFor(profile);
   if (!homeId) return null;
@@ -186,19 +266,46 @@ export function findHomeRoom(rooms, profile) {
   return rooms.find((r) => r && r.id === homeId) || null;
 }
 
-/** Is the home option available, and if not, why? Returns
- *  { status, homeId } — status is 'ready' (no home yet, GPS locked,
- *  profile known), 'no-location', 'no-profile', or
- *  'already-exists'. The app uses 'already-exists' to hide the
- *  Create Home option entirely (user's rule: it disappears). */
+/** The player's personal places from a rooms list, place #1 first
+ *  then place #2 (Two Places v1). An existing single home
+ *  (`home-<owner>`) comes back as place #1 with its stored name
+ *  preserved — that is the migration: nothing is renamed or moved.
+ *  Returns [] for a fully anonymous session. */
+export function findHomeRooms(rooms, profile) {
+  if (!Array.isArray(rooms)) return [];
+  if (!ownerKeyFromProfile(profile)) return [];
+  const out = [];
+  for (let index = 1; index <= HOME_MAX_PLACES; index += 1) {
+    const id = homePlaceIdFor(profile, index);
+    if (!id) continue;
+    const room = rooms.find((r) => r && r.id === id);
+    if (room) out.push(room);
+  }
+  return out;
+}
+
+/** Is the create-a-place option available, and if not, why?
+ *  Returns { status, homeId, placeIndex, defaultName } — status is
+ *  'ready' (fewer than 2 places, GPS locked, profile known),
+ *  'no-location', 'no-profile', or 'already-exists' (2 places
+ *  already). homeId is the NEXT place's id, placeIndex its number
+ *  (1 or 2), defaultName its blank-name default. The app uses
+ *  'already-exists' to hide the option entirely (user's rule: it
+ *  disappears). */
 export function homeCreateState({ location, profile, rooms } = {}) {
-  const homeId = homeRoomIdFor(profile);
-  if (!homeId) return { status: 'no-profile', homeId: null };
-  if (findHomeRoom(rooms, profile)) return { status: 'already-exists', homeId };
+  const existing = findHomeRooms(rooms, profile);
+  if (!ownerKeyFromProfile(profile)) return { status: 'no-profile', homeId: null, placeIndex: 0, defaultName: null };
+  if (existing.length >= HOME_MAX_PLACES) {
+    return { status: 'already-exists', homeId: null, placeIndex: 0, defaultName: null };
+  }
+  const placeIndex = existing.length + 1;
+  const homeId = homePlaceIdFor(profile, placeIndex);
   const lat = Number(location?.latitude);
   const lng = Number(location?.longitude);
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return { status: 'no-location', homeId };
-  return { status: 'ready', homeId };
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return { status: 'no-location', homeId, placeIndex, defaultName: defaultHomeName(placeIndex) };
+  }
+  return { status: 'ready', homeId, placeIndex, defaultName: defaultHomeName(placeIndex) };
 }
 
 // --- storage (per profile, localStorage; in-memory fallback when

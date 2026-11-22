@@ -9,7 +9,7 @@ import { normalizeAvatarModel } from '../game/entities/avatarModels.js';
 import { deriveLocationPalette } from '../utils/locationPalette';
 import { signOut } from '../lib/authClient';
 import { getRoomAccessRadius, isOpenAccessRoom } from '../accessPolicy';
-import { homeRoomIdFor, findHomeRoom, homeCreateState, HOME_ROOM_RADIUS } from '../village/homeStorage.js';
+import { findHomeRooms, homeCreateState, defaultHomeName, HOME_ROOM_RADIUS } from '../village/homeStorage.js';
 import { clearPuzzlePieces, clearPuzzlePiecesForNewSession } from '../village/items.js';
 
 const VillageCanvas = lazy(() => import('../village/VillageCanvas.jsx'));
@@ -896,13 +896,16 @@ function App() {
 
   const allRooms = mergeRoomsById(getAllRooms(), communityRooms);
 
-  // Your Place v1.1 (`sq-your-place-v1-1`): the player's home is a
-  // user room (kind 'home', id `home-<owner>`). One home per player
-  // — once it is in allRooms, the Create Home option disappears
-  // from the create-location flow and the 🏠 Home button is the way
-  // back (gated on homeExists below, at the VillageCanvas prop).
-  const homeRoom = findHomeRoom(allRooms, profile);
-  const homeExists = !!homeRoom;
+  // Two Places v1 (`sq-two-places-v1`): the player's personal
+  // places are user rooms (kind 'home', ids `home-<owner>` and
+  // `home-<owner>_2`). Up to two per player — once both are in
+  // allRooms, the "Create your place" option disappears from the
+  // create-location flow. There is NO teleport home any more: you
+  // enter a place from the map when you are next to it (the
+  // `home-` open-access exemption is gone from accessPolicy.js),
+  // so there is no Home button anywhere in the app now.
+  const homeRooms = findHomeRooms(allRooms, profile);
+  const homeCount = homeRooms.length;
 
   const staticRoomMatch = location
     ? (() => {
@@ -1049,49 +1052,54 @@ function App() {
     }
   };
 
-  // Your Place v1.1 (`sq-your-place-v1-1`): "Create Home" from the
-  // map page's Create a Place flow. Same GPS capture as creating a
-  // location — the home is created at the player's real current
-  // location. One home per player: homeCreateState refuses a second
-  // one, and the option disappears from the modal once a home
-  // exists (homeExists above). After creation the player is taken
-  // straight into their home, like a newly created room — so the
-  // home pin appears on the map the next time the map mounts
-  // (MapView builds its pins once on mount, same as other rooms).
-  const confirmCreateHome = () => {
+  // Two Places v1 (`sq-two-places-v1`): "Create your place" from
+  // the map page's Create a Place flow. Same GPS capture as
+  // creating a location — the place is created at the player's real
+  // current location. Up to two places per player: homeCreateState
+  // refuses a third, and the option disappears from the modal once
+  // two exist (homeCount above). The name comes from the modal's
+  // name input (same as creating any location); blank defaults to
+  // "Your Place" (place #1) / "Your Place 2" (place #2). After
+  // creation the player is taken straight into their place, like a
+  // newly created room — so the pin appears on the map the next
+  // time the map mounts (MapView builds its pins once on mount,
+  // same as other rooms).
+  const confirmCreatePlace = () => {
     const state = homeCreateState({ location, profile, rooms: allRooms });
     if (state.status === 'no-location') {
       setCreatingRoom(false);
-      setGpsToast('Waiting for GPS. Use Retry Location before creating your home.');
+      setGpsToast('Waiting for GPS. Use Retry Location before creating your place.');
       setTimeout(() => setGpsToast(null), 4000);
       retryLocation();
       return;
     }
     if (state.status === 'no-profile') {
       setCreatingRoom(false);
-      setGpsToast('Sign in to create your home.');
+      setGpsToast('Sign in to create your place.');
       setTimeout(() => setGpsToast(null), 4000);
       return;
     }
     if (state.status === 'already-exists') {
       setCreatingRoom(false);
-      setGpsToast('Your home is already created — tap 🏠 Home to go there.');
+      setGpsToast('You already have two places — find them on the map.');
       setTimeout(() => setGpsToast(null), 4000);
       return;
     }
     const ownerId = profile?.profile?.email || profile?.mode || 'guest';
     const contributorName = profile?.profile?.characterName || profile?.mode || 'guest';
+    const placeName = newRoomName.trim() || state.defaultName || defaultHomeName(state.placeIndex);
     const home = createUserRoom({
-      id: state.homeId, name: 'Your Place',
+      id: state.homeId, name: placeName,
       lat: location.latitude, lng: location.longitude,
       radiusMeters: HOME_ROOM_RADIUS, contributor: contributorName, ownerId, isPublic: false,
       kind: 'home',
     });
+    setNewRoomName('');
     setCreatingRoom(false);
     if (home) {
       setSelectedRoom(home.id);
       setActiveScene('room');
-      setGpsToast('🏠 Home created — welcome home.');
+      setGpsToast(`🏠 ${placeName} created — welcome home.`);
       setTimeout(() => setGpsToast(null), 5000);
     }
   };
@@ -1373,22 +1381,12 @@ function App() {
     };
   };
 
-  // Your Place v1 (`sq-your-place-v1`) + Create Home v1.1
-  // (`sq-your-place-v1-1`): the 🏠 Home button in the room top bar
-  // goes to your own home room (home-<owner>). The poiMeta carries
-  // no lat/lng, so no GPS gate applies — your place is always open
-  // to you — and the server still refuses anyone else at the door
-  // (join_denied). v1.1: the button only shows once a home EXISTS
-  // (gated on homeExists at the VillageCanvas prop) — before that
-  // it would lead nowhere. No home room exists for a fully
-  // anonymous session (homeRoomIdFor returns null), so the button
-  // hides then too.
-  const handleGoHome = () => {
-    const homeId = homeRoomIdFor(profile);
-    if (!homeId) return;
-    handleEnterRoom(homeId, { id: homeId, name: 'Your Place', kind: 'home' });
-  };
-
+  // Two Places v1 (`sq-two-places-v1`): there is NO go-home
+  // button any more. Your places are real locations — you enter
+  // one from the map when you are next to it (GPS proximity, like
+  // any other place), via its pin, its room-list card, or a
+  // ?openRoom link. handleEnterRoom enforces the gate; the server
+  // still refuses strangers at the door (join_denied, owner-only).
   const handleEnterRoom = (roomId, poiMeta = null) => {
     const hasOpenAccess = isOpenAccessRoom(roomId);
     const canonicalRoom = allRooms.find((room) => room.id === roomId) || null;
@@ -1650,18 +1648,21 @@ function App() {
                 Cancel
               </button>
             </div>
-            {/* Your Place v1.1 (`sq-your-place-v1-1`): Create Home lives
-                in the same flow as Create a Place, at your current
-                location. One home per player — once a home exists this
-                whole block is GONE (not disabled, not relabelled);
-                the 🏠 Home button is the way back after that. */}
-            {!homeExists && (
+            {/* Two Places v1 (`sq-two-places-v1`): Create your place
+                lives in the same flow as Create a Place, at your
+                current location. Up to two places per player — once
+                two exist this whole block is GONE (not disabled, not
+                relabelled). The name comes from the input above;
+                blank defaults to "Your Place" / "Your Place 2".
+                There is no teleport home any more: you enter your
+                places from the map when you are next to them. */}
+            {homeCount < 2 && (
               <div style={{ marginTop: 16, borderTop: '2px solid #334155', paddingTop: 14 }}>
                 <div style={{ fontSize: 10, color: '#64748b', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 1 }}>— or —</div>
-                <button onClick={confirmCreateHome} style={{ width: '100%', padding: '10px 0', background: '#7c3aed', border: '2px solid #000', boxShadow: '2px 2px 0 #000', color: '#fff', fontWeight: 'bold', fontFamily: 'Courier New, monospace', fontSize: 12, cursor: 'pointer', textTransform: 'uppercase' }}>
-                  🏠 Create Home here
+                <button onClick={confirmCreatePlace} style={{ width: '100%', padding: '10px 0', background: '#7c3aed', border: '2px solid #000', boxShadow: '2px 2px 0 #000', color: '#fff', fontWeight: 'bold', fontFamily: 'Courier New, monospace', fontSize: 12, cursor: 'pointer', textTransform: 'uppercase' }}>
+                  🏠 Create your place here
                 </button>
-                <div style={{ color: '#64748b', fontSize: 10, marginTop: 8 }}>Your private place, at your current location. One home per player — once created, this option disappears and 🏠 Home takes you there.</div>
+                <div style={{ color: '#64748b', fontSize: 10, marginTop: 8 }}>Your private place, at your current location. Two places per player — once you have two, this option disappears. You enter your places from the map when you are next to them.</div>
               </div>
             )}
           </div>
@@ -1799,7 +1800,7 @@ function App() {
             ) : (
               <div style={{ flex: 1, border: '2px solid #334155', borderRadius: 12, overflow: 'hidden', position: 'relative' }}>
                 <Suspense fallback={<div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', color: '#94a3b8', background: '#0f172a' }}>Loading room…</div>}>
-                  <VillageCanvas room={osmRoom ? { ...osmRoom, id: osmRoom.id } : activeRoom} venueEvents={venueEvents} canManageVenue={venuePermissions.canManage} isModerator={venuePermissions.isModerator} profile={profile} location={location} onLeave={() => { setActiveScene('world'); setOsmRoom(null); }} onGoHome={homeExists ? handleGoHome : null} />
+                  <VillageCanvas room={osmRoom ? { ...osmRoom, id: osmRoom.id } : activeRoom} venueEvents={venueEvents} canManageVenue={venuePermissions.canManage} isModerator={venuePermissions.isModerator} profile={profile} location={location} onLeave={() => { setActiveScene('world'); setOsmRoom(null); }} />
                 </Suspense>
                 {venuePermissions.canManage && <button
                   type="button"

@@ -8,15 +8,21 @@ import {
   HOME_STORAGE_MARKER_V1,
   HOME_STORAGE_MARKER_V1_1,
   HOME_DROP_MARKER_V1,
+  HOME_TWO_PLACES_MARKER_V1,
+  HOME_MAX_PLACES,
   HOME_ROOM_PREFIX,
   HOME_ROOM_RADIUS,
   HOME_STORAGE_MAX_ITEMS,
   homeRoomIdFor,
+  homePlaceIdFor,
+  homePlaceIndex,
+  defaultHomeName,
   isHomeRoom,
   homeOwnerOf,
   normalizeHomeOwner,
   ownerKeyFromProfile,
   findHomeRoom,
+  findHomeRooms,
   homeCreateState,
   normalizeHomeItems,
   mergeHomeItems,
@@ -193,14 +199,26 @@ describe('create home v1.1', () => {
   });
 
   it('says ready when there is no home yet, GPS is locked, profile known', () => {
+    // Two Places v1: the state now also names the NEXT place (its
+    // number and blank-name default) — place #1 here.
     const state = homeCreateState({ location: loc, profile, rooms: [otherRoom] });
-    expect(state).toEqual({ status: 'ready', homeId });
+    expect(state).toEqual({ status: 'ready', homeId, placeIndex: 1, defaultName: 'Your Place' });
   });
 
-  it('says already-exists once the home room is in the list', () => {
-    const state = homeCreateState({ location: loc, profile, rooms: [otherRoom, homeRoom] });
-    expect(state.status).toBe('already-exists');
-    expect(state.homeId).toBe(homeId);
+  it('says already-exists only once BOTH places are in the list', () => {
+    // Two Places v1: one home is no longer "already-exists" — the
+    // second place is still available. The option disappears at 2.
+    const onePlace = homeCreateState({ location: loc, profile, rooms: [otherRoom, homeRoom] });
+    expect(onePlace.status).toBe('ready');
+    expect(onePlace.placeIndex).toBe(2);
+    expect(onePlace.homeId).toBe(`${homeId}_2`);
+    const twoPlaces = homeCreateState({
+      location: loc,
+      profile,
+      rooms: [otherRoom, homeRoom, { id: `${homeId}_2`, name: 'Your Place 2', kind: 'home' }],
+    });
+    expect(twoPlaces.status).toBe('already-exists');
+    expect(twoPlaces.homeId).toBe(null);
   });
 
   it('refuses without GPS, and without a profile', () => {
@@ -210,14 +228,23 @@ describe('create home v1.1', () => {
     expect(homeCreateState({ location: loc, profile: 'guest', rooms: [] }).status).toBe('no-profile');
   });
 
-  it('a second create is refused even with a fresh GPS fix', () => {
-    // The modal hides the option, but the state function is the
-    // backstop: calling it again with the home already in the list
-    // still says already-exists.
+  it('a third create is refused even with a fresh GPS fix', () => {
+    // Two Places v1: the old "second create refused" test is now
+    // the third create — place #2 is allowed, place #3 is not. The
+    // modal hides the option, but the state function is the
+    // backstop: calling it again with both places already in the
+    // list still says already-exists.
     const first = homeCreateState({ location: loc, profile, rooms: [] });
     expect(first.status).toBe('ready');
     const second = homeCreateState({ location: { latitude: 29.8, longitude: -95.5 }, profile, rooms: [homeRoom] });
-    expect(second.status).toBe('already-exists');
+    expect(second.status).toBe('ready');
+    expect(second.placeIndex).toBe(2);
+    const third = homeCreateState({
+      location: loc,
+      profile,
+      rooms: [homeRoom, { id: `${homeId}_2`, name: 'Your Place 2', kind: 'home' }],
+    });
+    expect(third.status).toBe('already-exists');
   });
 });
 
@@ -294,5 +321,86 @@ describe('drop on the home floor v1', () => {
     const after = pickupFromFloor(res.list, 'trash-1');
     expect(after.list).toEqual([]);
     expect(after.item.type).toBe('trash');
+  });
+});
+
+describe('two places v1', () => {
+  const profile = 'tfkelleher3@gmail.com';
+  const homeId = 'home-tfkelleher3-gmail-com';
+  const homeId2 = 'home-tfkelleher3-gmail-com_2';
+  const loc = { latitude: 29.75, longitude: -95.4 };
+  const place1 = { id: homeId, name: 'Your Place', kind: 'home', lat: 29.75, lng: -95.4 };
+  const place2 = { id: homeId2, name: 'Treehouse', kind: 'home', lat: 29.8, lng: -95.5 };
+  const otherRoom = { id: 'agora-houston', name: 'Agora', kind: 'gps' };
+
+  it('carries the v1 marker and caps places at two', () => {
+    expect(HOME_TWO_PLACES_MARKER_V1).toBe('sq-two-places-v1');
+    expect(HOME_MAX_PLACES).toBe(2);
+  });
+
+  it('derives place ids: place 1 keeps the old id, place 2 gets _2', () => {
+    expect(homePlaceIdFor(profile, 1)).toBe(homeId);
+    expect(homePlaceIdFor(profile)).toBe(homeId);
+    expect(homePlaceIdFor(profile, 2)).toBe(homeId2);
+    expect(homePlaceIdFor(profile, 3)).toBe(null);
+    expect(homePlaceIdFor(profile, 0)).toBe(null);
+    expect(homePlaceIdFor(null, 2)).toBe(null);
+    expect(homePlaceIdFor('guest', 1)).toBe(null);
+    // Place 1 is unchanged — the original home id still works.
+    expect(homeRoomIdFor(profile)).toBe(homeId);
+  });
+
+  it('recognizes both place ids and parses the owner back out', () => {
+    expect(isHomeRoom(homeId)).toBe(true);
+    expect(isHomeRoom(homeId2)).toBe(true);
+    expect(isHomeRoom('home-jules-example-com_2')).toBe(true);
+    expect(isHomeRoom('agora-houston')).toBe(false);
+    expect(isHomeRoom('home-')).toBe(false);
+    expect(isHomeRoom('home-x_y')).toBe(false);
+    // Place 2 reports the SAME owner as place 1 — that is what
+    // keeps the server join guard and store handlers owner-only
+    // for both places with no changes on their side.
+    expect(homeOwnerOf(homeId)).toBe('tfkelleher3-gmail-com');
+    expect(homeOwnerOf(homeId2)).toBe('tfkelleher3-gmail-com');
+    expect(homeOwnerOf('agora-houston')).toBe('');
+    expect(homePlaceIndex(homeId)).toBe(1);
+    expect(homePlaceIndex(homeId2)).toBe(2);
+    expect(homePlaceIndex('agora-houston')).toBe(0);
+  });
+
+  it('defaults names to Your Place / Your Place 2', () => {
+    expect(defaultHomeName(1)).toBe('Your Place');
+    expect(defaultHomeName()).toBe('Your Place');
+    expect(defaultHomeName(2)).toBe('Your Place 2');
+  });
+
+  it('finds both places in order, and migrates an existing home as place 1', () => {
+    expect(findHomeRooms([], profile)).toEqual([]);
+    expect(findHomeRooms([otherRoom], profile)).toEqual([]);
+    // Migration: a home created before Two Places (custom name and
+    // all) comes back as place 1, name preserved.
+    expect(findHomeRooms([otherRoom, { ...place1, name: 'My Old Place' }], profile))
+      .toEqual([{ ...place1, name: 'My Old Place' }]);
+    expect(findHomeRooms([place2, otherRoom, place1], profile)).toEqual([place1, place2]);
+    expect(findHomeRooms([place2], profile)).toEqual([place2]);
+    // Another player's places are not mine; anonymous has none.
+    expect(findHomeRooms([{ id: 'home-jules-example-com', kind: 'home' }], profile)).toEqual([]);
+    expect(findHomeRooms([place1], null)).toEqual([]);
+    // findHomeRoom still returns place 1 (backwards compatible).
+    expect(findHomeRoom([place2, place1], profile)).toBe(place1);
+  });
+
+  it('homeCreateState walks 0 → 1 → 2 places, then refuses', () => {
+    const none = homeCreateState({ location: loc, profile, rooms: [otherRoom] });
+    expect(none).toEqual({ status: 'ready', homeId, placeIndex: 1, defaultName: 'Your Place' });
+    const one = homeCreateState({ location: loc, profile, rooms: [otherRoom, place1] });
+    expect(one).toEqual({ status: 'ready', homeId: homeId2, placeIndex: 2, defaultName: 'Your Place 2' });
+    const two = homeCreateState({ location: loc, profile, rooms: [otherRoom, place1, place2] });
+    expect(two.status).toBe('already-exists');
+    expect(two.homeId).toBe(null);
+    // A named place 1 still counts — the count is by id, not name.
+    const named = homeCreateState({ location: loc, profile, rooms: [{ ...place1, name: 'Treehouse' }] });
+    expect(named.status).toBe('ready');
+    expect(named.placeIndex).toBe(2);
   });
 });
