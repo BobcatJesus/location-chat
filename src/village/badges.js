@@ -5,7 +5,9 @@
 // round) never duplicates it. The badge list is the player's record
 // of finished quests: the 7 solo quests in quests.js, plus the
 // shared Group Puzzle (which is not a QuestManager quest — it lives
-// in PuzzleQuest.js, so its badge def lives here, not in quests.js).
+// in PuzzleQuest.js, so its badge def lives here, not in quests.js),
+// the Trim the Tree group quest, and the repeatable Hungry Cat
+// quest (also not a QuestManager quest — see catHunger.js).
 //
 // Coffee purchases are quest STEPS, not badges: buying a coffee adds
 // to the Coffee Quest's progress, and only completing that quest
@@ -38,6 +40,7 @@
 // back.
 
 import { QUESTS, getQuest } from './quests.js';
+import { HUNGRY_CAT_QUEST_ID } from './catHunger.js';
 
 // Landing marker for the v1 kit check.
 export const BADGES_MARKER_V1 = 'sq-quest-badges-v1';
@@ -66,11 +69,26 @@ export const TRIM_TREE_BADGE = {
   emoji: '🎄',
 };
 
+/** The Hungry Cat badge — Hungry Cat v1 (`sq-hungry-cat-v1`): not
+ *  a QuestManager quest either (the hunger quest is repeatable,
+ *  twice a day, so it lives outside the one-time quest flow — see
+ *  catHunger.js and QuestManager's recordHungryCatCompletion). id
+ *  must match what the server uses ('hungry-cat'). Earned once
+ *  ever, on the FIRST hungry feeding; the +3 coins still come
+ *  every window after that. */
+export const HUNGRY_CAT_BADGE = {
+  id: HUNGRY_CAT_QUEST_ID,
+  title: 'Feed the Hungry Cat',
+  description: 'Feed the cafe cat when she is hungry.',
+  emoji: '🐱',
+};
+
 /** Every quest id that can earn a badge (solo quests + group puzzle + trim the tree). */
 export const BADGE_QUEST_IDS = [
   ...QUESTS.map((q) => q.id),
   GROUP_PUZZLE_BADGE.id,
   TRIM_TREE_BADGE.id,
+  HUNGRY_CAT_BADGE.id,
 ];
 
 const BADGE_ID_SET = new Set(BADGE_QUEST_IDS);
@@ -86,6 +104,7 @@ export function isBadgeQuestId(questId) {
 export function getBadgeDef(questId) {
   if (questId === GROUP_PUZZLE_BADGE.id) return { ...GROUP_PUZZLE_BADGE };
   if (questId === TRIM_TREE_BADGE.id) return { ...TRIM_TREE_BADGE };
+  if (questId === HUNGRY_CAT_BADGE.id) return { ...HUNGRY_CAT_BADGE };
   const q = getQuest(questId);
   if (!q) return null;
   return {

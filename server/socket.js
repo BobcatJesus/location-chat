@@ -58,6 +58,22 @@ import {
   removeDecoration,
   serializeDecorState,
 } from '../src/village/decorState.js';
+// Hungry Cat v1 (`sq-hungry-cat-v1`): the cat gets hungry twice a
+// day (morning + evening, Chicago time) on a server timer — the
+// pure window math + hunger state machine live in catHunger.js so
+// the server is authoritative for hunger and for who completed a
+// window.
+import {
+  HUNGRY_CAT_MARKER_V1,
+  HUNGRY_CAT_QUEST_ID,
+  HUNGRY_CAT_REWARD_COINS,
+  HUNGRY_CAT_WINDOWS,
+  parseHungerWindows,
+  createCatHungerState,
+  serializeCatHunger,
+  refreshCatHunger,
+  feedCatHunger,
+} from '../src/village/catHunger.js';
 import { backfilledBadgesFromQuestState } from '../src/village/badges.js';
 import {
   isHomeRoom,
@@ -418,6 +434,33 @@ const pumpkinLit = {};
 // to sleep in a sunbeam; a new player walking in wakes it back up.
 const catState = {};
 const CATS_PETS_TO_SLEEP = 3;
+// Hungry Cat v1 (`sq-hungry-cat-v1`): per-room hunger state —
+// catHunger[roomId] = { windowId, hungry, fedBy }. In-memory like
+// the cat itself: a server restart forgets who fed her this window,
+// so the window becomes completable again (see the restart story in
+// the kit report). The windows come from HUNGRY_CAT_WINDOWS
+// (8–10am + 6–8pm Chicago time), overridable with the
+// HUNGRY_CAT_WINDOWS env var ("8-10,18-20") — the tuning seam, and
+// what the protocol harness uses to cover "now".
+const catHunger = {};
+const HUNGER_CAT_MARKER = HUNGRY_CAT_MARKER_V1;
+const HUNGER_WINDOWS = parseHungerWindows(process.env.HUNGRY_CAT_WINDOWS) || HUNGRY_CAT_WINDOWS;
+function hungerRoom(roomId) {
+  if (!catHunger[roomId]) catHunger[roomId] = createCatHungerState();
+  return catHunger[roomId];
+}
+/** Refresh one room's hunger for right now; broadcast only when the
+ *  hungry flag flips. Returns { state, changed }. */
+function refreshRoomHunger(roomId) {
+  const res = refreshCatHunger(hungerRoom(roomId), {
+    now: new Date(),
+    asleep: Boolean(catState[roomId]?.asleep),
+    windows: HUNGER_WINDOWS,
+  });
+  catHunger[roomId] = res.state;
+  if (res.changed) io.to(roomId).emit('cat_hunger', serializeCatHunger(res.state));
+  return res;
+}
 // Quests (Quest Wrapper v1): per-room state
 //   questState[roomId][questId] = { shared, users: { [userId]: { count, completed } } }
 // `shared` is the room-wide total (everyone's events added up); each
@@ -467,7 +510,7 @@ const QUEST_DEFS = {
 // completions can't be recovered: no persistent record of past
 // puzzle contributors exists anywhere (the puzzle state resets
 // every round).
-const BADGE_QUEST_IDS = new Set([...Object.keys(QUEST_DEFS), 'group-puzzle', 'trim-tree']);
+const BADGE_QUEST_IDS = new Set([...Object.keys(QUEST_DEFS), 'group-puzzle', 'trim-tree', HUNGRY_CAT_QUEST_ID]);
 const userBadges = {};
 function badgeMapFor(userId) {
   if (!userBadges[userId]) userBadges[userId] = {};
@@ -1186,6 +1229,17 @@ setInterval(() => {
   try { io.emit('time_phase', currentTimePhase()); } catch {}
 }, 60000);
 
+// Hungry Cat v1 (`sq-hungry-cat-v1`): the hunger tick — every 30s
+// (faster than the 2-hour windows need, so hunger starts within
+// half a minute of 8am / 6pm), refresh Agora's hunger and broadcast
+// only when the hungry flag flips. Players already in the room get
+// the bubble + banner from the broadcast; players joining mid-window
+// get the state from get_cat_hunger; a sleeping cat's hunger waits
+// (refreshCatHunger does not activate while she is asleep).
+setInterval(() => {
+  try { refreshRoomHunger('agora-houston'); } catch {}
+}, 30000);
+
 // 2. Real-Time Socket Event Handlers
 io.on('connection', (socket) => {
   console.log(`⚡ Client connected: ${socket.id}`);
@@ -1234,6 +1288,20 @@ io.on('connection', (socket) => {
     if (catState[roomId]?.asleep) {
       catState[roomId] = { pets: 0, asleep: false };
       io.to(roomId).emit('cat_state', { pets: 0, asleep: false });
+      // Hungry Cat v1 (`sq-hungry-cat-v1`): hunger waits while she
+      // sleeps — if she wakes inside a window she is hungry again
+      // right away (the tick would catch it within 30s, but the
+      // bubble should come back with the wake, not half a minute
+      // later). refreshRoomHunger already broadcasts when the flag
+      // flips; the extra emit below covers the case where hunger
+      // was already true while she slept (no flip, no broadcast)
+      // and the room still needs to hear she is hungry again.
+      if (roomId === 'agora-houston') {
+        const woken = refreshRoomHunger(roomId);
+        if (!woken.changed && woken.state.hungry) {
+          io.to(roomId).emit('cat_hunger', serializeCatHunger(woken.state));
+        }
+      }
     }
 
     if (!rooms[roomId]) {
@@ -1396,7 +1464,7 @@ io.on('connection', (socket) => {
 
   // PET THE CAFE CAT (shared Agora interaction — petting is counted
   // per room; 3 pets puts the cat to sleep in a sunbeam for everyone)
-  socket.on('pet_cat', ({ roomId } = {}) => {
+  socket.on('pet_cat', ({ roomId, fed } = {}) => {
     if (!roomId || roomId !== 'agora-houston') return;
     if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
     const userId = socketUserMap[socket.id] || socket.id;
@@ -1409,6 +1477,41 @@ io.on('connection', (socket) => {
     if (state.pets >= CATS_PETS_TO_SLEEP) state.asleep = true;
     socket.to(roomId).emit('cat_petted', { pets: state.pets, by: socket.id });
     io.to(roomId).emit('cat_state', { pets: state.pets, asleep: state.asleep });
+    // Hungry Cat v1 (`sq-hungry-cat-v1`): a FOOD treat (fed: true —
+    // only the ItemsSystem treat path sends it; a hand pet never
+    // does) on a hungry cat completes the quest for the FIRST
+    // feeder in this window. The pet above still counted either
+    // way; only the quest is gated. The server is authoritative
+    // for first-feeder + window; the client asserts it had food
+    // (same client-asserted model as quest_progress — the +3 coins
+    // are paid client-side on the confirmation below, bounded to
+    // one completion per window per feeder).
+    if (fed) {
+      const res = feedCatHunger(hungerRoom(roomId), { now: new Date(), userId, windows: HUNGER_WINDOWS });
+      catHunger[roomId] = res.state;
+      if (res.ok) {
+        // Only the feeder hears the completion (and pays themself
+        // +3 coins on it); the room hears the hunger end, with the
+        // feeder's name so the moment is visible to everyone.
+        socket.emit('hungry_cat_completed', {
+          questId: HUNGRY_CAT_QUEST_ID,
+          windowId: res.state.windowId,
+          rewardCoins: HUNGRY_CAT_REWARD_COINS,
+        });
+        // Quest badges v1: the badge is once ever (awardBadge is
+        // idempotent) — coins come every window, the badge only
+        // the first time.
+        if (awardBadge(userId, HUNGRY_CAT_QUEST_ID, Date.now())) {
+          io.to(roomId).emit('player_badges', { socketId: socket.id, userId, badges: badgesArrayFor(userId) });
+        }
+        const fedByName = rooms[roomId]?.[socket.id]?.name || null;
+        io.to(roomId).emit('cat_hunger', {
+          ...serializeCatHunger(res.state),
+          fedByName,
+          fedByUserId: userId,
+        });
+      }
+    }
   });
 
   socket.on('get_cat', ({ roomId } = {}) => {
@@ -1416,6 +1519,23 @@ io.on('connection', (socket) => {
     if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
     const state = catState[roomId] || { pets: 0, asleep: false };
     socket.emit('cat_state', { pets: state.pets, asleep: state.asleep });
+  });
+
+  // HUNGRY CAT v1 (`sq-hungry-cat-v1`): a player's current hunger
+  // state — answered on join / (re)connect (the client emits this
+  // next to get_cat), and refreshed here so a window that opened
+  // while nobody was around is live the moment someone asks. The
+  // 30s tick covers players already in the room.
+  socket.on('get_cat_hunger', ({ roomId } = {}) => {
+    if (!roomId || roomId !== 'agora-houston') return;
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const res = refreshCatHunger(hungerRoom(roomId), {
+      now: new Date(),
+      asleep: Boolean(catState[roomId]?.asleep),
+      windows: HUNGER_WINDOWS,
+    });
+    catHunger[roomId] = res.state;
+    socket.emit('cat_hunger', serializeCatHunger(res.state));
   });
 
   // QUEST PROGRESS (Quest Wrapper v1 — one quest event from a player:

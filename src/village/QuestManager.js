@@ -80,6 +80,7 @@ import {
   normalizeBadgeMap,
   formatBadgeDate,
 } from './badges.js';
+import { HUNGRY_CAT_QUEST_ID } from './catHunger.js';
 
 const QUESTS_PREFIX = 'location-chat-quests';
 
@@ -425,6 +426,29 @@ export class QuestManager {
     return true;
   }
 
+  /** Record the Hungry Cat badge: I fed the cafe cat while she was
+   *  hungry (VillageScene calls this when the server confirms the
+   *  hungry-cat quest). Once ever — the quest itself is repeatable
+   *  (twice a day, +3 coins every window), but the badge is earned
+   *  on the FIRST hungry feeding only, like the puzzle/tree badges.
+   *  The server awards the same badge (awardBadge is once-ever),
+   *  so both paths converge on one entry. The coins are paid on
+   *  every server confirmation, NOT here — this only records the
+   *  badge. Note this marks saved['hungry-cat'] completed, but the
+   *  quest is NOT in QUESTS, so refresh() / anywhereQuests() never
+   *  see it and the one-time quest flow is untouched. */
+  recordHungryCatCompletion() {
+    const entry = this.saved[HUNGRY_CAT_QUEST_ID] || { count: 0, completed: false };
+    if (entry.completed) return false;
+    entry.completed = true;
+    entry.count = 1;
+    entry.completedAt = Date.now();
+    this.saved[HUNGRY_CAT_QUEST_ID] = entry;
+    saveSaved(this.saved);
+    this._bumpHud();
+    return true;
+  }
+
   /** Public banner for other systems (e.g. TrimTreeQuest): show the
    *  big top-centre quest banner for a quest-like object
    *  { id, emoji, title, description, rewardCoins }. Same once-per-
@@ -728,6 +752,14 @@ export class QuestManager {
       );
       if (this.sharedCount > 0) room.push(`Room total: ${this.sharedCount}`);
     }
+    // Hungry Cat v1 (`sq-hungry-cat-v1`): the hungry-cat quest rides
+    // along UNDER the room quest while she is hungry — CafeCat owns
+    // the line (null outside a hunger window, so the quest is
+    // invisible in the tracker until the next window; the banner
+    // announces it when a window opens). Same pattern as the puzzle
+    // and the trees below.
+    const hungryLine = this.scene?.cafeCat?.getTrackerLine?.();
+    if (hungryLine) room.push(hungryLine);
     const puzzle = this.scene?.puzzleQuest?.getProgress?.();
     if (puzzle) {
       room.push(

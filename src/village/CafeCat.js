@@ -19,6 +19,7 @@
 // (roomId === 'agora-houston'); every other room is a no-op.
 
 import { DEPTH } from './depth.js';
+import { HUNGRY_CAT_BUBBLE_TEXT } from './catHunger.js';
 
 const AGORA_ROOM_ID = 'agora-houston';
 const WANDER_SPEED = 26;   // px/sec
@@ -177,6 +178,14 @@ export class CafeCat {
     this.zzz = null;      // floating "Z z z" text
     this.pets = 0;
     this.asleep = false;
+    // Hungry Cat v1 (`sq-hungry-cat-v1`): the server says when she
+    // is hungry (twice a day, morning + evening). While hungry she
+    // shows a thought bubble saying "hungry..." — hidden while she
+    // is asleep (feeding a sleeping cat is refused), and it follows
+    // her while she wanders.
+    this.hungry = false;
+    this.hungerWindowId = null;
+    this.hungerBubble = null; // scene-level text, repositioned in update()
     this.hatWorn = false; // Santa Hat v1: she is wearing the hat
     this.petCooldown = 0;
     this.followUntil = 0;
@@ -257,10 +266,19 @@ export class CafeCat {
     this._applyHatVisibility();
     // If we re-spawned while the server says the cat is asleep, show that.
     if (this.asleep) this._showAsleep();
+    // Hungry Cat v1: the bubble was destroyed with the old cat
+    // (_clearEntities) — if she is still hungry and awake, bring
+    // it back with the respawn instead of waiting for the next
+    // cat_hunger broadcast.
+    else if (this.hungry) this._showHungerBubble();
   }
 
-  /** Pet the cat: purr + hop + heart + 1 coin, then it follows you. */
-  petCat(local = true) {
+  /** Pet the cat: purr + hop + heart + 1 coin, then it follows you.
+   *  opts.fed (Hungry Cat v1) marks a FOOD treat (only the
+   *  ItemsSystem treat path sends it — a hand pet never does): the
+   *  server checks whether she is hungry and, if so, completes the
+   *  hungry-cat quest for the first feeder in this window. */
+  petCat(local = true, opts = {}) {
     if (!this.cat || !this.cat.container || !this.cat.container.active) return;
     if (this.asleep) return;
     const now = Date.now();
@@ -291,8 +309,11 @@ export class CafeCat {
       try { this.onCatPet?.(); } catch {}
     }
     // Tell the server so everyone counts the pet toward the 3-pet sleep.
+    // Hungry Cat v1: a treat also tells the server it was food (fed),
+    // so the server can complete the hungry-cat quest for the first
+    // feeder in this window. A hand pet sends fed: false.
     if (local) {
-      try { this.scene.socket?.emit('pet_cat', { roomId: this.scene.roomId }); } catch {}
+      try { this.scene.socket?.emit('pet_cat', { roomId: this.scene.roomId, fed: Boolean(opts?.fed) }); } catch {}
     }
   }
 
@@ -311,6 +332,51 @@ export class CafeCat {
     this.asleep = nextAsleep;
     if (nextAsleep) this._showAsleep();
     else this._showAwake();
+  }
+
+  /** Hungry Cat v1 (`sq-hungry-cat-v1`): the server's hunger state
+   *  for this window. The bubble shows only while she is awake —
+   *  a sleeping cat cannot be fed, so hunger waits silently until
+   *  she wakes (and _showAwake re-shows it if she is still hungry).
+   *  Idempotent: the same window re-sent (reconnect, wake) just
+   *  re-shows the same bubble. */
+  setHungry(hungry, windowId = null) {
+    this.hungry = Boolean(hungry);
+    this.hungerWindowId = windowId || null;
+    if (this.hungry && !this.asleep) this._showHungerBubble();
+    else this._hideHungerBubble();
+  }
+
+  /** One tracker line for the hungry-cat quest, while she is hungry
+   *  and awake — the quest is invisible in the tracker outside a
+   *  hunger window (the banner announces it when a window opens).
+   *  QuestManager._trackerSections reads this, like the puzzle and
+   *  the trees. */
+  getTrackerLine() {
+    if (!this.hungry || this.asleep || !this.cat) return null;
+    return '🐱 Feed the Hungry Cat — she\'s hungry! Feed her a treat (+3 coins)';
+  }
+
+  _showHungerBubble() {
+    if (!this.cat) return;
+    try {
+      if (!this.hungerBubble) {
+        this.hungerBubble = this.scene.add.text(0, 0, HUNGRY_CAT_BUBBLE_TEXT, {
+          fontSize: '15px',
+          color: '#7c2d12',
+          backgroundColor: 'rgba(255,255,255,0.92)',
+          padding: { x: 8, y: 4 },
+        });
+        this.hungerBubble.setOrigin(0.5, 1);
+        this.hungerBubble.setDepth(DEPTH.ACTOR_MIN + 500);
+      }
+      this.hungerBubble.setText(HUNGRY_CAT_BUBBLE_TEXT);
+      this.hungerBubble.setPosition(this.cat.x, this.cat.y - 40).setAlpha(1);
+    } catch {}
+  }
+
+  _hideHungerBubble() {
+    try { this.hungerBubble?.setAlpha(0); } catch {}
   }
 
   /** Santa Hat v1: she is wearing the hat (or not). The hat rides
@@ -346,6 +412,10 @@ export class CafeCat {
     this.cat.curled.setVisible(true);
     this.cat.container.setDepth(DEPTH.ACTOR_MIN + Math.round(this.cat.y));
     this._applyHatVisibility();
+    // Hungry Cat v1: the bubble hides while she sleeps (hunger
+    // waits — it is not cleared — and _showAwake brings the bubble
+    // back if she is still hungry).
+    this._hideHungerBubble();
     this._showZzz();
   }
 
@@ -355,6 +425,10 @@ export class CafeCat {
     this.cat.curled.setVisible(false);
     this.cat.body.setVisible(true);
     this._applyHatVisibility();
+    // Hungry Cat v1: she may have fallen asleep hungry — the bubble
+    // comes back with the wake, as long as the window is still open
+    // (this.hungry is still true; the server clears it at window end).
+    if (this.hungry) this._showHungerBubble();
     const target = this._randomWanderPoint();
     this.cat.tx = target.x; this.cat.ty = target.y;
     this.cat.state = 'wander';
@@ -405,6 +479,13 @@ export class CafeCat {
   update(delta) {
     const cat = this.cat;
     if (!cat || !cat.container || !cat.container.active) return;
+    // Hungry Cat v1: the bubble rides above her while she wanders
+    // (and while she follows you) — repositioned every frame, like
+    // the prompts. She does not move while asleep, and the bubble
+    // is hidden then anyway.
+    if (this.hungerBubble && this.hungry && !this.asleep) {
+      try { this.hungerBubble.setPosition(cat.x, cat.y - 40).setAlpha(1); } catch {}
+    }
     if (this.asleep) return;
     const dt = delta / 1000;
     const player = this.scene?.player;
@@ -459,6 +540,11 @@ export class CafeCat {
     try { this.sunbeam?.destroy(); } catch {}
     this.sunbeam = null;
     this._hideZzz();
+    // Hungry Cat v1: the bubble is scene-level (it follows her), so
+    // it needs its own destroy — hiding alone would leak it across
+    // floor switches.
+    try { this.hungerBubble?.destroy(); } catch {}
+    this.hungerBubble = null;
     this.followUntil = 0;
   }
 

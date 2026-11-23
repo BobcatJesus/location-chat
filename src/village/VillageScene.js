@@ -2062,6 +2062,10 @@ export class VillageScene extends Phaser.Scene {
       socket.emit('get_jukebox', { roomId: this.roomId });
       socket.emit('get_pumpkins', { roomId: this.roomId });
       socket.emit('get_cat', { roomId: this.roomId });
+      // Hungry Cat v1 (`sq-hungry-cat-v1`): re-request the hunger
+      // state on (re)connect, so a window that opened during a
+      // disconnect comes back with the bubble + banner.
+      socket.emit('get_cat_hunger', { roomId: this.roomId });
       // Santa Hat v1: re-request the hat's state on (re)connect, so
       // a hat placed / slipped during a disconnect window comes back.
       socket.emit('get_hat', { roomId: this.roomId });
@@ -2295,6 +2299,48 @@ export class VillageScene extends Phaser.Scene {
     // we join and whenever it changes.
     socket.on('cat_state', (payload = {}) => {
       this.cafeCat?.applyState(payload);
+    });
+
+    // Hungry Cat v1 (`sq-hungry-cat-v1`): the server's hunger state
+    // for this window — the bubble + tracker line come from CafeCat,
+    // and the quest banner pops the first time a window opens (once
+    // per window per session: the banner id is window-scoped, so the
+    // evening window still announces itself after the morning one).
+    // When someone else feeds her, the room hears the hunger end
+    // with their name (the feeder gets the quest toast instead).
+    socket.on('cat_hunger', (payload = {}) => {
+      const wasHungry = Boolean(this.cafeCat?.hungry);
+      this.cafeCat?.setHungry(Boolean(payload.hungry), payload.windowId || null);
+      if (payload.hungry && !wasHungry && payload.windowId) {
+        try {
+          this.questManager?.showQuestBannerFor({
+            id: `hungry-cat:${payload.windowId}`,
+            emoji: '🐱',
+            title: 'Feed the Hungry Cat',
+            description: 'The cafe cat is hungry! Feed her a treat.',
+            rewardCoins: 3,
+          });
+        } catch {}
+      }
+      if (!payload.hungry && payload.fedByName
+        && String(payload.fedByUserId || '') !== String(this.userId || '')) {
+        try { this.onSystemNotice?.(`🐱 ${payload.fedByName} fed the hungry cat!`); } catch {}
+      }
+    });
+
+    // Hungry Cat v1: the server confirms I was the first feeder in
+    // this window — +3 coins ON TOP of the usual +1 pet coin (the
+    // treat already paid that), the badge once ever, and the quest
+    // toast. The quest is repeatable: this fires again at the next
+    // window. Coins are paid here, on the server's word — never
+    // optimistically, or a second feeder could pay themself.
+    socket.on('hungry_cat_completed', (payload = {}) => {
+      const coins = Number(payload.rewardCoins) || 3;
+      try {
+        import('./CoinWallet.js').then((m) => m.earnCoins(coins, 'quest-hungry-cat')).catch(() => {});
+      } catch {}
+      try { this.questManager?.recordHungryCatCompletion?.(); } catch {}
+      try { this.questManager?.showToast?.(`🎉 Quest complete! 🐱 Feed the Hungry Cat — +${coins} coins`); } catch {}
     });
 
     // Quest state (your progress + the room's shared total), sent when
@@ -3014,7 +3060,15 @@ export class VillageScene extends Phaser.Scene {
     // Cafe cat: prompt near the cat (duck prompt takes priority).
     const nearCat = this.cafeCat?.nearestCat(this.player.gx, this.player.gy);
     if (nearCat && !nearPond && !nearHat) {
-      this.catPrompt.setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
+      // Hungry Cat v1 (`sq-hungry-cat-v1`): near a hungry cat the
+      // prompt says she is hungry instead of "Pet the cat [E]" —
+      // and it carries no [E], because E would only pet her: feeding
+      // is a treat from the pocket (Use on the food). The bubble
+      // above her says "hungry..." already; this is the close-up
+      // version with the what-to-do.
+      this.catPrompt.setText(this.cafeCat?.hungry
+        ? '🐱 The cat looks hungry — feed her a treat!'
+        : '🐱 Pet the cat [E]').setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
     } else {
       this.catPrompt.setAlpha(0);
     }

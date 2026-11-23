@@ -447,7 +447,12 @@ export class ItemsSystem {
     // quest step as petting — CafeCat owns the cooldown/asleep rules).
     const cat = this.scene?.cafeCat?.nearestCat?.(player.gx, player.gy);
     if (cat) {
-      try { this.scene.cafeCat.petCat(true); } catch {}
+      // Hungry Cat v1 (`sq-hungry-cat-v1`): a treat is FOOD, not a
+      // hand pet — petCat gets fed: true so the server can complete
+      // the hungry-cat quest for the first feeder in this window.
+      // (Shared file with Feed the Ducks v2 — extract that kit
+      // first, then this one on top.)
+      try { this.scene.cafeCat.petCat(true, { fed: true }); } catch {}
       // One charge from the tapped item (not the whole item). The
       // pet-cooldown edge is pre-existing: petCat can no-op inside
       // its 5s cooldown, and the charge is spent anyway — it now
