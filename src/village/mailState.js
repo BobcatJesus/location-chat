@@ -21,6 +21,15 @@
 //     is close, at the nearest public place instead. Mail waits in
 //     your inbox until you go there and collect it. The mailbox is
 //     an interactable object in that room (notice-board pattern).
+//     Mailbox v1.2 (`sq-mailbox-v1.2`): per-place mailboxes — each
+//     of your places (up to 2) gets its OWN mailbox, at the nearest
+//     park to THAT PLACE (not to where you happen to be standing);
+//     if no park is within 5 km of a place, that place's mailbox
+//     sits AT THE PLACE ITSELF (the Galveston case: no park rooms
+//     there at all). Players with no places keep the v1 rule
+//     (nearest park to current location, fallback nearest
+//     open-access room). One shared inbox, one key, flag on every
+//     mailbox.
 //   - KEY: you need the mailbox key in your pocket to open the
 //     mailbox. The key takes a pocket slot and can be left at your
 //     place (home storage) when not needed.
@@ -46,7 +55,13 @@
 //     from anywhere, so the mailbox is reachable for EVERY player,
 //     including one with no park anywhere near them. The fallback
 //     trades the travel incentive for reachability; the park case
-//     (the majority, in Houston) keeps the trip.
+//     (the majority, in Houston) keeps the trip. Mailbox v1.2
+//     (`sq-mailbox-v1.2`): the range is now measured from EACH
+//     PLACE, not from the player's current location — and when no
+//     park is within range of a place, that place's mailbox sits
+//     AT THE PLACE ITSELF instead of falling back to a faraway
+//     public room. The open-access fallback survives only for
+//     players with NO places at all.
 //   - The mailbox opens from the same 170px range as the notice
 //     board and the storage chest.
 //   - A collected package is removed from the inbox only when the
@@ -74,6 +89,10 @@ export const MAILBOX_MARKER_V1 = 'sq-mailbox-v1';
 // MailSystem so it survives minification into the built bundle (a
 // comment alone would be stripped).
 export const MAILBOX_MARKER_V1_1 = 'sq-mailbox-v1.1';
+// Mailbox v1.2 (`sq-mailbox-v1.2`): live marker string, referenced by
+// MailSystem so it survives minification into the built bundle (a
+// comment alone would be stripped).
+export const MAILBOX_MARKER_V1_2 = 'sq-mailbox-v1.2';
 
 // A park room counts as "nearby" inside this range; beyond it the
 // mailbox falls back to the nearest open-access room.
@@ -401,6 +420,160 @@ export function resolveMailboxRoom(rooms, location) {
     };
   }
   return null;
+}
+
+// --- Mailbox v1.2 (`sq-mailbox-v1.2`): per-place mailboxes -----------
+// The v1 rule resolved ONE mailbox from the player's CURRENT
+// location — which stranded a player in Galveston (~50 miles from
+// the Houston parks) at the MD Anderson Library fallback. Now each
+// of the player's places gets its OWN mailbox, resolved from THAT
+// PLACE's coordinates, so the mailbox rooms are stable per player
+// instead of moving as they travel (design consequence, flagged).
+// A mailbox-room entry is
+//   { roomId, roomName, isPark, isHome, placeIndex, placeId, distanceM }
+// where `isHome` means the mailbox sits AT the place itself (no
+// park within range of that place — the Galveston case), and
+// `distanceM` is the place-to-park distance (0 for an at-home box).
+
+/** The default name for a place ("Your Place" / "Your Place 2") —
+ *  mirrors defaultHomeName in homeStorage.js, inlined here because
+ *  this module is also imported by the server and must not pull in
+ *  homeStorage.js. */
+export function defaultMailboxPlaceName(placeIndex = 1) {
+  return placeIndex === 2 ? 'Your Place 2' : 'Your Place';
+}
+
+/**
+ * Resolve ONE place's mailbox room: the nearest park room within
+ * MAILBOX_PARK_RANGE_M of the place's own coordinates; if none is
+ * close — or the place has no coordinates at all (a legacy room) —
+ * the mailbox sits AT THE PLACE ITSELF, so it is always reachable.
+ * Returns null only when the place itself is unusable (no id).
+ */
+export function resolveMailboxRoomForPlace(place, rooms, placeIndex = 1) {
+  if (!place || !place.id) return null;
+  const list = Array.isArray(rooms) ? rooms.filter((r) => r && r.id) : [];
+  const parks = list.filter(isParkRoom);
+  const placeName = typeof place.name === 'string' && place.name.trim()
+    ? place.name.trim()
+    : '';
+  const homeName = placeName || defaultMailboxPlaceName(placeIndex);
+  const at = roomLatLng(place);
+  if (at) {
+    let bestPark = null;
+    let bestParkD = Infinity;
+    for (const room of parks) {
+      const pat = roomLatLng(room);
+      if (!pat) continue;
+      const d = getDistanceMeters(at.lat, at.lng, pat.lat, pat.lng);
+      if (d < bestParkD) { bestParkD = d; bestPark = room; }
+    }
+    if (bestPark && bestParkD <= MAILBOX_PARK_RANGE_M) {
+      return {
+        roomId: bestPark.id,
+        roomName: bestPark.name || bestPark.id,
+        isPark: true,
+        isHome: false,
+        placeIndex,
+        placeId: place.id,
+        distanceM: Math.round(bestParkD),
+      };
+    }
+  }
+  // No park close (or no coordinates to measure from): the mailbox
+  // lives at the place itself. The place is owner-only and always
+  // enterable by its owner, so the mailbox is reachable by
+  // construction — no library 50 miles away.
+  return {
+    roomId: place.id,
+    roomName: homeName,
+    isPark: false,
+    isHome: true,
+    placeIndex,
+    placeId: place.id,
+    distanceM: 0,
+  };
+}
+
+/**
+ * Resolve ALL of the player's mailbox rooms. `places` is the
+ * player's places (place #1 first, then #2 — see findHomeRooms in
+ * homeStorage.js; the caller supplies them, so this stays pure and
+ * server-safe). With no places, the v1 rule applies unchanged: one
+ * mailbox from the player's current location. With places, one
+ * mailbox per place, deduped by room id — two places near the same
+ * park share one mailbox room (the first place's entry wins), so
+ * the player never sees two boxes in one room.
+ */
+export function resolveMailboxRooms(rooms, location, places) {
+  const list = Array.isArray(rooms) ? rooms.filter((r) => r && r.id) : [];
+  if (!list.length) return [];
+  const myPlaces = (Array.isArray(places) ? places : []).filter((p) => p && p.id);
+  if (!myPlaces.length) {
+    const single = resolveMailboxRoom(list, location);
+    return single ? [{ ...single, isHome: false, placeIndex: 0, placeId: '' }] : [];
+  }
+  const out = [];
+  const seen = new Set();
+  myPlaces.forEach((place, i) => {
+    const resolved = resolveMailboxRoomForPlace(place, list, i + 1);
+    if (!resolved || seen.has(resolved.roomId)) return;
+    seen.add(resolved.roomId);
+    out.push(resolved);
+  });
+  return out;
+}
+
+/**
+ * The nearest of the player's mailbox rooms to their current
+ * location (by room coordinates, looked up in `rooms` by id).
+ * One room → it. No location, or no room with coordinates → the
+ * first entry (place #1's). This is the room the toast names, the
+ * pocket line leads with, and the "Go to my mailbox" button takes
+ * you to. Returns the entry or null when there is no mailbox room.
+ */
+export function nearestMailboxRoom(mailboxRooms, rooms, location) {
+  const entries = (Array.isArray(mailboxRooms) ? mailboxRooms : [])
+    .filter((r) => r && r.roomId);
+  if (!entries.length) return null;
+  if (entries.length === 1) return entries[0];
+  const me = locationLatLng(location);
+  if (!me) return entries[0];
+  const byId = new Map(
+    (Array.isArray(rooms) ? rooms : [])
+      .filter((r) => r && r.id)
+      .map((r) => [r.id, r]),
+  );
+  let best = entries[0];
+  let bestD = Infinity;
+  for (const entry of entries) {
+    const at = roomLatLng(byId.get(entry.roomId));
+    if (!at) continue;
+    const d = getDistanceMeters(me.lat, me.lng, at.lat, at.lng);
+    if (d < bestD) { bestD = d; best = entry; }
+  }
+  return best;
+}
+
+/**
+ * The pocket line naming where your mailbox(es) are — the real
+ * room name(s), never a generic "at the park". One room:
+ * "Your mailbox is at Shepherd Park". Two: "Your mailboxes are at
+ * Shepherd Park and Your Place 2". `fallbackName` is the single
+ * nearest room's name, used only when the list itself is empty
+ * (defensive — getState always supplies the list). Returns '' when
+ * nothing is known.
+ */
+export function mailboxRoomsLine(mailboxRooms, fallbackName = '') {
+  const list = (Array.isArray(mailboxRooms) ? mailboxRooms : [])
+    .filter((r) => r && typeof r.roomName === 'string' && r.roomName.trim());
+  if (list.length === 1) return `Your mailbox is at ${list[0].roomName.trim()}`;
+  if (list.length > 1) {
+    const names = list.map((r) => r.roomName.trim());
+    return `Your mailboxes are at ${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+  }
+  const fb = typeof fallbackName === 'string' && fallbackName.trim() ? fallbackName.trim() : '';
+  return fb ? `Your mailbox is at ${fb}` : '';
 }
 
 /**

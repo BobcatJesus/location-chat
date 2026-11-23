@@ -53,6 +53,11 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 
+// Mailbox v1.2 (`sq-mailbox-v1.2`): the pocket line naming where
+// your mailbox(es) are — the real room name(s), never a generic
+// "at the park".
+import { mailboxRoomsLine } from './mailState.js';
+
 const REASON_TEXT = {
   'inventory-full': 'Your pocket is full — use, drop, or throw something away to make room.',
   'not-enough-coins': 'Not enough coins for that yet.',
@@ -129,6 +134,12 @@ export default function InventoryPanel({
   // recipient's code typed so far.
   const [sendTarget, setSendTarget] = useState(null);
   const [sendCode, setSendCode] = useState('');
+  // Mailbox v1.2 (`sq-mailbox-v1.2`, decision 2): the pocket line
+  // naming where your mailbox(es) are — one room ("Your mailbox is
+  // at Shepherd Park") or both ("Your mailboxes are at Shepherd
+  // Park and Your Place 2"). Falls back to the single nearest
+  // room's name when the list itself is empty.
+  const mailboxLine = state ? mailboxRoomsLine(state.mailboxRooms, state.mailboxRoomName) : '';
 
   useEffect(() => {
     const t = setInterval(() => {
@@ -234,13 +245,16 @@ export default function InventoryPanel({
         {/* Mailbox v1 (`sq-mailbox-v1`): your own mailbox code, so
             you can share it with a friend in the room — it is a
             game number, it means nothing in the real world. The
-            line also names where your mailbox is (your nearest
-            park, or the nearest public place when no park is
-            close) and says when you have mail waiting. */}
+            line also names where your mailbox is. Mailbox v1.2
+            (`sq-mailbox-v1.2`, decision 2): with two mailboxes it
+            names BOTH rooms ("Your mailboxes are at Shepherd Park
+            and Your Place 2") — the real room names, never a
+            generic "at the park". It also says when you have mail
+            waiting. */}
         {state.mailboxCode && (
           <div style={{ fontSize: 13, marginTop: 4, color: '#3d6a8a' }}>
             📬 My mailbox code: <b style={{ letterSpacing: 2 }}>{state.mailboxCode}</b>
-            {state.mailboxRoomName ? ` · Your mailbox is at ${state.mailboxRoomName}` : ''}
+            {mailboxLine ? ` · ${mailboxLine}` : ''}
             {state.mailUnread > 0 ? ` · You’ve got mail (${state.mailUnread})!` : ''}
           </div>
         )}
@@ -252,7 +266,12 @@ export default function InventoryPanel({
             (tapping it there would just remount the same room).
             The click closes the pocket and enters the room through
             the app-level entry — the same path as tapping the
-            room's pin on the map — via onGoToMailboxRoom. */}
+            room's pin on the map — via onGoToMailboxRoom.
+            Mailbox v1.2 (`sq-mailbox-v1.2`, decision 3): the target
+            is the NEAREST of the player's mailbox rooms (the
+            mailboxRoomId / mailboxRoomName in state are the
+            nearest); the button hides when you are already in ANY
+            of your mailbox rooms (isMailboxRoom). */}
         {state.mailboxRoomId && state.mailboxRoomName && !state.isMailboxRoom && (
           <div style={{ marginTop: 6 }}>
             <button

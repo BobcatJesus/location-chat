@@ -265,6 +265,12 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
   // unread packages are waiting (the envelope dot on the 🎒 button).
   const [openMailbox, setOpenMailbox] = useState(false);
   const [mailUnread, setMailUnread] = useState(0);
+  const [mailRoomName, setMailRoomName] = useState('');
+  // Mailbox v1.2 (`sq-mailbox-v1.2`): the nearest mailbox room's
+  // name, for the envelope dot's tooltip — the generic "Open your
+  // mailbox at the park" misled the user when the mailbox was at a
+  // library (the Galveston fallback). The tooltip now names the
+  // real room, or says nothing about a place when unresolved.
   // Decoration Shop v1 (`sq-dec-shop-v1`): the Agora coffee-bar shop.
   const [openDecorShop, setOpenDecorShop] = useState(false);
   // Your Place v1: the storage chest panel, opened from the chest
@@ -297,6 +303,8 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
   // Mailbox v1 (`sq-mailbox-v1`): the same poll reads the unread
   // mail count, so the envelope dot on the 🎒 button appears the
   // moment mail arrives and clears when it is collected.
+  // Mailbox v1.2 (`sq-mailbox-v1.2`): the same poll also reads the
+  // nearest mailbox room's name, for the dot's tooltip.
   useEffect(() => {
     const t = setInterval(() => {
       try {
@@ -305,6 +313,7 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
         if (st) {
           setInventoryCount(`${st.count}/${st.capacity}`);
           setMailUnread(Number(st.mailUnread) || 0);
+          setMailRoomName(typeof st.mailboxRoomName === 'string' ? st.mailboxRoomName : '');
         } else if (inventoryCount !== null) setInventoryCount(null);
       } catch { /* scene not ready yet */ }
     }, 1000);
@@ -1329,10 +1338,18 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
           </span>
         )}
         {/* Mailbox v1 (`sq-mailbox-v1`): the envelope dot — up while
-            you have unread mail, until you've collected it. */}
+            you have unread mail, until you've collected it.
+            Mailbox v1.2 (`sq-mailbox-v1.2`): the tooltip names the
+            real mailbox room (the nearest one) — the old generic
+            "Open your mailbox at the park" said "the park" even
+            when the mailbox was at a library. When the room is
+            unresolved it says nothing about a place at all — never
+            a generic "at the park". */}
         {mailUnread > 0 && (
           <span
-            title={`You’ve got mail (${mailUnread})! Open your mailbox at the park.`}
+            title={mailRoomName
+              ? `You’ve got mail (${mailUnread})! Open your mailbox at ${mailRoomName}.`
+              : `You’ve got mail (${mailUnread})!`}
             style={{
               position: 'absolute', top: -4, right: -4,
               background: '#dc2626', color: '#fff',

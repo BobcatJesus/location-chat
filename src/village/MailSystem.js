@@ -4,10 +4,13 @@
 // Owned by VillageScene, same shape as NoticeBoardSystem /
 // SantaHatSystem: constructed in create(), refreshed on floor
 // switches, destroyed in shutdown(). The mailbox itself only
-// renders in the player's mailbox room (their nearest park, or the
-// nearest open-access room when no park is close — see
-// mailState.resolveMailboxRoom); every other room has no mailbox
-// object at all.
+// renders in one of the player's mailbox rooms — Mailbox v1.2
+// (`sq-mailbox-v1.2`): one mailbox per place (nearest park to that
+// place, or AT the place when no park is close — the Galveston
+// case), or the v1 single room (nearest park / open-access
+// fallback) for players with no places. Every other room has no
+// mailbox object at all. One shared inbox, one key, flag on every
+// mailbox.
 //
 // THE MAILBOX: a post box by the room's entrance (east of the
 // entry — the notice board takes the west side in parks). Walk up
@@ -45,7 +48,9 @@
 //      while you're online (mail_arrived). Mailbox v1.1
 //      (`sq-mailbox-v1.1`): the toast names the mailbox room when
 //      it is known — "📬 You’ve got mail at Shepherd Park!" — and
-//      falls back to the plain text when it is not.
+//      falls back to the plain text when it is not. Mailbox v1.2
+//      (`sq-mailbox-v1.2`, decision 1): with two mailboxes it names
+//      the NEAREST one to the player at toast time.
 //   2. an envelope dot on the 🎒 pocket button until the mail is
 //      collected (VillageCanvas polls getState());
 //   3. a red flag up on the mailbox itself while you have mail
@@ -55,6 +60,7 @@ import { DEPTH } from './depth.js';
 import {
   MAILBOX_MARKER_V1,
   MAILBOX_MARKER_V1_1,
+  MAILBOX_MARKER_V1_2,
   MAILBOX_W,
   MAILBOX_H,
   MAILBOX_OPEN_RANGE,
@@ -64,7 +70,8 @@ import {
   normalizeMailboxCode,
   isValidMailboxCode,
   cleanMailItem,
-  resolveMailboxRoom,
+  resolveMailboxRooms,
+  nearestMailboxRoom,
   resolveMailboxSpot,
   mailToastText,
 } from './mailState.js';
@@ -79,7 +86,7 @@ import {
   ensureMailboxKey,
   hasMailboxKey,
 } from './items.js';
-import { getHomeItems } from './homeStorage.js';
+import { getHomeItems, findHomeRooms } from './homeStorage.js';
 
 // How long a send / collect waits for the server before giving up
 // (same 5s as the decoration shop's pending timeout).
@@ -94,6 +101,9 @@ export class MailSystem {
     // reference, so the string survives minification into the
     // built bundle).
     this.markerV11 = MAILBOX_MARKER_V1_1;
+    // sq-mailbox-v1.2 — marker for the v1.2 landing check (live
+    // reference, same reason).
+    this.markerV12 = MAILBOX_MARKER_V1_2;
     this.state = createMailState();
     this._mailbox = null; // { x, y, w, h, roomId, roomName, isPark } — null when this room is not my mailbox room
     this._gfx = null; // Phaser graphics for the post box
@@ -131,11 +141,18 @@ export class MailSystem {
     // "Your mailbox is at …" was blank everywhere else — and a
     // "Go to my mailbox" button wired to that state would have been
     // hidden everywhere except the mailbox room itself.
-    const mailboxRoom = this._mailboxRoom();
+    // Mailbox v1.2 (`sq-mailbox-v1.2`): there can be TWO mailbox
+    // rooms now (one per place), so getState also returns the full
+    // list — `mailboxRooms` — and mailboxRoomId / mailboxRoomName
+    // stay as the NEAREST one (the toast, the pocket line and the
+    // Go button all lead with it).
+    const mailboxRooms = this._mailboxRooms();
+    const mailboxRoom = this._nearestFrom(mailboxRooms);
     return {
       packages,
       unread: packages.length,
       mailboxCode: mailboxCodeFor(this.scene?.userId || ''),
+      mailboxRooms,
       mailboxRoomId: mailboxRoom?.roomId || '',
       mailboxRoomName: mailboxRoom?.roomName || '',
       isMailboxRoom: this.isMailboxRoom,
@@ -145,17 +162,57 @@ export class MailSystem {
     };
   }
 
+  /** My mailbox rooms from ANY room (Mailbox v1.2,
+   *  `sq-mailbox-v1.2`): one per place — nearest park to that
+   *  place, or AT the place when no park is close — or the v1
+   *  single room (nearest park / open-access fallback) for
+   *  players with no places. `findHomeRooms` reads the player's
+   *  places (deterministic ids `home-<owner>` / `home-<owner>_2`)
+   *  out of allRooms; the places carry their own lat/lng (created
+   *  at the player's real location), so the park lookup measures
+   *  from the place, not from where the player happens to be
+   *  standing. A second place created later gains its mailbox on
+   *  the next scene (re)build — place creation happens on the map,
+   *  so entering any room afterwards rebuilds the scene with the
+   *  new place in allRooms. Places cannot be deleted, so no
+   *  deletion handling is needed. Returns [] when nothing
+   *  resolves. */
+  _mailboxRooms() {
+    try {
+      const places = findHomeRooms(this.scene?.allRooms || [], this.scene?.profile);
+      return resolveMailboxRooms(
+        this.scene?.allRooms || [],
+        this.scene?.userLocation || null,
+        places,
+      );
+    } catch { return []; }
+  }
+
+  /** The nearest of my mailbox rooms to my current location —
+   *  the one the toast names, the pocket line leads with, and the
+   *  Go button takes me to (Mailbox v1.2 decision 1 + 3). */
+  _nearestFrom(mailboxRooms) {
+    try {
+      return nearestMailboxRoom(
+        mailboxRooms,
+        this.scene?.allRooms || [],
+        this.scene?.userLocation || null,
+      );
+    } catch { return null; }
+  }
+
   /** My mailbox room from ANY room (Mailbox v1.1,
    *  `sq-mailbox-v1.1`): the nearest park / fallback, resolved from
    *  allRooms + userLocation (both are set at scene boot, before any
    *  socket state can arrive). Unlike `this._mailbox` (the drawn
-   *  object, only set when this room IS the mailbox room), this
-   *  answers "where is my mailbox?" everywhere. Null when no room
-   *  resolves (empty room list) — callers fall back to the plain
-   *  toast / hide the button. */
+   *  object, only set when this room IS a mailbox room), this
+   *  answers "where is my mailbox?" everywhere. Mailbox v1.2: the
+   *  nearest of the per-place rooms. Null when no room resolves
+   *  (empty room list) — callers fall back to the plain toast /
+   *  hide the button. */
   _mailboxRoom() {
     try {
-      return resolveMailboxRoom(this.scene?.allRooms || [], this.scene?.userLocation || null);
+      return this._nearestFrom(this._mailboxRooms());
     } catch { return null; }
   }
 
@@ -220,28 +277,35 @@ export class MailSystem {
 
   // ---- the mailbox object in the room ------------------------------------
 
-  /** Resolve this room's mailbox: only when this room IS the
-   *  player's mailbox room (nearest park / fallback). Otherwise
-   *  _mailbox stays null and nothing is drawn here. */
+  /** Resolve this room's mailbox: only when this room IS one of
+   *  the player's mailbox rooms (Mailbox v1.2,
+   *  `sq-mailbox-v1.2` — one per place, or the v1 single room for
+   *  players with no places). Otherwise _mailbox stays null and
+   *  nothing is drawn here. */
   _resolveMailbox() {
     this._mailbox = null;
     if (!this.enabled) return;
-    let resolved = null;
-    try {
-      resolved = resolveMailboxRoom(
-        this.scene?.allRooms || [],
-        this.scene?.userLocation || null,
-      );
-    } catch { resolved = null; }
-    if (!resolved || resolved.roomId !== this.scene.roomId) return;
+    let rooms = [];
+    try { rooms = this._mailboxRooms(); } catch { rooms = []; }
+    const mine = rooms.find((r) => r && r.roomId === this.scene.roomId);
+    if (!mine) return;
     const spot = this._resolveMailboxSpot();
-    this._mailbox = { ...spot, roomId: resolved.roomId, roomName: resolved.roomName, isPark: resolved.isPark };
+    this._mailbox = {
+      ...spot,
+      roomId: mine.roomId,
+      roomName: mine.roomName,
+      isPark: mine.isPark,
+      isHome: mine.isHome || false,
+    };
   }
 
   /** Where the box goes: east of the entry (the notice board takes
    *  the west side in parks), else west, else near the spawn.
    *  Mirrors RoomLayout.getNoticeBoardFallback's entry/spawn
-   *  discovery. */
+   *  discovery. Mailbox v1.2 (`sq-mailbox-v1.2`, decision 4): the
+   *  SAME spot logic in a home room — the home entry is bottom
+   *  centre, so east of it is clear of the storage chest (north
+   *  wall), the couches and the portrait. No home-specific spot. */
   _resolveMailboxSpot() {
     const layout = this.scene?.roomLayout;
     let entry = null;

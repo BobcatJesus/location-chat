@@ -140,6 +140,11 @@ export class ItemsSystem {
       mailboxCode: mail?.mailboxCode || '',
       mailPackages: mail?.packages || [],
       mailUnread: mail?.unread || 0,
+      // Mailbox v1.2 (`sq-mailbox-v1.2`): the full list of the
+      // player's mailbox rooms (one per place) — the pocket line
+      // names them all; mailboxRoomId / mailboxRoomName stay the
+      // NEAREST one (the Go button's target).
+      mailboxRooms: mail?.mailboxRooms || [],
       mailboxRoomId: mail?.mailboxRoomId || '',
       mailboxRoomName: mail?.mailboxRoomName || '',
       isMailboxRoom: Boolean(mail?.isMailboxRoom),
