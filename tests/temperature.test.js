@@ -1,4 +1,7 @@
-// temperature.test.js — Temperature System v1 (`sq-temperature-v1`).
+// temperature.test.js — Temperature System v1 (`sq-temperature-v1`)
+// + v1.1 (`sq-temperature-v1.1`: shiver widened ±3px → ±6px, and a
+// 🥶 marker above the head while cold — the v1 shake was invisible
+// live because the camera follows the avatar).
 //
 // Fall + winter you are cold by default, spring + summer you are
 // warm by default; a matching drink (warm: cocoa/coffee, cool:
@@ -214,20 +217,27 @@ describe('TemperatureSystem (stub scene)', () => {
   // computed from the real season, so these pass year-round.
   function makeScene() {
     const notices = [];
-    const sweat = {
+    const makeText = () => ({
       alpha: 0, x: 0, y: 0,
       setOrigin() { return this; },
       setDepth() { return this; },
       setAlpha(a) { this.alpha = a; return this; },
       setPosition(x, y) { this.x = x; this.y = y; return this; },
       destroy() { this.destroyed = true; },
-    };
+    });
+    const sweat = makeText();
+    const cold = makeText();
+    let textCalls = 0;
     const scene = {
       player: { gx: 100, gy: 200, avatar: { x: 100 } },
       onSystemNotice: (msg) => { notices.push(msg); },
-      add: { text: () => sweat },
+      // _ensureVisuals creates the sweat drop first, then the 🥶
+      // marker — the first text call is the sweat drop, the
+      // second is the cold marker.
+      add: { text: () => (textCalls++ === 0 ? sweat : cold) },
       _notices: notices,
       _sweat: sweat,
+      _cold: cold,
     };
     return scene;
   }
@@ -294,7 +304,8 @@ describe('TemperatureSystem (stub scene)', () => {
         seen.add(scene.player.avatar.x);
       }
       // The shake moves the avatar a few px either side of gx…
-      for (const x of seen) expect(Math.abs(x - 100)).toBeLessThanOrEqual(3);
+      // (v1.1: ±6px, was ±3px — the v1 shake was invisible live.)
+      for (const x of seen) expect(Math.abs(x - 100)).toBeLessThanOrEqual(6);
       // …and it actually oscillates, not a fixed offset.
       expect(seen.size).toBeGreaterThan(1);
       expect(scene._sweat.alpha).toBe(0);
@@ -308,6 +319,24 @@ describe('TemperatureSystem (stub scene)', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('shows a 🥶 marker while cold and hides it when warmed (v1.1)', () => {
+    const scene = makeScene();
+    const sys = new TemperatureSystem(scene);
+    const season = seasonFor(new Date());
+    if (season !== 'cold') { sys.destroy(); return; } // warm-season runs cover the sweat case below
+    sys.update();
+    // The marker rides above the head, like the sweat drop.
+    expect(scene._cold.alpha).toBe(1);
+    expect(scene._cold.x).toBe(100 + 14);
+    expect(Math.abs(scene._cold.y - (200 - 72))).toBeLessThanOrEqual(2);
+    expect(scene._sweat.alpha).toBe(0);
+    // A warm drink hides the marker, same as it stops the shiver.
+    sys.drinkWarm();
+    sys.update();
+    expect(scene._cold.alpha).toBe(0);
+    sys.destroy();
   });
 
   it('shows the sweat drop while warm and hides it when cooled', () => {
@@ -325,12 +354,13 @@ describe('TemperatureSystem (stub scene)', () => {
     sys.destroy();
   });
 
-  it('destroys the sweat drop and drops the scene', () => {
+  it('destroys the sweat drop and the cold marker and drops the scene', () => {
     const scene = makeScene();
     const sys = new TemperatureSystem(scene);
     sys.refresh();
     sys.destroy();
     expect(scene._sweat.destroyed).toBe(true);
+    expect(scene._cold.destroyed).toBe(true);
     expect(sys.scene).toBeNull();
   });
 });

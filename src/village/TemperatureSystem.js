@@ -12,10 +12,13 @@
 //     "You're warm, get a cold drink" (once per spell — see
 //     refreshTemperature).
 //   - the SHIVER: while cold, the local avatar shakes a few
-//     pixels side to side. Applied AFTER player.sync() (the scene
-//     re-positions the avatar every frame), so the offset
-//     survives one frame at a time and self-corrects the moment
-//     the player warms up.
+//     pixels side to side, and a 🥶 marker rides above the head
+//     (v1.1: the v1 shake was ±3px and invisible — the camera
+//     follows the avatar, so it cancelled most of it out. The
+//     marker is the part you can actually see.) Applied AFTER
+//     player.sync() (the scene re-positions the avatar every
+//     frame), so the offset survives one frame at a time and
+//     self-corrects the moment the player warms up.
 //   - the SWEAT: while warm, a 💧 drop rides above the local
 //     avatar (same scene-level-text pattern as the cafe cup /
 //     the cat's hungry bubble).
@@ -41,12 +44,20 @@ import {
 // need finer grain.
 const TEMP_TICK_MS = 1000;
 
-// The shiver: ±3px at ~9Hz — visible, but a tremble, not an
-// earthquake. The sweat drop bobs gently above the head.
-const SHIVER_AMPLITUDE_PX = 3;
+// The shiver: ±6px at ~9Hz — a visible tremble, not an
+// earthquake. (v1 was ±3px and invisible on the live site: the
+// camera follows the avatar, so it cancelled most of the wobble
+// out. v1.1 doubles it and adds the 🥶 marker above the head.)
+// The sweat drop bobs gently above the head.
+const SHIVER_AMPLITUDE_PX = 6;
 const SHIVER_PERIOD_MS = 110;
 const SWEAT_OFFSET_X = 14;
 const SWEAT_OFFSET_Y = 72;
+// sq-temperature-v1.1 — the cold marker rides in the same spot
+// as the sweat drop (they never show at the same time: cold and
+// warm are exclusive), so it reuses the same offsets.
+const COLD_OFFSET_X = 14;
+const COLD_OFFSET_Y = 72;
 
 export class TemperatureSystem {
   constructor(scene) {
@@ -58,6 +69,7 @@ export class TemperatureSystem {
     this.state = loadTemperatureState();
     this._lastCheckMs = 0;
     this._sweat = null; // Phaser text, created lazily
+    this._cold = null; // Phaser text (🥶), created lazily — v1.1
   }
 
   get enabled() {
@@ -109,6 +121,11 @@ export class TemperatureSystem {
 
   update() {
     if (!this.enabled) return;
+    // Belt and braces: refresh() normally builds the markers in
+    // create(), but update() must not silently do nothing if it
+    // runs first — the markers are created lazily and cheaply
+    // guarded once they exist.
+    this._ensureVisuals();
     const now = Date.now();
     if (now - (this._lastCheckMs || 0) >= TEMP_TICK_MS) {
       this._lastCheckMs = now;
@@ -118,12 +135,19 @@ export class TemperatureSystem {
   }
 
   _ensureVisuals() {
-    if (this._sweat) return;
+    if (this._sweat && this._cold) return;
     try {
-      this._sweat = this.scene.add.text(0, 0, '💧', { fontSize: '18px' })
-        .setOrigin(0.5, 1).setDepth(DEPTH.UI).setAlpha(0);
+      if (!this._sweat) {
+        this._sweat = this.scene.add.text(0, 0, '💧', { fontSize: '18px' })
+          .setOrigin(0.5, 1).setDepth(DEPTH.UI).setAlpha(0);
+      }
+      if (!this._cold) {
+        this._cold = this.scene.add.text(0, 0, '🥶', { fontSize: '18px' })
+          .setOrigin(0.5, 1).setDepth(DEPTH.UI).setAlpha(0);
+      }
     } catch {
-      this._sweat = null;
+      // A failed creation leaves that marker null; the setters
+      // tolerate null, so the other marker still works.
     }
   }
 
@@ -138,16 +162,40 @@ export class TemperatureSystem {
     if (!avatar) return;
     const exposure = exposureFor(this.state, { now });
     if (exposure === 'cold') {
-      // Small fast shake around the synced position.
+      // Small fast shake around the synced position, plus the 🥶
+      // marker above the head (v1.1 — the shake alone was
+      // invisible live).
       try {
         avatar.x = player.gx + Math.round(Math.sin(now / SHIVER_PERIOD_MS) * SHIVER_AMPLITUDE_PX);
       } catch {}
+      this._setCold(true, now);
       this._setSweat(false, now);
     } else if (exposure === 'warm') {
+      this._setCold(false, now);
       this._setSweat(true, now);
     } else {
+      this._setCold(false, now);
       this._setSweat(false, now);
     }
+  }
+
+  /** The 🥶 marker above the head while cold (v1.1). Same shape
+   *  as _setSweat: rides above the avatar with a gentle bob, and
+   *  hides the moment a warm drink takes effect. */
+  _setCold(show, now) {
+    if (!this._cold) return;
+    try {
+      if (!show) {
+        this._cold.setAlpha(0);
+        return;
+      }
+      const player = this.scene?.player;
+      if (!player) { this._cold.setAlpha(0); return; }
+      const bob = Math.round(Math.sin(now / 300) * 2);
+      this._cold
+        .setPosition(player.gx + COLD_OFFSET_X, player.gy - COLD_OFFSET_Y + bob)
+        .setAlpha(1);
+    } catch {}
   }
 
   _setSweat(show, now) {
@@ -168,7 +216,9 @@ export class TemperatureSystem {
 
   destroy() {
     try { this._sweat?.destroy(); } catch {}
+    try { this._cold?.destroy(); } catch {}
     this._sweat = null;
+    this._cold = null;
     this.scene = null;
   }
 }
