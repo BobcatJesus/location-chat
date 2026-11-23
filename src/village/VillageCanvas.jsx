@@ -24,6 +24,10 @@ import { isHomeRoom } from './homeStorage.js';
 import { getDistanceMeters } from '../geo';
 import { ROOMS, getAllRooms } from '../../rooms/rooms.js';
 import { getVenueEvents } from '../../lib/venueEvents.js';
+// Mailbox v1.1 (`sq-mailbox-v1.1`): the "Go to my mailbox" seam —
+// close the pocket, then enter the mailbox room through the
+// app-level entry (same path as a map pin).
+import { goToMailboxRoom } from './mailState.js';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'https://location-chat-production.up.railway.app';
 
@@ -226,7 +230,7 @@ function createDecahedronRoomFootprint(room = {}) {
   return points;
 }
 
-export default function VillageCanvas({ room, profile, onLeave, location, venueEvents: providedVenueEvents = [], canManageVenue = false, isModerator = false }) {
+export default function VillageCanvas({ room, profile, onLeave, location, venueEvents: providedVenueEvents = [], canManageVenue = false, isModerator = false, onEnterRoom }) {
   const BASE_WIDTH = 1600;
   const BASE_HEIGHT = 900;
   const containerRef = useRef(null);
@@ -867,6 +871,12 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
           // player with this mailbox code — it leaves the pocket
           // only when the server confirms the send.
           onSendMail={(id, code) => gameRef.current?.scene?.getScene('VillageScene')?.itemsSystem?.sendMail?.(id, code) || { ok: false, reason: 'error' }}
+          // Mailbox v1.1 (`sq-mailbox-v1.1`): "Go to my mailbox" —
+          // close the pocket, then enter the mailbox room through
+          // the app-level entry (onEnterRoom, wired in app.jsx to
+          // openFeaturedRoomDirect — the same path as tapping the
+          // room's pin on the map, GPS gates included).
+          onGoToMailboxRoom={(roomId, roomName) => goToMailboxRoom({ closePanel: () => setOpenInventory(false), onEnterRoom, roomId, roomName })}
           onOpenPuzzle={() => { setOpenInventory(false); setOpenPuzzle(true); }}
           onClose={() => { setOpenInventory(false); setCoinBalance(getCoins()); }}
         />

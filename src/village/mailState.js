@@ -70,6 +70,10 @@ import { getDistanceMeters } from '../geo.js';
 import { isOpenAccessRoom } from '../accessPolicy.js';
 
 export const MAILBOX_MARKER_V1 = 'sq-mailbox-v1';
+// Mailbox v1.1 (`sq-mailbox-v1.1`): live marker string, referenced by
+// MailSystem so it survives minification into the built bundle (a
+// comment alone would be stripped).
+export const MAILBOX_MARKER_V1_1 = 'sq-mailbox-v1.1';
 
 // A park room counts as "nearby" inside this range; beyond it the
 // mailbox falls back to the nearest open-access room.
@@ -256,6 +260,44 @@ export function parseMailState(raw) {
     s.packages.push(pkg);
   }
   return s;
+}
+
+// --- Mailbox v1.1 (`sq-mailbox-v1.1`) --------------------------------------
+// Toast text + the go-to-mailbox seam. Both are pure (no Phaser, no
+// React) so tests can drive them without a DOM or a scene.
+//
+// TOAST NAMES THE PLACE (user-decided 2026-11-23): the "You've got
+// mail!" toast used to say nothing about WHERE the mailbox is. It
+// now names the room when the room is known, and falls back to the
+// plain text when it is not — never a blank.
+//   login (no sender):  "📬 You’ve got mail at Shepherd Park!"
+//   live (has sender):  "📬 You’ve got mail from Alice at Shepherd Park!"
+/** Toast text for "you've got mail". `fromName` is the sender and
+ *  only applies to the live-arrival toast (the login toast has no
+ *  sender). `roomName` is the mailbox room, or '' when unresolved. */
+export function mailToastText({ roomName, fromName } = {}) {
+  const place = typeof roomName === 'string' && roomName.trim() ? roomName.trim() : '';
+  const from = typeof fromName === 'string' && fromName.trim() ? fromName.trim() : '';
+  if (place && from) return `📬 You’ve got mail from ${from} at ${place}!`;
+  if (place) return `📬 You’ve got mail at ${place}!`;
+  if (from) return `📬 You’ve got mail from ${from}!`;
+  return '📬 You’ve got mail!';
+}
+
+/** Go to my mailbox room: close the pocket panel first, then enter
+ *  the room through the app-level entry (the same path as tapping
+ *  the room's pin on the map — app.jsx openFeaturedRoomDirect calls
+ *  handleEnterRoom with the canonical room, so the GPS gates behave
+ *  exactly as the pin does). The close happens FIRST on purpose: on
+ *  a GPS refusal the player is still in the current room and the
+ *  too-far toast is visible — the same dismiss-first pattern as the
+ *  landing room shortcuts. Pure seam: `closePanel` and
+ *  `onEnterRoom` are callbacks, so this is testable without Phaser
+ *  or React (VillageCanvas.jsx cannot be imported in node — Phaser
+ *  touches the DOM at import time). */
+export function goToMailboxRoom({ closePanel, onEnterRoom, roomId, roomName } = {}) {
+  try { closePanel?.(); } catch {}
+  try { onEnterRoom?.(roomId, roomName); } catch {}
 }
 
 // --- where the mailbox lives ----------------------------------------------

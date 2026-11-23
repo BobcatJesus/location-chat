@@ -42,7 +42,10 @@
 // NOTIFICATIONS (all three, user-decided):
 //   1. a "📬 You've got mail!" toast — on login when the first
 //      mail_state shows unread mail, and the moment mail arrives
-//      while you're online (mail_arrived);
+//      while you're online (mail_arrived). Mailbox v1.1
+//      (`sq-mailbox-v1.1`): the toast names the mailbox room when
+//      it is known — "📬 You’ve got mail at Shepherd Park!" — and
+//      falls back to the plain text when it is not.
 //   2. an envelope dot on the 🎒 pocket button until the mail is
 //      collected (VillageCanvas polls getState());
 //   3. a red flag up on the mailbox itself while you have mail
@@ -51,6 +54,7 @@
 import { DEPTH } from './depth.js';
 import {
   MAILBOX_MARKER_V1,
+  MAILBOX_MARKER_V1_1,
   MAILBOX_W,
   MAILBOX_H,
   MAILBOX_OPEN_RANGE,
@@ -62,6 +66,7 @@ import {
   cleanMailItem,
   resolveMailboxRoom,
   resolveMailboxSpot,
+  mailToastText,
 } from './mailState.js';
 import {
   ITEM_TYPES,
@@ -85,6 +90,10 @@ export class MailSystem {
     this.scene = scene;
     // sq-mailbox-v1 — marker for the v1 landing check.
     this.marker = MAILBOX_MARKER_V1;
+    // sq-mailbox-v1.1 — marker for the v1.1 landing check (live
+    // reference, so the string survives minification into the
+    // built bundle).
+    this.markerV11 = MAILBOX_MARKER_V1_1;
     this.state = createMailState();
     this._mailbox = null; // { x, y, w, h, roomId, roomName, isPark } — null when this room is not my mailbox room
     this._gfx = null; // Phaser graphics for the post box
@@ -114,17 +123,46 @@ export class MailSystem {
    *  (both poll this ~1-2x/sec). */
   getState() {
     const packages = (this.state.packages || []).map((p) => ({ ...p, item: { ...p.item } }));
+    // Mailbox v1.1 (`sq-mailbox-v1.1`): the room the mailbox lives
+    // in, resolved from ANY room (see _mailboxRoom) — v1 only named
+    // it while you were already standing in it (mailboxRoomId /
+    // mailboxRoomName came from `this._mailbox`, which is only set
+    // when this room IS the mailbox room), so the pocket line
+    // "Your mailbox is at …" was blank everywhere else — and a
+    // "Go to my mailbox" button wired to that state would have been
+    // hidden everywhere except the mailbox room itself.
+    const mailboxRoom = this._mailboxRoom();
     return {
       packages,
       unread: packages.length,
       mailboxCode: mailboxCodeFor(this.scene?.userId || ''),
-      mailboxRoomId: this._mailbox?.roomId || '',
-      mailboxRoomName: this._mailbox?.roomName || '',
+      mailboxRoomId: mailboxRoom?.roomId || '',
+      mailboxRoomName: mailboxRoom?.roomName || '',
       isMailboxRoom: this.isMailboxRoom,
       hasKey: hasMailboxKey(),
       mailNotice: this._mailNotice.text || '',
       mailNoticeSeq: this._mailNotice.seq || 0,
     };
+  }
+
+  /** My mailbox room from ANY room (Mailbox v1.1,
+   *  `sq-mailbox-v1.1`): the nearest park / fallback, resolved from
+   *  allRooms + userLocation (both are set at scene boot, before any
+   *  socket state can arrive). Unlike `this._mailbox` (the drawn
+   *  object, only set when this room IS the mailbox room), this
+   *  answers "where is my mailbox?" everywhere. Null when no room
+   *  resolves (empty room list) — callers fall back to the plain
+   *  toast / hide the button. */
+  _mailboxRoom() {
+    try {
+      return resolveMailboxRoom(this.scene?.allRooms || [], this.scene?.userLocation || null);
+    } catch { return null; }
+  }
+
+  /** The mailbox room's name, or '' when it is not resolved yet —
+   *  the toast sites use this and fall back to the plain text. */
+  _mailboxRoomName() {
+    try { return this._mailboxRoom()?.roomName || ''; } catch { return ''; }
   }
 
   /** (Re)build the mailbox position + drawing, grant the key, and
@@ -157,7 +195,11 @@ export class MailSystem {
     if (!this._sawFirstState) {
       this._sawFirstState = true;
       if (unread > 0) {
-        try { this.scene?.onSystemNotice?.('📬 You’ve got mail!'); } catch {}
+        // Mailbox v1.1 (`sq-mailbox-v1.1`): the login toast names
+        // the mailbox room when it is resolved — "📬 You’ve got
+        // mail at Shepherd Park!" — and falls back to the plain
+        // text when it is not (never a blank).
+        try { this.scene?.onSystemNotice?.(mailToastText({ roomName: this._mailboxRoomName() })); } catch {}
       }
     }
     if (unread !== hadUnread) this._renderFlag();
@@ -165,12 +207,15 @@ export class MailSystem {
 
   /** Mail just arrived while I'm online: toast now (the server
    *  also sends the fresh mail_state right after, so the dot and
-   *  flag update on their own). */
+   *  flag update on their own). Mailbox v1.1 (`sq-mailbox-v1.1`):
+   *  the toast names the mailbox room too — "📬 You’ve got mail
+   *  from Alice at Shepherd Park!" — falling back to the plain
+   *  "from Alice" text when the room is unresolved. */
   onMailArrived(payload = {}) {
     const from = typeof payload.fromName === 'string' && payload.fromName.trim()
       ? payload.fromName.trim()
       : 'Someone';
-    try { this.scene?.onSystemNotice?.(`📬 You’ve got mail from ${from}!`); } catch {}
+    try { this.scene?.onSystemNotice?.(mailToastText({ roomName: this._mailboxRoomName(), fromName: from })); } catch {}
   }
 
   // ---- the mailbox object in the room ------------------------------------

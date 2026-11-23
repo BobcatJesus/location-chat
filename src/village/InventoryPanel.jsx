@@ -40,6 +40,11 @@
 //     full inbox) — see the decor channel above. The panel also
 //     shows the player's own mailbox code (mailboxCode) and where
 //     their mailbox is (mailboxRoomName).
+//   onGoToMailboxRoom(roomId, roomName) — "Go to my mailbox"
+//     (Mailbox v1.1, `sq-mailbox-v1.1`): close the pocket and enter
+//     the mailbox room through the app-level entry (the same path as
+//     tapping the room's pin on the map). The canvas supplies it;
+//     the panel just calls it with the resolved mailbox room.
 //   onOpenPuzzle() — close this panel and open the puzzle board
 //   getBadges() — () => [{ questId, emoji, title, description,
 //     completedAt, completedLabel }] (QuestManager.getCompletions,
@@ -90,7 +95,7 @@ const REASON_TEXT = {
 };
 
 export default function InventoryPanel({
-  getState, onUse, onDrop, onDispose, onBuyBag, onMakeFlyer, onPinFlyer, onPlaceDecoration, onPutHatOnCat, onSendMail, onOpenPuzzle, getBadges, onClose,
+  getState, onUse, onDrop, onDispose, onBuyBag, onMakeFlyer, onPinFlyer, onPlaceDecoration, onPutHatOnCat, onSendMail, onGoToMailboxRoom, onOpenPuzzle, getBadges, onClose,
 }) {
   const [state, setState] = useState(() => {
     try { return getState ? getState() : null; } catch { return null; }
@@ -237,6 +242,26 @@ export default function InventoryPanel({
             📬 My mailbox code: <b style={{ letterSpacing: 2 }}>{state.mailboxCode}</b>
             {state.mailboxRoomName ? ` · Your mailbox is at ${state.mailboxRoomName}` : ''}
             {state.mailUnread > 0 ? ` · You’ve got mail (${state.mailUnread})!` : ''}
+          </div>
+        )}
+        {/* Mailbox v1.1 (`sq-mailbox-v1.1`): "Go to my mailbox" —
+            next to the code line. Only when the mailbox room is
+            resolved (mailboxRoomId + mailboxRoomName — v1.1 resolves
+            them from any room; v1 left them blank outside the
+            mailbox room) and you are not already standing in it
+            (tapping it there would just remount the same room).
+            The click closes the pocket and enters the room through
+            the app-level entry — the same path as tapping the
+            room's pin on the map — via onGoToMailboxRoom. */}
+        {state.mailboxRoomId && state.mailboxRoomName && !state.isMailboxRoom && (
+          <div style={{ marginTop: 6 }}>
+            <button
+              onClick={() => onGoToMailboxRoom?.(state.mailboxRoomId, state.mailboxRoomName)}
+              title={`Go to ${state.mailboxRoomName} — your mailbox is there`}
+              style={btnStyle}
+            >
+              📬 Go to my mailbox
+            </button>
           </div>
         )}
 

@@ -1905,7 +1905,13 @@ function App() {
             ) : (
               <div style={{ flex: 1, border: '2px solid #334155', borderRadius: 12, overflow: 'hidden', position: 'relative' }}>
                 <Suspense fallback={<div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', color: '#94a3b8', background: '#0f172a' }}>Loading room…</div>}>
-                  <VillageCanvas room={osmRoom ? { ...osmRoom, id: osmRoom.id } : activeRoom} venueEvents={venueEvents} canManageVenue={venuePermissions.canManage} isModerator={venuePermissions.isModerator} profile={profile} location={location} onLeave={() => { setActiveScene('world'); setOsmRoom(null); }} />
+                  {/* Mailbox v1.1 (`sq-mailbox-v1.1`): the pocket's
+                      "Go to my mailbox" button enters the mailbox
+                      room through openFeaturedRoomDirect — the same
+                      path as tapping the room's pin on the map
+                      (handleEnterRoom with the canonical room, GPS
+                      gates included). */}
+                  <VillageCanvas room={osmRoom ? { ...osmRoom, id: osmRoom.id } : activeRoom} venueEvents={venueEvents} canManageVenue={venuePermissions.canManage} isModerator={venuePermissions.isModerator} profile={profile} location={location} onLeave={() => { setActiveScene('world'); setOsmRoom(null); }} onEnterRoom={(roomId, displayName) => openFeaturedRoomDirect(roomId, displayName)} />
                 </Suspense>
                 {venuePermissions.canManage && <button
                   type="button"
