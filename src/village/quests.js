@@ -34,7 +34,34 @@
 //   rewardCoins — coins paid from the local CoinWallet on completion.
 //   emoji       — tracker/toast decoration.
 
+/** The guided first quest (Onboarding v1, `sq-onboarding-v1`):
+ *  walk up to the cafe cat in Agora and pet her once. Declared
+ *  above QUESTS — the def below references it, and consts are
+ *  not usable before their declaration. */
+export const FIRST_STEPS_QUEST_ID = 'first-steps';
+
 export const QUESTS = [
+  // Onboarding v1 (`sq-onboarding-v1`): the guided first quest.
+  // FIRST among the Agora quests, so refresh() picks it before Cat
+  // Cuddles — a new player's first pet completes this, and the same
+  // pet also counts as Cat Cuddles 1/3 (QuestManager.recordEvent
+  // advances every unfinished room quest listening for the event).
+  // rewardCoins 0: NO extra coins — the normal +1 pet coin IS the
+  // reward (QuestManager skips the wallet call and the "+0 coins"
+  // text when the reward is 0). The badge is automatic, like every
+  // completed quest. Completable by anyone, once ever — the landing
+  // card is what points first-timers at it.
+  {
+    id: FIRST_STEPS_QUEST_ID,
+    title: 'First Steps',
+    description: 'Walk up to the cafe cat and pet her once. (Press E when you are close.)',
+    roomId: 'agora-houston',
+    kind: 'solo',
+    event: 'cat-pet',
+    target: 1,
+    rewardCoins: 0,
+    emoji: '👋',
+  },
   {
     id: 'duck-roundup',
     title: 'The Duck Roundup',

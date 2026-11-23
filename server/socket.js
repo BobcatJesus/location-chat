@@ -412,6 +412,12 @@ const CATS_PETS_TO_SLEEP = 3;
 // can't invent quests or rewards.
 const questState = {};
 const QUEST_DEFS = {
+  // Onboarding v1 (`sq-onboarding-v1`): the guided first quest —
+  // pet the cafe cat once. rewardCoins 0: no extra coins, the +1
+  // pet coin is the reward (the client skips the wallet call and
+  // the "+0 coins" text). Must be here or quest_progress for it is
+  // silently dropped and the badge is not a known id.
+  'first-steps': { target: 1, rewardCoins: 0 },
   'duck-roundup': { target: 3, rewardCoins: 5 },
   'cat-cuddles': { target: 3, rewardCoins: 3 },
   'first-round': { target: 1, rewardCoins: 3 },

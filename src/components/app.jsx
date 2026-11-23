@@ -11,6 +11,15 @@ import { signOut } from '../lib/authClient';
 import { getRoomAccessRadius, isOpenAccessRoom } from '../accessPolicy';
 import { findHomeRooms, homeCreateState, defaultHomeName, HOME_ROOM_RADIUS } from '../village/homeStorage.js';
 import { clearPuzzlePieces, clearPuzzlePiecesForNewSession } from '../village/items.js';
+import {
+  hasSeenWelcome,
+  markWelcomeSeen,
+  WELCOME_TITLE,
+  WELCOME_BODY,
+  WELCOME_FIRST_STEP,
+  WELCOME_GO_LABEL,
+  WELCOME_DISMISS_LABEL,
+} from '../village/onboarding.js';
 
 const VillageCanvas = lazy(() => import('../village/VillageCanvas.jsx'));
 const MapView = lazy(() => import('./MapView.jsx'));
@@ -527,6 +536,10 @@ function App() {
   const [selectedRoom, setSelectedRoom] = useState('shepherd-park');
   const [activeScene, setActiveScene] = useState('world');
   const [gpsToast, setGpsToast] = useState(null);
+  // Onboarding v1 (`sq-onboarding-v1`): the welcome card shows once
+  // ever, per browser — initialized from the flag, so a return visit
+  // never flashes it.
+  const [welcomeDismissed, setWelcomeDismissed] = useState(() => hasSeenWelcome());
   const [editingProfile, setEditingProfile] = useState(false);
   const [onboardingRequired, setOnboardingRequired] = useState(false);
   const [profileError, setProfileError] = useState(null);
@@ -1571,6 +1584,34 @@ function App() {
     handleEnterRoom('md-anderson-library', library);
   };
 
+  // Onboarding v1 (`sq-onboarding-v1`): the welcome card's "Take me
+  // to Agora" button. SAME path as tapping Agora's pin on the map
+  // (MapView calls onEnterRoom(id, room) the same way) — Agora is
+  // open-access (accessPolicy OPEN_ACCESS_ROOM_IDS), so no GPS gate
+  // applies, and this bypasses nothing: if Agora ever left open
+  // access, the button would hit the same too-far toast as the pin.
+  const openAgoraDirect = () => {
+    const agora = allRooms.find((room) => room.id === 'agora-houston');
+    if (!agora) {
+      setGpsToast('Agora is not available yet.');
+      setTimeout(() => setGpsToast(null), 3000);
+      return;
+    }
+    handleEnterRoom('agora-houston', agora);
+  };
+
+  // Onboarding v1: either welcome-card button dismisses the card
+  // for good (the flag is set on dismiss AND on going to Agora).
+  const dismissWelcome = () => {
+    markWelcomeSeen();
+    setWelcomeDismissed(true);
+  };
+  const goAgoraFromWelcome = () => {
+    markWelcomeSeen();
+    setWelcomeDismissed(true);
+    openAgoraDirect();
+  };
+
   const _THREE_DAYS = 3 * 24 * 60 * 60 * 1000;
   const _lastLocTs = parseInt(localStorage.getItem('sidequest_loc_ts') || '0', 10);
   const locCooldown = Date.now() - _lastLocTs < _THREE_DAYS;
@@ -1794,6 +1835,22 @@ function App() {
                 ) : (
                   <div style={{ position: 'absolute', top: 12, left: 12, zIndex: 1000, background: '#1e293b', border: '1px solid #475569', padding: '8px 14px', fontFamily: 'Courier New', fontSize: 11, color: '#64748b', boxShadow: '2px 2px 0 #000' }}>
                     📍 Waiting for GPS…
+                  </div>
+                )}
+                {/* Onboarding v1 (`sq-onboarding-v1`): the welcome card.
+                    First visit only (per browser — guests included):
+                    once dismissed, welcomeDismissed stays true for
+                    the session and hasSeenWelcome() keeps it gone on
+                    every return visit. Copy lives in onboarding.js. */}
+                {!welcomeDismissed && (
+                  <div style={{ position: 'absolute', top: 56, left: '50%', transform: 'translateX(-50%)', zIndex: 1001, width: 'min(420px, calc(100% - 24px))', background: '#111827', border: '2px solid #fbbf24', boxShadow: '6px 6px 0 #000', padding: 18, color: '#f8fafc', fontFamily: 'Courier New, monospace' }}>
+                    <h2 style={{ margin: '0 0 6px', color: '#fbbf24', fontSize: 20 }}>{WELCOME_TITLE}</h2>
+                    <div style={{ fontSize: 13, lineHeight: 1.5, color: '#e2e8f0' }}>{WELCOME_BODY}</div>
+                    <div style={{ marginTop: 10, fontSize: 13, lineHeight: 1.5, color: '#fde68a' }}>{WELCOME_FIRST_STEP}</div>
+                    <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+                      <button onClick={goAgoraFromWelcome} style={{ flex: 1, padding: '10px 12px', background: '#fbbf24', color: '#111827', border: '2px solid #111827', cursor: 'pointer', fontWeight: 'bold', fontFamily: 'inherit', fontSize: 13 }}>{WELCOME_GO_LABEL}</button>
+                      <button onClick={dismissWelcome} style={{ padding: '10px 12px', background: 'transparent', color: '#cbd5e1', border: '1px solid #475569', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13 }}>{WELCOME_DISMISS_LABEL}</button>
+                    </div>
                   </div>
                 )}
               </div>

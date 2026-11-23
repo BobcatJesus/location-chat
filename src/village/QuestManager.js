@@ -63,7 +63,12 @@
 // unfinished one, and finishing it activates the next.
 
 import { DEPTH } from './depth.js';
-import { QUESTS, getQuest } from './quests.js';
+import { QUESTS, getQuest, FIRST_STEPS_QUEST_ID } from './quests.js';
+import {
+  FIRST_STEPS_STEP_PROMPT,
+  FIRST_STEPS_ASLEEP_PROMPT,
+  ONBOARDING_MARKER_V1,
+} from './onboarding.js';
 import {
   BADGES_MARKER_V1,
   BADGES_BACKFILL_MARKER_V1_1,
@@ -139,6 +144,9 @@ export class QuestManager {
     this._serverBadges = {}; // { [questId]: completedAt }
     this.marker = BADGES_MARKER_V1;
     this.backfillMarker = BADGES_BACKFILL_MARKER_V1_1;
+    // Onboarding v1 (`sq-onboarding-v1`): live reference so the
+    // marker survives minification in the built bundle.
+    this.onboardingMarker = ONBOARDING_MARKER_V1;
     // DOM HUD (VillageCanvas renders tracker/banner/toast as DOM): when
     // true, QuestManager keeps the same state but exposes it via
     // getHudState() instead of drawing Phaser text. Default false keeps
@@ -170,7 +178,8 @@ export class QuestManager {
    * trackerSections: { room, anywhere } — the room quest on its own
    * and the anywhere quests separately, so the DOM can lead with
    * this room's quest and label the anywhere ones as not-this-room.
-   * banner: the live banner info, or null. toast: live toast text, or null. */
+   * banner: the live banner info, or null. toast: live toast text, or null.
+   * stepPrompt: the Onboarding v1 nudge for First Steps, or null. */
   getHudState() {
     return {
       version: this._hudVersion,
@@ -178,7 +187,26 @@ export class QuestManager {
       trackerSections: this._trackerSections(),
       banner: this._bannerInfo ? { ...this._bannerInfo } : null,
       toast: this._toastText,
+      stepPrompt: this.getStepPrompt(),
     };
+  }
+
+  /** Onboarding v1 (`sq-onboarding-v1`): the one-line nudge for the
+   *  First Steps quest, or null. Only while First Steps is the
+   *  active quest and unfinished — the moment it completes, the
+   *  prompt is gone (refresh() picks Cat Cuddles next). If the cat
+   *  is napping (3 pets put her to sleep — she wakes when someone
+   *  new walks in), the prompt says so instead of sending the
+   *  player to a cat that can't be petted. The DOM polls
+   *  getHudState, so the text flips when she falls asleep / wakes
+   *  up. A returning player who never did First Steps sees the
+   *  same prompt — the quest is completable by anyone, once ever. */
+  getStepPrompt() {
+    const quest = this.activeQuest;
+    if (!quest || quest.id !== FIRST_STEPS_QUEST_ID) return null;
+    if (this.saved[quest.id]?.completed) return null;
+    if (this.scene?.cafeCat?.asleep) return FIRST_STEPS_ASLEEP_PROMPT;
+    return FIRST_STEPS_STEP_PROMPT;
   }
 
   /** Public dismiss for the DOM banner's click handler. */
@@ -436,10 +464,23 @@ export class QuestManager {
     }
   }
 
-  /** One quest event happened for the ROOM quest (e.g. you fed a duck). */
+  /** One quest event happened for the ROOM quests (e.g. you pet the
+   *  cat). Onboarding v1 (`sq-onboarding-v1`): a room event can
+   *  advance MORE than the active quest — the First Steps pet is
+   *  also Cat Cuddles 1/3, so every unfinished room quest listening
+   *  for this event counts it. (Before this, only the active room
+   *  quest counted; anywhere quests already shared events via
+   *  recordGlobalEvent.) The list is captured up front because
+   *  completing one quest refresh()es the active quest mid-loop;
+   *  _increment bails on completed quests, so nothing double-counts.
+   *  In practice only the Agora cat-pet overlaps (First Steps +
+   *  Cat Cuddles) — every other room's quests listen for different
+   *  events. */
   recordEvent(eventName) {
-    const quest = this.activeQuest;
-    if (quest && quest.event === eventName) this._increment(quest);
+    const roomQuests = QUESTS.filter(
+      (q) => q.roomId === this.scene?.roomId && q.event === eventName && !this.saved[q.id]?.completed,
+    );
+    for (const quest of roomQuests) this._increment(quest);
     // The same action can also be a step of an anywhere quest (the
     // Bartender's Errand advances on bartender-talk / ducks-fed /
     // cat-pet), so anywhere quests always get a look too.
@@ -562,12 +603,20 @@ export class QuestManager {
     // Paid exactly once: this is the only path that sets completed
     // from false to true, and recordEvent / applyServerState both
     // bail out once completed is true.
-    try {
-      import('./CoinWallet.js')
-        .then((m) => m.earnCoins(quest.rewardCoins, `quest-${quest.id}`))
-        .catch(() => {});
-    } catch {}
-    const toastText = `🎉 Quest complete! ${quest.emoji} ${quest.title} — +${quest.rewardCoins} coins`;
+    // Onboarding v1 (`sq-onboarding-v1`): First Steps pays NO extra
+    // coins — the normal +1 pet coin IS the reward. Skip the wallet
+    // call entirely (earnCoins(0) would be a no-op write) and leave
+    // coins out of the toast, so it never reads "+0 coins".
+    if (quest.rewardCoins > 0) {
+      try {
+        import('./CoinWallet.js')
+          .then((m) => m.earnCoins(quest.rewardCoins, `quest-${quest.id}`))
+          .catch(() => {});
+      } catch {}
+    }
+    const toastText = quest.rewardCoins > 0
+      ? `🎉 Quest complete! ${quest.emoji} ${quest.title} — +${quest.rewardCoins} coins`
+      : `🎉 Quest complete! ${quest.emoji} ${quest.title}`;
     // The next quest for this room (if any) becomes active. Refresh
     // FIRST — it clears texts — then show the toast so it survives.
     this.refresh();
@@ -615,7 +664,9 @@ export class QuestManager {
       const text = [
         `${quest.emoji} ${quest.title}`,
         quest.description,
-        `Reward: +${quest.rewardCoins} coins`,
+        // Onboarding v1: a 0-coin reward shows no reward line at all
+        // (never "Reward: +0 coins" — First Steps pays in pet coins).
+        ...(quest.rewardCoins > 0 ? [`Reward: +${quest.rewardCoins} coins`] : []),
       ].join('\n');
       this.banner = scene.add.text(w / 2, 64, text, {
         fontSize: `${this._fontFor(18)}px`,

@@ -1076,6 +1076,19 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
               <div style={{ whiteSpace: 'pre-line' }}>
                 {questHud.trackerSections.room.length > 0 ? questHud.trackerSections.room.join('\n') : '✅ All quests complete — more coming soon!'}
               </div>
+              {/* Onboarding v1 (`sq-onboarding-v1`): the First Steps
+                  nudge, inside the tracker box so it can never
+                  overlap it — visible only while First Steps is the
+                  active quest and unfinished (QuestManager clears it
+                  the moment the quest completes). */}
+              {questHud.stepPrompt && (
+                <div style={{
+                  marginTop: 8, paddingTop: 6, borderTop: '1px solid rgba(146,64,14,0.35)',
+                  color: '#92400e', fontWeight: 'bold', whiteSpace: 'pre-line',
+                }}>
+                  {questHud.stepPrompt}
+                </div>
+              )}
               {questHud.trackerSections.anywhere.length > 0 && (
                 <div style={{
                   marginTop: 8, paddingTop: 6, borderTop: '1px solid rgba(26,73,113,0.3)',
@@ -1105,7 +1118,9 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
         >
           <div style={{ fontWeight: 'bold', fontSize: 16 }}>{questHud.banner.emoji} {questHud.banner.title}</div>
           <div>{questHud.banner.description}</div>
-          <div>Reward: +{questHud.banner.rewardCoins} coins</div>
+          {/* Onboarding v1: a 0-coin reward (First Steps) shows no
+              reward line — never "Reward: +0 coins". */}
+          {questHud.banner.rewardCoins > 0 && (<div>Reward: +{questHud.banner.rewardCoins} coins</div>)}
         </div>
       )}
       {questHud?.toast && (
