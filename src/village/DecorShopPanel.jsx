@@ -19,11 +19,15 @@
 //
 // Props:
 //   getState() — () => { items: [{ kind, emoji, label, blurb,
-//     price }], coins, full, roomId } (DecorSystem.getShopState)
+//     price }], breads: [{ kind, emoji, label, blurb, price }],
+//     coins, full, roomId } (DecorSystem.getShopState)
 //   onBuyCoffee() — returns { ok, reason? } (the instant coffee
 //     buy, same as pressing E at the bar used to do)
 //   onBuyDecoration(kind) — returns { ok, item?, price?, reason? }
 //     (DecorSystem.buyDecoration)
+//   onBuyBread(kind) — returns { ok, item?, price?, reason? }
+//     (Bread Shop v1, DecorSystem.buyBread — a bread is a FOOD
+//     item, 3 feeds, ducks or cat)
 //   onClose()
 
 import React, { useEffect, useState } from 'react';
@@ -32,13 +36,13 @@ const REASON_TEXT = {
   'inventory-full': 'Your pocket is full — use, drop, or throw something away to make room first.',
   'not-enough-coins': 'Not enough coins for that yet.',
   cooldown: 'Just bought one — give it a moment.',
-  'bad-kind': 'That decoration is not on sale.',
+  'bad-kind': 'That is not on sale here.',
   'not-available': 'The decoration shop is only at the Agora coffee bar.',
   offline: 'You seem to be offline — try again when you’re connected.',
   error: 'Something went wrong — try again.',
 };
 
-export default function DecorShopPanel({ getState, onBuyCoffee, onBuyDecoration, onClose }) {
+export default function DecorShopPanel({ getState, onBuyCoffee, onBuyDecoration, onBuyBread, onClose }) {
   const [state, setState] = useState(() => {
     try { return getState ? getState() : null; } catch { return null; }
   });
@@ -79,6 +83,9 @@ export default function DecorShopPanel({ getState, onBuyCoffee, onBuyDecoration,
 
   if (!state) return null;
   const items = state.items || [];
+  // Bread Shop v1 (`sq-bread-shop-v1`): the bar sells all three
+  // breads in their own section, between coffee and decorations.
+  const breads = state.breads || [];
   const coins = Number(state.coins) || 0;
 
   return (
@@ -148,6 +155,47 @@ export default function DecorShopPanel({ getState, onBuyCoffee, onBuyDecoration,
               Buy · 2 🪙
             </button>
           </div>
+
+          {breads.map((item) => {
+            const afford = coins >= item.price;
+            const blocked = state.full || !afford;
+            return (
+              <div
+                key={item.kind}
+                style={{
+                  border: '1px solid #e2b46c', borderRadius: 8, padding: '10px 12px',
+                  background: '#fffdf5', display: 'flex', justifyContent: 'space-between',
+                  alignItems: 'center', gap: 8,
+                }}
+              >
+                <div>
+                  <div style={{ fontWeight: 'bold', fontSize: 14 }}>
+                    {item.emoji} {item.label}
+                  </div>
+                  <div style={{ fontSize: 12.5, color: '#3d6a8a', marginTop: 2 }}>
+                    {item.blurb}
+                  </div>
+                </div>
+                <button
+                  onClick={() => runBuy(
+                    () => onBuyBread && onBuyBread(item.kind),
+                    `🍞 ${item.label} bought — feed the ducks or the cat, 3 feeds!`,
+                  )}
+                  disabled={blocked}
+                  title={state.full
+                    ? 'Your pocket is full — make room first'
+                    : !afford ? `Need ${item.price} coins` : `Buy a ${item.label} for ${item.price} coins`}
+                  style={{
+                    ...btnStyle, flexShrink: 0,
+                    opacity: blocked ? 0.55 : 1,
+                    cursor: blocked ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  Buy · {item.price} 🪙
+                </button>
+              </div>
+            );
+          })}
 
           {items.map((item) => {
             const afford = coins >= item.price;

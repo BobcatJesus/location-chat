@@ -48,6 +48,10 @@
 
 import { getCoins, spendCoins, earnCoins } from './CoinWallet.js';
 import { DECOR_KINDS } from './decorState.js';
+// Bread Shop v1 (`sq-bread-shop-v1`): bought breads are FOOD items
+// with a breadKind, resolved the same way decorations resolve a
+// decorKind (see describeItem).
+import { BREAD_KINDS } from './breadShop.js';
 
 export const ITEMS_MARKER_V1 = 'sq-items-inventory-v1';
 
@@ -306,14 +310,22 @@ function describeItem(item) {
   // Decoration Shop v1: a decoration's label / emoji / blurb come
   // from its kind (ornament, lights, snowman, tree, santa) — the
   // generic def above is only the fallback for a kindless item.
+  // Bread Shop v1 (`sq-bread-shop-v1`): same shape for bought
+  // bread — a FOOD item whose label / emoji / blurb come from its
+  // breadKind (roll / croissant / baguette), so the three breads
+  // are distinguishable in the pocket. A kindless food item (the
+  // bits you pick up off the ground) falls back to the FOOD def.
   const kindDef = item?.type === ITEM_TYPES.DECORATION
     ? (DECOR_KINDS[item?.decorKind] || null)
-    : null;
+    : item?.type === ITEM_TYPES.FOOD && item?.breadKind
+      ? (BREAD_KINDS[item.breadKind] || null)
+      : null;
   return {
     id: item.id,
     type: item.type,
     pieceId: typeof item.pieceId === 'number' ? item.pieceId : null,
     decorKind: item?.type === ITEM_TYPES.DECORATION ? (item.decorKind || null) : null,
+    breadKind: item?.type === ITEM_TYPES.FOOD ? (item.breadKind || null) : null,
     decorPrice: kindDef ? kindDef.price : null,
     // Feed the Ducks v2 (`sq-feed-ducks-v2`): food shows its remaining
     // feeds; legacy food without a usesLeft field counts as full (3).
@@ -370,6 +382,10 @@ export function addItem(item, inv = getInventory()) {
     // Decoration Shop v1: which decoration this pocket item is
     // (ornament / lights / snowman / tree / santa).
     decorKind: typeof item.decorKind === 'string' ? item.decorKind : null,
+    // Bread Shop v1 (`sq-bread-shop-v1`): which bread this pocket
+    // item is (roll / croissant / baguette). A kindless food item
+    // is the bits of food from the ground.
+    breadKind: typeof item.breadKind === 'string' ? item.breadKind : null,
     // Feed the Ducks v2 (`sq-feed-ducks-v2`): food carries its
     // remaining feeds; a fresh item is full (3), and a supplied count
     // is clamped to 3. Non-food keeps null.
@@ -576,6 +592,26 @@ export function buyDecoration(kind, inv = getInventory()) {
   const res = addItem({ type: ITEM_TYPES.DECORATION, decorKind: def.kind }, getInventory());
   if (!res.ok) {
     try { earnCoins(def.price, `decor-refund-${def.kind}`); } catch {}
+    return { ok: false, reason: res.reason || 'error' };
+  }
+  return { ok: true, item: res.item, price: def.price };
+}
+
+// --- buying bread (Bread Shop v1, `sq-bread-shop-v1`) ---------------------
+// Same shape as buyDecoration: the pocket-full check happens BEFORE
+// any coins move — a refused sale costs nothing — and a failed add
+// refunds the coins. A bought bread is a FOOD item (3 feeds, ducks
+// or cat, via the Feed the Ducks v2 charge logic), so it feeds
+// exactly like the bits of food from the ground.
+export function buyBread(kind, inv = getInventory()) {
+  const def = BREAD_KINDS[String(kind || '').trim()];
+  if (!def) return { ok: false, reason: 'bad-kind' };
+  if (inv.items.length >= capacity(inv)) return { ok: false, reason: 'inventory-full' };
+  if (getCoins() < def.price) return { ok: false, reason: 'not-enough-coins' };
+  if (!spendCoins(def.price)) return { ok: false, reason: 'not-enough-coins' };
+  const res = addItem({ type: ITEM_TYPES.FOOD, breadKind: def.kind }, getInventory());
+  if (!res.ok) {
+    try { earnCoins(def.price, `bread-refund-${def.kind}`); } catch {}
     return { ok: false, reason: res.reason || 'error' };
   }
   return { ok: true, item: res.item, price: def.price };

@@ -62,7 +62,11 @@ import {
   getItem,
   isFull,
   buyDecoration,
+  buyBread,
 } from './items.js';
+// Bread Shop v1 (`sq-bread-shop-v1`): the stock table lives in
+// breadShop.js — one function keyed by shop type.
+import { BREAD_KINDS, BREAD_KIND_IDS, breadStockFor } from './breadShop.js';
 
 const AGORA_ROOM_ID = 'agora-houston';
 
@@ -144,9 +148,37 @@ export class DecorSystem {
   getShopState() {
     return {
       items: DECOR_KIND_IDS.map((id) => ({ ...DECOR_KINDS[id] })),
+      // Bread Shop v1 (`sq-bread-shop-v1`): the Agora bar sells all
+      // three breads alongside coffee and decorations.
+      breads: BREAD_KIND_IDS.map((id) => ({ ...BREAD_KINDS[id] })),
       coins: getCoins(),
       full: isFull(),
       roomId: this.scene?.roomId || '',
+    };
+  }
+
+  /** The breads THIS room sells (the stock table in breadShop.js).
+   *  The Agora bar sells all three; a bakery sells all three; a
+   *  supermarket sells only the roll; a non-food shop sells none. */
+  _roomBreadStock() {
+    return breadStockFor({
+      roomId: this.scene?.roomId || '',
+      roomName: this.scene?.roomName || '',
+      amenityTag: this.scene?.amenityTag || '',
+      shopTag: this.scene?.shopTag || '',
+    });
+  }
+
+  /** Plain-data state for the Register-counter shop panel in a
+   *  food-shop room (bread only — no coffee, no decorations). */
+  getBreadShopState() {
+    const stock = this._roomBreadStock();
+    return {
+      breads: stock.map((id) => ({ ...BREAD_KINDS[id] })),
+      coins: getCoins(),
+      full: isFull(),
+      roomId: this.scene?.roomId || '',
+      roomName: this.scene?.roomName || '',
     };
   }
 
@@ -299,6 +331,25 @@ export class DecorSystem {
     if (res && res.ok) {
       try {
         this.scene?.onSystemNotice?.(`🎄 You bought a ${res.item.label} for ${res.price} coins — it's in your pocket. Place it from the 🎒 panel!`);
+      } catch {}
+    }
+    return res;
+  }
+
+  /** Buy a bread: 3 coins, it goes into your pocket as a FOOD item
+   * (3 feeds — ducks or cat). The stock table IS the gate: a kind
+   * this room does not sell is refused ('bad-kind'), so a
+   * non-food shop can never sell bread — and the Agora bar, the
+   * bakery, and the Register panel all go through this one method.
+   * The pocket-full check happens BEFORE any coins move (see
+   * items.buyBread) — a refused sale costs nothing. */
+  buyBread(kind) {
+    const stock = this._roomBreadStock();
+    if (!stock.includes(String(kind || '').trim())) return { ok: false, reason: 'bad-kind' };
+    const res = buyBread(kind);
+    if (res && res.ok) {
+      try {
+        this.scene?.onSystemNotice?.(`🍞 You bought a ${res.item.label} for ${res.price} coins — it's in your pocket. Feed the ducks or the cat!`);
       } catch {}
     }
     return res;

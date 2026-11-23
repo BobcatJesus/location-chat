@@ -451,6 +451,9 @@ export function normalizeFloorItems(input) {
       text: typeof raw.text === 'string' ? raw.text : null,
       title: typeof raw.title === 'string' ? raw.title : null,
       pieceId: typeof raw.pieceId === 'number' ? raw.pieceId : null,
+      // Bread Shop v1 (`sq-bread-shop-v1`): dropped bread keeps
+      // its kind, same as the chest store.
+      breadKind: typeof raw.breadKind === 'string' ? raw.breadKind : null,
       createdAt: Number.isFinite(Number(raw.createdAt)) && Number(raw.createdAt) > 0
         ? Number(raw.createdAt)
         : null,
@@ -511,6 +514,10 @@ export function normalizeHomeItems(input) {
       text: typeof raw.text === 'string' ? raw.text : null,
       title: typeof raw.title === 'string' ? raw.title : null,
       pieceId: typeof raw.pieceId === 'number' ? raw.pieceId : null,
+      // Bread Shop v1 (`sq-bread-shop-v1`): stored bread keeps its
+      // kind, same as mail — otherwise a baguette taken back out
+      // of the chest would read as generic bits of food.
+      breadKind: typeof raw.breadKind === 'string' ? raw.breadKind : null,
       // Feed the Ducks v2 (`sq-feed-ducks-v2`): stored food keeps its
       // remaining feeds (clamped to 3 — FOOD_FEEDS_PER_ITEM in
       // items.js, inlined so this module stays server-importable).

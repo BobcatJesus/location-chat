@@ -13,6 +13,10 @@ import { MailSystem } from './MailSystem.js';
 import { DecorSystem } from './DecorSystem.js';
 import { HomeStorageSystem } from './HomeStorageSystem.js';
 import { hasBag as inventoryHasBag, INVENTORY_FULL_MESSAGE, getInventory, findFoodItem, spendFoodCharge, NO_FOOD_MESSAGE } from './items.js';
+// Bread Shop v1 (`sq-bread-shop-v1`): the stock table — one
+// function keyed by shop type — decides whether this room sells
+// bread at all, and which kinds.
+import { breadStockFor } from './breadShop.js';
 import { badgeListFrom, normalizeBadgeMap, formatBadgeDate } from './badges.js';
 import { io } from 'socket.io-client';
 import { RoomLayout } from './RoomLayout.js';
@@ -482,6 +486,9 @@ export class VillageScene extends Phaser.Scene {
     this.onOpenHomeStorage = d.onOpenHomeStorage ?? (() => {});
     // Decoration Shop v1: opens the coffee-bar shop panel (DOM).
     this.onOpenDecorShop = d.onOpenDecorShop ?? (() => {});
+    // Bread Shop v1 (`sq-bread-shop-v1`): opens the Register-counter
+    // bread shop panel (DOM) in a food-shop room.
+    this.onOpenBreadShop = d.onOpenBreadShop ?? (() => {});
     // Quest badges v1: opens another player's badges panel (DOM).
     this.onOpenPlayerBadges = d.onOpenPlayerBadges ?? (() => {});
     this.preferredCameraMode = ['ultra-close-follow', 'close-follow', 'follow', 'wide-follow', 'overview'].includes(d.preferredCameraMode)
@@ -805,6 +812,15 @@ export class VillageScene extends Phaser.Scene {
       fontSize: '14px',
       color: '#1f2937',
       backgroundColor: 'rgba(255,255,255,0.95)',
+      padding: { x: 8, y: 4 },
+    }).setOrigin(0.5, 1).setDepth(DEPTH.UI).setAlpha(0);
+
+    // Bread Shop v1 (`sq-bread-shop-v1`): prompt at the Register
+    // counter in a food-shop room ("Buy bread · 3 coins [E]").
+    this.shopPrompt = this.add.text(0, 0, '🛒 Buy bread · 3 coins [E]', {
+      fontSize: '15px',
+      color: '#7c2d12',
+      backgroundColor: 'rgba(255,255,255,0.85)',
       padding: { x: 8, y: 4 },
     }).setOrigin(0.5, 1).setDepth(DEPTH.UI).setAlpha(0);
 
@@ -1361,6 +1377,11 @@ export class VillageScene extends Phaser.Scene {
       this.decorSystem?.pickupNearest();
     } else if (kind === 'bar') {
       this._tryBuyDrink();
+    } else if (kind === 'shop') {
+      // Bread Shop v1 (`sq-bread-shop-v1`): open the Register
+      // counter's bread panel (DOM) — the panel itself lists this
+      // shop's breads and takes the coins.
+      this.onOpenBreadShop?.();
     }
   }
 
@@ -1391,6 +1412,11 @@ export class VillageScene extends Phaser.Scene {
     if (this.homeStorageSystem?.nearestChest(this.player.gx, this.player.gy)) return 'storage-chest';
     if (this.homeStorageSystem?.nearestFloorItem(this.player.gx, this.player.gy)) return 'floor-item';
     if (this.decorSystem?.nearestDecoration(this.player.gx, this.player.gy)) return 'decoration';
+    // Bread Shop v1 (`sq-bread-shop-v1`): the Register counter in
+    // a food-shop room. Checked before the shelves — the counter
+    // sits ~60px from the first shelf row, and standing at the
+    // counter should open the shop, not a shelf.
+    if (this._nearestShopCounter() && this._shopStock().length > 0) return 'shop';
     if (this._nearestShelf()) return 'shelf';
     if (this._nearestJukebox()) return 'jukebox';
     if (this._nearestBar()) return 'bar';
@@ -1439,6 +1465,42 @@ export class VillageScene extends Phaser.Scene {
       if (d < bestD) { bestD = d; best = z; }
     }
     return best ? { label: best.label } : null;
+  }
+
+  // Bread Shop v1 (`sq-bread-shop-v1`): the nearest shop counter
+  // (the 🛒 Register in a shop room, the ☕ Counter in a cafe) — or
+  // null. A counter alone does NOT mean bread: getInteractKind and
+  // the prompt also require a non-empty stock (see _shopStock), so
+  // a pharmacy or bookshop counter does nothing at all.
+  _nearestShopCounter() {
+    if (!this.player || !this.roomLayout?.interactZones) return null;
+    const px = this.player.gx, py = this.player.gy;
+    let best = null, bestD = 110;
+    for (const z of this.roomLayout.interactZones) {
+      if (z.type !== 'counter') continue;
+      if (!/register/i.test(z.label || '') && !/counter/i.test(z.label || '')) continue;
+      const cx = Math.max(z.x, Math.min(px, z.x + (z.w || 0)));
+      const cy = Math.max(z.y, Math.min(py, z.y + (z.h || 0)));
+      const d = Math.hypot(px - cx, py - cy);
+      if (d < bestD) { bestD = d; best = z; }
+    }
+    return best ? { label: best.label } : null;
+  }
+
+  /** The bread kinds this room sells (breadStockFor in
+   *  breadShop.js) — [] in a non-food shop, so the counter there
+   *  does nothing. */
+  _shopStock() {
+    try {
+      return breadStockFor({
+        roomId: this.roomId || '',
+        roomName: this.roomName || '',
+        amenityTag: this.amenityTag || '',
+        shopTag: this.shopTag || '',
+      });
+    } catch {
+      return [];
+    }
   }
 
   // Order a drink at the bar counter. The bartender NPC serves it:
@@ -3184,6 +3246,18 @@ export class VillageScene extends Phaser.Scene {
       this.drinkPrompt.setAlpha(0);
     }
 
+    // Bread Shop v1 (`sq-bread-shop-v1`): prompt at the Register
+    // counter in a food-shop room. A counter in a non-food shop
+    // (pharmacy, bookshop) has an empty stock, so it shows nothing
+    // at all — the counter simply does nothing there.
+    const nearShop = this._nearestShopCounter();
+    const shopStock = nearShop ? this._shopStock() : [];
+    if (nearShop && shopStock.length > 0 && !nearPond && !nearShelf && !nearJukebox) {
+      this.shopPrompt.setText('🛒 Buy bread · 3 coins [E]').setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
+    } else {
+      this.shopPrompt.setAlpha(0);
+    }
+
 
     // Bartender speech bubble: the question while you pick, the call-out
     // ("One Lone Star") for a breath after each hand-off.
@@ -3462,6 +3536,8 @@ export class VillageScene extends Phaser.Scene {
     this.shelfPrompt?.destroy();
     this.jukeboxPrompt?.destroy();
     this.drinkPrompt?.destroy();
+    // Bread Shop v1 (`sq-bread-shop-v1`).
+    this.shopPrompt?.destroy();
     this.bartenderBubble?.destroy();
     this._drinkCard?.destroy();
     try { stopYouTube(); } catch {}

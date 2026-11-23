@@ -193,6 +193,12 @@ export function cleanMailItem(raw = {}) {
     text: typeof r.text === 'string' ? r.text : null,
     title: typeof r.title === 'string' ? r.title : null,
     decorKind: typeof r.decorKind === 'string' ? r.decorKind : null,
+    // Bread Shop v1 (`sq-bread-shop-v1`): a mailed bread keeps
+    // its kind (roll / croissant / baguette) so it still reads as
+    // that bread when collected — otherwise it would degrade to
+    // generic bits of food. Unknown kinds fall back to the FOOD
+    // def when described (see items.describeItem).
+    breadKind: typeof r.breadKind === 'string' ? r.breadKind : null,
     // Feed the Ducks v2 (`sq-feed-ducks-v2`): a mailed bits of food
     // keeps its remaining feeds (clamped to 3 — FOOD_FEEDS_PER_ITEM
     // in items.js, inlined here so this module stays importable by

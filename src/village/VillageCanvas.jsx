@@ -7,6 +7,9 @@ import JukeboxPanel from './JukeboxPanel.jsx';
 import PuzzleBoard from './PuzzleBoard.jsx';
 import InventoryPanel from './InventoryPanel.jsx';
 import DecorShopPanel from './DecorShopPanel.jsx';
+// Bread Shop v1 (`sq-bread-shop-v1`): the Register-counter bread
+// panel in food-shop rooms.
+import BreadShopPanel from './BreadShopPanel.jsx';
 import NoticeBoardPanel from './NoticeBoardPanel.jsx';
 import MailboxPanel from './MailboxPanel.jsx';
 import HomeStoragePanel from './HomeStoragePanel.jsx';
@@ -273,6 +276,9 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
   // real room, or says nothing about a place when unresolved.
   // Decoration Shop v1 (`sq-dec-shop-v1`): the Agora coffee-bar shop.
   const [openDecorShop, setOpenDecorShop] = useState(false);
+  // Bread Shop v1 (`sq-bread-shop-v1`): the Register-counter bread
+  // shop in a food-shop room.
+  const [openBreadShop, setOpenBreadShop] = useState(false);
   // Your Place v1: the storage chest panel, opened from the chest
   // in your home room (E key / click / interact button).
   const [openHomeStorage, setOpenHomeStorage] = useState(false);
@@ -378,6 +384,9 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
     shelf: ['📚', 'Browse the shelf'],
     jukebox: ['🎵', 'Open the jukebox'],
     bar: ['🍺', 'Order a drink'],
+    // Bread Shop v1 (`sq-bread-shop-v1`): the Register counter in
+    // a food-shop room.
+    shop: ['🛒', 'Buy bread'],
   };
   const interactMeta = INTERACT_META[interactKind] || ['✦', 'Interact'];
   const [eventClock, setEventClock] = useState(() => Date.now());
@@ -676,6 +685,9 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
       onOpenHomeStorage: () => setOpenHomeStorage(true),
       // Decoration Shop v1: opens the coffee-bar shop panel (DOM).
       onOpenDecorShop: () => setOpenDecorShop(true),
+      // Bread Shop v1 (`sq-bread-shop-v1`): opens the Register
+      // counter bread panel (DOM) in a food-shop room.
+      onOpenBreadShop: () => setOpenBreadShop(true),
       onOpenPlayerBadges: (info) => setOpenPlayerBadges(info),
       onNearbyNpcChange: setNearbyNpc,
       onNpcConversationClear: ({ npcId } = {}) => {
@@ -924,7 +936,15 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
           getState={() => gameRef.current?.scene?.getScene('VillageScene')?.decorSystem?.getShopState?.()}
           onBuyCoffee={() => gameRef.current?.scene?.getScene('VillageScene')?.buyCoffeeFromShop?.() || { ok: false, reason: 'error' }}
           onBuyDecoration={(kind) => gameRef.current?.scene?.getScene('VillageScene')?.decorSystem?.buyDecoration?.(kind) || { ok: false, reason: 'error' }}
+          onBuyBread={(kind) => gameRef.current?.scene?.getScene('VillageScene')?.decorSystem?.buyBread?.(kind) || { ok: false, reason: 'error' }}
           onClose={() => setOpenDecorShop(false)}
+        />
+      )}
+      {openBreadShop && (
+        <BreadShopPanel
+          getState={() => gameRef.current?.scene?.getScene('VillageScene')?.decorSystem?.getBreadShopState?.()}
+          onBuyBread={(kind) => gameRef.current?.scene?.getScene('VillageScene')?.decorSystem?.buyBread?.(kind) || { ok: false, reason: 'error' }}
+          onClose={() => setOpenBreadShop(false)}
         />
       )}
       {openPlayerBadges && (
