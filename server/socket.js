@@ -439,9 +439,10 @@ const CATS_PETS_TO_SLEEP = 3;
 // the cat itself: a server restart forgets who fed her this window,
 // so the window becomes completable again (see the restart story in
 // the kit report). The windows come from HUNGRY_CAT_WINDOWS
-// (8–10am + 6–8pm Chicago time), overridable with the
-// HUNGRY_CAT_WINDOWS env var ("8-10,18-20") — the tuning seam, and
+// (7–10am + 5–8pm Chicago time), overridable with the
+// HUNGRY_CAT_WINDOWS env var ("7-10,17-20") — the tuning seam, and
 // what the protocol harness uses to cover "now".
+// sq-hungry-cat-v1.1: windows widened from 8–10am + 6–8pm.
 const catHunger = {};
 const HUNGER_CAT_MARKER = HUNGRY_CAT_MARKER_V1;
 const HUNGER_WINDOWS = parseHungerWindows(process.env.HUNGRY_CAT_WINDOWS) || HUNGRY_CAT_WINDOWS;

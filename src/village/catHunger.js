@@ -35,15 +35,17 @@ export const HUNGRY_CAT_BUBBLE_TEXT = 'hungry...';
 export const HUNGRY_CAT_TIMEZONE = 'America/Chicago';
 
 /** Hunger windows, as minutes since midnight in Chicago time.
- *  Morning 8:00–10:00, evening 18:00–20:00. A window lasts 2
+ *  Morning 7:00–10:00, evening 17:00–20:00. A window lasts 3
  *  hours: if nobody feeds her, the hunger simply ends when the
  *  window does. */
+// sq-hungry-cat-v1.1: windows widened from 8–10am + 6–8pm to
+// 7–10am + 5–8pm (3 hours each) so they are easier to catch.
 export const HUNGRY_CAT_WINDOWS = [
-  { label: 'morning', startMin: 8 * 60, endMin: 10 * 60 },
-  { label: 'evening', startMin: 18 * 60, endMin: 20 * 60 },
+  { label: 'morning', startMin: 7 * 60, endMin: 10 * 60 },
+  { label: 'evening', startMin: 17 * 60, endMin: 20 * 60 },
 ];
 
-/** Parse an env override for the windows ("8-10,18-20" — start/end
+/** Parse an env override for the windows ("7-10,17-20" — start/end
  *  hours in Chicago time). Returns the window list, or null when
  *  the value is missing or unusable (the caller falls back to the
  *  default). This is the tuning seam AND the test seam: the

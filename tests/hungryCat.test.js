@@ -33,16 +33,20 @@ import {
   badgeListFrom,
 } from '../src/village/badges.js';
 import { QuestManager } from '../src/village/QuestManager.js';
+// sq-hungry-cat-v1.1: windows widened to 7–10am + 5–8pm Chicago.
 import { CafeCat } from '../src/village/CafeCat.js';
 
-// 2026-11-23 is CST (UTC-6): 08:00 Chicago = 14:00 UTC,
+// 2026-11-23 is CST (UTC-6): 07:00 Chicago = 13:00 UTC,
 // 18:30 Chicago = 00:30 UTC the next day. July is CDT (UTC-5).
 const utc = (y, mo, d, h, mi = 0) => new Date(Date.UTC(y, mo - 1, d, h, mi));
-const NOV_23_0759 = utc(2026, 11, 23, 13, 59); // 07:59 Chicago
+const NOV_23_0659 = utc(2026, 11, 23, 12, 59); // 06:59 Chicago
+const NOV_23_0700 = utc(2026, 11, 23, 13, 0);  // 07:00 Chicago
 const NOV_23_0800 = utc(2026, 11, 23, 14, 0);  // 08:00 Chicago
 const NOV_23_0930 = utc(2026, 11, 23, 15, 30); // 09:30 Chicago
 const NOV_23_1000 = utc(2026, 11, 23, 16, 0);  // 10:00 Chicago
 const NOV_23_1200 = utc(2026, 11, 23, 18, 0);  // 12:00 Chicago
+const NOV_23_1659 = utc(2026, 11, 23, 22, 59); // 16:59 Chicago
+const NOV_23_1700 = utc(2026, 11, 23, 23, 0);  // 17:00 Chicago
 const NOV_23_1830 = utc(2026, 11, 24, 0, 30);  // 18:30 Chicago
 const NOV_23_2000 = utc(2026, 11, 24, 2, 0);   // 20:00 Chicago
 const JUL_01_0800 = utc(2026, 7, 1, 13, 0);    // 08:00 Chicago, CDT
@@ -54,8 +58,8 @@ describe('constants', () => {
     expect(HUNGRY_CAT_REWARD_COINS).toBe(3);
     expect(HUNGRY_CAT_BUBBLE_TEXT).toBe('hungry...');
     expect(HUNGRY_CAT_WINDOWS).toEqual([
-      { label: 'morning', startMin: 480, endMin: 600 },
-      { label: 'evening', startMin: 1080, endMin: 1200 },
+      { label: 'morning', startMin: 420, endMin: 600 },
+      { label: 'evening', startMin: 1020, endMin: 1200 },
     ]);
   });
 });
@@ -65,15 +69,18 @@ describe('chicagoDateParts / hungerWindowFor', () => {
     expect(chicagoDateParts(NOV_23_0800)).toMatchObject({ year: 2026, month: 11, day: 23, hour: 8, minute: 0 });
     expect(chicagoDateParts(JUL_01_0800)).toMatchObject({ year: 2026, month: 7, day: 1, hour: 8, minute: 0 });
   });
-  it('morning window: 08:00 in, 07:59 and 10:00 out, end exclusive', () => {
-    expect(hungerWindowFor(NOV_23_0800)).toEqual({ windowId: '2026-11-23-morning', period: 'morning', active: true });
+  it('morning window: 07:00 in, 06:59 and 10:00 out, end exclusive', () => {
+    expect(hungerWindowFor(NOV_23_0700)).toEqual({ windowId: '2026-11-23-morning', period: 'morning', active: true });
+    expect(hungerWindowFor(NOV_23_0800).active).toBe(true);
     expect(hungerWindowFor(NOV_23_0930).active).toBe(true);
-    expect(hungerWindowFor(NOV_23_0759).active).toBe(false);
+    expect(hungerWindowFor(NOV_23_0659).active).toBe(false);
     expect(hungerWindowFor(NOV_23_1000).active).toBe(false);
     expect(hungerWindowFor(NOV_23_1000).windowId).toBeNull();
   });
-  it('evening window: 18:30 in, 20:00 out', () => {
-    expect(hungerWindowFor(NOV_23_1830)).toEqual({ windowId: '2026-11-23-evening', period: 'evening', active: true });
+  it('evening window: 17:00 in, 16:59 and 20:00 out', () => {
+    expect(hungerWindowFor(NOV_23_1700)).toEqual({ windowId: '2026-11-23-evening', period: 'evening', active: true });
+    expect(hungerWindowFor(NOV_23_1830).active).toBe(true);
+    expect(hungerWindowFor(NOV_23_1659).active).toBe(false);
     expect(hungerWindowFor(NOV_23_2000).active).toBe(false);
   });
   it('midday is no window', () => {
@@ -86,9 +93,9 @@ describe('chicagoDateParts / hungerWindowFor', () => {
 
 describe('parseHungerWindows', () => {
   it('parses the default shape', () => {
-    expect(parseHungerWindows('8-10,18-20')).toEqual([
-      { label: 'morning', startMin: 480, endMin: 600 },
-      { label: 'evening', startMin: 1080, endMin: 1200 },
+    expect(parseHungerWindows('7-10,17-20')).toEqual([
+      { label: 'morning', startMin: 420, endMin: 600 },
+      { label: 'evening', startMin: 1020, endMin: 1200 },
     ]);
   });
   it('rejects garbage (caller falls back to the default)', () => {
