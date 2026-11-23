@@ -937,6 +937,9 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
           onBuyCoffee={() => gameRef.current?.scene?.getScene('VillageScene')?.buyCoffeeFromShop?.() || { ok: false, reason: 'error' }}
           onBuyDecoration={(kind) => gameRef.current?.scene?.getScene('VillageScene')?.decorSystem?.buyDecoration?.(kind) || { ok: false, reason: 'error' }}
           onBuyBread={(kind) => gameRef.current?.scene?.getScene('VillageScene')?.decorSystem?.buyBread?.(kind) || { ok: false, reason: 'error' }}
+          // Temperature System v1 (`sq-temperature-v1`): cocoa /
+          // iced coffee at the Agora bar, 2 coins each.
+          onBuyDrink={(kind) => gameRef.current?.scene?.getScene('VillageScene')?.decorSystem?.buyDrink?.(kind) || { ok: false, reason: 'error' }}
           onClose={() => setOpenDecorShop(false)}
         />
       )}

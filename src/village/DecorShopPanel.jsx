@@ -28,6 +28,9 @@
 //   onBuyBread(kind) — returns { ok, item?, price?, reason? }
 //     (Bread Shop v1, DecorSystem.buyBread — a bread is a FOOD
 //     item, 3 feeds, ducks or cat)
+//   onBuyDrink(kind) — returns { ok, reason? }
+//     (Temperature System v1, DecorSystem.buyDrink — a hot cocoa
+//     or iced coffee, 2 coins, drunk on the spot)
 //   onClose()
 
 import React, { useEffect, useState } from 'react';
@@ -42,7 +45,7 @@ const REASON_TEXT = {
   error: 'Something went wrong — try again.',
 };
 
-export default function DecorShopPanel({ getState, onBuyCoffee, onBuyDecoration, onBuyBread, onClose }) {
+export default function DecorShopPanel({ getState, onBuyCoffee, onBuyDecoration, onBuyBread, onBuyDrink, onClose }) {
   const [state, setState] = useState(() => {
     try { return getState ? getState() : null; } catch { return null; }
   });
@@ -86,6 +89,10 @@ export default function DecorShopPanel({ getState, onBuyCoffee, onBuyDecoration,
   // Bread Shop v1 (`sq-bread-shop-v1`): the bar sells all three
   // breads in their own section, between coffee and decorations.
   const breads = state.breads || [];
+  // Temperature System v1 (`sq-temperature-v1`): the bar sells
+  // hot cocoa and iced coffee in their own section, between
+  // coffee and breads — warm and cold drinks for the seasons.
+  const drinks = state.drinks || [];
   const coins = Number(state.coins) || 0;
 
   return (
@@ -155,6 +162,46 @@ export default function DecorShopPanel({ getState, onBuyCoffee, onBuyDecoration,
               Buy · 2 🪙
             </button>
           </div>
+
+          {drinks.map((item) => {
+            const afford = coins >= item.price;
+            return (
+              <div
+                key={item.kind}
+                style={{
+                  border: '1px solid #e2b46c', borderRadius: 8, padding: '10px 12px',
+                  background: '#fffdf5', display: 'flex', justifyContent: 'space-between',
+                  alignItems: 'center', gap: 8,
+                }}
+              >
+                <div>
+                  <div style={{ fontWeight: 'bold', fontSize: 14 }}>
+                    {item.emoji} {item.label}
+                  </div>
+                  <div style={{ fontSize: 12.5, color: '#3d6a8a', marginTop: 2 }}>
+                    {item.blurb}
+                  </div>
+                </div>
+                <button
+                  onClick={() => runBuy(
+                    () => onBuyDrink && onBuyDrink(item.kind),
+                    item.kind === 'cocoa'
+                      ? '🍫 Hot cocoa! -2 coins — enjoy!'
+                      : '🧊 Iced coffee! -2 coins — enjoy!',
+                  )}
+                  disabled={!afford}
+                  title={!afford ? `Need ${item.price} coins` : `Buy a ${item.label} for ${item.price} coins`}
+                  style={{
+                    ...btnStyle, flexShrink: 0,
+                    opacity: !afford ? 0.55 : 1,
+                    cursor: !afford ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  Buy · {item.price} 🪙
+                </button>
+              </div>
+            );
+          })}
 
           {breads.map((item) => {
             const afford = coins >= item.price;

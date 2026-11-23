@@ -67,6 +67,9 @@ import {
 // Bread Shop v1 (`sq-bread-shop-v1`): the stock table lives in
 // breadShop.js — one function keyed by shop type.
 import { BREAD_KINDS, BREAD_KIND_IDS, breadStockFor } from './breadShop.js';
+// Temperature System v1 (`sq-temperature-v1`): the hot cocoa /
+// iced coffee the Agora bar sells for the seasons.
+import { TEMP_DRINK_KINDS, TEMP_DRINK_KIND_IDS } from './temperature.js';
 
 const AGORA_ROOM_ID = 'agora-houston';
 
@@ -151,6 +154,10 @@ export class DecorSystem {
       // Bread Shop v1 (`sq-bread-shop-v1`): the Agora bar sells all
       // three breads alongside coffee and decorations.
       breads: BREAD_KIND_IDS.map((id) => ({ ...BREAD_KINDS[id] })),
+      // Temperature System v1 (`sq-temperature-v1`): the Agora bar
+      // sells hot cocoa (warm drink) and iced coffee (cold drink)
+      // alongside coffee — 2 coins each, same as coffee.
+      drinks: TEMP_DRINK_KIND_IDS.map((id) => ({ ...TEMP_DRINK_KINDS[id] })),
       coins: getCoins(),
       full: isFull(),
       roomId: this.scene?.roomId || '',
@@ -353,6 +360,18 @@ export class DecorSystem {
       } catch {}
     }
     return res;
+  }
+
+  /** Buy a hot cocoa or an iced coffee at the Agora bar
+   * (Temperature System v1, `sq-temperature-v1`): 2 coins, drunk
+   * on the spot — not a pocket item. The scene owns the purchase
+   * (coins, drink animation, temperature effect); this only
+   * gates on the bar and the kind, mirroring buyBread's
+   * 'bad-kind' refusal for anything the bar does not sell. */
+  buyDrink(kind) {
+    if (!this.shopEnabled) return { ok: false, reason: 'not-available' };
+    if (!TEMP_DRINK_KINDS[String(kind || '').trim()]) return { ok: false, reason: 'bad-kind' };
+    return this.scene?.buyBarDrink?.(kind) || { ok: false, reason: 'error' };
   }
 
   // ---- placing (from the inventory) --------------------------------------

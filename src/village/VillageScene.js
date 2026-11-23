@@ -6,6 +6,9 @@ import { HiddenKey } from './HiddenKey.js';
 import { PuzzleQuest } from './PuzzleQuest.js';
 import { TrimTreeQuest } from './TrimTreeQuest.js';
 import { SantaHatSystem } from './SantaHatSystem.js';
+// Temperature System v1 (`sq-temperature-v1`): seasonal cold/warm,
+// warm drinks (cocoa, coffee) and cold drinks (beer, iced coffee).
+import { TemperatureSystem } from './TemperatureSystem.js';
 import { QuestManager } from './QuestManager.js';
 import { ItemsSystem } from './ItemsSystem.js';
 import { NoticeBoardSystem } from './NoticeBoardSystem.js';
@@ -696,6 +699,13 @@ export class VillageScene extends Phaser.Scene {
     // itself no-ops everywhere else.
     this.santaHatSystem = new SantaHatSystem(this);
     this.santaHatSystem.refresh();
+    // Temperature System v1 (`sq-temperature-v1`): fall/winter you
+    // are cold (shiver + "You're cold, get a warm drink"),
+    // spring/summer you are warm (sweat + "You're warm, get a
+    // cold drink"); a matching drink fixes it for 30 minutes.
+    // Client-side only — no server state, no quest.
+    this.temperatureSystem = new TemperatureSystem(this);
+    this.temperatureSystem.refresh();
     // Wanderer quest: this room entry counts (after refresh, not in it).
     this.questManager?.noteRoomVisit();
     // Seasonal: pumpkins, bats, spooky tint in October.
@@ -1540,6 +1550,47 @@ export class VillageScene extends Phaser.Scene {
     return this._buyCoffeeInstant();
   }
 
+  /** Buy a hot cocoa or an iced coffee at the Agora bar
+   * (Temperature System v1, `sq-temperature-v1`): -2 coins like
+   * coffee, the same drink animation, and the temperature effect
+   * — cocoa warms (cold season), iced coffee cools (warm
+   * season). A drink of the wrong temperature for the season is
+   * just a drink. No puzzle piece roll (that is coffee-only),
+   * no buzz (these are soft drinks — unlike coffee, which keeps
+   * its existing buzz behaviour). Returns { ok, reason? }. */
+  async buyBarDrink(kind) {
+    if (kind !== 'cocoa' && kind !== 'iced-coffee') return { ok: false, reason: 'bad-kind' };
+    if (this._drinkCooldownMs > 0) return { ok: false, reason: 'cooldown' };
+    const avatar = this.player?.avatar;
+    if (!avatar || typeof avatar.playDrink !== 'function') return { ok: false, reason: 'error' };
+    let wallet;
+    try {
+      wallet = await import('./CoinWallet.js');
+    } catch {
+      return { ok: false, reason: 'error' };
+    }
+    if (wallet.getCoins() < wallet.BAR_DRINK_COST) {
+      this._drinkBrokeUntil = this.time.now + 1300;
+      return { ok: false, reason: 'not-enough-coins' };
+    }
+    if (!wallet.spendCoins(wallet.BAR_DRINK_COST)) {
+      this._drinkBrokeUntil = this.time.now + 1300;
+      return { ok: false, reason: 'not-enough-coins' };
+    }
+    this._drinkCooldownMs = 3000;
+    this._drinkAnimUntil = this.time.now + 2600;
+    avatar.playDrink();
+    if (kind === 'cocoa') {
+      this.onSystemNotice?.('🍫 Hot cocoa! -2 coins — enjoy!');
+      this.temperatureSystem?.drinkWarm();
+    } else {
+      this.onSystemNotice?.('🧊 Iced coffee! -2 coins — enjoy!');
+      this.temperatureSystem?.drinkCool();
+    }
+    this.socket?.emit('buy_drink', { roomId: this.roomId });
+    return { ok: true };
+  }
+
   /** Instant coffee/drink buy at a bar with no bartender on shift:
    * -2 coins, drink animation, puzzle coffee roll in Agora.
    * Returns { ok, reason? } — 'not-enough-coins' flashes the
@@ -1584,6 +1635,10 @@ export class VillageScene extends Phaser.Scene {
         }
       } catch {}
     }
+    // Temperature System v1 (`sq-temperature-v1`): coffee is a
+    // warm drink — it warms you for 30 minutes in the cold season
+    // (a no-op in the warm season; the system decides).
+    this.temperatureSystem?.drinkWarm();
     this.socket?.emit('buy_drink', { roomId: this.roomId });
     return { ok: true };
   }
@@ -1952,6 +2007,11 @@ export class VillageScene extends Phaser.Scene {
     } else {
       if (isMine) this._drinkAnimUntil = this.time.now + 2600;
       actor.avatar.playDrink();
+      // Temperature System v1 (`sq-temperature-v1`): a served beer
+      // is a cold drink — it cools the local player for 30 minutes
+      // in the warm season (a no-op in the cold season; the system
+      // decides). Remote players' serves never touch our state.
+      if (isMine) this.temperatureSystem?.drinkCool();
     }
   }
 
@@ -3096,6 +3156,9 @@ export class VillageScene extends Phaser.Scene {
     this.puzzleQuest?.update(delta);
     this.trimTreeQuest?.update(delta);
     this.santaHatSystem?.update(delta);
+    // sq-temperature-v1: ticks the toast (1s) and the shiver /
+    // sweat visuals (every frame, after player.sync()).
+    this.temperatureSystem?.update(delta);
     this.itemsSystem?.update(delta);
     this.questManager?.update(delta);
     this.halloween?.update(delta);
@@ -3517,6 +3580,8 @@ export class VillageScene extends Phaser.Scene {
     this.decorSystem = null;
     this.santaHatSystem?.destroy();
     this.santaHatSystem = null;
+    this.temperatureSystem?.destroy();
+    this.temperatureSystem = null;
     this.homeStorageSystem?.destroy();
     this.homeStorageSystem = null;
     this.questManager?.destroy();
