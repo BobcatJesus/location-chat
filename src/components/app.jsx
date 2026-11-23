@@ -20,6 +20,7 @@ import {
   WELCOME_GO_LABEL,
   WELCOME_DISMISS_LABEL,
 } from '../village/onboarding.js';
+import { HOME_LINK_MARKER_V1, shouldShowLanding, resolveLandingRoomAction } from '../village/homeLink.js';
 
 const VillageCanvas = lazy(() => import('../village/VillageCanvas.jsx'));
 const MapView = lazy(() => import('./MapView.jsx'));
@@ -533,6 +534,14 @@ function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [profile, setProfile] = useState(null);
   const [showLanding, setShowLanding] = useState(true);
+  // Home Link v1 (`sq-home-link-v1`): set only by the map's "⌂ Home"
+  // link. The landing gate (below) is `showLanding && (!isLoggedIn
+  // || homeLandingOpen)` — without this flag, gating on showLanding
+  // alone would show the landing to every returning signed-in player
+  // on load, because showLanding starts true and the saved session is
+  // restored after first paint. Cleared by Enter, by any landing room
+  // shortcut, and by logout.
+  const [homeLandingOpen, setHomeLandingOpen] = useState(false);
   const [selectedRoom, setSelectedRoom] = useState('shepherd-park');
   const [activeScene, setActiveScene] = useState('world');
   const [gpsToast, setGpsToast] = useState(null);
@@ -855,6 +864,10 @@ function App() {
     setIsLoggedIn(false);
     setProfile(null);
     setShowLanding(true);
+    // Home Link v1 (`sq-home-link-v1`): reset the flag — the landing
+    // shows after logout through the logged-out branch of the gate
+    // anyway, so a stale flag must not leak into the next session.
+    setHomeLandingOpen(false);
     setOnboardingRequired(false);
     setEditingProfile(false);
     setProfileError(null);
@@ -1564,24 +1577,36 @@ function App() {
     } catch {}
   }, [isLoggedIn, allRooms, location?.latitude, location?.longitude]);
 
-  const openShepherdParkDirect = () => {
-    const shepherd = allRooms.find((room) => room.id === 'shepherd-park');
-    if (!shepherd) {
-      setGpsToast('Shepherd Park is not available yet.');
+  // Home Link v1 (`sq-home-link-v1`): one shared direct-entry helper
+  // for the five featured rooms. SAME path as tapping a room's pin on
+  // the map (MapView calls onEnterRoom(id, room) the same way), so
+  // the GPS gates behave exactly as the pins do — and all five
+  // featured rooms are open-access (accessPolicy
+  // OPEN_ACCESS_ROOM_IDS), so no gate applies to any of them.
+  const openFeaturedRoomDirect = (roomId, displayName) => {
+    const room = allRooms.find((r) => r.id === roomId);
+    if (!room) {
+      setGpsToast(`${displayName} is not available yet.`);
       setTimeout(() => setGpsToast(null), 3000);
       return;
     }
-    handleEnterRoom('shepherd-park', shepherd);
+    handleEnterRoom(roomId, room);
+  };
+
+  const openShepherdParkDirect = () => {
+    openFeaturedRoomDirect('shepherd-park', 'Shepherd Park');
   };
 
   const openMdAndersonLibraryDirect = () => {
-    const library = allRooms.find((room) => room.id === 'md-anderson-library');
-    if (!library) {
-      setGpsToast('MD Anderson Library is not available yet.');
-      setTimeout(() => setGpsToast(null), 3000);
-      return;
-    }
-    handleEnterRoom('md-anderson-library', library);
+    openFeaturedRoomDirect('md-anderson-library', 'MD Anderson Library');
+  };
+
+  const openAsgardGamesDirect = () => {
+    openFeaturedRoomDirect('asgard-games', 'Asgard Games');
+  };
+
+  const openLolasDepotDirect = () => {
+    openFeaturedRoomDirect('lolas-depot', "Lola's Depot");
   };
 
   // Onboarding v1 (`sq-onboarding-v1`): the welcome card's "Take me
@@ -1591,13 +1616,26 @@ function App() {
   // applies, and this bypasses nothing: if Agora ever left open
   // access, the button would hit the same too-far toast as the pin.
   const openAgoraDirect = () => {
-    const agora = allRooms.find((room) => room.id === 'agora-houston');
-    if (!agora) {
-      setGpsToast('Agora is not available yet.');
-      setTimeout(() => setGpsToast(null), 3000);
-      return;
+    openFeaturedRoomDirect('agora-houston', 'Agora');
+  };
+
+  // Home Link v1 (`sq-home-link-v1`): one dispatcher for all five
+  // landing-page room shortcuts. Signed in, the room opens right
+  // away through the direct path (see resolveLandingRoomAction — the
+  // ?openRoom= URL trick only works through the login transition,
+  // because the openRoom effect fires when isLoggedIn flips; a
+  // signed-in player tapping a shortcut would set the URL and nothing
+  // would happen). Logged out, the existing flow is untouched: the
+  // param survives the auth modal and the effect enters the room
+  // once the player logs in.
+  const openLandingRoom = (roomId, displayName) => {
+    setShowLanding(false);
+    setHomeLandingOpen(false);
+    if (resolveLandingRoomAction({ isLoggedIn }) === 'direct') {
+      openFeaturedRoomDirect(roomId, displayName);
+    } else {
+      window.history.replaceState({}, '', `${window.location.pathname}?openRoom=${roomId}`);
     }
-    handleEnterRoom('agora-houston', agora);
   };
 
   // Onboarding v1: either welcome-card button dismisses the card
@@ -1717,29 +1755,22 @@ function App() {
         </div>
       )}
 
-      {!isLoggedIn && showLanding && (
+      {/* Home Link v1 (`sq-home-link-v1`): the landing used to render
+          only when logged out (`!isLoggedIn && showLanding`), so a
+          signed-in player could never get back to it. The gate is now
+          the shared shouldShowLanding() truth table: logged out, it
+          behaves exactly as before; signed in, the landing shows only
+          when the player asked for it from the map (homeLandingOpen),
+          so a returning session never lands on the front door. The
+          auth-modal gate below is UNCHANGED. */}
+      {shouldShowLanding({ isLoggedIn, showLanding, homeLandingOpen }) && (
         <RetroLandingPage
-          onEnter={() => setShowLanding(false)}
-          onOpenShepherdPark={() => {
-            setShowLanding(false);
-            window.history.replaceState({}, '', `${window.location.pathname}?openRoom=shepherd-park`);
-          }}
-          onOpenMdAndersonLibrary={() => {
-            setShowLanding(false);
-            window.history.replaceState({}, '', `${window.location.pathname}?openRoom=md-anderson-library`);
-          }}
-          onOpenAsgardGames={() => {
-            setShowLanding(false);
-            window.history.replaceState({}, '', `${window.location.pathname}?openRoom=asgard-games`);
-          }}
-          onOpenLolasDepot={() => {
-            setShowLanding(false);
-            window.history.replaceState({}, '', `${window.location.pathname}?openRoom=lolas-depot`);
-          }}
-          onOpenAgora={() => {
-            setShowLanding(false);
-            window.history.replaceState({}, '', `${window.location.pathname}?openRoom=agora-houston`);
-          }}
+          onEnter={() => { setShowLanding(false); setHomeLandingOpen(false); }}
+          onOpenShepherdPark={() => openLandingRoom('shepherd-park', 'Shepherd Park')}
+          onOpenMdAndersonLibrary={() => openLandingRoom('md-anderson-library', 'MD Anderson Library')}
+          onOpenAsgardGames={() => openLandingRoom('asgard-games', 'Asgard Games')}
+          onOpenLolasDepot={() => openLandingRoom('lolas-depot', "Lola's Depot")}
+          onOpenAgora={() => openLandingRoom('agora-houston', 'Agora')}
         />
       )}
 
@@ -1837,6 +1868,23 @@ function App() {
                     📍 Waiting for GPS…
                   </div>
                 )}
+                {/* Home Link v1 (`sq-home-link-v1`): "⌂ Home" on the MAP
+                    only — rooms already have "Return to map", so the
+                    link never appears inside a room. Same amber style
+                    as "+ Create room here", top-right so the two never
+                    collide (the map's centred title chip sits between
+                    them). Shows the RetroLandingPage again: sets the
+                    flag AND showLanding — the gate needs both for a
+                    signed-in player. The landing's Enter button takes
+                    you straight back to this map. */}
+                <button
+                  type="button"
+                  data-home-link={HOME_LINK_MARKER_V1}
+                  title="Back to the landing page"
+                  onClick={() => { setHomeLandingOpen(true); setShowLanding(true); }}
+                  style={{ position: 'absolute', top: 12, right: 12, zIndex: 1000, background: '#fbbf24', border: 'none', padding: '8px 14px', fontWeight: 'bold', cursor: 'pointer', fontFamily: 'Courier New', fontSize: 12, boxShadow: '2px 2px 0 #000' }}>
+                  ⌂ Home
+                </button>
                 {/* Onboarding v1 (`sq-onboarding-v1`): the welcome card.
                     First visit only (per browser — guests included):
                     once dismissed, welcomeDismissed stays true for
