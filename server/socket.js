@@ -68,6 +68,17 @@ import {
   normalizeFloorItems,
   mergeFloorItems,
 } from '../src/village/homeStorage.js';
+import {
+  MAILBOX_MARKER_V1,
+  createMailState,
+  sendPackage,
+  collectPackage,
+  serializeMailState,
+  mailboxCodeFor,
+  normalizeMailboxCode,
+  isValidMailboxCode,
+  cleanMailItem,
+} from '../src/village/mailState.js';
 
 // Shared instructions so every NPC reads as a real person, not a helpful assistant.
 const HUMAN_STYLE_GUIDE = `
@@ -554,6 +565,67 @@ function setHomeFloor(userId, items) {
 function homeStateFor(userId) {
   return { userId, items: homeItemsFor(userId), floor: homeFloorFor(userId) };
 }
+// MAILBOX (Mailbox v1, `sq-mailbox-v1`): per-player inboxes —
+// userMailInbox[userId] = { packages: [] }. In-memory like the
+// notice boards: a server restart wipes unread mail (there is no
+// outbox re-sync — it would resurrect mail the recipient already
+// collected, because the server forgets what was collected across
+// a restart). The client asks for its inbox on connect (get_mail),
+// so a restart is visible immediately: the mailbox is empty, the
+// dot and the flag go down.
+//   - A code resolves to the player it belongs to through
+//     userMailCode[code] = userId. Codes are deterministic from the
+//     player id (mailboxCodeFor), so a code is stable across
+//     sessions — but the server cannot invert a hash, so it keeps
+//     this registry instead. It is populated on every join_room
+//     (and on mail_send, belt and braces): a player who has joined
+//     at least once since the last restart resolves. A send to a
+//     registered user who has NOT joined since the restart falls
+//     back to the auth_users table (userIdForMailCode) — their email
+//     is their id, so the code resolves even though they are not in
+//     the registry yet. Guests cannot be found that way (their id
+//     is a socket id): their code only resolves while they are online.
+const userMailInbox = {};
+function mailInboxFor(userId) {
+  if (!userMailInbox[userId]) userMailInbox[userId] = createMailState();
+  return userMailInbox[userId];
+}
+const userMailCode = new Map();
+function registerMailCode(userId) {
+  try {
+    const code = mailboxCodeFor(userId);
+    if (code) userMailCode.set(code, String(userId));
+  } catch {}
+}
+async function userIdForMailCode(code) {
+  if (!pool) return null;
+  try {
+    const { rows } = await pool.query('SELECT email FROM auth_users');
+    for (const row of rows || []) {
+      const email = typeof row?.email === 'string' ? row.email : '';
+      if (!email) continue;
+      if (mailboxCodeFor(email) === code) {
+        userMailCode.set(code, email);
+        return email;
+      }
+    }
+  } catch {}
+  return null;
+}
+/** The in-room display name of a player (by userId), or null when
+ *  they are offline — the client falls back to "them". */
+function playerNameForUser(userId) {
+  const sid = socketIdForUser(userId);
+  if (!sid) return null;
+  for (const players of Object.values(rooms || {})) {
+    const p = players?.[sid];
+    if (p && typeof p.name === 'string' && p.name.trim()) return p.name.trim();
+  }
+  return null;
+}
+// Marker for the v1 landing check (`sq-mailbox-v1` — see the import
+// above; referenced here so the marker is greppable server-side too).
+const MAILBOX_MARKER = MAILBOX_MARKER_V1;
 // Group puzzle (Shared Puzzle Quest v1.2,
 // `group-puzzle-v1-2-hidden-search`): per-room state
 // puzzleState[roomId] = { state, resetTimer }. Agora only.
@@ -1193,6 +1265,11 @@ io.on('connection', (socket) => {
 
     rooms[roomId][socket.id] = playerState;
     socketUserMap[socket.id] = userId;
+    // Mailbox v1 (`sq-mailbox-v1`): register this player's mailbox
+    // code, so a friend can send them mail even while they are in
+    // another room (or offline — the inbox is per-player, not
+    // per-room).
+    registerMailCode(userId);
     await removeDuplicatePresenceByUser({ roomId, userId, keepSocketId: socket.id });
     await upsertPresence({
       socketId: socket.id,
@@ -1734,6 +1811,120 @@ io.on('connection', (socket) => {
     if (!roomId) return;
     if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
     socket.emit('board_state', serializeNoticeBoardState(noticeBoardRoom(roomId).state));
+  });
+
+  // MAILBOX (Mailbox v1, `sq-mailbox-v1`). Send a pocket item to
+  // the player with this mailbox code: the server resolves the
+  // code (registry, then the auth_users fallback — see
+  // registerMailCode), validates the item (cleanMailItem refuses
+  // puzzle pieces, the Santa hat and the mailbox key — a raw socket
+  // emit cannot smuggle one through), and puts the package in the
+  // recipient's inbox. The item leaves the SENDER's pocket only
+  // when this handler answers ok (mail_send_result) — an unknown
+  // code, a full inbox, or a rate limit leaves the item in the
+  // pocket. Sending is FREE in v1 (no coins). The recipient gets
+  // mail_arrived + their fresh inbox when they are online; when
+  // they are offline the package simply waits in their inbox until
+  // they log in and ask for it (get_mail).
+  socket.on('mail_send', async ({ roomId, packageId, code, item, fromName } = {}) => {
+    if (!roomId) return;
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const userId = socketUserMap[socket.id] || socket.id;
+    const rate = checkRateLimit(userId);
+    if (!rate.allowed) {
+      socket.emit('mail_send_result', { packageId, ok: false, reason: 'rate-limited' });
+      return;
+    }
+    registerMailCode(userId);
+    const cleanCode = normalizeMailboxCode(code);
+    if (!isValidMailboxCode(cleanCode)) {
+      socket.emit('mail_send_result', { packageId, ok: false, reason: 'bad-code' });
+      return;
+    }
+    let recipientId = userMailCode.get(cleanCode) || null;
+    if (!recipientId) recipientId = await userIdForMailCode(cleanCode);
+    if (!recipientId) {
+      socket.emit('mail_send_result', { packageId, ok: false, reason: 'unknown-code' });
+      return;
+    }
+    if (String(recipientId) === String(userId)) {
+      socket.emit('mail_send_result', { packageId, ok: false, reason: 'self-send' });
+      return;
+    }
+    const cleanItem = cleanMailItem(item);
+    if (!cleanItem) {
+      socket.emit('mail_send_result', { packageId, ok: false, reason: 'not-sendable' });
+      return;
+    }
+    const inbox = mailInboxFor(recipientId);
+    const res = sendPackage(inbox, {
+      id: packageId,
+      fromUserId: userId,
+      fromName: typeof fromName === 'string' && fromName.trim()
+        ? fromName.trim().slice(0, 80)
+        : (rooms[roomId][socket.id]?.name || 'Someone'),
+      item: cleanItem,
+      sentAt: Date.now(),
+    });
+    if (!res.ok) {
+      socket.emit('mail_send_result', {
+        packageId,
+        ok: false,
+        reason: res.reason === 'inbox-full' ? 'inbox-full' : 'bad-package',
+      });
+      return;
+    }
+    socket.emit('mail_send_result', {
+      packageId,
+      ok: true,
+      recipientName: playerNameForUser(recipientId),
+    });
+    const recipientSocketId = socketIdForUser(recipientId);
+    if (recipientSocketId) {
+      io.to(recipientSocketId).emit('mail_arrived', { fromName: res.package.fromName });
+      io.to(recipientSocketId).emit('mail_state', serializeMailState(mailInboxFor(recipientId)));
+    }
+  });
+
+  // MAILBOX: ask for my own inbox (on connect, and on reconnect —
+  // the first state with unread mail fires the login toast).
+  socket.on('get_mail', () => {
+    const userId = socketUserMap[socket.id] || socket.id;
+    socket.emit('mail_state', serializeMailState(mailInboxFor(userId)));
+  });
+
+  // MAILBOX: take one package out of my inbox. The package STAYS
+  // in the inbox until the client confirms the item landed in the
+  // pocket (mail_collect_confirm) — a full pocket can never eat a
+  // gift. The client only asks when its pocket has room; the
+  // server just hands the item over.
+  socket.on('mail_collect', ({ roomId, packageId } = {}) => {
+    if (!roomId) return;
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const userId = socketUserMap[socket.id] || socket.id;
+    const rate = checkRateLimit(userId);
+    if (!rate.allowed) {
+      socket.emit('mail_collect_result', { packageId, ok: false, reason: 'rate-limited' });
+      return;
+    }
+    const inbox = mailInboxFor(userId);
+    const pkg = (inbox.packages || []).find((p) => p.id === String(packageId));
+    if (!pkg) {
+      socket.emit('mail_collect_result', { packageId, ok: false, reason: 'not-found' });
+      return;
+    }
+    socket.emit('mail_collect_result', { packageId, ok: true, item: { ...pkg.item } });
+  });
+
+  // MAILBOX: the item landed in the pocket — now remove the package
+  // from the inbox, and send the fresh state (dot + flag go down).
+  socket.on('mail_collect_confirm', ({ roomId, packageId } = {}) => {
+    if (!roomId) return;
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const userId = socketUserMap[socket.id] || socket.id;
+    const res = collectPackage(mailInboxFor(userId), packageId);
+    if (!res.ok) return;
+    socket.emit('mail_state', serializeMailState(mailInboxFor(userId)));
   });
 
   // DECORATION SHOP (Decoration Shop v1, `sq-dec-shop-v1`). Place a

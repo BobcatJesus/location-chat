@@ -9,6 +9,7 @@ import { SantaHatSystem } from './SantaHatSystem.js';
 import { QuestManager } from './QuestManager.js';
 import { ItemsSystem } from './ItemsSystem.js';
 import { NoticeBoardSystem } from './NoticeBoardSystem.js';
+import { MailSystem } from './MailSystem.js';
 import { DecorSystem } from './DecorSystem.js';
 import { HomeStorageSystem } from './HomeStorageSystem.js';
 import { hasBag as inventoryHasBag, INVENTORY_FULL_MESSAGE } from './items.js';
@@ -471,6 +472,12 @@ export class VillageScene extends Phaser.Scene {
     this.onOpenPuzzle = d.onOpenPuzzle ?? (() => {});
     this.onOpenInventory = d.onOpenInventory ?? (() => {});
     this.onOpenNoticeBoard = d.onOpenNoticeBoard ?? (() => {});
+    // Mailbox v1 (`sq-mailbox-v1`): opens the mailbox overlay.
+    this.onOpenMailbox = d.onOpenMailbox ?? (() => {});
+    // Mailbox v1 (`sq-mailbox-v1`): every room the app knows about
+    // (featured + user-created), so MailSystem can find the
+    // player's nearest park room (their mailbox room).
+    this.allRooms = Array.isArray(d.allRooms) ? d.allRooms : [];
     // Your Place v1: opens the storage chest panel (DOM).
     this.onOpenHomeStorage = d.onOpenHomeStorage ?? (() => {});
     // Decoration Shop v1: opens the coffee-bar shop panel (DOM).
@@ -658,6 +665,13 @@ export class VillageScene extends Phaser.Scene {
     // Each room's board is separate.
     this.noticeBoardSystem = new NoticeBoardSystem(this);
     this.noticeBoardSystem.refresh();
+    // Mailbox v1 (`sq-mailbox-v1`): the post box at the player's
+    // nearest park (or the nearest public place when no park is
+    // close) + sending and collecting mail. Renders only in the
+    // player's mailbox room; sending works from the pocket in any
+    // room.
+    this.mailSystem = new MailSystem(this);
+    this.mailSystem.refresh();
     // Decoration Shop v1 (`sq-dec-shop-v1`): buy decorations at the
     // Agora bar, place them anywhere — server-synced, everyone in
     // the room sees them. Placing works in every room; the shop
@@ -736,6 +750,15 @@ export class VillageScene extends Phaser.Scene {
     this.decorPrompt = this.add.text(0, 0, '🎄 Decoration [E]', {
       fontSize: '15px',
       color: '#7c2d12',
+      backgroundColor: 'rgba(255,255,255,0.85)',
+      padding: { x: 8, y: 4 },
+    }).setOrigin(0.5, 1).setDepth(DEPTH.UI).setAlpha(0);
+
+    // Mailbox v1 (`sq-mailbox-v1`): prompt near the mailbox (open
+    // it with E — the key must be in your pocket).
+    this.mailPrompt = this.add.text(0, 0, '📬 Mailbox [E]', {
+      fontSize: '15px',
+      color: '#1a4971',
       backgroundColor: 'rgba(255,255,255,0.85)',
       padding: { x: 8, y: 4 },
     }).setOrigin(0.5, 1).setDepth(DEPTH.UI).setAlpha(0);
@@ -958,6 +981,15 @@ export class VillageScene extends Phaser.Scene {
       try {
         const br = this.noticeBoardSystem?.boardTapAt(ptr.worldX, ptr.worldY);
         if (br && br.opened) return;
+      } catch {}
+      // Mailbox v1 (`sq-mailbox-v1`): a click on the mailbox itself
+      // opens it (if you are standing close enough and the key is
+      // in your pocket) — same scene-level pointerdown pattern as
+      // the notice board. A click that only MISSES the box falls
+      // through to tap-to-move below.
+      try {
+        const mr = this.mailSystem?.mailboxTapAt(ptr.worldX, ptr.worldY);
+        if (mr && mr.opened) return;
       } catch {}
       // Your Place v1: a click on the storage chest itself opens it
       // (if you are standing close enough) — same scene-level
@@ -1307,6 +1339,10 @@ export class VillageScene extends Phaser.Scene {
     } else if (kind === 'notice-board') {
       // Notice board v1: open the pinned-flyers board.
       this.noticeBoardSystem?.openBoard();
+    } else if (kind === 'mailbox') {
+      // Mailbox v1: open your mailbox (the key must be in your
+      // pocket — MailSystem says so when it is not).
+      this.mailSystem?.openMailbox();
     } else if (kind === 'storage-chest') {
       // Your Place v1: open the storage chest panel.
       this.homeStorageSystem?.openStorage();
@@ -1349,6 +1385,9 @@ export class VillageScene extends Phaser.Scene {
     if (this.trimTreeQuest?.nearestBox(this.player.gx, this.player.gy)) return 'tree-box';
     if (this.trimTreeQuest?.nearestTree(this.player.gx, this.player.gy)) return 'trim-tree';
     if (this.noticeBoardSystem?.nearestBoard(this.player.gx, this.player.gy)) return 'notice-board';
+    // Mailbox v1: the post box at the player's nearest park (or the
+    // fallback public place) — after the board, before the chest.
+    if (this.mailSystem?.nearestMailbox(this.player.gx, this.player.gy)) return 'mailbox';
     if (this.homeStorageSystem?.nearestChest(this.player.gx, this.player.gy)) return 'storage-chest';
     if (this.homeStorageSystem?.nearestFloorItem(this.player.gx, this.player.gy)) return 'floor-item';
     if (this.decorSystem?.nearestDecoration(this.player.gx, this.player.gy)) return 'decoration';
@@ -2013,6 +2052,10 @@ export class VillageScene extends Phaser.Scene {
       socket.emit('get_puzzle', { roomId: this.roomId });
       socket.emit('get_board', { roomId: this.roomId });
       socket.emit('get_home', { roomId: this.roomId });
+      // Mailbox v1: re-request the inbox on (re)connect, so mail
+      // sent during a disconnect window comes back — and the login
+      // toast fires when there is unread mail.
+      socket.emit('get_mail', { roomId: this.roomId });
       socket.emit('get_time_phase', {});
       // Quest badges v1: re-sync my local completions record so the
       // server's per-player badge store (wiped by a restart) comes
@@ -2280,6 +2323,33 @@ export class VillageScene extends Phaser.Scene {
     // in-memory on the server like badges).
     socket.on('home_state', (payload = {}) => {
       this.homeStorageSystem?.applyState(payload);
+    });
+
+    // Mailbox state (per player — only your own inbox, in-memory on
+    // the server like badges). The first state after connect fires
+    // the "You've got mail!" toast when there is unread mail.
+    socket.on('mail_state', (payload = {}) => {
+      this.mailSystem?.applyState(payload);
+    });
+
+    // Mailbox send answer (per send): ok → the item leaves the
+    // pocket; fail → it stays, with the reason.
+    socket.on('mail_send_result', (payload = {}) => {
+      this.mailSystem?.onSendResult(payload);
+    });
+
+    // Mailbox collect answer (per package): ok → the item lands in
+    // the pocket and the client confirms, which is when the server
+    // removes it from the inbox. A full pocket never eats a gift.
+    socket.on('mail_collect_result', (payload = {}) => {
+      this.mailSystem?.onCollectResult(payload);
+    });
+
+    // Mail just arrived while I'm online: toast now (the server
+    // sends the fresh mail_state right after, so the dot and the
+    // flag update on their own).
+    socket.on('mail_arrived', (payload = {}) => {
+      this.mailSystem?.onMailArrived(payload);
     });
     // The room finished the puzzle — re-ask for the canonical state
     // (the puzzle_state broadcast just before this carries it too;
@@ -2986,6 +3056,19 @@ export class VillageScene extends Phaser.Scene {
       this.decorPrompt.setAlpha(0);
     }
 
+    // Mailbox v1: prompt near the mailbox — "You've got mail!"
+    // when there is unread mail waiting, plain "Mailbox" otherwise.
+    // The board / chest have no prompt of their own; the mailbox
+    // gets one because it lives in a park the player may visit
+    // rarely, and the flag alone is easy to miss.
+    const nearMailbox = this.mailSystem?.nearestMailbox(this.player.gx, this.player.gy);
+    if (nearMailbox && !nearPond && !nearCat && !nearTable && !nearBox && !nearTree) {
+      const mailUnread = (this.mailSystem?.getState?.().unread || 0);
+      this.mailPrompt.setText(mailUnread > 0 ? '📬 You’ve got mail! [E]' : '📬 Mailbox [E]').setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
+    } else {
+      this.mailPrompt.setAlpha(0);
+    }
+
     // Jukebox: prompt near jukeboxes (pond and shelf prompts take priority).
     // Client-side audio: play CC-licensed tracks when near any jukebox.
     const nearJukebox = this._nearestJukebox();
@@ -3283,6 +3366,8 @@ export class VillageScene extends Phaser.Scene {
     this.itemsSystem = null;
     this.noticeBoardSystem?.destroy();
     this.noticeBoardSystem = null;
+    this.mailSystem?.destroy();
+    this.mailSystem = null;
     this.decorSystem?.destroy();
     this.decorSystem = null;
     this.santaHatSystem?.destroy();
@@ -3296,6 +3381,7 @@ export class VillageScene extends Phaser.Scene {
     this.puzzlePrompt?.destroy();
     this.treePrompt?.destroy();
     this.decorPrompt?.destroy();
+    this.mailPrompt?.destroy();
     this.halloween?.destroy();
     this.halloween = null;
     this.dayNight?.destroy();
@@ -3340,6 +3426,10 @@ export class VillageScene extends Phaser.Scene {
     // floor (upper floors have no board — _board goes null, so the
     // ground-floor board cannot be opened from upstairs).
     this.noticeBoardSystem?.refresh();
+    // Mailbox v1: re-resolve the mailbox for this floor (upper
+    // floors have no mailbox — _mailbox goes null, so the
+    // ground-floor box cannot be opened from upstairs).
+    this.mailSystem?.refresh();
     // Decoration Shop v1: re-resolve the room's decorations for
     // this floor (placed decorations re-draw after the switch).
     this.decorSystem?.refresh();

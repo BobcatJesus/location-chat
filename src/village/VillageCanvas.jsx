@@ -8,6 +8,7 @@ import PuzzleBoard from './PuzzleBoard.jsx';
 import InventoryPanel from './InventoryPanel.jsx';
 import DecorShopPanel from './DecorShopPanel.jsx';
 import NoticeBoardPanel from './NoticeBoardPanel.jsx';
+import MailboxPanel from './MailboxPanel.jsx';
 import HomeStoragePanel from './HomeStoragePanel.jsx';
 import PlayerBadgesPanel from './PlayerBadgesPanel.jsx';
 import InteriorSketchModal from './InteriorSketchModal.jsx';
@@ -21,7 +22,7 @@ import { agora } from './layouts/agora.js';
 import { home } from './layouts/home.js';
 import { isHomeRoom } from './homeStorage.js';
 import { getDistanceMeters } from '../geo';
-import { ROOMS } from '../../rooms/rooms.js';
+import { ROOMS, getAllRooms } from '../../rooms/rooms.js';
 import { getVenueEvents } from '../../lib/venueEvents.js';
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'https://location-chat-production.up.railway.app';
@@ -256,6 +257,10 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
   const [openPuzzle, setOpenPuzzle] = useState(false);
   const [openInventory, setOpenInventory] = useState(false);
   const [openNoticeBoard, setOpenNoticeBoard] = useState(false);
+  // Mailbox v1 (`sq-mailbox-v1`): the mailbox overlay + how many
+  // unread packages are waiting (the envelope dot on the 🎒 button).
+  const [openMailbox, setOpenMailbox] = useState(false);
+  const [mailUnread, setMailUnread] = useState(0);
   // Decoration Shop v1 (`sq-dec-shop-v1`): the Agora coffee-bar shop.
   const [openDecorShop, setOpenDecorShop] = useState(false);
   // Your Place v1: the storage chest panel, opened from the chest
@@ -285,13 +290,18 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
     return () => clearInterval(t);
   }, []);
   // Poll the inventory badge (bottom-left 🎒 button count, "n/cap").
+  // Mailbox v1 (`sq-mailbox-v1`): the same poll reads the unread
+  // mail count, so the envelope dot on the 🎒 button appears the
+  // moment mail arrives and clears when it is collected.
   useEffect(() => {
     const t = setInterval(() => {
       try {
         const scene = gameRef.current?.scene?.getScene('VillageScene');
         const st = scene?.itemsSystem?.getState ? scene.itemsSystem.getState() : null;
-        if (st) setInventoryCount(`${st.count}/${st.capacity}`);
-        else if (inventoryCount !== null) setInventoryCount(null);
+        if (st) {
+          setInventoryCount(`${st.count}/${st.capacity}`);
+          setMailUnread(Number(st.mailUnread) || 0);
+        } else if (inventoryCount !== null) setInventoryCount(null);
       } catch { /* scene not ready yet */ }
     }, 1000);
     return () => clearInterval(t);
@@ -348,6 +358,8 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
     key: ['🔑', 'Pick up the golden key'],
     'puzzle-table': ['🧩', 'Open the puzzle table'],
     'notice-board': ['📌', 'Read the notice board'],
+    // Mailbox v1 (`sq-mailbox-v1`): open your mailbox at the park.
+    mailbox: ['📬', 'Open your mailbox'],
     'storage-chest': ['📦', 'Open your storage chest'],
     'floor-item': ['🎒', 'Pick up'],
     shelf: ['📚', 'Browse the shelf'],
@@ -642,6 +654,12 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
       onOpenPuzzle: () => setOpenPuzzle(true),
       onOpenInventory: () => setOpenInventory(true),
       onOpenNoticeBoard: () => setOpenNoticeBoard(true),
+      // Mailbox v1 (`sq-mailbox-v1`): opens the mailbox overlay.
+      onOpenMailbox: () => setOpenMailbox(true),
+      // Mailbox v1 (`sq-mailbox-v1`): every room the app knows
+      // about (featured + user-created), so the scene can find the
+      // player's nearest park room (their mailbox room).
+      allRooms: getAllRooms(),
       onOpenHomeStorage: () => setOpenHomeStorage(true),
       // Decoration Shop v1: opens the coffee-bar shop panel (DOM).
       onOpenDecorShop: () => setOpenDecorShop(true),
@@ -845,6 +863,10 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
           onPinFlyer={(id) => gameRef.current?.scene?.getScene('VillageScene')?.itemsSystem?.pinFlyerToBoard?.(id) || { ok: false, reason: 'error' }}
           onPlaceDecoration={(id) => gameRef.current?.scene?.getScene('VillageScene')?.decorSystem?.placeDecoration?.(id) || { ok: false, reason: 'error' }}
           onPutHatOnCat={(id) => gameRef.current?.scene?.getScene('VillageScene')?.santaHatSystem?.placeOnCat?.(id) || { ok: false, reason: 'error' }}
+          // Mailbox v1 (`sq-mailbox-v1`): send a pocket item to the
+          // player with this mailbox code — it leaves the pocket
+          // only when the server confirms the send.
+          onSendMail={(id, code) => gameRef.current?.scene?.getScene('VillageScene')?.itemsSystem?.sendMail?.(id, code) || { ok: false, reason: 'error' }}
           onOpenPuzzle={() => { setOpenInventory(false); setOpenPuzzle(true); }}
           onClose={() => { setOpenInventory(false); setCoinBalance(getCoins()); }}
         />
@@ -855,6 +877,18 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
           onRemove={(flyerId) => gameRef.current?.scene?.getScene('VillageScene')?.noticeBoardSystem?.removeFlyer?.(flyerId) || { ok: false, reason: 'error' }}
           isModerator={isModerator}
           onClose={() => setOpenNoticeBoard(false)}
+        />
+      )}
+      {/* Mailbox v1 (`sq-mailbox-v1`): your packages at your nearest
+          park (or the nearest public place when no park is close).
+          Take asks the server first — a full pocket refuses and the
+          package stays in the mailbox. */}
+      {openMailbox && (
+        <MailboxPanel
+          getState={() => gameRef.current?.scene?.getScene('VillageScene')?.itemsSystem?.getState?.()}
+          onCollect={(packageId) => gameRef.current?.scene?.getScene('VillageScene')?.mailSystem?.collectPackage?.(packageId) || { ok: false, reason: 'error' }}
+          onCollectAll={() => gameRef.current?.scene?.getScene('VillageScene')?.mailSystem?.collectAll?.() || { ok: false, reason: 'error' }}
+          onClose={() => setOpenMailbox(false)}
         />
       )}
       {openHomeStorage && (
@@ -1282,6 +1316,22 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
             border: '2px solid #1a4971',
           }}>
             {inventoryCount}
+          </span>
+        )}
+        {/* Mailbox v1 (`sq-mailbox-v1`): the envelope dot — up while
+            you have unread mail, until you've collected it. */}
+        {mailUnread > 0 && (
+          <span
+            title={`You’ve got mail (${mailUnread})! Open your mailbox at the park.`}
+            style={{
+              position: 'absolute', top: -4, right: -4,
+              background: '#dc2626', color: '#fff',
+              borderRadius: 10, padding: '1px 6px',
+              fontSize: 12, fontWeight: 'bold', lineHeight: 1.4,
+              border: '2px solid #fff',
+            }}
+          >
+            ✉️
           </span>
         )}
       </button>

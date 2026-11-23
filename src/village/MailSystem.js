@@ -1,0 +1,550 @@
+// MailSystem.js — the in-room side of the Mailbox (Mailbox v1,
+// `sq-mailbox-v1`).
+//
+// Owned by VillageScene, same shape as NoticeBoardSystem /
+// SantaHatSystem: constructed in create(), refreshed on floor
+// switches, destroyed in shutdown(). The mailbox itself only
+// renders in the player's mailbox room (their nearest park, or the
+// nearest open-access room when no park is close — see
+// mailState.resolveMailboxRoom); every other room has no mailbox
+// object at all.
+//
+// THE MAILBOX: a post box by the room's entrance (east of the
+// entry — the notice board takes the west side in parks). Walk up
+// and press E, or click the mailbox itself, to open it
+// (MailboxPanel.jsx): a list of your packages, newest last; Take
+// one, or Take All. The inbox is SERVER state (server/socket.js,
+// in-memory per player like badges): sending and collecting go
+// through the socket, and the mail waits there until you collect
+// it — the sender never needs to know where your mailbox is.
+//
+// SENDING (from the inventory — an item's "Send ✉️" button): you
+// type the recipient's mailbox code (5 letters). The item leaves
+// the pocket ONLY when the server confirms the send (see
+// onSendResult) — an unknown code, or a send that never lands
+// (offline, rate-limited), leaves the item in your pocket.
+// Nothing is ever lost by sending.
+//
+// COLLECTING: Take asks the server for the package FIRST
+// (mail_collect_result); only when the result arrives AND the
+// pocket has room does the item land in the pocket — and only
+// then does the client confirm (mail_collect_confirm), which is
+// when the server removes the package from the inbox. A full
+// pocket can never eat a gift: the package simply stays in the
+// mailbox. Take All collects oldest-first, as many as fit.
+//
+// THE KEY: opening the mailbox needs the mailbox key in your
+// pocket. The key is auto-granted on first load (see
+// ensureMailboxKey in items.js) and can be left at home. Without
+// it, the prompt says so — "Your key is at home" when it is
+// stored there, plain "You need your mailbox key" otherwise.
+//
+// NOTIFICATIONS (all three, user-decided):
+//   1. a "📬 You've got mail!" toast — on login when the first
+//      mail_state shows unread mail, and the moment mail arrives
+//      while you're online (mail_arrived);
+//   2. an envelope dot on the 🎒 pocket button until the mail is
+//      collected (VillageCanvas polls getState());
+//   3. a red flag up on the mailbox itself while you have mail
+//      (redrawn on every applyState).
+
+import { DEPTH } from './depth.js';
+import {
+  MAILBOX_MARKER_V1,
+  MAILBOX_W,
+  MAILBOX_H,
+  MAILBOX_OPEN_RANGE,
+  createMailState,
+  parseMailState,
+  mailboxCodeFor,
+  normalizeMailboxCode,
+  isValidMailboxCode,
+  cleanMailItem,
+  resolveMailboxRoom,
+  resolveMailboxSpot,
+} from './mailState.js';
+import {
+  ITEM_TYPES,
+  INVENTORY_FULL_MESSAGE,
+  getItem,
+  removeItem,
+  addItem,
+  canAddItem,
+  getInventoryState,
+  ensureMailboxKey,
+  hasMailboxKey,
+} from './items.js';
+import { getHomeItems } from './homeStorage.js';
+
+// How long a send / collect waits for the server before giving up
+// (same 5s as the decoration shop's pending timeout).
+const MAIL_PENDING_TIMEOUT_MS = 5000;
+
+export class MailSystem {
+  constructor(scene) {
+    this.scene = scene;
+    // sq-mailbox-v1 — marker for the v1 landing check.
+    this.marker = MAILBOX_MARKER_V1;
+    this.state = createMailState();
+    this._mailbox = null; // { x, y, w, h, roomId, roomName, isPark } — null when this room is not my mailbox room
+    this._gfx = null; // Phaser graphics for the post box
+    this._label = null; // Phaser text label above the box
+    this._flagGfx = null; // red flag, drawn only while I have mail
+    this._lastUnread = -1;
+    this._pendingSends = new Map(); // packageId -> { itemId, timer }
+    this._pendingCollects = new Map(); // packageId -> { item, timer }
+    this._collectedIds = new Set(); // packageIds already added to the pocket (a late duplicate result must not add twice)
+    this._mailNotice = { text: '', seq: 0 };
+    this._sawFirstState = false;
+  }
+
+  // The mailbox lives in ONE room per player (their nearest park,
+  // or the fallback) — but the system exists everywhere, because
+  // sending happens from the pocket in any room.
+  get enabled() {
+    return Boolean(this.scene?.roomId);
+  }
+
+  /** Is this room the player's mailbox room? */
+  get isMailboxRoom() {
+    return Boolean(this._mailbox);
+  }
+
+  /** Plain-data state for the mailbox panel + the pocket button dot
+   *  (both poll this ~1-2x/sec). */
+  getState() {
+    const packages = (this.state.packages || []).map((p) => ({ ...p, item: { ...p.item } }));
+    return {
+      packages,
+      unread: packages.length,
+      mailboxCode: mailboxCodeFor(this.scene?.userId || ''),
+      mailboxRoomId: this._mailbox?.roomId || '',
+      mailboxRoomName: this._mailbox?.roomName || '',
+      isMailboxRoom: this.isMailboxRoom,
+      hasKey: hasMailboxKey(),
+      mailNotice: this._mailNotice.text || '',
+      mailNoticeSeq: this._mailNotice.seq || 0,
+    };
+  }
+
+  /** (Re)build the mailbox position + drawing, grant the key, and
+   *  ask the server for the inbox. */
+  refresh() {
+    // The key is auto-granted on first load (see items.js): one
+    // per player, never duplicated, retried when the pocket has room.
+    try { ensureMailboxKey(getHomeItems()); } catch {}
+    this._resolveMailbox();
+    this._renderMailbox();
+    this._requestState();
+  }
+
+  _requestState() {
+    try {
+      if (this.scene?.socket?.connected) {
+        this.scene.socket.emit('get_mail', { roomId: this.scene.roomId });
+      }
+    } catch {}
+  }
+
+  /** Apply the server's canonical inbox. Also drives the three
+   *  notifications: the login toast (first state with unread mail),
+   *  and the flag redraw (the dot comes from getState polling). */
+  applyState(payload = {}) {
+    const next = parseMailState(payload);
+    const hadUnread = (this.state.packages || []).length;
+    this.state = next;
+    const unread = next.packages.length;
+    if (!this._sawFirstState) {
+      this._sawFirstState = true;
+      if (unread > 0) {
+        try { this.scene?.onSystemNotice?.('📬 You’ve got mail!'); } catch {}
+      }
+    }
+    if (unread !== hadUnread) this._renderFlag();
+  }
+
+  /** Mail just arrived while I'm online: toast now (the server
+   *  also sends the fresh mail_state right after, so the dot and
+   *  flag update on their own). */
+  onMailArrived(payload = {}) {
+    const from = typeof payload.fromName === 'string' && payload.fromName.trim()
+      ? payload.fromName.trim()
+      : 'Someone';
+    try { this.scene?.onSystemNotice?.(`📬 You’ve got mail from ${from}!`); } catch {}
+  }
+
+  // ---- the mailbox object in the room ------------------------------------
+
+  /** Resolve this room's mailbox: only when this room IS the
+   *  player's mailbox room (nearest park / fallback). Otherwise
+   *  _mailbox stays null and nothing is drawn here. */
+  _resolveMailbox() {
+    this._mailbox = null;
+    if (!this.enabled) return;
+    let resolved = null;
+    try {
+      resolved = resolveMailboxRoom(
+        this.scene?.allRooms || [],
+        this.scene?.userLocation || null,
+      );
+    } catch { resolved = null; }
+    if (!resolved || resolved.roomId !== this.scene.roomId) return;
+    const spot = this._resolveMailboxSpot();
+    this._mailbox = { ...spot, roomId: resolved.roomId, roomName: resolved.roomName, isPark: resolved.isPark };
+  }
+
+  /** Where the box goes: east of the entry (the notice board takes
+   *  the west side in parks), else west, else near the spawn.
+   *  Mirrors RoomLayout.getNoticeBoardFallback's entry/spawn
+   *  discovery. */
+  _resolveMailboxSpot() {
+    const layout = this.scene?.roomLayout;
+    let entry = null;
+    let spawn = null;
+    try {
+      const floor = layout?.layout?.floors?.[layout?.currentFloor || 0];
+      entry = (floor?.zones || []).find((z) => z.type === 'entry') || null;
+      spawn = layout?.layout?.spawnF1 || null;
+    } catch {}
+    let bounds = null;
+    try { bounds = layout?.getBoundaryBounds?.(); } catch {}
+    return resolveMailboxSpot({
+      entry,
+      spawn,
+      bounds,
+      isInside: (x, y) => {
+        try { return layout?.isPointInsideRoom?.(x, y, 0) ?? true; } catch { return true; }
+      },
+    });
+  }
+
+  /** Draw the post box (+ label). The flag is drawn separately so
+   *  it can flip without redrawing the box. */
+  _renderMailbox() {
+    this._destroyDrawing();
+    if (!this._mailbox) return;
+    const b = this._mailbox;
+    const cx = b.x + b.w / 2;
+    const groundY = b.y + b.h;
+    try {
+      const g = this.scene.add.graphics();
+      // Post.
+      g.fillStyle(0x6b4a2f, 1);
+      g.fillRect(cx - 5, b.y + 34, 10, b.h - 34);
+      // Box body.
+      g.fillStyle(0x1a4971, 1);
+      g.fillRect(b.x + 6, b.y + 6, b.w - 12, 30);
+      // Box lid (rounded look via a lighter strip).
+      g.fillStyle(0x2b6a9e, 1);
+      g.fillRect(b.x + 6, b.y + 6, b.w - 12, 8);
+      // Slot.
+      g.fillStyle(0x0f172a, 1);
+      g.fillRect(b.x + 16, b.y + 18, b.w - 32, 4);
+      g.setDepth(DEPTH.ACTOR_MIN + Math.round(groundY));
+      this._gfx = g;
+      const label = this.scene.add.text(cx, b.y - 6, '📬 Mailbox', {
+        fontSize: '13px', color: '#1a4971',
+        backgroundColor: 'rgba(255,255,255,0.85)', padding: { x: 6, y: 3 },
+      });
+      label.setOrigin(0.5, 1);
+      label.setDepth(DEPTH.UI);
+      this._label = label;
+    } catch {}
+    this._lastUnread = -1;
+    this._renderFlag();
+  }
+
+  /** Draw (or hide) the red flag: up while I have unread mail. */
+  _renderFlag() {
+    const unread = (this.state.packages || []).length;
+    if (unread === this._lastUnread) return;
+    this._lastUnread = unread;
+    try { this._flagGfx?.destroy(); } catch {}
+    this._flagGfx = null;
+    if (!this._mailbox || unread <= 0) return;
+    const b = this._mailbox;
+    try {
+      const g = this.scene.add.graphics();
+      // Flag pole + red flag on the box's right side, raised.
+      g.fillStyle(0x8a8f98, 1);
+      g.fillRect(b.x + b.w - 8, b.y - 14, 3, 22);
+      g.fillStyle(0xdc2626, 1);
+      g.fillTriangle(
+        b.x + b.w - 5, b.y - 14,
+        b.x + b.w + 16, b.y - 8,
+        b.x + b.w - 5, b.y - 2,
+      );
+      g.setDepth(DEPTH.ACTOR_MIN + Math.round(b.y + b.h));
+      this._flagGfx = g;
+    } catch {}
+  }
+
+  _destroyDrawing() {
+    try { this._gfx?.destroy(); } catch {}
+    try { this._label?.destroy(); } catch {}
+    try { this._flagGfx?.destroy(); } catch {}
+    this._gfx = null;
+    this._label = null;
+    this._flagGfx = null;
+  }
+
+  /** One click on the mailbox itself: open it if the click lands
+   *  on the box and the player is standing close enough. Same
+   *  scene-level pointerdown pattern as the notice board. Returns
+   *  { ok, opened?, reason? }. */
+  mailboxTapAt(wx, wy) {
+    if (!this.enabled || !this._mailbox) return { ok: false, reason: 'not-available' };
+    const b = this._mailbox;
+    if (wx < b.x || wx > b.x + b.w || wy < b.y || wy > b.y + b.h) {
+      return { ok: false, reason: 'no-mailbox' };
+    }
+    const player = this.scene?.player;
+    if (!player) return { ok: false, reason: 'no-player' };
+    const cx = Math.max(b.x, Math.min(player.gx, b.x + b.w));
+    const cy = Math.max(b.y, Math.min(player.gy, b.y + b.h));
+    if (Math.hypot(player.gx - cx, player.gy - cy) > MAILBOX_OPEN_RANGE) {
+      return { ok: false, reason: 'too-far' };
+    }
+    this.openMailbox();
+    return { ok: true, opened: true };
+  }
+
+  /** The mailbox within MAILBOX_OPEN_RANGE of (x, y) — or null (E key). */
+  nearestMailbox(px, py) {
+    if (!this.enabled || !this._mailbox) return null;
+    const b = this._mailbox;
+    const cx = Math.max(b.x, Math.min(px, b.x + b.w));
+    const cy = Math.max(b.y, Math.min(py, b.y + b.h));
+    return Math.hypot(px - cx, py - cy) <= MAILBOX_OPEN_RANGE ? { ...b } : null;
+  }
+
+  /** Open the mailbox overlay (DOM panel, MailboxPanel.jsx). The
+   *  key must be in your pocket — without it the prompt says so
+   *  (and names home when the key is stored there). */
+  openMailbox() {
+    if (!this.enabled) return;
+    if (!hasMailboxKey()) {
+      let atHome = false;
+      try {
+        atHome = getHomeItems().some((it) => it.type === ITEM_TYPES.MAILBOX_KEY);
+      } catch {}
+      try {
+        this.scene?.onSystemNotice?.(atHome
+          ? '🔑 Your mailbox key is at home — go get it first.'
+          : '🔑 You need your mailbox key to open your mailbox.');
+      } catch {}
+      return;
+    }
+    try { this.scene?.onOpenMailbox?.(); } catch {}
+  }
+
+  // ---- sending -------------------------------------------------------------
+
+  /** Send a pocket item to the player with this mailbox code. The
+   *  item leaves the pocket ONLY when the server confirms the send
+   *  (see onSendResult) — an unknown code, or a send that never
+   *  lands, leaves the item in your pocket. Returns
+   *  { ok, pending?, reason? }. */
+  sendMail(itemId, code) {
+    if (!this.enabled) return { ok: false, reason: 'not-available' };
+    if (!this.scene?.socket?.connected) return { ok: false, reason: 'offline' };
+    const cleanCode = normalizeMailboxCode(code);
+    if (!isValidMailboxCode(cleanCode)) return { ok: false, reason: 'bad-code' };
+    const item = getItem(itemId);
+    if (!item) return { ok: false, reason: 'not-found' };
+    const cleaned = cleanMailItem(item);
+    if (!cleaned) return { ok: false, reason: 'not-sendable' };
+    const packageId = `mail-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+    const fromName = this._displayName();
+    this._pendingSends.set(packageId, {
+      itemId: item.id,
+      timer: setTimeout(() => {
+        if (!this._pendingSends.has(packageId)) return;
+        this._pendingSends.delete(packageId);
+        this._postMailNotice('📬 The room didn’t answer — tap Send again.');
+      }, MAIL_PENDING_TIMEOUT_MS),
+    });
+    try {
+      this.scene.socket.emit('mail_send', {
+        roomId: this.scene.roomId,
+        packageId,
+        code: cleanCode,
+        item: cleaned,
+        fromName,
+      });
+    } catch {
+      const pending = this._pendingSends.get(packageId);
+      if (pending) clearTimeout(pending.timer);
+      this._pendingSends.delete(packageId);
+      return { ok: false, reason: 'error' };
+    }
+    return { ok: true, pending: true, packageId };
+  }
+
+  /** The server answered a send: ok → the item leaves the pocket
+   *  (the slot frees up); fail → it stays, with the reason. */
+  onSendResult(payload = {}) {
+    const packageId = String(payload.packageId || '');
+    const pending = this._pendingSends.get(packageId);
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    this._pendingSends.delete(packageId);
+    if (!payload.ok) {
+      this._postMailNotice(this._sendReasonText(payload.reason));
+      return;
+    }
+    try {
+      const removed = removeItem(pending.itemId);
+      if (removed) {
+        const name = typeof payload.recipientName === 'string' && payload.recipientName.trim()
+          ? payload.recipientName.trim()
+          : 'them';
+        // The success goes through BOTH channels: the scene toast
+        // (seen when the pocket is closed) and the mail notice
+        // (seen in the pocket panel, which sits ABOVE the toast).
+        try { this.scene?.onSystemNotice?.(`📬 Sent to ${name}!`); } catch {}
+        this._postMailNotice(`📬 Sent to ${name}!`);
+      }
+    } catch {}
+  }
+
+  _sendReasonText(reason) {
+    switch (reason) {
+      case 'unknown-code': return 'No mailbox with that code — check it and try again.';
+      case 'self-send': return 'That’s your own code — send it to a friend instead.';
+      case 'not-sendable': return 'That can’t be sent by mail.';
+      case 'inbox-full': return 'Their mailbox is full — try again later.';
+      case 'rate-limited': return 'You’re sending too fast — try again in a bit.';
+      default: return 'Something went wrong — try again.';
+    }
+  }
+
+  // ---- collecting ----------------------------------------------------------
+
+  /** Take one package out of the mailbox, into the pocket. The
+   *  server only removes it from the inbox when the client
+   *  confirms the item landed (mail_collect_confirm) — a full
+   *  pocket can never eat a gift. Returns { ok, pending?, reason? }. */
+  collectPackage(packageId) {
+    if (!this.enabled) return { ok: false, reason: 'not-available' };
+    if (!this.scene?.socket?.connected) return { ok: false, reason: 'offline' };
+    const pkg = (this.state.packages || []).find((p) => p.id === String(packageId));
+    if (!pkg) return { ok: false, reason: 'not-found' };
+    if (!canAddItem(pkg.item)) {
+      return { ok: false, reason: 'inventory-full' };
+    }
+    this._pendingCollects.set(pkg.id, {
+      item: { ...pkg.item },
+      timer: setTimeout(() => {
+        if (!this._pendingCollects.has(pkg.id)) return;
+        this._pendingCollects.delete(pkg.id);
+        this._postMailNotice('📬 The room didn’t answer — tap Take again.');
+      }, MAIL_PENDING_TIMEOUT_MS),
+    });
+    try {
+      this.scene.socket.emit('mail_collect', { roomId: this.scene.roomId, packageId: pkg.id });
+    } catch {
+      const pending = this._pendingCollects.get(pkg.id);
+      if (pending) clearTimeout(pending.timer);
+      this._pendingCollects.delete(pkg.id);
+      return { ok: false, reason: 'error' };
+    }
+    return { ok: true, pending: true };
+  }
+
+  /** The server answered a collect: ok → the item lands in the
+   *  pocket (if there is still room — the panel is modal, so the
+   *  pocket cannot fill under it, but a second tab could), and only
+   *  then the client confirms and the server removes the package.
+   *  A late duplicate result (same package twice) never adds twice. */
+  onCollectResult(payload = {}) {
+    const packageId = String(payload.packageId || '');
+    const pending = this._pendingCollects.get(packageId);
+    if (!pending) return;
+    clearTimeout(pending.timer);
+    this._pendingCollects.delete(packageId);
+    if (!payload.ok || !payload.item) {
+      this._postMailNotice(payload.reason === 'not-found'
+        ? 'That package is already gone.'
+        : 'Something went wrong — try again.');
+      return;
+    }
+    if (this._collectedIds.has(packageId)) {
+      // Already added (a duplicate result) — still confirm, so the
+      // server removes the package instead of leaving it behind.
+      try {
+        this.scene?.socket?.emit('mail_collect_confirm', { roomId: this.scene.roomId, packageId });
+      } catch {}
+      return;
+    }
+    const res = addItem(payload.item);
+    if (!res.ok) {
+      // The pocket filled between the check and the add — the
+      // package stays in the inbox (no confirm is sent), so nothing
+      // is lost; the player just needs room first.
+      this._postMailNotice(`🎒 ${INVENTORY_FULL_MESSAGE}`);
+      return;
+    }
+    this._collectedIds.add(packageId);
+    try {
+      this.scene?.socket?.emit('mail_collect_confirm', { roomId: this.scene.roomId, packageId });
+    } catch {}
+    // Both channels again: the scene toast (mailbox closed) and
+    // the mail notice (the mailbox panel sits above the toast).
+    try {
+      this.scene?.onSystemNotice?.(`📬 You got ${res.item.label || 'a gift'}!`);
+    } catch {}
+    this._postMailNotice(`📬 You got ${res.item.label || 'a gift'}!`);
+  }
+
+  /** Take All: collect oldest-first, as many as fit right now.
+   *  The rest stay in the mailbox. */
+  collectAll() {
+    if (!this.enabled) return { ok: false, reason: 'not-available' };
+    if (!this.scene?.socket?.connected) return { ok: false, reason: 'offline' };
+    const inv = getInventoryState();
+    let room = Math.max(0, inv.capacity - inv.count);
+    let started = 0;
+    for (const pkg of this.state.packages || []) {
+      if (room <= 0) break;
+      const res = this.collectPackage(pkg.id);
+      if (res.ok) { started += 1; room -= 1; }
+    }
+    if (started === 0) return { ok: false, reason: 'inventory-full' };
+    return { ok: true, started };
+  }
+
+  // ---- helpers ---------------------------------------------------------------
+
+  _displayName() {
+    try {
+      const p = this.scene?.profile?.profile || {};
+      return p.characterName || p.firstName || this.scene?.userId || 'Someone';
+    } catch {
+      return 'Someone';
+    }
+  }
+
+  _postMailNotice(text) {
+    this._mailNotice = { text: String(text || ''), seq: (this._mailNotice.seq || 0) + 1 };
+  }
+
+  update() {
+    // Nothing per-frame: sends / collects arrive over the socket,
+    // opens arrive via pointerdown / E, and the panel polls getState().
+  }
+
+  destroy() {
+    for (const pending of this._pendingSends.values()) {
+      try { clearTimeout(pending.timer); } catch {}
+    }
+    for (const pending of this._pendingCollects.values()) {
+      try { clearTimeout(pending.timer); } catch {}
+    }
+    this._pendingSends.clear();
+    this._pendingCollects.clear();
+    this._collectedIds.clear();
+    this._destroyDrawing();
+    this.scene = null;
+  }
+}

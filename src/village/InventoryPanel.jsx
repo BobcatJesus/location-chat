@@ -32,6 +32,14 @@
 //   onPutHatOnCat(id) — put the Santa hat on the cafe cat (Santa
 //     Hat v1); returns { ok, pending?, reason? } — the hat leaves
 //     the pocket when the server confirms it is on the cat
+//   onSendMail(id, code) — send a pocket item to the player with
+//     this mailbox code (Mailbox v1, `sq-mailbox-v1`); returns
+//     { ok, pending?, reason? } — the item leaves the pocket only
+//     when the server confirms the send. mailNotice/mailNoticeSeq
+//     are the same channel for send news (timeout, unknown code,
+//     full inbox) — see the decor channel above. The panel also
+//     shows the player's own mailbox code (mailboxCode) and where
+//     their mailbox is (mailboxRoomName).
 //   onOpenPuzzle() — close this panel and open the puzzle board
 //   getBadges() — () => [{ questId, emoji, title, description,
 //     completedAt, completedLabel }] (QuestManager.getCompletions,
@@ -57,6 +65,19 @@ const REASON_TEXT = {
   'not-hat': 'Only the Santa hat goes on the cat.',
   'not-near-cat': 'Walk up to the cat to put the hat on her.',
   'santa-hat-no-drop': 'The Santa hat belongs on the cat — put it on her instead of dropping it.',
+  // Mailbox v1 (`sq-mailbox-v1`): the key can never be dropped
+  // (dropping it would lock you out of your own mail); puzzle
+  // pieces and the Santa hat can never be sent (round-scoped /
+  // one-per-room server state). The last three arrive via the mail
+  // notice channel too (MailSystem._sendReasonText) — they are
+  // listed here so a direct send path shows the same words.
+  'mailbox-key-no-drop': 'You can’t drop your mailbox key — you’d lock yourself out of your own mail.',
+  'not-sendable': 'That can’t be sent by mail — puzzle pieces, the Santa hat and your mailbox key stay with you.',
+  'bad-code': 'That doesn’t look like a mailbox code — it’s 5 letters.',
+  'unknown-code': 'No mailbox with that code — check it and try again.',
+  'self-send': 'That’s your own code — send it to a friend instead.',
+  'inbox-full': 'Their mailbox is full — try again later.',
+  'rate-limited': 'You’re sending too fast — try again in a bit.',
   'room-full': 'This room is full of decorations — pick one up first.',
   'not-yours': 'That decoration belongs to someone else — only they can move it.',
   // Decoration Shop v1.1 (`sq-dec-shop-v1-1`): placing (or taking
@@ -69,7 +90,7 @@ const REASON_TEXT = {
 };
 
 export default function InventoryPanel({
-  getState, onUse, onDrop, onDispose, onBuyBag, onMakeFlyer, onPinFlyer, onPlaceDecoration, onPutHatOnCat, onOpenPuzzle, getBadges, onClose,
+  getState, onUse, onDrop, onDispose, onBuyBag, onMakeFlyer, onPinFlyer, onPlaceDecoration, onPutHatOnCat, onSendMail, onOpenPuzzle, getBadges, onClose,
 }) {
   const [state, setState] = useState(() => {
     try { return getState ? getState() : null; } catch { return null; }
@@ -92,10 +113,17 @@ export default function InventoryPanel({
   const lastDecorNoticeSeqRef = useRef(0);
   // Santa Hat v1 (`sq-santa-hat-v1`): same channel for hat news.
   const lastHatNoticeSeqRef = useRef(0);
+  // Mailbox v1 (`sq-mailbox-v1`): same channel for mail news (a
+  // send that timed out, an unknown code, a full inbox).
+  const lastMailNoticeSeqRef = useRef(0);
   const [reader, setReader] = useState(null); // item being read, or null
   const [flyerTitle, setFlyerTitle] = useState('');
   const [flyerText, setFlyerText] = useState('');
   const [showFlyerForm, setShowFlyerForm] = useState(false);
+  // Mailbox v1 (`sq-mailbox-v1`): which item is being sent, and the
+  // recipient's code typed so far.
+  const [sendTarget, setSendTarget] = useState(null);
+  const [sendCode, setSendCode] = useState('');
 
   useEffect(() => {
     const t = setInterval(() => {
@@ -118,6 +146,15 @@ export default function InventoryPanel({
             && next.hatNoticeSeq !== lastHatNoticeSeqRef.current) {
             lastHatNoticeSeqRef.current = next.hatNoticeSeq;
             if (next.hatNotice) setNotice(next.hatNotice);
+          }
+          // Mailbox v1: same channel for mail news (a send that
+          // timed out, an unknown code, a full inbox, or a send
+          // that landed — the item leaving the pocket is visible
+          // in the list, but the words confirm it went through).
+          if (typeof next.mailNoticeSeq === 'number'
+            && next.mailNoticeSeq !== lastMailNoticeSeqRef.current) {
+            lastMailNoticeSeqRef.current = next.mailNoticeSeq;
+            if (next.mailNotice) setNotice(next.mailNotice);
           }
         }
       } catch {}
@@ -189,6 +226,19 @@ export default function InventoryPanel({
           {state.count}/{state.capacity} items · 🪙 {state.coins} coins
           {state.full ? ' · Pocket full!' : ''}
         </div>
+        {/* Mailbox v1 (`sq-mailbox-v1`): your own mailbox code, so
+            you can share it with a friend in the room — it is a
+            game number, it means nothing in the real world. The
+            line also names where your mailbox is (your nearest
+            park, or the nearest public place when no park is
+            close) and says when you have mail waiting. */}
+        {state.mailboxCode && (
+          <div style={{ fontSize: 13, marginTop: 4, color: '#3d6a8a' }}>
+            📬 My mailbox code: <b style={{ letterSpacing: 2 }}>{state.mailboxCode}</b>
+            {state.mailboxRoomName ? ` · Your mailbox is at ${state.mailboxRoomName}` : ''}
+            {state.mailUnread > 0 ? ` · You’ve got mail (${state.mailUnread})!` : ''}
+          </div>
+        )}
 
         <div style={{ display: 'flex', gap: 6, marginTop: 12 }}>
           <button
@@ -397,7 +447,69 @@ export default function InventoryPanel({
                           Drop
                         </button>
                       )}
+                      {/* Mailbox v1 (`sq-mailbox-v1`): send this to a
+                          friend's mailbox — they pick it up at their
+                          nearest park. Puzzle pieces and the Santa
+                          hat can't be sent (round-scoped /
+                          one-per-room server state), and the mailbox
+                          key can't be sent either (it's the key to
+                          your own mail). */}
+                      {item.type !== 'puzzle-piece' && item.type !== 'santa-hat' && item.type !== 'mailbox-key' && sendTarget?.id !== item.id && (
+                        <button
+                          onClick={() => { setSendTarget(item); setSendCode(''); setNotice(''); }}
+                          title="Send this to a friend's mailbox — type their 5-letter mailbox code. It leaves your pocket once their mailbox confirms it"
+                          style={btnStyle}
+                        >
+                          Send ✉️
+                        </button>
+                      )}
                     </div>
+                    {sendTarget?.id === item.id && (
+                      <div style={{
+                        marginTop: 8, padding: 10, borderRadius: 8,
+                        background: '#eff6ff', border: '1px solid #93c5fd',
+                      }}>
+                        <div style={{ fontWeight: 'bold', fontSize: 13 }}>✉️ Send to a mailbox</div>
+                        <div style={{ fontSize: 12.5, color: '#3d6a8a', marginTop: 2 }}>
+                          Type their 5-letter mailbox code — a game
+                          code, nothing real. It leaves your pocket
+                          once their mailbox confirms it. Sending is free.
+                        </div>
+                        <input
+                          value={sendCode}
+                          onChange={(e) => setSendCode(e.target.value.toUpperCase().replace(/[^ABCDEFGHJKMNPQRSTUVWXYZ23456789]/g, '').slice(0, 5))}
+                          placeholder="Mailbox code (5 letters)"
+                          maxLength={5}
+                          style={{ ...inputStyle, letterSpacing: 2, textTransform: 'uppercase' }}
+                        />
+                        <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                          <button
+                            onClick={() => {
+                              const ok = run(
+                                () => onSendMail && onSendMail(item.id, sendCode),
+                                '📬 Sending it…',
+                              );
+                              if (ok) { setSendTarget(null); setSendCode(''); }
+                            }}
+                            disabled={sendCode.trim().length !== 5}
+                            title={sendCode.trim().length === 5 ? 'Send this to their mailbox' : 'Type all 5 letters of their mailbox code first'}
+                            style={{
+                              ...btnStyle,
+                              opacity: sendCode.trim().length === 5 ? 1 : 0.55,
+                              cursor: sendCode.trim().length === 5 ? 'pointer' : 'not-allowed',
+                            }}
+                          >
+                            Send ✉️
+                          </button>
+                          <button
+                            onClick={() => { setSendTarget(null); setSendCode(''); setNotice(''); }}
+                            style={{ ...btnStyle, background: 'transparent' }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
                     {item.type === 'puzzle-piece' && (
                       <div style={{ fontSize: 12, color: '#92400e', marginTop: 6 }}>
                         Placing it on the puzzle board frees this slot.

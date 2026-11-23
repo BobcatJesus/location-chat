@@ -80,6 +80,12 @@ export const ITEM_TYPES = {
   // Santa Hat v1 (`sq-santa-hat-v1`): one hat, hidden behind the
   // Christmas tree in Agora. Found -> pocket -> put on the cafe cat.
   SANTA_HAT: 'santa-hat',
+  // Mailbox v1 (`sq-mailbox-v1`): the key to your mailbox at the
+  // park. Auto-granted (see ensureMailboxKey) — one per player.
+  // It takes a pocket slot, cannot be dropped or sent (dropping or
+  // sending it would lock you out of your own mail), and can be
+  // left at home (home storage) until you need it.
+  MAILBOX_KEY: 'mailbox-key',
 };
 
 // label / emoji / one-line blurb per type. `readable` items open a
@@ -137,6 +143,14 @@ export const ITEM_DEFS = {
   [ITEM_TYPES.SANTA_HAT]: {
     emoji: '🎅', label: 'Santa hat',
     blurb: 'A Santa hat, found behind the Christmas tree. It belongs on the cat — until it slips off again.',
+    readable: false, usable: false, disposable: false,
+  },
+  // Mailbox v1 (`sq-mailbox-v1`): the key to your mailbox at the
+  // park. It opens your mailbox — keep it in your pocket when you
+  // go to collect mail, or leave it at home until you need it.
+  [ITEM_TYPES.MAILBOX_KEY]: {
+    emoji: '🔑', label: 'Mailbox key',
+    blurb: 'The key to your mailbox at the park. Keep it in your pocket to open your mail — or leave it at home until you need it.',
     readable: false, usable: false, disposable: false,
   },
 };
@@ -487,6 +501,35 @@ export function buyDecoration(kind, inv = getInventory()) {
     return { ok: false, reason: res.reason || 'error' };
   }
   return { ok: true, item: res.item, price: def.price };
+}
+
+// --- mailbox key (Mailbox v1, `sq-mailbox-v1`) ---------------------------
+// The key is auto-granted: every player gets exactly one. The id is
+// FIXED ('mailbox-key') so the grant is idempotent even across tabs
+// — a second grant sees the same id already in the pocket or at
+// home and does nothing, so the key can never duplicate.
+//   - In the pocket already → nothing to do.
+//   - Stored at home → nothing to do (go get it when you need it).
+//   - Pocket full → the grant fails ('inventory-full'); the next
+//     refresh retries once there is room — the key is never lost,
+//     it just waits.
+// Returns { ok, reason? } — reason is 'already-in-pocket',
+// 'stored-at-home', 'granted', or 'inventory-full'.
+export const MAILBOX_KEY_ITEM_ID = 'mailbox-key';
+
+export function hasMailboxKey(inv = getInventory()) {
+  return (inv.items || []).some((it) => it.type === ITEM_TYPES.MAILBOX_KEY);
+}
+
+export function ensureMailboxKey(homeItems = []) {
+  const inv = getInventory();
+  if (hasMailboxKey(inv)) return { ok: true, reason: 'already-in-pocket' };
+  if (Array.isArray(homeItems) && homeItems.some((it) => it.type === ITEM_TYPES.MAILBOX_KEY)) {
+    return { ok: true, reason: 'stored-at-home' };
+  }
+  const res = addItem({ id: MAILBOX_KEY_ITEM_ID, type: ITEM_TYPES.MAILBOX_KEY }, inv);
+  if (!res.ok) return { ok: false, reason: res.reason || 'error' };
+  return { ok: true, reason: 'granted' };
 }
 
 // --- one-time seeded finds --------------------------------------------------

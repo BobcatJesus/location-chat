@@ -153,6 +153,9 @@ export const HOME_STORAGE_MAX_ITEMS = 200;
 // Item types that can be stored at home. Mirrors ITEM_TYPES in
 // items.js (kept as its own list so this module stays importable
 // from the server without pulling in CoinWallet).
+// Mailbox v1 (`sq-mailbox-v1`): the mailbox key IS storable — the
+// user leaves it at home until they need it. (Decorations and the
+// Santa hat are not in this list: they are room items, not storage.)
 export const HOME_ITEM_TYPES = [
   'trash',
   'flyer',
@@ -161,6 +164,7 @@ export const HOME_ITEM_TYPES = [
   'food',
   'cigarettes',
   'puzzle-piece',
+  'mailbox-key',
 ];
 
 const HOME_ITEM_TYPE_SET = new Set(HOME_ITEM_TYPES);

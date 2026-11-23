@@ -125,12 +125,27 @@ export class ItemsSystem {
     // for the pocket panel's own notice line.
     let hatNotice = { text: '', seq: 0 };
     try { hatNotice = this.scene?.santaHatSystem?.getHatNotice?.() || hatNotice; } catch {}
+    // Mailbox v1 (`sq-mailbox-v1`): the mailbox panel + the pocket
+    // button dot poll these — the mailbox code, the room the
+    // mailbox lives in, whether the key is in the pocket, and the
+    // send failure reason (the pocket panel shows it).
+    let mail = null;
+    try { mail = this.scene?.mailSystem?.getState?.() || null; } catch {}
     return {
       ...state,
       decorNotice: decorNotice.text || '',
       decorNoticeSeq: decorNotice.seq || 0,
       hatNotice: hatNotice.text || '',
       hatNoticeSeq: hatNotice.seq || 0,
+      mailboxCode: mail?.mailboxCode || '',
+      mailPackages: mail?.packages || [],
+      mailUnread: mail?.unread || 0,
+      mailboxRoomId: mail?.mailboxRoomId || '',
+      mailboxRoomName: mail?.mailboxRoomName || '',
+      isMailboxRoom: Boolean(mail?.isMailboxRoom),
+      hasMailboxKey: Boolean(mail?.hasKey),
+      mailNotice: mail?.mailNotice || '',
+      mailNoticeSeq: mail?.mailNoticeSeq || 0,
       roomId: this.scene?.roomId || '',
       // Drop on the home floor v1: the panel shows a different
       // success line when Drop puts a persisted item on the home
@@ -440,9 +455,32 @@ export class ItemsSystem {
    * state, and dropping it as session litter would strand it — the
    * server would say "carried" while the hat sat somewhere nobody
    * can see once the litter despawns. */
+  /** Send a pocket item to the player with this mailbox code
+   *  (Mailbox v1, `sq-mailbox-v1`): delegated to MailSystem; the
+   *  item leaves the pocket only on the server's confirm. */
+  sendMail(itemId, code) {
+    return this.scene?.mailSystem?.sendMail?.(itemId, code)
+      ?? { ok: false, reason: 'not-available' };
+  }
+
+  /** @deprecated No longer used: MailSystem.onSendResult removes
+   *  the item only when the server confirms the send (Mailbox v1,
+   *  `sq-mailbox-v1`) — removing it eagerly would lose the gift
+   *  when the send is refused. Kept for reference so nobody
+   *  re-invents it. */
+  confirmSentMail(itemId) {
+    removeItem(itemId);
+  }
+
   dropItem(id) {
     const item = getItem(id);
     if (!item) return { ok: false, reason: 'not-found' };
+    // Mailbox v1 (`sq-mailbox-v1`): the key can never be dropped —
+    // dropping it would lock you out of your own mail. The reason
+    // text is shown by the pocket panel's own notice line.
+    if (item.type === ITEM_TYPES.MAILBOX_KEY) {
+      return { ok: false, reason: 'mailbox-key-no-drop', message: 'You can’t drop your mailbox key — you’d lock yourself out of your own mail.' };
+    }
     if (item.type === ITEM_TYPES.PUZZLE_PIECE) {
       return { ok: false, reason: 'puzzle-piece-no-drop' };
     }
