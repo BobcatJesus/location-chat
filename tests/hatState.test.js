@@ -4,6 +4,7 @@
 // timing; release safety valve; serialize / parse.
 
 import { describe, it, expect } from 'vitest';
+// sq-santa-hat-v1.2: slip-off widened from 4 minutes to 30 minutes.
 import {
   HAT_MARKER_V1,
   HAT_MARKER_V11,
@@ -32,9 +33,9 @@ describe('hat constants', () => {
     expect(HAT_MARKER_V11).toBe('sq-santa-hat-v1-1');
   });
 
-  it('pays 3 coins, slips off after 4 minutes, takes 3 search clicks', () => {
+  it('pays 3 coins, slips off after 30 minutes, takes 3 search clicks', () => {
     expect(HAT_REWARD_COINS).toBe(3);
-    expect(HAT_SLIP_MS).toBe(4 * 60 * 1000);
+    expect(HAT_SLIP_MS).toBe(30 * 60 * 1000);
     expect(HAT_SEARCH_CLICKS).toBe(3);
     expect(HAT_SEARCH_RANGE).toBe(140);
   });

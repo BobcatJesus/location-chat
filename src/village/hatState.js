@@ -9,7 +9,7 @@
 // it by clicking behind the tree a few times (hidden-search, same
 // pattern as puzzle pieces), it goes into your pocket, and you can
 // put it on the cafe cat — she wears it, everyone in the room sees
-// it. After a few minutes it SLIPS OFF and lands on the ground
+// it. After 30 minutes it SLIPS OFF and lands on the ground
 // nearby, visible on the floor; anyone can pick it up and put it
 // back on her. Placing it on the cat pays +3 coins the FIRST time
 // each player does it (once ever per player — later placements are
@@ -25,7 +25,8 @@
 export const HAT_MARKER_V1 = 'sq-santa-hat-v1';
 export const HAT_MARKER_V11 = 'sq-santa-hat-v1-1'; // v1.1: hiding spot moved to the foot of the tree
 export const HAT_REWARD_COINS = 3; // a few coins, first placement only
-export const HAT_SLIP_MS = 4 * 60 * 1000; // 4 minutes on the cat, then it slips off
+export const HAT_SLIP_MS = 30 * 60 * 1000; // 30 minutes on the cat, then it slips off
+// sq-santa-hat-v1.2: slip-off widened from 4 minutes to 30 minutes.
 export const HAT_SEARCH_CLICKS = 3; // clicks behind the tree to find it (puzzle pattern)
 export const HAT_SEARCH_RANGE = 140; // px the player must stand from the hiding spot
 export const HAT_GROUND_CLICK_RANGE = 44; // px a click must land from the hat on the floor
