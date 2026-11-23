@@ -46,6 +46,11 @@ import {
   serializeHatState,
 } from '../src/village/hatState.js';
 import {
+  HAT_ROOM_STATE_TABLE_SQL,
+  saveHatState,
+  loadHatState,
+} from './hatPersist.js';
+import {
   NOTICE_BOARD_MAX_FLYERS,
   createNoticeBoardState,
   pinFlyer,
@@ -321,6 +326,11 @@ async function initDb() {
   `);
   await pool.query('CREATE INDEX IF NOT EXISTS layout_submissions_status ON layout_submissions (status)');
   console.log('✅ Postgres layout_submissions table ready');
+  // Santa Hat persistence (`sq-hat-persist-v1`): one row per room
+  // holding the serialized hat state, so a server restart restores
+  // the hat instead of hiding it behind the tree again.
+  await pool.query(HAT_ROOM_STATE_TABLE_SQL);
+  console.log('✅ Postgres hat_room_state table ready');
   await authService.init();
 }
 
@@ -730,19 +740,63 @@ function treeRoom(roomId) {
   if (!treeRooms[roomId]) treeRooms[roomId] = { state: createTreeState() };
   return treeRooms[roomId];
 }
-// Santa Hat (Santa Hat v1, `sq-santa-hat-v1`): ONE hat hidden
-// behind the Christmas tree in Agora. In-memory like the puzzle —
-// a server restart hides it behind the tree again. hatRooms[roomId]
-// = { state }. The server validates every move (one hat only, room
-// membership, rate limits); it does not verify the 3 search clicks
-// or the walk to the cat — same trust level as the puzzle's
-// hidden-search clicks. The slip-off runs on the server's clock
-// (slipAt in the state): the first client to notice reports it,
-// with its own local cat position for where the hat lands.
+// Santa Hat (Santa Hat v1, `sq-santa-hat-v1`; persistence
+// `sq-hat-persist-v1`): ONE hat hidden behind the Christmas tree
+// in Agora. The state is persisted to Postgres (hat_room_state) on
+// every mutation and loaded back lazily, so a server restart
+// restores the hat in whatever state it was in instead of hiding
+// it behind the tree again. Without a DB the hat stays in-memory
+// only, exactly as before. hatRooms[roomId] = { state }. The
+// server validates every move (one hat only, room membership, rate
+// limits); it does not verify the 3 search clicks or the walk to
+// the cat — same trust level as the puzzle's hidden-search clicks.
+// The slip-off runs on the server's clock (slipAt in the state):
+// the first client to notice reports it, with its own local cat
+// position for where the hat lands.
 const hatRooms = {};
+const hatRoomsLoaded = new Set(); // roomIds whose DB row has been read (or attempted)
+const hatLoadPromises = {}; // roomId -> in-flight load promise
 function hatRoom(roomId) {
   if (!hatRooms[roomId]) hatRooms[roomId] = { state: createHatState() };
   return hatRooms[roomId];
+}
+// Save one room's hat state, never crashing the caller: a failed
+// save warns and the live broadcast still goes out (the in-memory
+// state is the live truth; the next mutation retries the save).
+async function persistHat(roomId, state) {
+  try {
+    await saveHatState(pool, roomId, state);
+  } catch (e) {
+    console.warn('⚠️ hat persist failed:', e && e.message);
+  }
+}
+// Load a room's hat from Postgres the first time it is touched.
+// Concurrent touches share one in-flight load, so a mutation can
+// never land on the default hidden state while the real row is
+// still being read. A missing row, a down DB, or a bad row all
+// leave the default hidden state in place.
+async function ensureHatLoaded(roomId) {
+  if (hatRoomsLoaded.has(roomId)) return hatRooms[roomId];
+  if (!hatLoadPromises[roomId]) {
+    hatLoadPromises[roomId] = (async () => {
+      const room = hatRoom(roomId);
+      try {
+        const loaded = await loadHatState(pool, roomId);
+        if (loaded) {
+          room.state = loaded.state;
+          // A slip that came due while the server was down was
+          // repaired to the ground on load — write the repair back
+          // so the row stays truthful.
+          if (loaded.repaired) await saveHatState(pool, roomId, room.state);
+        }
+      } catch (e) {
+        console.warn('⚠️ hat load failed:', e && e.message);
+      }
+      hatRoomsLoaded.add(roomId);
+      return room;
+    })();
+  }
+  return hatLoadPromises[roomId];
 }
 // Notice board (Notice Board v1, `sq-notice-board-v1`): per-room
 // pinned flyers, Agora only. In-memory like the puzzle — a server
@@ -1851,44 +1905,50 @@ io.on('connection', (socket) => {
   // gets it (one hat per room). The hat goes into the finder's
   // pocket on the hat_state broadcast; a full pocket makes the
   // client give it straight back (hat_release).
-  socket.on('hat_find', ({ roomId } = {}) => {
+  socket.on('hat_find', async ({ roomId } = {}) => {
     if (!roomId || roomId !== 'agora-houston') return;
     if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
     const userId = socketUserMap[socket.id] || socket.id;
     const rate = checkRateLimit(userId);
     if (!rate.allowed) return;
+    await ensureHatLoaded(roomId);
     const room = hatRoom(roomId);
     const res = findHat(room.state, userId);
     if (!res.ok) return;
+    await persistHat(roomId, room.state);
     io.to(roomId).emit('hat_state', serializeHatState(room.state));
   });
 
   // SANTA HAT PLACE: the carrier puts the hat on the cafe cat. The
-  // server sets the slip-off time (4 minutes from now); the hat
+  // server sets the slip-off time (30 minutes from now); the hat
   // leaves the carrier's pocket on the hat_state broadcast.
-  socket.on('hat_place', ({ roomId } = {}) => {
+  socket.on('hat_place', async ({ roomId } = {}) => {
     if (!roomId || roomId !== 'agora-houston') return;
     if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
     const userId = socketUserMap[socket.id] || socket.id;
     const rate = checkRateLimit(userId);
     if (!rate.allowed) return;
+    await ensureHatLoaded(roomId);
     const room = hatRoom(roomId);
     const res = placeHat(room.state, userId);
     if (!res.ok) return;
+    await persistHat(roomId, room.state);
     io.to(roomId).emit('hat_state', serializeHatState(room.state));
   });
 
   // SANTA HAT PICKUP: anyone picks the hat up off the ground. The
   // hat goes into the picker's pocket on the hat_state broadcast.
-  socket.on('hat_pickup', ({ roomId } = {}) => {
+  socket.on('hat_pickup', async ({ roomId } = {}) => {
     if (!roomId || roomId !== 'agora-houston') return;
     if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
     const userId = socketUserMap[socket.id] || socket.id;
     const rate = checkRateLimit(userId);
     if (!rate.allowed) return;
+    await ensureHatLoaded(roomId);
     const room = hatRoom(roomId);
     const res = pickupHat(room.state, userId);
     if (!res.ok) return;
+    await persistHat(roomId, room.state);
     io.to(roomId).emit('hat_state', serializeHatState(room.state));
   });
 
@@ -1897,15 +1957,17 @@ io.on('connection', (socket) => {
   // position for where the hat lands — the server only accepts the
   // transition once the slip time has come, so a client cannot
   // knock it off early.
-  socket.on('hat_slip', ({ roomId, x, y } = {}) => {
+  socket.on('hat_slip', async ({ roomId, x, y } = {}) => {
     if (!roomId || roomId !== 'agora-houston') return;
     if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
     const userId = socketUserMap[socket.id] || socket.id;
     const rate = checkRateLimit(userId);
     if (!rate.allowed) return;
+    await ensureHatLoaded(roomId);
     const room = hatRoom(roomId);
     const res = slipHat(room.state, x, y);
     if (!res.ok) return;
+    await persistHat(roomId, room.state);
     io.to(roomId).emit('hat_state', serializeHatState(room.state));
   });
 
@@ -1913,22 +1975,25 @@ io.on('connection', (socket) => {
   // Safety valve for a client whose pocket filled in the instant
   // between check and confirm — the hat goes back to hidden
   // instead of vanishing.
-  socket.on('hat_release', ({ roomId } = {}) => {
+  socket.on('hat_release', async ({ roomId } = {}) => {
     if (!roomId || roomId !== 'agora-houston') return;
     if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
     const userId = socketUserMap[socket.id] || socket.id;
     const rate = checkRateLimit(userId);
     if (!rate.allowed) return;
+    await ensureHatLoaded(roomId);
     const room = hatRoom(roomId);
     const res = releaseHat(room.state, userId);
     if (!res.ok) return;
+    await persistHat(roomId, room.state);
     io.to(roomId).emit('hat_state', serializeHatState(room.state));
   });
 
   // SANTA HAT STATE: the room's hat, sent when you join (or ask).
-  socket.on('get_hat', ({ roomId } = {}) => {
+  socket.on('get_hat', async ({ roomId } = {}) => {
     if (!roomId || roomId !== 'agora-houston') return;
     if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    await ensureHatLoaded(roomId);
     socket.emit('hat_state', serializeHatState(hatRoom(roomId).state));
   });
 
