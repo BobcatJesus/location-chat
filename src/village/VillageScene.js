@@ -12,7 +12,7 @@ import { NoticeBoardSystem } from './NoticeBoardSystem.js';
 import { MailSystem } from './MailSystem.js';
 import { DecorSystem } from './DecorSystem.js';
 import { HomeStorageSystem } from './HomeStorageSystem.js';
-import { hasBag as inventoryHasBag, INVENTORY_FULL_MESSAGE } from './items.js';
+import { hasBag as inventoryHasBag, INVENTORY_FULL_MESSAGE, getInventory, findFoodItem, spendFoodCharge, NO_FOOD_MESSAGE } from './items.js';
 import { badgeListFrom, normalizeBadgeMap, formatBadgeDate } from './badges.js';
 import { io } from 'socket.io-client';
 import { RoomLayout } from './RoomLayout.js';
@@ -1943,11 +1943,23 @@ export class VillageScene extends Phaser.Scene {
     }
   }
 
-  _tryFeedDucks() {
-    if (!this.duckPond || this._feedCooldownMs > 0) return;
-    if (!this.player) return;
+  // Feed the Ducks v2 (`sq-feed-ducks-v2`): feeding costs food — one
+  // charge from a bits-of-food item (3 feeds per item). The pond
+  // prompt stays visible with no food so players discover feeding;
+  // pressing E then just says so (no crumb, no broadcast, no quest
+  // step). preferredFoodId is the item the player tapped Use on (the
+  // pocket path); the E-key path passes none and spends from the food
+  // with the fewest charges left. Returns true when a feed happened.
+  _tryFeedDucks(preferredFoodId = null) {
+    if (!this.duckPond || this._feedCooldownMs > 0) return false;
+    if (!this.player) return false;
     const pond = this.duckPond.nearestFeedablePond(this.player.gx, this.player.gy);
-    if (!pond) return;
+    if (!pond) return false;
+    // The gate: no food in the pocket, no feed.
+    if (!findFoodItem(getInventory(), preferredFoodId)) {
+      try { this.onSystemNotice?.(NO_FOOD_MESSAGE); } catch {}
+      return false;
+    }
     // Toss the crumb toward the pond center from the player's position.
     const cx = pond.x + pond.w / 2;
     const cy = pond.y + pond.h / 2;
@@ -1958,6 +1970,9 @@ export class VillageScene extends Phaser.Scene {
     const fx = this.player.gx + (dx / d) * toss;
     const fy = this.player.gy + (dy / d) * toss;
     if (this.duckPond.feed(fx, fy)) {
+      // One charge, not the whole item. The gate above guarantees a
+      // food item exists, so this cannot fail in normal play.
+      spendFoodCharge(preferredFoodId);
       this._feedCooldownMs = 2500;
       this.socket?.emit('feed_ducks', { roomId: this.roomId, x: Math.round(fx), y: Math.round(fy) });
       // Feeding tosses crumbs to the pond ducks, and pond ducks don't
@@ -1965,7 +1980,9 @@ export class VillageScene extends Phaser.Scene {
       // a quest step. Only petting a roaming duck does. It DOES count
       // as step 2 of the Bartender's Errand (via recordGlobalEvent).
       this.questManager?.recordEvent('ducks-fed');
+      return true;
     }
+    return false;
   }
 
   /** Decoration Shop v1.1 (`sq-dec-shop-v1-1`): true once the server

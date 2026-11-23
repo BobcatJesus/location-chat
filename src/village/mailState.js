@@ -167,7 +167,7 @@ export function isSendableItemType(type) {
 // --- packages -------------------------------------------------------------
 /** A mailed package: { id, fromUserId, fromName, item, sentAt }.
  *  `item` is the stored-item shape the inventory keeps
- *  ({ id, type, label, blurb, text, title, decorKind }). */
+ *  ({ id, type, label, blurb, text, title, decorKind, usesLeft }). */
 export function createMailState() {
   return {
     packages: [], // oldest first
@@ -193,6 +193,14 @@ export function cleanMailItem(raw = {}) {
     text: typeof r.text === 'string' ? r.text : null,
     title: typeof r.title === 'string' ? r.title : null,
     decorKind: typeof r.decorKind === 'string' ? r.decorKind : null,
+    // Feed the Ducks v2 (`sq-feed-ducks-v2`): a mailed bits of food
+    // keeps its remaining feeds (clamped to 3 — FOOD_FEEDS_PER_ITEM
+    // in items.js, inlined here so this module stays importable by
+    // the server without pulling items.js in). Food without a usable
+    // count arrives full (addItem defaults it to 3 on collect).
+    usesLeft: type === 'food' && Number.isFinite(Number(r.usesLeft)) && Number(r.usesLeft) >= 1
+      ? Math.min(Math.floor(Number(r.usesLeft)), 3)
+      : null,
     pieceId: null, // pieces never travel by mail (see above)
     createdAt: Number.isFinite(Number(r.createdAt)) && Number(r.createdAt) > 0
       ? Number(r.createdAt)

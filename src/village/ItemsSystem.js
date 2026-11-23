@@ -59,6 +59,7 @@ import {
   addItem,
   removeItem,
   getItem,
+  spendFoodCharge,
   getInventoryState,
   buyBag,
   createFlyer,
@@ -420,7 +421,9 @@ export class ItemsSystem {
   // ---- inventory actions (called by the DOM panel) -----------------------
 
   /** Use an item: food feeds the ducks at a pond or the cafe cat.
-   * Consumes one food. Anywhere else, it explains itself. */
+   * Feed the Ducks v2 (`sq-feed-ducks-v2`): one charge per feed
+   * (3 per item), not the whole item — _tryFeedDucks spends the duck
+   * charge itself. Anywhere else, it explains itself. */
   useItem(id) {
     const item = getItem(id);
     if (!item) return { ok: false, reason: 'not-found' };
@@ -433,17 +436,23 @@ export class ItemsSystem {
     // Ducks first: standing by a pond, toss the food to them.
     const pond = this.scene?.duckPond?.nearestFeedablePond?.(player.gx, player.gy);
     if (pond && (this.scene._feedCooldownMs || 0) <= 0) {
-      try { this.scene._tryFeedDucks?.(); } catch {}
-      removeItem(id);
-      try { this.scene?.onSystemNotice?.('🦆 You toss the food to the ducks!'); } catch {}
-      return { ok: true, used: 'ducks' };
+      // _tryFeedDucks spends one charge from THIS item (the one the
+      // player tapped) and returns true only when a feed happened.
+      if (this.scene._tryFeedDucks?.(id)) {
+        try { this.scene?.onSystemNotice?.('🦆 You toss the food to the ducks!'); } catch {}
+        return { ok: true, used: 'ducks' };
+      }
     }
     // Then the cafe cat: a treat counts as a pet (same +1 coin and
     // quest step as petting — CafeCat owns the cooldown/asleep rules).
     const cat = this.scene?.cafeCat?.nearestCat?.(player.gx, player.gy);
     if (cat) {
       try { this.scene.cafeCat.petCat(true); } catch {}
-      removeItem(id);
+      // One charge from the tapped item (not the whole item). The
+      // pet-cooldown edge is pre-existing: petCat can no-op inside
+      // its 5s cooldown, and the charge is spent anyway — it now
+      // costs 1 feed instead of a whole item.
+      spendFoodCharge(id);
       try { this.scene?.onSystemNotice?.('🐱 The cat gobbles up the treat!'); } catch {}
       return { ok: true, used: 'cat' };
     }

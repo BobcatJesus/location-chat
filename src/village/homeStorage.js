@@ -454,6 +454,11 @@ export function normalizeFloorItems(input) {
       createdAt: Number.isFinite(Number(raw.createdAt)) && Number(raw.createdAt) > 0
         ? Number(raw.createdAt)
         : null,
+      // Feed the Ducks v2 (`sq-feed-ducks-v2`): food dropped on the
+      // floor keeps its remaining feeds, same as the chest store.
+      usesLeft: type === 'food' && Number.isFinite(Number(raw.usesLeft)) && Number(raw.usesLeft) >= 1
+        ? Math.min(Math.floor(Number(raw.usesLeft)), 3)
+        : null,
       x: Math.max(0, Math.min(HOME_FLOOR_W, x)),
       y: Math.max(0, Math.min(HOME_FLOOR_H, y)),
     });
@@ -506,6 +511,14 @@ export function normalizeHomeItems(input) {
       text: typeof raw.text === 'string' ? raw.text : null,
       title: typeof raw.title === 'string' ? raw.title : null,
       pieceId: typeof raw.pieceId === 'number' ? raw.pieceId : null,
+      // Feed the Ducks v2 (`sq-feed-ducks-v2`): stored food keeps its
+      // remaining feeds (clamped to 3 — FOOD_FEEDS_PER_ITEM in
+      // items.js, inlined so this module stays server-importable).
+      // Food without a usable count is full when taken back out
+      // (addItem defaults it to 3).
+      usesLeft: type === 'food' && Number.isFinite(Number(raw.usesLeft)) && Number(raw.usesLeft) >= 1
+        ? Math.min(Math.floor(Number(raw.usesLeft)), 3)
+        : null,
       createdAt: Number.isFinite(Number(raw.createdAt)) && Number(raw.createdAt) > 0
         ? Number(raw.createdAt)
         : null,

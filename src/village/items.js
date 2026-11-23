@@ -56,6 +56,13 @@ export const POCKET_CAPACITY = 3;
 export const BAG_CAPACITY = 10;
 export const BAG_PRICE_COINS = 20;
 export const FLYER_CREATE_COST = 5;
+// Feed the Ducks v2 (`sq-feed-ducks-v2`): one bits of food lasts
+// this many feeds (ducks or cat) before it runs out.
+export const FEED_DUCKS_V2_MARKER = 'sq-feed-ducks-v2';
+// Exact approved wording for the no-food refusal (scene toast +
+// pocket panel reason text).
+export const FOOD_FEEDS_PER_ITEM = 3;
+export const NO_FOOD_MESSAGE = 'You need bits of food to feed the ducks';
 // Hidden things take the same 3 clicks as puzzle v1.2 pieces.
 export const ITEM_SEARCH_CLICKS = 3;
 export const ITEM_SEARCH_RANGE = 140; // px from hiding furniture
@@ -308,6 +315,9 @@ function describeItem(item) {
     pieceId: typeof item.pieceId === 'number' ? item.pieceId : null,
     decorKind: item?.type === ITEM_TYPES.DECORATION ? (item.decorKind || null) : null,
     decorPrice: kindDef ? kindDef.price : null,
+    // Feed the Ducks v2 (`sq-feed-ducks-v2`): food shows its remaining
+    // feeds; legacy food without a usesLeft field counts as full (3).
+    usesLeft: item?.type === ITEM_TYPES.FOOD ? foodUsesLeft(item) : null,
     emoji: kindDef?.emoji || def.emoji || '📦',
     label: item.label || kindDef?.label || def.label || 'Item',
     blurb: item.blurb || kindDef?.blurb || def.blurb || '',
@@ -360,6 +370,14 @@ export function addItem(item, inv = getInventory()) {
     // Decoration Shop v1: which decoration this pocket item is
     // (ornament / lights / snowman / tree / santa).
     decorKind: typeof item.decorKind === 'string' ? item.decorKind : null,
+    // Feed the Ducks v2 (`sq-feed-ducks-v2`): food carries its
+    // remaining feeds; a fresh item is full (3), and a supplied count
+    // is clamped to 3. Non-food keeps null.
+    usesLeft: item.type === ITEM_TYPES.FOOD
+      ? (Number.isFinite(Number(item.usesLeft)) && Number(item.usesLeft) >= 1
+        ? Math.min(Math.floor(Number(item.usesLeft)), FOOD_FEEDS_PER_ITEM)
+        : FOOD_FEEDS_PER_ITEM)
+      : null,
     createdAt: Date.now(),
   };
   inv.items = [...inv.items, stored];
@@ -379,6 +397,60 @@ export function removeItem(id, inv = getInventory()) {
 export function getItem(id, inv = getInventory()) {
   const found = inv.items.find((it) => it.id === id);
   return found ? describeItem(found) : null;
+}
+
+// --- food charges (Feed the Ducks v2, `sq-feed-ducks-v2`) -----------------
+// A bits of food is good for FOOD_FEEDS_PER_ITEM feeds (ducks or cat),
+// not one: each feed spends ONE charge, and the item leaves the pocket
+// when the last charge is spent. The gate is by FOOD TYPE, not a
+// specific item id — food from the future shop feeds ducks too.
+// Food granted before this kit has no usesLeft field: it counts as
+// full (3), never stranded.
+
+/** Remaining feeds on a food item (null for non-food). Legacy food
+ *  without a usesLeft field counts as full. */
+export function foodUsesLeft(item) {
+  if (!item || item.type !== ITEM_TYPES.FOOD) return null;
+  const n = Number(item?.usesLeft);
+  if (!Number.isFinite(n) || n < 1) return FOOD_FEEDS_PER_ITEM;
+  return Math.min(Math.floor(n), FOOD_FEEDS_PER_ITEM);
+}
+
+/** The food item a feed should spend from. A preferred id (the item
+ *  the player tapped Use on) wins; otherwise the food with the
+ *  FEWEST charges left goes first, so a nearly-empty item is finished
+ *  before a fresh one is opened. Returns the raw stored item or null. */
+export function findFoodItem(inv = getInventory(), preferredId = null) {
+  const foods = (inv.items || []).filter((it) => it?.type === ITEM_TYPES.FOOD);
+  if (preferredId) {
+    const pref = foods.find((it) => it.id === preferredId);
+    if (pref) return pref;
+  }
+  let best = null;
+  for (const it of foods) {
+    if (!best || foodUsesLeft(it) < foodUsesLeft(best)) best = it;
+  }
+  return best;
+}
+
+/** Spend ONE feed from a food item — the single charge-spending
+ *  helper both entry points (E key by the pond, pocket Use button)
+ *  go through. Returns { ok, chargesLeft?, removed?, itemId?,
+ *  reason? } — reason is 'no-food' when the pocket holds no food.
+ *  At 0 charges the item leaves the pocket. */
+export function spendFoodCharge(preferredId = null, inv = getInventory()) {
+  const target = findFoodItem(inv, preferredId);
+  if (!target) return { ok: false, reason: 'no-food' };
+  const idx = inv.items.findIndex((it) => it.id === target.id);
+  if (idx < 0) return { ok: false, reason: 'no-food' };
+  const left = foodUsesLeft(target) - 1;
+  if (left <= 0) {
+    inv.items.splice(idx, 1);
+  } else {
+    inv.items[idx] = { ...inv.items[idx], usesLeft: left };
+  }
+  saveInventory(inv);
+  return { ok: true, chargesLeft: Math.max(0, left), removed: left <= 0, itemId: target.id };
 }
 
 // --- puzzle pieces in the pocket ------------------------------------------

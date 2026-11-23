@@ -60,6 +60,9 @@ import React, { useEffect, useRef, useState } from 'react';
 // naming the actual room(s) too (the static def in items.js is the
 // place-less fallback for other surfaces).
 import { mailboxRoomsLine, mailboxKeyBlurb } from './mailState.js';
+// Feed the Ducks v2 (`sq-feed-ducks-v2`): the exact no-food wording
+// for the panel's reason text.
+import { NO_FOOD_MESSAGE } from './items.js';
 
 const REASON_TEXT = {
   'inventory-full': 'Your pocket is full — use, drop, or throw something away to make room.',
@@ -68,6 +71,9 @@ const REASON_TEXT = {
   'empty-flyer': 'A flyer needs a title and some text.',
   'not-usable': 'That item has no Use action.',
   'nothing-to-feed': 'No one here to feed right now — find the ducks at a pond or the cafe cat in Agora.',
+  // Feed the Ducks v2 (`sq-feed-ducks-v2`): the E-key pond feed
+  // refuses with this when the pocket holds no food.
+  'no-food': NO_FOOD_MESSAGE,
   'cat-asleep': 'The cat is asleep — she wakes up when someone new walks in.',
   'not-near-trash-can': 'Walk to the Agora trash can to throw this away.',
   'not-trash': 'Only trash can be thrown away.',
@@ -399,6 +405,10 @@ export default function InventoryPanel({
                       {item.emoji} {item.title || item.label}
                       {item.type === 'puzzle-piece' && item.pieceId != null
                         ? ` (#${item.pieceId + 1})` : ''}
+                      {/* Feed the Ducks v2 (`sq-feed-ducks-v2`): a
+                          bits of food shows its remaining feeds. */}
+                      {item.type === 'food' && item.usesLeft != null
+                        ? ` · ${item.usesLeft} ${item.usesLeft === 1 ? 'feed' : 'feeds'} left` : ''}
                     </div>
                     <div style={{ fontSize: 12.5, color: '#3d6a8a', marginTop: 2 }}>
                       {/* Places Sync v1 (`sq-places-sync-v1`): the
