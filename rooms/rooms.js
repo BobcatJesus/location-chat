@@ -1,5 +1,9 @@
 import { isWithinRadius } from '../src/geo.js';
 import { getDistanceMeters } from '../src/geo.js';
+// Places Sync v1 (`sq-places-sync-v1`): replacing one owner's home
+// rooms with the merged list from the server. homeStorage.js
+// imports nothing from this file, so there is no cycle.
+import { isHomeRoom, homeOwnerOf } from '../src/village/homeStorage.js';
 
 // Pre-defined GPS-anchored locations
 export const ROOMS = [
@@ -313,6 +317,45 @@ export function acceptRoomInvite(room, ownerId) {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
     }
   } catch {}
+}
+
+// Places Sync v1 (`sq-places-sync-v1`): replace ONE owner's home
+// rooms in the in-memory list and in localStorage with a new list
+// (the merged list from the server, or the merged list the client
+// computed). Other rooms — community creations, invited rooms,
+// other owners' rooms — are untouched. The merged list is the sync
+// truth for this owner's places: it is what the map pins, the
+// create-option count, and the mailbox resolution all read.
+export function replaceOwnerHomeRooms(ownerKey, rooms) {
+  const key = typeof ownerKey === 'string' ? ownerKey : '';
+  const next = (Array.isArray(rooms) ? rooms : []).filter((r) => r && r.id);
+  // Keep the local record's extra fields (contributors, invitedIds,
+  // isPublic) when an id matches — the merged records are stripped
+  // wire shapes, and the incoming values win for the sync fields
+  // (name, coords, radius, kind, owner).
+  const localById = new Map();
+  for (const room of USER_CREATED_ROOMS) {
+    if (room && isHomeRoom(room.id) && homeOwnerOf(room.id) === key) {
+      localById.set(room.id, room);
+    }
+  }
+  const enriched = next.map((room) => ({ ...(localById.get(room.id) || {}), ...room }));
+  for (let i = USER_CREATED_ROOMS.length - 1; i >= 0; i -= 1) {
+    const room = USER_CREATED_ROOMS[i];
+    if (room && isHomeRoom(room.id) && homeOwnerOf(room.id) === key) {
+      USER_CREATED_ROOMS.splice(i, 1);
+    }
+  }
+  enriched.forEach((room) => {
+    if (!USER_CREATED_ROOMS.find((r) => r.id === room.id)) USER_CREATED_ROOMS.push(room);
+  });
+  try {
+    const all = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+    const kept = all.filter((room) => !(room && isHomeRoom(room.id) && homeOwnerOf(room.id) === key));
+    kept.push(...enriched);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(kept));
+  } catch {}
+  return enriched;
 }
 
 export function getAllRooms() {

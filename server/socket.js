@@ -68,6 +68,12 @@ import {
   normalizeFloorItems,
   mergeFloorItems,
 } from '../src/village/homeStorage.js';
+// Places Sync v1 (`sq-places-sync-v1`): per-player place records.
+import {
+  normalizePlaceRecord,
+  mergeServerPlaces,
+  isGuestOwnerKey,
+} from '../src/village/placesSync.js';
 import {
   MAILBOX_MARKER_V1,
   createMailState,
@@ -564,6 +570,26 @@ function setHomeFloor(userId, items) {
 /** One home_state payload for a player (chest store + floor). */
 function homeStateFor(userId) {
   return { userId, items: homeItemsFor(userId), floor: homeFloorFor(userId) };
+}
+
+// PLACES SYNC (Places Sync v1, `sq-places-sync-v1`): per-player
+// place records — userPlaces[ownerKey] = [place]. In-memory like
+// home storage: a server restart wipes the server's copy, but each
+// client keeps its own localStorage record and re-uploads it on
+// connect (places_sync), so places come back. First-writer wins
+// per id: a second device that created the same place id at
+// different coordinates is told about the conflict and keeps its
+// own copy locally (it never syncs). Only home rooms sync —
+// community rooms already have their own server path, invited
+// rooms stay local-only.
+const userPlaces = {};
+function placesFor(ownerKey) {
+  if (!userPlaces[ownerKey]) userPlaces[ownerKey] = [];
+  return userPlaces[ownerKey];
+}
+function setPlaces(ownerKey, places) {
+  userPlaces[ownerKey] = places;
+  return userPlaces[ownerKey];
 }
 // MAILBOX (Mailbox v1, `sq-mailbox-v1`): per-player inboxes —
 // userMailInbox[userId] = { packages: [] }. In-memory like the
@@ -1490,6 +1516,30 @@ io.on('connection', (socket) => {
   socket.on('get_home', () => {
     const userId = socketUserMap[socket.id] || socket.id;
     socket.emit('home_state', homeStateFor(userId));
+  });
+
+  // PLACES SYNC (Places Sync v1, `sq-places-sync-v1`): the client's
+  // home places, keyed by owner. The owner key comes in the payload
+  // — this socket has no join_room identity (the app-level socket
+  // never joins a room), so it cannot use socketUserMap; the key is
+  // the same client-asserted identity model as join_room's user.id.
+  // Every uploaded place is validated: it must be a home room whose
+  // owner matches the claimed key, so a client can only sync its
+  // own places. Guest stamp keys are refused — guests stay
+  // local-only by design. The reply carries the merged list plus
+  // any ids that conflicted with an earlier writer (first-writer
+  // wins per id). Rate-limited like the other sync handlers.
+  socket.on('places_sync', ({ ownerKey, places } = {}) => {
+    const key = normalizeHomeOwner(ownerKey);
+    if (!key || isGuestOwnerKey(key)) return;
+    const rate = checkRateLimit(key);
+    if (!rate.allowed) return;
+    const uploaded = (Array.isArray(places) ? places : [])
+      .map((raw) => normalizePlaceRecord(raw, key))
+      .filter(Boolean);
+    const { places: merged, conflicts } = mergeServerPlaces(placesFor(key), uploaded, key);
+    setPlaces(key, merged);
+    socket.emit('places_state', { ownerKey: key, places: merged, conflicts });
   });
 
   // YOUR PLACE: store one pocket item at home.

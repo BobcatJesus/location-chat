@@ -3,13 +3,26 @@ import { io } from 'socket.io-client';
 import RetroAuthModal from './RetroAuthModal';
 import AvatarSetupFields from './AvatarSetupFields';
 import { useGeofencedMap } from '../hooks/UseGeofencingApp';
-import { createUserRoom, deleteUserRoom, loadUserRooms, acceptRoomInvite, getAllRooms } from '../../rooms/rooms.js';
+import { createUserRoom, deleteUserRoom, loadUserRooms, acceptRoomInvite, getAllRooms, replaceOwnerHomeRooms } from '../../rooms/rooms.js';
 import { getDistanceMeters } from '../geo';
 import { normalizeAvatarModel } from '../game/entities/avatarModels.js';
 import { deriveLocationPalette } from '../utils/locationPalette';
 import { signOut } from '../lib/authClient';
 import { getRoomAccessRadius, isOpenAccessRoom } from '../accessPolicy';
-import { findHomeRooms, homeCreateState, defaultHomeName, HOME_ROOM_RADIUS } from '../village/homeStorage.js';
+import { findHomeRooms, homeCreateState, defaultHomeName, HOME_ROOM_RADIUS, ownerKeyFromProfile } from '../village/homeStorage.js';
+// Places Sync v1 (`sq-places-sync-v1`): the player's places follow
+// them between devices — each device uploads its local home places
+// on connect, the server merges by id and returns the merged list.
+import {
+  PLACES_SYNC_MARKER_V1,
+  PLACES_SYNC_INTERVAL_MS,
+  isGuestProfile,
+  homePlacesForUpload,
+  applyPlacesState,
+  getBlockedPlaceIds,
+  addBlockedPlaceIds,
+  placesSignature,
+} from '../village/placesSync.js';
 import { clearPuzzlePieces, clearPuzzlePiecesForNewSession } from '../village/items.js';
 import {
   hasSeenWelcome,
@@ -533,6 +546,19 @@ function RetroLandingPage({ onEnter, onOpenShepherdPark, onOpenMdAndersonLibrary
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [profile, setProfile] = useState(null);
+  // Places Sync v1 (`sq-places-sync-v1`): profileRef so the socket
+  // effect's callbacks always read the current profile (the effect
+  // only re-runs on login, but the owner key never changes while
+  // logged in); placesSocketRef so place creation can upload
+  // immediately; placesVersion bumps when the merged place list
+  // actually changes, so allRooms recomputes and the map remounts
+  // with the new pins; lastPlacesSigRef remembers the last applied
+  // list so the 30s re-syncs don't re-render for nothing.
+  const profileRef = useRef(null);
+  profileRef.current = profile;
+  const placesSocketRef = useRef(null);
+  const [placesVersion, setPlacesVersion] = useState(0);
+  const lastPlacesSigRef = useRef('');
   const [showLanding, setShowLanding] = useState(true);
   // Home Link v1 (`sq-home-link-v1`): set only by the map's "⌂ Home"
   // link. The landing gate (below) is `showLanding && (!isLoggedIn
@@ -900,9 +926,33 @@ function App() {
     };
   }, [isLoggedIn, SOCKET_SERVER_URL]);
 
+  // Places Sync v1 (`sq-places-sync-v1`): upload my local home
+  // places to the server and get the merged list back. Called on
+  // socket connect, every 30s while logged in, and right after a
+  // place is created. Guests stay local-only (their identity is a
+  // per-device random stamp, so cross-device sync is meaningless
+  // for them). Offline, this is a no-op — the socket isn't
+  // connected, local places keep working, nothing is wiped. The
+  // marker rides in the payload so the string survives
+  // minification into the built bundle (a comment alone would be
+  // stripped); the server ignores unknown fields.
+  const emitPlacesSync = (sock) => {
+    try {
+      const socket = sock || placesSocketRef.current;
+      if (!socket || !socket.connected) return;
+      const prof = profileRef.current;
+      if (!prof || isGuestProfile(prof)) return;
+      const ownerKey = ownerKeyFromProfile(prof);
+      if (!ownerKey) return;
+      const places = homePlacesForUpload(getAllRooms(), prof, getBlockedPlaceIds());
+      socket.emit('places_sync', { ownerKey, places, marker: PLACES_SYNC_MARKER_V1 });
+    } catch {}
+  };
+
   useEffect(() => {
     if (!isLoggedIn) return;
     const socket = io(SOCKET_SERVER_URL, { transports: ['websocket'] });
+    placesSocketRef.current = socket;
 
     socket.on('community_location_added', (room) => {
       const normalized = normalizeCommunityRoom(room);
@@ -915,7 +965,56 @@ function App() {
       setCommunityRooms((prev) => prev.filter((room) => room.id !== id));
     });
 
+    // Places Sync v1 (`sq-places-sync-v1`): the server's merged
+    // place list. Applying it replaces this owner's home rooms
+    // with the merged list (map pins, create-option count, and the
+    // mailbox resolution all read allRooms, so they all see both
+    // places at once — no mailbox changes). A place this device
+    // knows that the server hasn't seen yet (created offline) is
+    // kept, and a place that conflicts with the server's record
+    // for the same id keeps the local copy on THIS device only
+    // (see applyPlacesState) — the server's copy wins everywhere
+    // else. Only bumps the version (and remounts the map) when the
+    // merged list actually changes, so the 30s re-syncs don't
+    // re-render for nothing.
+    socket.on('places_state', (payload = {}) => {
+      try {
+        const prof = profileRef.current;
+        if (!prof || isGuestProfile(prof)) return;
+        const ownerKey = ownerKeyFromProfile(prof);
+        if (!ownerKey) return;
+        const { rooms, newConflicts } = applyPlacesState({
+          localRooms: findHomeRooms(getAllRooms(), prof),
+          serverPlaces: payload.places,
+          blockedIds: getBlockedPlaceIds(),
+        });
+        if (Array.isArray(newConflicts) && newConflicts.length) {
+          addBlockedPlaceIds(newConflicts);
+          setGpsToast('A place on this device differs from the one saved on your other device — this device keeps its own copy.');
+          setTimeout(() => setGpsToast(null), 6000);
+        }
+        const sig = placesSignature(rooms);
+        if (sig === lastPlacesSigRef.current) return;
+        lastPlacesSigRef.current = sig;
+        replaceOwnerHomeRooms(ownerKey, rooms);
+        setPlacesVersion((v) => v + 1);
+      } catch {}
+    });
+
+    // Seed the applied signature from the local places already
+    // loaded, so the first places_state only bumps the map when
+    // the server actually adds something (best-effort: if the
+    // rooms aren't loaded yet the seed is '' and the first sync
+    // remounts the map once — harmless).
+    try {
+      lastPlacesSigRef.current = placesSignature(findHomeRooms(getAllRooms(), profileRef.current));
+    } catch {}
+    socket.on('connect', () => emitPlacesSync(socket));
+    const placesTimer = setInterval(() => emitPlacesSync(socket), PLACES_SYNC_INTERVAL_MS);
+
     return () => {
+      clearInterval(placesTimer);
+      placesSocketRef.current = null;
       socket.disconnect();
     };
   }, [isLoggedIn, SOCKET_SERVER_URL]);
@@ -1127,6 +1226,11 @@ function App() {
       setActiveScene('room');
       setGpsToast(`🏠 ${placeName} created — welcome home.`);
       setTimeout(() => setGpsToast(null), 5000);
+      // Places Sync v1 (`sq-places-sync-v1`): upload the new place
+      // right away, so the player's other device learns about it
+      // within one re-sync (or on its next connect) instead of
+      // waiting for the next 30s tick.
+      emitPlacesSync(placesSocketRef.current);
     }
   };
 
@@ -1850,7 +1954,15 @@ function App() {
               /* Map view fills the main area */
               <div style={{ flex: 1, borderRadius: 12, overflow: 'hidden', border: '2px solid #334155', position: 'relative' }}>
                 <Suspense fallback={<div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', color: '#94a3b8', background: '#0f172a' }}>Loading map…</div>}>
+                  {/* Places Sync v1 (`sq-places-sync-v1`): MapView
+                      builds its pins once on mount, so a place that
+                      arrives from another device would not appear
+                      until the next mount. The key changes only when
+                      the merged place list changes, so the map
+                      remounts exactly then — with both pins — and
+                      never on the routine 30s re-syncs. */}
                   <MapView
+                    key={`places-${placesVersion}`}
                     location={location}
                     rooms={allRooms.map((r) => ({ ...r, radiusMeters: r.radiusMeters || r.radius || 100 }))}
                     onEnterRoom={handleEnterRoom}

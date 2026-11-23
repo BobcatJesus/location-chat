@@ -56,7 +56,10 @@ import React, { useEffect, useRef, useState } from 'react';
 // Mailbox v1.2 (`sq-mailbox-v1.2`): the pocket line naming where
 // your mailbox(es) are — the real room name(s), never a generic
 // "at the park".
-import { mailboxRoomsLine } from './mailState.js';
+// Places Sync v1 (`sq-places-sync-v1`): the mailbox key's blurb,
+// naming the actual room(s) too (the static def in items.js is the
+// place-less fallback for other surfaces).
+import { mailboxRoomsLine, mailboxKeyBlurb } from './mailState.js';
 
 const REASON_TEXT = {
   'inventory-full': 'Your pocket is full — use, drop, or throw something away to make room.',
@@ -140,6 +143,11 @@ export default function InventoryPanel({
   // Park and Your Place 2"). Falls back to the single nearest
   // room's name when the list itself is empty.
   const mailboxLine = state ? mailboxRoomsLine(state.mailboxRooms, state.mailboxRoomName) : '';
+  // Places Sync v1 (`sq-places-sync-v1`): the mailbox key's blurb
+  // names the same real room(s) as the pocket line — the static
+  // "at the park" text is gone. Unresolved yet: the place-less
+  // version, never a generic "at the park".
+  const mailboxKeyBlurbText = state ? mailboxKeyBlurb(state.mailboxRooms, state.mailboxRoomName) : '';
 
   useEffect(() => {
     const t = setInterval(() => {
@@ -393,7 +401,10 @@ export default function InventoryPanel({
                         ? ` (#${item.pieceId + 1})` : ''}
                     </div>
                     <div style={{ fontSize: 12.5, color: '#3d6a8a', marginTop: 2 }}>
-                      {item.blurb}
+                      {/* Places Sync v1 (`sq-places-sync-v1`): the
+                          mailbox key's blurb names the real room(s)
+                          — the static "at the park" text is gone. */}
+                      {item.type === 'mailbox-key' && mailboxKeyBlurbText ? mailboxKeyBlurbText : item.blurb}
                     </div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
                       {item.readable && (

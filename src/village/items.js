@@ -145,12 +145,18 @@ export const ITEM_DEFS = {
     blurb: 'A Santa hat, found behind the Christmas tree. It belongs on the cat — until it slips off again.',
     readable: false, usable: false, disposable: false,
   },
-  // Mailbox v1 (`sq-mailbox-v1`): the key to your mailbox at the
-  // park. It opens your mailbox — keep it in your pocket when you
-  // go to collect mail, or leave it at home until you need it.
+  // Mailbox v1 (`sq-mailbox-v1`): the key to your mailbox. It opens
+  // your mailbox — keep it in your pocket when you go to collect
+  // mail, or leave it at home until you need it.
+  // Places Sync v1 (`sq-places-sync-v1`): the blurb used to say
+  // "…at the park", hardcoded from when the mailbox was always at
+  // a park — wrong now that a mailbox can sit at a place (or a
+  // library). The pocket panel overrides this with the real room
+  // name(s) (mailboxKeyBlurb); this place-less text is the fallback
+  // for every other surface, so no surface ever says "at the park".
   [ITEM_TYPES.MAILBOX_KEY]: {
     emoji: '🔑', label: 'Mailbox key',
-    blurb: 'The key to your mailbox at the park. Keep it in your pocket to open your mail — or leave it at home until you need it.',
+    blurb: 'The key to your mailbox. Keep it in your pocket to open your mail — or leave it at home until you need it.',
     readable: false, usable: false, disposable: false,
   },
 };

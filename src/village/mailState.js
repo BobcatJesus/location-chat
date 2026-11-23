@@ -577,6 +577,28 @@ export function mailboxRoomsLine(mailboxRooms, fallbackName = '') {
 }
 
 /**
+ * The mailbox key's blurb — Places Sync v1 (`sq-places-sync-v1`).
+ * The static blurb in items.js used to say "The key to your
+ * mailbox at the park", hardcoded from when the mailbox was always
+ * at a park; wrong now that a mailbox can sit at a place (or, via
+ * the v1 fallback, a library). This names the actual room(s), the
+ * same names as the pocket line, and falls back to the place-less
+ * version when nothing is resolved yet — never a generic "at the
+ * park". One room: "…at Shepherd Park." Two: "…at Shepherd Park
+ * and Your Place 2."
+ */
+export function mailboxKeyBlurb(mailboxRooms, fallbackName = '') {
+  const names = (Array.isArray(mailboxRooms) ? mailboxRooms : [])
+    .filter((r) => r && typeof r.roomName === 'string' && r.roomName.trim())
+    .map((r) => r.roomName.trim());
+  if (!names.length && typeof fallbackName === 'string' && fallbackName.trim()) {
+    names.push(fallbackName.trim());
+  }
+  const at = names.length ? ` at ${names.join(' and ')}` : '';
+  return `The key to your mailbox${at}. Keep it in your pocket to open your mail — or leave it at home until you need it.`;
+}
+
+/**
  * Pick a spot for the mailbox inside a room. `entry` is the room's
  * entry zone { x, y, w, h } (or null); `spawn` the spawn point
  * { x, y }; `bounds` the boundary rect { x, y, w, h }. `isInside`
