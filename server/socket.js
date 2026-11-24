@@ -56,6 +56,12 @@ import {
   loadMailInbox,
 } from './mailPersist.js';
 import {
+  PUZZLE_ROOM_STATE_TABLE_SQL,
+  savePuzzleState,
+  loadPuzzleState,
+  repairLoadedPuzzleState,
+} from './puzzlePersist.js';
+import {
   NOTICE_BOARD_MAX_FLYERS,
   createNoticeBoardState,
   pinFlyer,
@@ -343,6 +349,13 @@ async function initDb() {
   // is excluded by default (private mail, not room state).
   await pool.query(MAIL_INBOX_TABLE_SQL);
   console.log('✅ Postgres mail_inbox table ready');
+  // Puzzle persistence (`sq-puzzle-persist-v1`): one row per room
+  // holding the serialized puzzle state, so a server restart
+  // restores the board instead of starting a fresh puzzle. NOTE
+  // for the Dec 19 reset: the deliberate reset clears this table
+  // — the puzzle IS room state (unlike mail, which is excluded).
+  await pool.query(PUZZLE_ROOM_STATE_TABLE_SQL);
+  console.log('✅ Postgres puzzle_room_state table ready');
   await authService.init();
 }
 
@@ -764,13 +777,17 @@ function playerNameForUser(userId) {
 // above; referenced here so the marker is greppable server-side too).
 const MAILBOX_MARKER = MAILBOX_MARKER_V1;
 // Group puzzle (Shared Puzzle Quest v1.2,
-// `group-puzzle-v1-2-hidden-search`): per-room state
+// `group-puzzle-v1-2-hidden-search`; persistence
+// `sq-puzzle-persist-v1`): per-room state
 // puzzleState[roomId] = { state, resetTimer }. Agora only.
-// In-memory like the cat and the pumpkins — a server restart starts
-// a fresh puzzle (round 1, nothing found). Pieces are shared: the
-// first finder claims a piece for the whole room, and a piece only
-// locks into its home cell (the server re-validates every placement,
-// so a bad client can't complete the puzzle by inventing moves).
+// The state is persisted to Postgres (puzzle_room_state) on every
+// mutation and loaded back lazily, so a server restart restores
+// the board in whatever state it was in instead of starting a
+// fresh puzzle. Without a DB the puzzle stays in-memory only,
+// exactly as before. Pieces are shared: the first finder claims a
+// piece for the whole room, and a piece only locks into its home
+// cell (the server re-validates every placement, so a bad client
+// can't complete the puzzle by inventing moves).
 // v1.2: pieces are functionally invisible — the client finds them by
 // clicking hiding furniture a few times (3 clicks) or by a lucky
 // coffee (piece 8, 1-in-3 per coffee bought). The server does not
@@ -778,9 +795,88 @@ const MAILBOX_MARKER = MAILBOX_MARKER_V1;
 // marker clicks; it guards the already-found rule, room membership,
 // rate limits, and the sleeping-cat rule below.
 const puzzleState = {};
+const puzzleRoomsLoaded = new Set(); // roomIds whose DB row has been read (or attempted)
+const puzzleLoadPromises = {}; // roomId -> in-flight load promise
 function puzzleRoom(roomId) {
   if (!puzzleState[roomId]) puzzleState[roomId] = { state: createPuzzleState(), resetTimer: null };
   return puzzleState[roomId];
+}
+// Save one room's puzzle state, never crashing the caller: a failed
+// save warns and the live broadcast still goes out (the in-memory
+// state is the live truth; the next mutation retries the save).
+async function persistPuzzle(roomId) {
+  try {
+    await savePuzzleState(pool, roomId, puzzleRoom(roomId).state);
+  } catch (e) {
+    console.warn('⚠️ puzzle persist failed:', e && e.message);
+  }
+}
+// Arm the 60s fresh-round timer for a completed puzzle. The
+// callback starts a fresh round, broadcasts it, and persists it —
+// a restart after the reset must not resurrect the completed
+// board. Shared by puzzle_place (a fresh completion) and
+// ensurePuzzleLoaded (a board that loaded completed but still
+// inside its admire window, re-armed for the remaining time).
+function armPuzzleResetTimer(roomId, ms) {
+  const room = puzzleRoom(roomId);
+  if (room.resetTimer) return;
+  room.resetTimer = setTimeout(() => {
+    room.resetTimer = null;
+    // Fresh round, same picture: new state, round number up.
+    const next = createPuzzleState();
+    next.round = room.state.round + 1;
+    room.state = next;
+    io.to(roomId).emit('puzzle_state', serializePuzzleState(room.state));
+    // Puzzle persistence (`sq-puzzle-persist-v1`): the fresh round
+    // is saved too, so a restart after the reset cannot bring back
+    // the completed board.
+    persistPuzzle(roomId);
+  }, ms);
+  // Don't hold the process open for a puzzle timer alone.
+  if (room.resetTimer.unref) room.resetTimer.unref();
+}
+// Load a room's puzzle from Postgres the first time it is touched.
+// Concurrent touches share one in-flight load, so a mutation can
+// never land on the default fresh board while the real row is
+// still being read. A missing row, a down DB, or a bad row all
+// leave the default fresh board in place. A board whose 60s
+// admire window elapsed while the server was down is repaired to
+// a fresh round (and the repair written back); a board still
+// inside its window comes back as-is, with the reset timer
+// re-armed for the remaining time.
+async function ensurePuzzleLoaded(roomId) {
+  if (puzzleRoomsLoaded.has(roomId)) return puzzleRoom(roomId);
+  if (!puzzleLoadPromises[roomId]) {
+    puzzleLoadPromises[roomId] = (async () => {
+      const room = puzzleRoom(roomId);
+      try {
+        const loaded = await loadPuzzleState(pool, roomId);
+        if (loaded) {
+          const now = Date.now();
+          const { state, repaired } = repairLoadedPuzzleState(loaded, now);
+          room.state = state;
+          if (repaired) {
+            // The admire window elapsed while the server was down —
+            // write the fresh round back so the row stays truthful.
+            await savePuzzleState(pool, roomId, room.state);
+          } else if (room.state.completed) {
+            // Still inside the admire window: re-arm the reset for
+            // the remaining time, so the fresh round still starts
+            // on schedule. Clamped to one window — a completedAt
+            // far in the future (bad row, clock skew) must not
+            // overflow the timer.
+            const remaining = PUZZLE_RESET_MS - (now - room.state.completedAt);
+            armPuzzleResetTimer(roomId, Math.max(1, Math.min(remaining, PUZZLE_RESET_MS)));
+          }
+        }
+      } catch (e) {
+        console.warn('⚠️ puzzle load failed:', e && e.message);
+      }
+      puzzleRoomsLoaded.add(roomId);
+      return room;
+    })();
+  }
+  return puzzleLoadPromises[roomId];
 }
 // Trim the Tree (Trim the Tree v1, `sq-trim-tree-v1`): per-room
 // state treeRooms[roomId] = { state }. Agora only. In-memory like
@@ -1842,7 +1938,7 @@ io.on('connection', (socket) => {
   // enforces that, so a client cannot claim it while she is awake.
   // Piece 8 comes from a lucky coffee (client rolls 1-in-3 per
   // coffee bought); the server only guards the already-found rule.
-  socket.on('puzzle_piece', ({ roomId, pieceId } = {}) => {
+  socket.on('puzzle_piece', async ({ roomId, pieceId } = {}) => {
     if (!roomId || roomId !== 'agora-houston') return;
     if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
     const userId = socketUserMap[socket.id] || socket.id;
@@ -1851,10 +1947,15 @@ io.on('connection', (socket) => {
     const id = Number(pieceId);
     if (!Number.isInteger(id) || id < 0 || id > 8) return;
     if (id === 7 && !catState[roomId]?.asleep) return;
+    // Puzzle persistence (`sq-puzzle-persist-v1`): load first, so a
+    // collect can never land on the default fresh board while the
+    // real row is still being read.
+    await ensurePuzzleLoaded(roomId);
     const room = puzzleRoom(roomId);
     const res = collectPiece(room.state, id, userId);
     if (!res.ok) return;
     io.to(roomId).emit('puzzle_state', serializePuzzleState(room.state));
+    persistPuzzle(roomId);
   });
 
   // GROUP PUZZLE PLACEMENT: one player put a found piece on the board.
@@ -1864,16 +1965,21 @@ io.on('connection', (socket) => {
   // The room only completes when all 9 are in their home cells at
   // the same time: everyone hears about it, and a fresh puzzle
   // starts automatically after PUZZLE_RESET_MS.
-  socket.on('puzzle_place', ({ roomId, pieceId, col, row } = {}) => {
+  socket.on('puzzle_place', async ({ roomId, pieceId, col, row } = {}) => {
     if (!roomId || roomId !== 'agora-houston') return;
     if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
     const userId = socketUserMap[socket.id] || socket.id;
     const rate = checkRateLimit(userId);
     if (!rate.allowed) return;
+    // Puzzle persistence (`sq-puzzle-persist-v1`): load first, so a
+    // placement can never land on the default fresh board while the
+    // real row is still being read.
+    await ensurePuzzleLoaded(roomId);
     const room = puzzleRoom(roomId);
     const res = placePiece(room.state, Number(pieceId), Number(col), Number(row), userId);
     if (!res.ok) return;
     io.to(roomId).emit('puzzle_state', serializePuzzleState(room.state));
+    persistPuzzle(roomId);
     if (res.completed) {
       io.to(roomId).emit('puzzle_completed', {
         round: room.state.round,
@@ -1889,25 +1995,21 @@ io.on('connection', (socket) => {
           }
         }
       }
-      if (!room.resetTimer) {
-        room.resetTimer = setTimeout(() => {
-          room.resetTimer = null;
-          // Fresh round, same picture: new state, round number up.
-          const next = createPuzzleState();
-          next.round = room.state.round + 1;
-          room.state = next;
-          io.to(roomId).emit('puzzle_state', serializePuzzleState(room.state));
-        }, PUZZLE_RESET_MS);
-        // Don't hold the process open for a puzzle timer alone.
-        if (room.resetTimer.unref) room.resetTimer.unref();
-      }
+      // Puzzle persistence (`sq-puzzle-persist-v1`): the fresh
+      // round starts on the same 60s timer; the helper persists
+      // the fresh round when it fires.
+      armPuzzleResetTimer(roomId, PUZZLE_RESET_MS);
     }
   });
 
   // GROUP PUZZLE STATE: the room's board, sent when you join (or ask).
-  socket.on('get_puzzle', ({ roomId } = {}) => {
+  socket.on('get_puzzle', async ({ roomId } = {}) => {
     if (!roomId || roomId !== 'agora-houston') return;
     if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    // Puzzle persistence (`sq-puzzle-persist-v1`): load first, so a
+    // joiner never sees the default fresh board while the real row
+    // is still being read.
+    await ensurePuzzleLoaded(roomId);
     socket.emit('puzzle_state', serializePuzzleState(puzzleRoom(roomId).state));
   });
 
