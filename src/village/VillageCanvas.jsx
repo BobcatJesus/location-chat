@@ -253,6 +253,22 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
   const [approvedLayout, setApprovedLayout] = useState(null);
   const [interactKind, setInteractKind] = useState(null);
   const [questHud, setQuestHud] = useState(null);
+  // Quests popup (`sq-quests-popup-v1`): on narrow screens the
+  // persistent tracker box is replaced by a "Quests" button in the top
+  // bar; tapping it opens the quests as a popup, closed by a literal X.
+  const [showQuests, setShowQuests] = useState(false);
+  const [isNarrow, setIsNarrow] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth <= 640 : false,
+  );
+  useEffect(() => {
+    const onResize = () => {
+      const narrow = window.innerWidth <= 640;
+      setIsNarrow(narrow);
+      if (!narrow) setShowQuests(false);
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
   const questHudVersionRef = useRef(-1);
   const [roomPopulation, setRoomPopulation] = useState(1);
   const [cameraMode, setCameraMode] = useState('wide-follow');
@@ -1161,13 +1177,34 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
           📋 Review
         </button>
         )}
+        {/* Quests popup (`sq-quests-popup-v1`): narrow screens only —
+            the persistent tracker box below is hidden there, so this
+            button is the way in. Tapping it opens the quests popup. */}
+        {isNarrow && (
+          <button
+            onClick={() => setShowQuests(true)}
+            style={{
+              background: 'rgba(0,0,0,0.55)', color: '#fff', border: 'none',
+              borderRadius: 8, padding: '6px 14px',
+              minHeight: 44, display: 'flex', alignItems: 'center',
+              cursor: 'pointer', fontSize: 14, fontWeight: 'bold',
+              flexShrink: 0, whiteSpace: 'nowrap',
+            }}
+          >
+            🎯 Quests
+          </button>
+        )}
       </div>
 
       {/* Quest HUD as DOM, below the top bar: the in-canvas tracker and
           banner sit underneath the DOM top bar on PC (zIndex 1000) and
           can't be seen, so the DOM is the render path. Tracker is
           persistent; banner shows ~5.5s per quest (click dismisses). */}
-      {questHud?.trackerLines?.length > 0 && (
+      {/* Quests popup (`sq-quests-popup-v1`): the persistent box is
+          wide-screens only — on narrow screens the "Quests" button in
+          the top bar opens the popup instead, so this box never
+          covers the play area on a phone. */}
+      {!isNarrow && questHud?.trackerLines?.length > 0 && (
         <div style={{
           position: 'absolute', top: 116, left: 12, zIndex: 1000,
           maxWidth: 'min(340px, calc(100vw - 24px))',
@@ -1207,6 +1244,72 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
           ) : (
             questHud.trackerLines.join('\n')
           )}
+        </div>
+      )}
+      {/* Quests popup (`sq-quests-popup-v1`): narrow screens only. The
+          content mirrors the persistent box above (room quests, First
+          Steps prompt, anywhere quests) — keep the two in sync. Closed
+          by the literal X, or by tapping the dimmed backdrop. */}
+      {isNarrow && showQuests && (
+        <div
+          style={{
+            position: 'absolute', inset: 0, zIndex: 2000,
+            background: 'rgba(2,6,23,0.75)',
+            display: 'grid', placeItems: 'center', padding: 20,
+          }}
+          onClick={() => setShowQuests(false)}
+        >
+          <div
+            style={{
+              width: 'min(420px, 100%)', maxHeight: '80vh', overflowY: 'auto',
+              background: '#fff', color: '#1a4971', borderRadius: 8,
+              padding: '14px 16px', fontSize: 14, lineHeight: 1.35,
+              boxShadow: '0 4px 20px rgba(0,0,0,0.4)', position: 'relative',
+              whiteSpace: 'pre-line',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setShowQuests(false)}
+              aria-label="Close quests"
+              style={{
+                position: 'absolute', top: 8, right: 8,
+                background: 'rgba(0,0,0,0.08)', border: 'none', borderRadius: 8,
+                width: 36, height: 36, fontSize: 18, fontWeight: 'bold',
+                cursor: 'pointer', color: '#1a4971',
+                display: 'grid', placeItems: 'center',
+              }}
+            >
+              ✕
+            </button>
+            <div style={{ fontWeight: 'bold', fontSize: 16, marginBottom: 8, paddingRight: 44 }}>🎯 Quests</div>
+            {questHud?.trackerSections ? (
+              <>
+                <div style={{ whiteSpace: 'pre-line' }}>
+                  {questHud.trackerSections.room.length > 0 ? questHud.trackerSections.room.join('\n') : '✅ All quests complete — more coming soon!'}
+                </div>
+                {questHud.stepPrompt && (
+                  <div style={{
+                    marginTop: 8, paddingTop: 6, borderTop: '1px solid rgba(146,64,14,0.35)',
+                    color: '#92400e', fontWeight: 'bold', whiteSpace: 'pre-line',
+                  }}>
+                    {questHud.stepPrompt}
+                  </div>
+                )}
+                {questHud.trackerSections.anywhere.length > 0 && (
+                  <div style={{
+                    marginTop: 8, paddingTop: 6, borderTop: '1px solid rgba(26,73,113,0.3)',
+                    fontSize: 12.5, lineHeight: 1.35, color: '#3d6a8a', whiteSpace: 'pre-line',
+                  }}>
+                    <div style={{ fontWeight: 'bold', fontSize: 12, letterSpacing: '0.04em', color: '#1a4971' }}>🌍 ANYWHERE QUESTS</div>
+                    {questHud.trackerSections.anywhere.join('\n')}
+                  </div>
+                )}
+              </>
+            ) : (
+              questHud?.trackerLines?.join('\n') || '✅ All quests complete — more coming soon!'
+            )}
+          </div>
         </div>
       )}
       {questHud?.banner && (
