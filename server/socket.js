@@ -51,6 +51,11 @@ import {
   loadHatState,
 } from './hatPersist.js';
 import {
+  MAIL_INBOX_TABLE_SQL,
+  saveMailInbox,
+  loadMailInbox,
+} from './mailPersist.js';
+import {
   NOTICE_BOARD_MAX_FLYERS,
   createNoticeBoardState,
   pinFlyer,
@@ -331,6 +336,13 @@ async function initDb() {
   // the hat instead of hiding it behind the tree again.
   await pool.query(HAT_ROOM_STATE_TABLE_SQL);
   console.log('✅ Postgres hat_room_state table ready');
+  // Mail persistence (`sq-mail-persist-v1`): one row per player
+  // holding the serialized inbox, so a server restart restores
+  // unread mail instead of wiping it. NOTE for the Dec 19 reset:
+  // the deliberate reset clears persisted ROOM state only — mail
+  // is excluded by default (private mail, not room state).
+  await pool.query(MAIL_INBOX_TABLE_SQL);
+  console.log('✅ Postgres mail_inbox table ready');
   await authService.init();
 }
 
@@ -645,14 +657,18 @@ function setPlaces(ownerKey, places) {
   userPlaces[ownerKey] = places;
   return userPlaces[ownerKey];
 }
-// MAILBOX (Mailbox v1, `sq-mailbox-v1`): per-player inboxes —
-// userMailInbox[userId] = { packages: [] }. In-memory like the
-// notice boards: a server restart wipes unread mail (there is no
-// outbox re-sync — it would resurrect mail the recipient already
-// collected, because the server forgets what was collected across
-// a restart). The client asks for its inbox on connect (get_mail),
-// so a restart is visible immediately: the mailbox is empty, the
-// dot and the flag go down.
+// MAILBOX (Mailbox v1, `sq-mailbox-v1`; persistence
+// `sq-mail-persist-v1`): per-player inboxes —
+// userMailInbox[userId] = { packages: [] }. The inbox is persisted
+// to Postgres (mail_inbox) on every mutation and loaded back lazily
+// (ensureMailLoaded), so a server restart restores unread mail
+// instead of wiping it. Without a DB the inbox stays in-memory only,
+// exactly as before. There is no outbox re-sync (it would resurrect
+// mail the recipient already collected — the server forgets what was
+// collected across a restart, so re-sending would duplicate gifts).
+// The client asks for its inbox on connect (get_mail), so a restart
+// used to be visible immediately: the mailbox was empty, the dot
+// and the flag went down. Now the inbox comes back with the mail.
 //   - A code resolves to the player it belongs to through
 //     userMailCode[code] = userId. Codes are deterministic from the
 //     player id (mailboxCodeFor), so a code is stable across
@@ -669,6 +685,47 @@ const userMailInbox = {};
 function mailInboxFor(userId) {
   if (!userMailInbox[userId]) userMailInbox[userId] = createMailState();
   return userMailInbox[userId];
+}
+const userMailInboxLoaded = new Set(); // userIds whose DB row has been read (or attempted)
+const userMailLoadPromises = {}; // userId -> in-flight load promise
+// Save one player's inbox, never crashing the caller: a failed
+// save warns and the live broadcast still goes out (the in-memory
+// inbox is the live truth; the next mutation retries the save).
+async function persistMail(userId) {
+  try {
+    await saveMailInbox(pool, userId, mailInboxFor(userId));
+  } catch (e) {
+    console.warn('⚠️ mail persist failed:', e && e.message);
+  }
+}
+// Load a player's inbox from Postgres the first time it is touched.
+// Concurrent touches share one in-flight load, so a mutation can
+// never land on the default empty inbox while the real row is
+// still being read. A missing row, a down DB, or a bad row all
+// leave the default empty inbox in place.
+// DELIBERATE: all inboxes persist, including guests' — a guest's
+// userId is a socket id, so its row is orphaned after they leave
+// and never read again (harmless), and the sender only knows a
+// mailbox code, not whether the recipient is a guest.
+// The code registry (userMailCode) stays in-memory — out of scope.
+async function ensureMailLoaded(userId) {
+  if (userMailInboxLoaded.has(userId)) return mailInboxFor(userId);
+  if (!userMailLoadPromises[userId]) {
+    userMailLoadPromises[userId] = (async () => {
+      const inbox = mailInboxFor(userId);
+      try {
+        const loaded = await loadMailInbox(pool, userId);
+        if (loaded) {
+          inbox.packages = loaded.packages;
+        }
+      } catch (e) {
+        console.warn('⚠️ mail load failed:', e && e.message);
+      }
+      userMailInboxLoaded.add(userId);
+      return inbox;
+    })();
+  }
+  return userMailLoadPromises[userId];
 }
 const userMailCode = new Map();
 function registerMailCode(userId) {
@@ -2092,6 +2149,12 @@ io.on('connection', (socket) => {
       socket.emit('mail_send_result', { packageId, ok: false, reason: 'not-sendable' });
       return;
     }
+    // Mail persistence (`sq-mail-persist-v1`): load the
+    // recipient's inbox BEFORE mutating it — an offline
+    // recipient's persisted mail must load first, or the save
+    // below would overwrite their unread mail with only the new
+    // package.
+    await ensureMailLoaded(recipientId);
     const inbox = mailInboxFor(recipientId);
     const res = sendPackage(inbox, {
       id: packageId,
@@ -2110,6 +2173,7 @@ io.on('connection', (socket) => {
       });
       return;
     }
+    await persistMail(recipientId);
     socket.emit('mail_send_result', {
       packageId,
       ok: true,
@@ -2124,8 +2188,11 @@ io.on('connection', (socket) => {
 
   // MAILBOX: ask for my own inbox (on connect, and on reconnect —
   // the first state with unread mail fires the login toast).
-  socket.on('get_mail', () => {
+  // Mail persistence (`sq-mail-persist-v1`): load first, so a
+  // returning player sees persisted mail, not an empty inbox.
+  socket.on('get_mail', async () => {
     const userId = socketUserMap[socket.id] || socket.id;
+    await ensureMailLoaded(userId);
     socket.emit('mail_state', serializeMailState(mailInboxFor(userId)));
   });
 
@@ -2134,7 +2201,7 @@ io.on('connection', (socket) => {
   // pocket (mail_collect_confirm) — a full pocket can never eat a
   // gift. The client only asks when its pocket has room; the
   // server just hands the item over.
-  socket.on('mail_collect', ({ roomId, packageId } = {}) => {
+  socket.on('mail_collect', async ({ roomId, packageId } = {}) => {
     if (!roomId) return;
     if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
     const userId = socketUserMap[socket.id] || socket.id;
@@ -2143,6 +2210,9 @@ io.on('connection', (socket) => {
       socket.emit('mail_collect_result', { packageId, ok: false, reason: 'rate-limited' });
       return;
     }
+    // Mail persistence (`sq-mail-persist-v1`): load first — a
+    // package in the DB must not report 'not-found'.
+    await ensureMailLoaded(userId);
     const inbox = mailInboxFor(userId);
     const pkg = (inbox.packages || []).find((p) => p.id === String(packageId));
     if (!pkg) {
@@ -2154,12 +2224,17 @@ io.on('connection', (socket) => {
 
   // MAILBOX: the item landed in the pocket — now remove the package
   // from the inbox, and send the fresh state (dot + flag go down).
-  socket.on('mail_collect_confirm', ({ roomId, packageId } = {}) => {
+  socket.on('mail_collect_confirm', async ({ roomId, packageId } = {}) => {
     if (!roomId) return;
     if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
     const userId = socketUserMap[socket.id] || socket.id;
+    // Mail persistence (`sq-mail-persist-v1`): load before the
+    // collect, then save the removal — otherwise a restart would
+    // resurrect the collected package.
+    await ensureMailLoaded(userId);
     const res = collectPackage(mailInboxFor(userId), packageId);
     if (!res.ok) return;
+    await persistMail(userId);
     socket.emit('mail_state', serializeMailState(mailInboxFor(userId)));
   });
 

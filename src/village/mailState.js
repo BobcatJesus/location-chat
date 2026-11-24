@@ -67,12 +67,13 @@
 //   - A collected package is removed from the inbox only when the
 //     client confirms the item landed in the pocket
 //     (mail_collect_confirm) — a full pocket can never eat a gift.
-//   - State is IN-MEMORY on the server, like the notice boards: a
-//     Railway restart wipes unread mail in the inbox. There is no
-//     outbox re-sync (it would resurrect mail the recipient already
-//     collected — the server forgets what was collected across a
-//     restart, so re-sending would duplicate gifts). Honest v1
-//     limitation, same class as the boards.
+//   - Mail Persistence v1 (`sq-mail-persist-v1`): inboxes are
+//     saved to Postgres (mail_inbox) on every send and collect, so
+//     a Railway restart restores unread mail instead of wiping it.
+//     There is no outbox re-sync (it would resurrect mail the
+//     recipient already collected — the server forgets what was
+//     collected across a restart, so re-sending would duplicate
+//     gifts). Honest v1 limitation, same class as the boards.
 //   - Puzzle pieces and the Santa hat CANNOT be sent (round-scoped
 //     / one-per-room server state — sending them would fork their
 //     state machines). The mailbox key cannot be sent either
