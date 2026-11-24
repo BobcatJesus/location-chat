@@ -24,8 +24,10 @@
 //   - A moderator can take down ANY flyer (reuse of the existing
 //     moderator check); a moderator removal discards the flyer —
 //     it does NOT go back to its owner's pocket.
-//   - State is IN-MEMORY per room, like the puzzle: a Railway
-//     restart wipes the board clean.
+//   - State is persisted to Postgres per room (Notice Board
+//     Persistence v1, `sq-notice-board-persist-v1`): a Railway
+//     restart restores the pinned flyers instead of wiping the
+//     board clean. Without a DB the boards stay in-memory only.
 
 export const NOTICE_BOARD_MARKER = 'sq-notice-board-v1';
 // Boards in every location (not just Agora) — marker for the

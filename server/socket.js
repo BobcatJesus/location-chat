@@ -67,6 +67,11 @@ import {
   loadTreeState,
 } from './treePersist.js';
 import {
+  NOTICE_BOARD_STATE_TABLE_SQL,
+  saveNoticeBoardState,
+  loadNoticeBoardState,
+} from './noticeBoardPersist.js';
+import {
   NOTICE_BOARD_MAX_FLYERS,
   createNoticeBoardState,
   pinFlyer,
@@ -369,6 +374,14 @@ async function initDb() {
   // excluded).
   await pool.query(TREE_ROOM_STATE_TABLE_SQL);
   console.log('✅ Postgres tree_room_state table ready');
+  // Notice board persistence (`sq-notice-board-persist-v1`): one
+  // row per room holding the serialized board state, so a server
+  // restart restores the pinned flyers instead of wiping every
+  // board clean. NOTE for the Dec 19 reset: the deliberate reset
+  // clears this table — the boards ARE room state (unlike mail,
+  // which is excluded).
+  await pool.query(NOTICE_BOARD_STATE_TABLE_SQL);
+  console.log('✅ Postgres notice_board_state table ready');
   await authService.init();
 }
 
@@ -1004,14 +1017,54 @@ async function ensureHatLoaded(roomId) {
   }
   return hatLoadPromises[roomId];
 }
-// Notice board (Notice Board v1, `sq-notice-board-v1`): per-room
-// pinned flyers, Agora only. In-memory like the puzzle — a server
-// restart wipes the board clean (fresh board, nothing pinned).
+// Notice board (Notice Board v1, `sq-notice-board-v1`; persistence
+// `sq-notice-board-persist-v1`): per-room pinned flyers, EVERY
+// room. The state is persisted to Postgres (notice_board_state)
+// on every pin and removal and loaded back lazily, so a server
+// restart restores the boards instead of wiping them clean.
+// Without a DB the boards stay in-memory only, exactly as before.
 // noticeBoards[roomId] = { state }.
 const noticeBoards = {};
+const noticeBoardsLoaded = new Set(); // roomIds whose DB row has been read (or attempted)
+const noticeBoardLoadPromises = {}; // roomId -> in-flight load promise
 function noticeBoardRoom(roomId) {
   if (!noticeBoards[roomId]) noticeBoards[roomId] = { state: createNoticeBoardState() };
   return noticeBoards[roomId];
+}
+// Save one room's board state, never crashing the caller: a failed
+// save warns and the live broadcast still goes out (the in-memory
+// state is the live truth; the next pin/removal retries the save).
+async function persistNoticeBoard(roomId) {
+  try {
+    await saveNoticeBoardState(pool, roomId, noticeBoardRoom(roomId).state);
+  } catch (e) {
+    console.warn('⚠️ notice board persist failed:', e && e.message);
+  }
+}
+// Load a room's board from Postgres the first time it is touched.
+// Concurrent touches share one in-flight load, so a pin can never
+// land on the default empty board while the real row is still
+// being read. A missing row, a down DB, or a bad row all leave the
+// default empty board in place. No repair step beyond
+// parseNoticeBoardState: there is no completion timer, and the
+// parser already cleans each flyer, caps at 10, and drops
+// malformed ones.
+async function ensureNoticeBoardLoaded(roomId) {
+  if (noticeBoardsLoaded.has(roomId)) return noticeBoardRoom(roomId);
+  if (!noticeBoardLoadPromises[roomId]) {
+    noticeBoardLoadPromises[roomId] = (async () => {
+      const room = noticeBoardRoom(roomId);
+      try {
+        const loaded = await loadNoticeBoardState(pool, roomId);
+        if (loaded) room.state = loaded;
+      } catch (e) {
+        console.warn('⚠️ notice board load failed:', e && e.message);
+      }
+      noticeBoardsLoaded.add(roomId);
+      return room;
+    })();
+  }
+  return noticeBoardLoadPromises[roomId];
 }
 // Decoration Shop v1 (`sq-dec-shop-v1`): per-room placed
 // decorations, EVERY room (not just Agora — decorations are
@@ -2227,12 +2280,16 @@ io.on('connection', (socket) => {
   // every player in the room sees it. Each room has its own board
   // (noticeBoards[roomId]). Pinning is free — the 5 coins were paid
   // when the flyer was made.
-  socket.on('board_pin', ({ roomId, id, title, text } = {}) => {
+  socket.on('board_pin', async ({ roomId, id, title, text } = {}) => {
     if (!roomId) return;
     if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
     const userId = socketUserMap[socket.id] || socket.id;
     const rate = checkRateLimit(userId);
     if (!rate.allowed) return;
+    // Notice board persistence (`sq-notice-board-persist-v1`): load
+    // first, so a pin can never land on the default empty board
+    // while the real row is still being read.
+    await ensureNoticeBoardLoaded(roomId);
     const room = noticeBoardRoom(roomId);
     const res = pinFlyer(room.state, {
       id,
@@ -2243,6 +2300,7 @@ io.on('connection', (socket) => {
     });
     if (!res.ok) return;
     io.to(roomId).emit('board_state', serializeNoticeBoardState(room.state));
+    persistNoticeBoard(roomId);
   });
 
   // NOTICE BOARD REMOVAL: your own flyer, or any flyer if you are a
@@ -2251,22 +2309,31 @@ io.on('connection', (socket) => {
   // to the flyer afterwards is the client's call (back to the
   // owner's pocket if they took it down and have room, discarded
   // otherwise — a moderator removal always discards it).
-  socket.on('board_remove', ({ roomId, flyerId } = {}) => {
+  socket.on('board_remove', async ({ roomId, flyerId } = {}) => {
     if (!roomId) return;
     if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
     const userId = socketUserMap[socket.id] || socket.id;
     const rate = checkRateLimit(userId);
     if (!rate.allowed) return;
+    // Notice board persistence (`sq-notice-board-persist-v1`): load
+    // first, so a removal can never run against the default empty
+    // board while the real row is still being read.
+    await ensureNoticeBoardLoaded(roomId);
     const room = noticeBoardRoom(roomId);
     const res = removeFlyer(room.state, flyerId, userId, isGlobalModerator(userId));
     if (!res.ok) return;
     io.to(roomId).emit('board_state', serializeNoticeBoardState(room.state));
+    persistNoticeBoard(roomId);
   });
 
   // NOTICE BOARD STATE: the room's board, sent when you join (or ask).
-  socket.on('get_board', ({ roomId } = {}) => {
+  socket.on('get_board', async ({ roomId } = {}) => {
     if (!roomId) return;
     if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    // Notice board persistence (`sq-notice-board-persist-v1`): load
+    // first, so a joiner never sees the default empty board while
+    // the real row is still being read.
+    await ensureNoticeBoardLoaded(roomId);
     socket.emit('board_state', serializeNoticeBoardState(noticeBoardRoom(roomId).state));
   });
 
