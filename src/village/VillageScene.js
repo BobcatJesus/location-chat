@@ -3201,17 +3201,22 @@ export class VillageScene extends Phaser.Scene {
     this.questManager?.update(delta);
     this.halloween?.update(delta);
     this.dayNight?.update(delta);
+    // No-E on mobile (`sq-no-e-mobile-v1`): on a phone there is no E
+    // key, so the floating prompts drop the " [E]" suffix. The drink
+    // prompts below already said "· tap" on touch — same idea.
+    const isTouchDevice = typeof window !== 'undefined' && ('ontouchstart' in window || (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0));
+    const noE = (text) => (isTouchDevice ? text.replace(' [E]', '') : text);
     const nearDuck = this.duckPond?.nearestPettableDuck(this.player.gx, this.player.gy);
     const nearPond = this.duckPond?.nearestFeedablePond(this.player.gx, this.player.gy);
     // Pet prompt wins when a duck is right next to you; otherwise the
     // feed prompt shows near a pond.
     if (nearDuck) {
-      this.duckPrompt.setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
+      this.duckPrompt.setText(noE('🦆 Pet the duck [E]')).setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
     } else {
       this.duckPrompt.setAlpha(0);
     }
     if (nearPond && !nearDuck && this._feedCooldownMs <= 0) {
-      this.feedPrompt.setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
+      this.feedPrompt.setText(noE('🦆 Feed the ducks [E]')).setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
     } else {
       this.feedPrompt.setAlpha(0);
     }
@@ -3231,14 +3236,14 @@ export class VillageScene extends Phaser.Scene {
       // version with the what-to-do.
       this.catPrompt.setText(this.cafeCat?.hungry
         ? '🐱 The cat looks hungry — feed her a treat!'
-        : '🐱 Pet the cat [E]').setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
+        : noE('🐱 Pet the cat [E]')).setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
     } else {
       this.catPrompt.setAlpha(0);
     }
 
     // Santa Hat v1: prompt near the hat on the ground.
     if (nearHat && !nearPond) {
-      this.hatPrompt.setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
+      this.hatPrompt.setText(noE('🎅 Pick up the Santa hat [E]')).setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
     } else {
       this.hatPrompt.setAlpha(0);
     }
@@ -3248,7 +3253,7 @@ export class VillageScene extends Phaser.Scene {
     // piece, or the prompt would give away where they are.
     const nearTable = this.puzzleQuest?.nearestTable(this.player.gx, this.player.gy);
     if (nearTable && !nearPond && !nearCat) {
-      this.puzzlePrompt.setText('🧩 Puzzle table [E]').setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
+      this.puzzlePrompt.setText(noE('🧩 Puzzle table [E]')).setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
     } else {
       this.puzzlePrompt.setAlpha(0);
     }
@@ -3260,10 +3265,10 @@ export class VillageScene extends Phaser.Scene {
     const nearBox = this.trimTreeQuest?.nearestBox(this.player.gx, this.player.gy);
     const nearTree = this.trimTreeQuest?.nearestTree(this.player.gx, this.player.gy);
     if (nearBox && !nearPond && !nearCat && !nearTable) {
-      this.treePrompt.setText('🎄 Take an ornament [E]').setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
+      this.treePrompt.setText(noE('🎄 Take an ornament [E]')).setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
     } else if (nearTree && !nearPond && !nearCat && !nearTable) {
       this.treePrompt.setText(
-        this.trimTreeQuest?.carrying ? '🎄 Hang the ornament [E]' : '🎄 Grab an ornament from the box first',
+        this.trimTreeQuest?.carrying ? noE('🎄 Hang the ornament [E]') : '🎄 Grab an ornament from the box first',
       ).setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
     } else {
       this.treePrompt.setAlpha(0);
@@ -3272,7 +3277,7 @@ export class VillageScene extends Phaser.Scene {
     // Bookshelf: prompt near interactable shelves (duck prompt takes priority).
     const nearShelf = this._nearestShelf();
     if (nearShelf && !nearPond) {
-      this.shelfPrompt.setText(`📚 ${nearShelf.label} [E]`).setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
+      this.shelfPrompt.setText(noE(`📚 ${nearShelf.label} [E]`)).setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
     } else {
       this.shelfPrompt.setAlpha(0);
     }
@@ -3283,7 +3288,7 @@ export class VillageScene extends Phaser.Scene {
     if (nearDecor && !nearPond && !nearCat && !nearTable && !nearBox && !nearTree) {
       this.decorPrompt.setText(
         nearDecor.mine
-          ? `🎄 Pick up your ${nearDecor.label} [E]`
+          ? noE(`🎄 Pick up your ${nearDecor.label} [E]`)
           : `🎄 ${nearDecor.addedByName}'s ${nearDecor.label}`,
       ).setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
     } else {
@@ -3298,7 +3303,7 @@ export class VillageScene extends Phaser.Scene {
     const nearMailbox = this.mailSystem?.nearestMailbox(this.player.gx, this.player.gy);
     if (nearMailbox && !nearPond && !nearCat && !nearTable && !nearBox && !nearTree) {
       const mailUnread = (this.mailSystem?.getState?.().unread || 0);
-      this.mailPrompt.setText(mailUnread > 0 ? '📬 You’ve got mail! [E]' : '📬 Mailbox [E]').setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
+      this.mailPrompt.setText(mailUnread > 0 ? noE('📬 You’ve got mail! [E]') : noE('📬 Mailbox [E]')).setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
     } else {
       this.mailPrompt.setAlpha(0);
     }
@@ -3307,7 +3312,7 @@ export class VillageScene extends Phaser.Scene {
     // Client-side audio: play CC-licensed tracks when near any jukebox.
     const nearJukebox = this._nearestJukebox();
     if (nearJukebox && !nearPond && !nearShelf) {
-      this.jukeboxPrompt.setText('🎵 Jukebox [E]').setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
+      this.jukeboxPrompt.setText(noE('🎵 Jukebox [E]')).setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
     } else {
       this.jukeboxPrompt.setAlpha(0);
     }
@@ -3318,7 +3323,7 @@ export class VillageScene extends Phaser.Scene {
     // "coming right up".
     // Coffee bar mobile (`sq-coffee-bar-mobile-v1`): on a phone there is
     // no E key — the prompts name the button to tap instead of "[E]".
-    const isTouchDevice = typeof window !== 'undefined' && ('ontouchstart' in window || (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0));
+    // (isTouchDevice is defined above, at the top of the prompt block.)
     const eHint = (emoji) => (isTouchDevice ? `· tap ${emoji}` : '[E]');
     const nearBar = this._nearestBar();
     const myId = this.socket?.id || '__local__';

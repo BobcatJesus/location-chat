@@ -524,7 +524,10 @@ export class HalloweenMode {
 
   update(delta) {
     if (!this.active) return;
-    // Pumpkin proximity prompt ([E] interaction): nearest unlit
+    // No-E on mobile (`sq-no-e-mobile-v1`): on a phone there is no E
+    // key, so the prompt drops the " [E]" suffix.
+    const isTouchDevice = typeof window !== 'undefined' && ('ontouchstart' in window || (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0));
+    // Pumpkin proximity prompt (tap / [E] interaction): nearest unlit
     // pumpkin within reach of the player shows the prompt, same as
     // the duck/shelf/jukebox prompts elsewhere in the scene.
     try {
@@ -538,7 +541,7 @@ export class HalloweenMode {
           if (d < bestD) { bestD = d; this._nearPumpkin = e; }
         }
         if (this._nearPumpkin) {
-          this.pumpkinPrompt.setPosition(player.gx, player.gy - 60).setAlpha(1);
+          this.pumpkinPrompt.setText(isTouchDevice ? "🎃 Light the jack-o'-lantern" : "🎃 Light the jack-o'-lantern [E]").setPosition(player.gx, player.gy - 60).setAlpha(1);
         } else {
           this.pumpkinPrompt.setAlpha(0);
         }
