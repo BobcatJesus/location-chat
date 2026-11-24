@@ -62,6 +62,11 @@ import {
   repairLoadedPuzzleState,
 } from './puzzlePersist.js';
 import {
+  TREE_ROOM_STATE_TABLE_SQL,
+  saveTreeState,
+  loadTreeState,
+} from './treePersist.js';
+import {
   NOTICE_BOARD_MAX_FLYERS,
   createNoticeBoardState,
   pinFlyer,
@@ -356,6 +361,14 @@ async function initDb() {
   // — the puzzle IS room state (unlike mail, which is excluded).
   await pool.query(PUZZLE_ROOM_STATE_TABLE_SQL);
   console.log('✅ Postgres puzzle_room_state table ready');
+  // Tree persistence (`sq-tree-persist-v1`): one row per room
+  // holding the serialized tree state, so a server restart
+  // restores the trees instead of wiping the group effort toward
+  // 25. NOTE for the Dec 19 reset: the deliberate reset clears
+  // this table — the trees ARE room state (unlike mail, which is
+  // excluded).
+  await pool.query(TREE_ROOM_STATE_TABLE_SQL);
+  console.log('✅ Postgres tree_room_state table ready');
   await authService.init();
 }
 
@@ -878,20 +891,60 @@ async function ensurePuzzleLoaded(roomId) {
   }
   return puzzleLoadPromises[roomId];
 }
-// Trim the Tree (Trim the Tree v1, `sq-trim-tree-v1`): per-room
-// state treeRooms[roomId] = { state }. Agora only. In-memory like
-// the puzzle — a server restart wipes the trees (tree 1 bare again,
-// tree 2 gone until tree 1 finishes again). Unlike the puzzle there
-// is NO auto-reset: a finished tree stays finished (it is decor),
+// Trim the Tree (Trim the Tree v1, `sq-trim-tree-v1`; persistence
+// `sq-tree-persist-v1`): per-room state treeRooms[roomId] =
+// { state }. Agora only. The state is persisted to Postgres
+// (tree_room_state) on every hang and loaded back lazily, so a
+// server restart restores the trees in whatever state they were
+// in instead of wiping them. Without a DB the trees stay
+// in-memory only, exactly as before. Unlike the puzzle there is
+// NO auto-reset: a finished tree stays finished (it is decor),
 // and tree 2 appears the moment tree 1 finishes. The server
 // enforces the hidden first-only rule (hangOrnament counts only a
 // player's first hang per tree), room membership, and rate limits;
 // it does not verify the box take or the walk to the tree — same
 // trust level as the puzzle's hidden-search clicks.
 const treeRooms = {};
+const treeRoomsLoaded = new Set(); // roomIds whose DB row has been read (or attempted)
+const treeLoadPromises = {}; // roomId -> in-flight load promise
 function treeRoom(roomId) {
   if (!treeRooms[roomId]) treeRooms[roomId] = { state: createTreeState() };
   return treeRooms[roomId];
+}
+// Save one room's tree state, never crashing the caller: a failed
+// save warns and the live broadcast still goes out (the in-memory
+// state is the live truth; the next hang retries the save).
+async function persistTree(roomId) {
+  try {
+    await saveTreeState(pool, roomId, treeRoom(roomId).state);
+  } catch (e) {
+    console.warn('⚠️ tree persist failed:', e && e.message);
+  }
+}
+// Load a room's trees from Postgres the first time they are
+// touched. Concurrent touches share one in-flight load, so a hang
+// can never land on the default bare trees while the real row is
+// still being read. A missing row, a down DB, or a bad row all
+// leave the default bare trees in place. No repair step beyond
+// parseTreeState: there is no completion timer, and the parser
+// already recomputes the active pointer and forces a completed
+// tree's counted to 25.
+async function ensureTreeLoaded(roomId) {
+  if (treeRoomsLoaded.has(roomId)) return treeRoom(roomId);
+  if (!treeLoadPromises[roomId]) {
+    treeLoadPromises[roomId] = (async () => {
+      const room = treeRoom(roomId);
+      try {
+        const loaded = await loadTreeState(pool, roomId);
+        if (loaded) room.state = loaded;
+      } catch (e) {
+        console.warn('⚠️ tree load failed:', e && e.message);
+      }
+      treeRoomsLoaded.add(roomId);
+      return room;
+    })();
+  }
+  return treeLoadPromises[roomId];
 }
 // Santa Hat (Santa Hat v1, `sq-santa-hat-v1`; persistence
 // `sq-hat-persist-v1`): ONE hat hidden behind the Christmas tree
@@ -2023,16 +2076,21 @@ io.on('connection', (socket) => {
   // every counted contributor earns the Trim the Tree badge (once
   // ever), and tree 2 appears in the same room (or the quest ends
   // here, if tree 2 just finished — max 2 trees per venue).
-  socket.on('tree_hang', ({ roomId } = {}) => {
+  socket.on('tree_hang', async ({ roomId } = {}) => {
     if (!roomId || roomId !== 'agora-houston') return;
     if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
     const userId = socketUserMap[socket.id] || socket.id;
     const rate = checkRateLimit(userId);
     if (!rate.allowed) return;
+    // Tree persistence (`sq-tree-persist-v1`): load first, so a
+    // hang can never land on the default bare trees while the
+    // real row is still being read.
+    await ensureTreeLoaded(roomId);
     const room = treeRoom(roomId);
     const res = hangOrnament(room.state, userId);
     if (!res.ok) return;
     io.to(roomId).emit('tree_state', serializeTreeState(room.state));
+    persistTree(roomId);
     if (res.treeFinished) {
       io.to(roomId).emit('tree_completed', {
         tree: res.tree,
@@ -2052,9 +2110,13 @@ io.on('connection', (socket) => {
   });
 
   // TRIM THE TREE STATE: the room's trees, sent when you join (or ask).
-  socket.on('get_tree', ({ roomId } = {}) => {
+  socket.on('get_tree', async ({ roomId } = {}) => {
     if (!roomId || roomId !== 'agora-houston') return;
     if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    // Tree persistence (`sq-tree-persist-v1`): load first, so a
+    // joiner never sees the default bare trees while the real row
+    // is still being read.
+    await ensureTreeLoaded(roomId);
     socket.emit('tree_state', serializeTreeState(treeRoom(roomId).state));
   });
 
