@@ -27,6 +27,7 @@ import { breadStockFor } from './breadShop.js';
 import { badgeListFrom, normalizeBadgeMap, formatBadgeDate } from './badges.js';
 import { io } from 'socket.io-client';
 import { RoomLayout } from './RoomLayout.js';
+import { stuckDropCheck } from './movement.js';
 import { pickLayout } from './layoutPicker.js';
 import { RoomEditor } from './RoomEditor.js';
 import { OutdoorEditor } from './OutdoorEditor.js';
@@ -3107,6 +3108,24 @@ export class VillageScene extends Phaser.Scene {
       }
     } else {
       // no-op
+    }
+
+    // Mobile movement v1 (`sq-mobile-move-v1`): tap-to-move has no
+    // steering (no keyboard on a phone), so a target whose straight-line
+    // path is blocked leaves the player pushing against furniture
+    // forever. If we haven't gotten meaningfully closer for a while,
+    // drop the target — they stop, and tap a clear spot to walk around.
+    if (this.target) {
+      const distToTarget = Math.hypot(this.target.x - this.player.gx, this.target.y - this.player.gy);
+      const stuck = stuckDropCheck(this._targetStuck || null, distToTarget, this.time.now);
+      if (stuck.drop) {
+        this.target = null;
+        this._targetStuck = null;
+      } else {
+        this._targetStuck = stuck.state;
+      }
+    } else {
+      this._targetStuck = null;
     }
 
     this.player.avatar.setMovementState({

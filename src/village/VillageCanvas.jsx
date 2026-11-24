@@ -257,6 +257,9 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
   // persistent tracker box is replaced by a "Quests" button in the top
   // bar; tapping it opens the quests as a popup, closed by a literal X.
   const [showQuests, setShowQuests] = useState(false);
+  // Mobile menu (`sq-mobile-move-v1`): on narrow screens the whole top
+  // bar collapses to a single ☰ button; this opens it as a popup.
+  const [showMenu, setShowMenu] = useState(false);
   const [isNarrow, setIsNarrow] = useState(() =>
     typeof window !== 'undefined' ? window.innerWidth <= 640 : false,
   );
@@ -819,6 +822,159 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
     }
   };
 
+  // Mobile menu (`sq-mobile-move-v1`): the top bar's buttons as one
+  // fragment, used by the wide bar (as a row) and by the narrow menu
+  // popup (as a column). Every action also closes the menu — a no-op
+  // on wide screens, where the menu is never open.
+  const topBarButtons = (
+    <>
+      {/* Leave rename v1 (sq-leave-rename-v1): the button says what it
+          does now — "Return to map". Same onLeave, same spot, same style. */}
+      <button
+        onClick={() => { setShowMenu(false); onLeave(); }}
+        style={{
+          background: 'rgba(0,0,0,0.55)', color: '#fff', border: 'none',
+          borderRadius: 8,
+          padding: '6px 14px',
+          minHeight: 44,
+          display: 'flex', alignItems: 'center',
+          cursor: 'pointer',
+          fontSize: 14,
+          flexShrink: 0,
+          whiteSpace: 'nowrap',
+        }}
+      >
+        ← Return to map
+      </button>
+      {/* Create Event top bar (`sq-create-event-topbar-v1`): "+ Create
+          event" used to float over this bar from app.jsx (top:12,
+          left:12, zIndex 1001), covering "Return to map" on every
+          screen where the player can manage the venue. It lives in
+          the bar now, so it wraps with the other buttons on mobile
+          instead of covering one. */}
+      {canManageVenue && onCreateEvent && (
+        <button
+          onClick={() => { setShowMenu(false); onCreateEvent(); }}
+          style={{
+            background: '#fbbf24', color: '#111827', border: 'none',
+            borderRadius: 8,
+            padding: '6px 14px',
+            minHeight: 44,
+            display: 'flex', alignItems: 'center',
+            cursor: 'pointer',
+            fontSize: 14,
+            fontWeight: 'bold',
+            flexShrink: 0,
+            whiteSpace: 'nowrap',
+          }}
+        >
+          + Create event
+        </button>
+      )}
+      {/* Two Places v1 (`sq-two-places-v1`): there is NO 🏠 Home
+          button any more. Your places are real locations — you
+          enter one from the map when you are next to it (GPS
+          proximity, like any other place). The teleport home is
+          gone entirely, so nothing here takes you to a place. */}
+      <button
+        onClick={() => { setShowMenu(false); toggleEditor(); }}
+        style={{
+          background: editorActive ? '#fbbf24' : 'rgba(0,0,0,0.55)',
+          color: editorActive ? '#000' : '#fff',
+          border: 'none',
+          borderRadius: 8,
+          padding: '6px 14px',
+          minHeight: 44,
+          display: 'flex', alignItems: 'center',
+          cursor: 'pointer',
+          fontSize: 14,
+          fontWeight: 'bold',
+          flexShrink: 0,
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {editorActive ? 'Done' : (outdoorMode ? 'Outdoor Edit' : 'Edit')}
+      </button>
+      <button
+        onClick={() => { setShowMenu(false); setShowInteriorSketch(true); }}
+        title="Sketch the interior layout of this place"
+        style={{
+          background: 'rgba(0,0,0,0.55)', color: '#35e0ff',
+          border: '2px solid #35e0ff',
+          borderRadius: 8, padding: '6px 14px',
+          fontSize: 14, fontWeight: 'bold', cursor: 'pointer',
+          minHeight: 44, display: 'flex', alignItems: 'center', flexShrink: 0,
+          whiteSpace: 'nowrap',
+        }}
+      >
+        🏠 Build layout
+      </button>
+      <button
+        onClick={() => { setShowMenu(false); toggleZoom(); }}
+        style={{
+          background: 'rgba(0,0,0,0.55)',
+          color: '#fff',
+          border: 'none',
+          borderRadius: 8,
+          padding: '6px 14px',
+          minHeight: 44,
+          display: 'flex', alignItems: 'center',
+          cursor: 'pointer',
+          fontSize: 14,
+          fontWeight: 'bold',
+          flexShrink: 0,
+          whiteSpace: 'nowrap',
+        }}
+      >
+        Zoom: {zoomLabel}
+      </button>
+      <div
+        title="Your coins — earn 10 daily, 5 for new places"
+        style={{
+          background: 'rgba(0,0,0,0.55)', color: '#ffb02e',
+          borderRadius: 8, padding: '6px 14px',
+          fontSize: 14, fontWeight: 'bold',
+          display: 'flex', alignItems: 'center', gap: 4,
+          minHeight: 44, flexShrink: 0,
+        }}
+      >
+        🪙 {coinBalance}
+      </div>
+      {isModerator && (
+      <button
+        onClick={() => { setShowMenu(false); setShowModQueue(true); }}
+        title="Review pending layout submissions"
+        style={{
+          background: 'rgba(0,0,0,0.55)', color: '#ffb02e',
+          border: '2px solid #ffb02e',
+          borderRadius: 8, padding: '6px 14px',
+          fontSize: 14, fontWeight: 'bold', cursor: 'pointer',
+          minHeight: 44, display: 'flex', alignItems: 'center', flexShrink: 0,
+        }}
+      >
+        📋 Review
+      </button>
+      )}
+      {/* Quests popup (`sq-quests-popup-v1`): narrow screens only —
+          the persistent tracker box below is hidden there, so this
+          button is the way in. Tapping it opens the quests popup. */}
+      {isNarrow && (
+        <button
+          onClick={() => { setShowMenu(false); setShowQuests(true); }}
+          style={{
+            background: 'rgba(0,0,0,0.55)', color: '#fff', border: 'none',
+            borderRadius: 8, padding: '6px 14px',
+            minHeight: 44, display: 'flex', alignItems: 'center',
+            cursor: 'pointer', fontSize: 14, fontWeight: 'bold',
+            flexShrink: 0, whiteSpace: 'nowrap',
+          }}
+        >
+          🎯 Quests
+        </button>
+      )}
+    </>
+  );
+
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
@@ -1050,139 +1206,9 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
         alignItems: 'center',
         paddingBottom: 4,
       }}>
-        {/* Leave rename v1 (sq-leave-rename-v1): the button says what it
-            does now — "Return to map". Same onLeave, same spot, same style. */}
-        <button
-          onClick={onLeave}
-          style={{
-            background: 'rgba(0,0,0,0.55)', color: '#fff', border: 'none',
-            borderRadius: 8,
-            padding: '6px 14px',
-            minHeight: 44,
-            display: 'flex', alignItems: 'center',
-            cursor: 'pointer',
-            fontSize: 14,
-            flexShrink: 0,
-            whiteSpace: 'nowrap',
-          }}
-        >
-          ← Return to map
-        </button>
-        {/* Create Event top bar (`sq-create-event-topbar-v1`): "+ Create
-            event" used to float over this bar from app.jsx (top:12,
-            left:12, zIndex 1001), covering "Return to map" on every
-            screen where the player can manage the venue. It lives in
-            the bar now, so it wraps with the other buttons on mobile
-            instead of covering one. */}
-        {canManageVenue && onCreateEvent && (
+        {isNarrow ? (
           <button
-            onClick={onCreateEvent}
-            style={{
-              background: '#fbbf24', color: '#111827', border: 'none',
-              borderRadius: 8,
-              padding: '6px 14px',
-              minHeight: 44,
-              display: 'flex', alignItems: 'center',
-              cursor: 'pointer',
-              fontSize: 14,
-              fontWeight: 'bold',
-              flexShrink: 0,
-              whiteSpace: 'nowrap',
-            }}
-          >
-            + Create event
-          </button>
-        )}
-        {/* Two Places v1 (`sq-two-places-v1`): there is NO 🏠 Home
-            button any more. Your places are real locations — you
-            enter one from the map when you are next to it (GPS
-            proximity, like any other place). The teleport home is
-            gone entirely, so nothing here takes you to a place. */}
-        <button
-          onClick={toggleEditor}
-          style={{
-            background: editorActive ? '#fbbf24' : 'rgba(0,0,0,0.55)',
-            color: editorActive ? '#000' : '#fff',
-            border: 'none',
-            borderRadius: 8,
-            padding: '6px 14px',
-            minHeight: 44,
-            display: 'flex', alignItems: 'center',
-            cursor: 'pointer',
-            fontSize: 14,
-            fontWeight: 'bold',
-            flexShrink: 0,
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {editorActive ? 'Done' : (outdoorMode ? 'Outdoor Edit' : 'Edit')}
-        </button>
-        <button
-          onClick={() => setShowInteriorSketch(true)}
-          title="Sketch the interior layout of this place"
-          style={{
-            background: 'rgba(0,0,0,0.55)', color: '#35e0ff',
-            border: '2px solid #35e0ff',
-            borderRadius: 8, padding: '6px 14px',
-            fontSize: 14, fontWeight: 'bold', cursor: 'pointer',
-            minHeight: 44, display: 'flex', alignItems: 'center', flexShrink: 0,
-            whiteSpace: 'nowrap',
-          }}
-        >
-          🏠 Build layout
-        </button>
-        <button
-          onClick={toggleZoom}
-          style={{
-            background: 'rgba(0,0,0,0.55)',
-            color: '#fff',
-            border: 'none',
-            borderRadius: 8,
-            padding: '6px 14px',
-            minHeight: 44,
-            display: 'flex', alignItems: 'center',
-            cursor: 'pointer',
-            fontSize: 14,
-            fontWeight: 'bold',
-            flexShrink: 0,
-            whiteSpace: 'nowrap',
-          }}
-        >
-          Zoom: {zoomLabel}
-        </button>
-        <div
-          title="Your coins — earn 10 daily, 5 for new places"
-          style={{
-            background: 'rgba(0,0,0,0.55)', color: '#ffb02e',
-            borderRadius: 8, padding: '6px 14px',
-            fontSize: 14, fontWeight: 'bold',
-            display: 'flex', alignItems: 'center', gap: 4,
-            minHeight: 44, flexShrink: 0,
-          }}
-        >
-          🪙 {coinBalance}
-        </div>
-        {isModerator && (
-        <button
-          onClick={() => setShowModQueue(true)}
-          title="Review pending layout submissions"
-          style={{
-            background: 'rgba(0,0,0,0.55)', color: '#ffb02e',
-            border: '2px solid #ffb02e',
-            borderRadius: 8, padding: '6px 14px',
-            fontSize: 14, fontWeight: 'bold', cursor: 'pointer',
-            minHeight: 44, display: 'flex', alignItems: 'center', flexShrink: 0,
-          }}
-        >
-          📋 Review
-        </button>
-        )}
-        {/* Quests popup (`sq-quests-popup-v1`): narrow screens only —
-            the persistent tracker box below is hidden there, so this
-            button is the way in. Tapping it opens the quests popup. */}
-        {isNarrow && (
-          <button
-            onClick={() => setShowQuests(true)}
+            onClick={() => setShowMenu(true)}
             style={{
               background: 'rgba(0,0,0,0.55)', color: '#fff', border: 'none',
               borderRadius: 8, padding: '6px 14px',
@@ -1191,10 +1217,56 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
               flexShrink: 0, whiteSpace: 'nowrap',
             }}
           >
-            🎯 Quests
+            ☰ Menu
           </button>
+        ) : (
+          topBarButtons
         )}
       </div>
+
+      {/* Menu popup (`sq-mobile-move-v1`): narrow screens only — the whole
+          top bar lives here while the ☰ button is the only thing in the
+          bar itself. Closed by the literal X, or by tapping the dimmed
+          backdrop. */}
+      {isNarrow && showMenu && (
+        <div
+          style={{
+            position: 'absolute', inset: 0, zIndex: 2000,
+            background: 'rgba(2,6,23,0.75)',
+            display: 'grid', placeItems: 'center', padding: 20,
+          }}
+          onClick={() => setShowMenu(false)}
+        >
+          <div
+            style={{
+              width: 'min(420px, 100%)', maxHeight: '80vh', overflowY: 'auto',
+              background: '#0f172a', color: '#f8fafc', borderRadius: 8,
+              padding: '14px 16px', boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
+              position: 'relative',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setShowMenu(false)}
+              aria-label="Close menu"
+              style={{
+                position: 'absolute', top: 8, right: 8,
+                background: 'rgba(255,255,255,0.12)', border: 'none', borderRadius: 8,
+                width: 36, height: 36, fontSize: 18, fontWeight: 'bold',
+                cursor: 'pointer', color: '#f8fafc',
+                display: 'grid', placeItems: 'center',
+              }}
+            >
+              ✕
+            </button>
+            <div style={{ fontWeight: 'bold', fontSize: 16, marginBottom: 10, paddingRight: 44 }}>☰ Menu</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'stretch' }}>
+              {topBarButtons}
+            </div>
+          </div>
+        </div>
+      )}
+
 
       {/* Quest HUD as DOM, below the top bar: the in-canvas tracker and
           banner sit underneath the DOM top bar on PC (zIndex 1000) and
