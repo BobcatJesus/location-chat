@@ -124,6 +124,7 @@ export class TrimTreeQuest {
     this.marker = TREE_MARKER_V1;
     this.state = createTreeState();
     this.carrying = false; // I am holding an ornament from the box
+    this._carryText = null; // carried-ornament marker above my head (sq-carry-ornament-v1)
     this.myCountedTrees = new Set(); // tree numbers (1/2) my first ornament counted on
     this._treeContainers = new Map(); // 'tree1' | 'tree2' -> Phaser container
     this._boxContainer = null;
@@ -245,9 +246,30 @@ export class TrimTreeQuest {
    *  time — taking another while carrying does nothing (silent). */
   takeOrnament() {
     if (!this.enabled) return { ok: false, reason: 'not-available' };
-    if (this.state.active < 0) return { ok: false, reason: 'all-done' };
-    if (this.carrying) return { ok: false, reason: 'already-carrying' };
+    if (this.state.active < 0) {
+      try { this.scene?.onSystemNotice?.('🎄 Both trees are finished — thank you!'); } catch {}
+      return { ok: false, reason: 'all-done' };
+    }
+    if (this.carrying) {
+      try { this.scene?.onSystemNotice?.("🎄 You're already holding an ornament — hang it on the tree first."); } catch {}
+      return { ok: false, reason: 'already-carrying' };
+    }
+    // One per person (`sq-carry-ornament-v1`): one counted ornament
+    // per tree. The server already counts only your first hang per
+    // tree (contributors); the box just stops handing out seconds.
+    // Contributors come from server state, so the limit survives a
+    // refresh; the pending check covers the ~1s before the server
+    // confirms my hang.
+    const treeNum = this.state.active + 1;
+    const tree = this.state.trees[this.state.active];
+    const alreadyCounted = tree?.contributors?.includes(this._myUserId())
+      || this._pendingHangTree === treeNum;
+    if (alreadyCounted) {
+      try { this.scene?.onSystemNotice?.("🎄 You've already hung your ornament on this tree — one per person!"); } catch {}
+      return { ok: false, reason: 'already-took' };
+    }
     this.carrying = true;
+    this._updateCarryIndicator();
     try { this.scene?.onSystemNotice?.('🎄 You took an ornament from the box. Hang it on the tree!'); } catch {}
     return { ok: true };
   }
@@ -264,6 +286,7 @@ export class TrimTreeQuest {
     this._pendingHangTree = treeNum;
     this._pendingWasContributor = (tree?.contributors || []).includes(this._myUserId());
     this.carrying = false;
+    this._updateCarryIndicator();
     const socket = this.scene?.socket;
     if (socket?.connected) {
       // The server validates (first-only counting) and broadcasts
@@ -516,7 +539,32 @@ export class TrimTreeQuest {
     g.fillPath();
   }
 
+  /** Carried-ornament marker (`sq-carry-ornament-v1`): while I am
+   *  carrying a free ornament, a 🎄 rides above my head so the state
+   *  is visible — no more invisible "am I holding one?" (the 2.6s
+   *  take toast alone was too easy to miss). Same pattern as the
+   *  cat's "hungry..." bubble: a scene-level text repositioned
+   *  every frame. Offset to the side so it never covers my name. */
+  _updateCarryIndicator() {
+    try {
+      const player = this.scene?.player;
+      const show = Boolean(this.carrying && this.enabled && player);
+      if (!show) {
+        this._carryText?.setAlpha(0);
+        return;
+      }
+      if (!this._carryText) {
+        this._carryText = this.scene.add.text(0, 0, '🎄', { fontSize: '20px' });
+        this._carryText.setOrigin(0.5, 1);
+        this._carryText.setDepth(DEPTH.ACTOR_MIN + 500);
+      }
+      this._carryText.setPosition(player.gx + 22, player.gy - 56).setAlpha(1);
+    } catch {}
+  }
+
   update() {
+    // Keep the carried-ornament marker on my head every frame.
+    this._updateCarryIndicator();
     if (!this.enabled) return;
     const now = Date.now();
     if (now - (this._lastCheckMs || 0) < RESPAWN_CHECK_MS) return;
@@ -536,6 +584,8 @@ export class TrimTreeQuest {
 
   destroy() {
     this._clearEntities();
+    try { this._carryText?.destroy(); } catch {}
+    this._carryText = null;
     this.scene = null;
   }
 }
