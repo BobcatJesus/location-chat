@@ -82,6 +82,13 @@ import {
   loadCatState,
 } from './catPersist.js';
 import {
+  JUKEBOX_ROOM_STATE_TABLE_SQL,
+  saveJukeboxNowPlaying,
+  loadJukeboxNowPlaying,
+  jukeboxRemainingMs,
+  JUKEBOX_MIN_REMAINING_MS,
+} from './jukeboxPersist.js';
+import {
   NOTICE_BOARD_MAX_FLYERS,
   createNoticeBoardState,
   pinFlyer,
@@ -409,6 +416,15 @@ async function initDb() {
   // which is excluded).
   await pool.query(CAT_ROOM_STATE_TABLE_SQL);
   console.log('✅ Postgres cat_room_state table ready');
+  // Jukebox Persistence v1 (`sq-jukebox-persist-v1`): one row per
+  // room holding the now-playing song snapshot (+ skip votes,
+  // cooldown, queue votedBy), so a server restart resumes the
+  // song instead of cutting it off and skipping it entirely. The
+  // queue itself already lives in the jukebox_songs table. NOTE
+  // for the Dec 19 reset: the deliberate reset clears this table
+  // — the jukebox IS room state (unlike mail, which is excluded).
+  await pool.query(JUKEBOX_ROOM_STATE_TABLE_SQL);
+  console.log('✅ Postgres jukebox_room_state table ready');
   await authService.init();
 }
 
@@ -1269,25 +1285,140 @@ function publicJukeboxState(roomId, userId) {
   return { nowPlaying, queue };
 }
 
-async function loadJukebox(roomId) {
-  if (jukeboxLoaded.has(roomId)) return jukeboxRooms[roomId];
-  jukeboxLoaded.add(roomId);
-  const st = jukeboxState(roomId);
-  if (!pool) return st;
+const jukeboxNowPlayingLoaded = new Set(); // roomIds whose now-playing row has been read (or attempted)
+const jukeboxNowPlayingLoadPromises = {}; // roomId -> in-flight restore promise
+const jukeboxLoadPromises = {}; // roomId -> in-flight loadJukebox promise (queue + restore)
+// Save one room's jukebox now-playing snapshot (song + skip votes
+// + cooldown + queue votedBy), never crashing the caller: a failed
+// save warns and the live broadcast still goes out (the in-memory
+// state is the live truth; the next advance/skip/vote retries the
+// save).
+async function persistJukebox(roomId) {
   try {
-    const { rows } = await pool.query(
-      'SELECT id, title, artist, votes, added_by AS "addedBy", added_by_name AS "addedByName", created_at AS "createdAt", youtube_video_id AS "youtubeVideoId" FROM jukebox_songs WHERE room_id = $1 AND played = FALSE ORDER BY votes DESC, created_at ASC',
-      [roomId]
-    );
-    // Legacy title-only seed rows never actually play — keep them out of
-    // the live queue so they can't block the house song or user picks.
-    st.queue = rows
-      .filter((r) => r.youtubeVideoId || !String(r.id).startsWith('seed-'))
-      .map((r) => ({ ...r, votedBy: new Set(), createdAt: new Date(r.createdAt).getTime() || Date.now() }));
+    const st = jukeboxRooms[roomId];
+    await saveJukeboxNowPlaying(pool, roomId, {
+      nowPlaying: st?.nowPlaying || null,
+      defaultCooldownUntil: st?.defaultCooldownUntil ?? null,
+      votedBy: Object.fromEntries(
+        (st?.queue || [])
+          .filter((s) => s.votedBy && s.votedBy.size)
+          .map((s) => [s.id, [...s.votedBy]])
+      ),
+    });
   } catch (e) {
-    console.error('loadJukebox failed:', e.message);
+    console.warn('⚠️ jukebox persist failed:', e && e.message);
   }
-  return st;
+}
+// Overlay restored queue votedBy flags onto the loaded queue.
+// Idempotent (Sets): safe to call twice, e.g. once from the
+// in-flight load and once from a concurrent early return.
+function overlayJukeboxVotes(roomId, row) {
+  const st = jukeboxRooms[roomId];
+  if (!st || !row || !row.votedBy) return;
+  for (const song of st.queue) {
+    const voters = row.votedBy[song.id];
+    if (Array.isArray(voters)) for (const v of voters) song.votedBy.add(v);
+  }
+}
+// Restore one room's now-playing song from Postgres the first time
+// the jukebox is touched. Concurrent touches share one in-flight
+// load, so a get_jukebox can never advance past a song that is
+// still being restored. Returns the parsed row (or null) so the
+// caller can overlay the votedBy flags once the queue is loaded.
+// The snapshot is the ONLY copy of the playing song — it was
+// already marked played when it started, so the queue SELECT
+// excludes it. A snapshot of the house song is rebuilt from
+// DEFAULT_JUKEBOX_SONG (the row only carries its startedAt +
+// skip votes). The timer is re-armed for the REMAINING time; a
+// song that already ran out while the server was down is left
+// unrestored (nowPlaying stays null) so the caller advances. A
+// cooldown that already expired is dropped the same way.
+async function ensureJukeboxNowPlayingLoaded(roomId) {
+  if (jukeboxNowPlayingLoaded.has(roomId)) return jukeboxNowPlayingLoadPromises[roomId] || null;
+  if (!jukeboxNowPlayingLoadPromises[roomId]) {
+    jukeboxNowPlayingLoadPromises[roomId] = (async () => {
+      try {
+        const st = jukeboxState(roomId);
+        const loaded = await loadJukeboxNowPlaying(pool, roomId);
+        if (loaded && !st.nowPlaying) {
+          if (Number.isFinite(loaded.defaultCooldownUntil) && loaded.defaultCooldownUntil > Date.now()) {
+            st.defaultCooldownUntil = loaded.defaultCooldownUntil;
+          }
+          if (loaded.nowPlaying) {
+            const snap = loaded.nowPlaying;
+            const remaining = jukeboxRemainingMs(snap);
+            if (remaining > JUKEBOX_MIN_REMAINING_MS) {
+              // Defensive: a stale row must never double-play a song
+              // that is also sitting in the queue.
+              st.queue = st.queue.filter((s) => s.id !== snap.id);
+              const isHouse = snap.id === DEFAULT_JUKEBOX_SONG.id;
+              st.nowPlaying = {
+                id: snap.id,
+                title: isHouse ? DEFAULT_JUKEBOX_SONG.title : snap.title,
+                artist: isHouse ? DEFAULT_JUKEBOX_SONG.artist : snap.artist,
+                addedBy: isHouse ? 'house' : snap.addedBy,
+                addedByName: isHouse ? DEFAULT_JUKEBOX_SONG.addedByName : snap.addedByName,
+                youtubeVideoId: isHouse ? DEFAULT_JUKEBOX_SONG.youtubeVideoId : snap.youtubeVideoId,
+                startedAt: snap.startedAt,
+                skipVotes: new Set(snap.skipVotes || []),
+              };
+              st.timer = setTimeout(() => advanceJukebox(roomId), remaining);
+              if (st.timer.unref) st.timer.unref();
+            }
+            // else: the song already ran out while the server was
+            // down — leave nowPlaying null so the caller advances.
+          }
+        }
+        return loaded;
+      } catch (e) {
+        console.warn('⚠️ jukebox now-playing load failed:', e && e.message);
+        return null;
+      } finally {
+        jukeboxNowPlayingLoaded.add(roomId);
+      }
+    })();
+  }
+  return jukeboxNowPlayingLoadPromises[roomId];
+}
+
+async function loadJukebox(roomId) {
+  if (jukeboxLoaded.has(roomId)) {
+    // Queue load already started (or done): every caller shares
+    // the one in-flight load, so a second add_song can never push
+    // onto the pre-load empty queue and lose the song when the
+    // load replaces it — and a get_jukebox can never advance past
+    // a now-playing song that is still being restored.
+    return jukeboxLoadPromises[roomId];
+  }
+  jukeboxLoadPromises[roomId] = (async () => {
+    jukeboxLoaded.add(roomId);
+    const st = jukeboxState(roomId);
+    if (!pool) {
+      // No Postgres: restore is a no-op, exactly as today.
+      await ensureJukeboxNowPlayingLoaded(roomId);
+      return st;
+    }
+    try {
+      const { rows } = await pool.query(
+        'SELECT id, title, artist, votes, added_by AS "addedBy", added_by_name AS "addedByName", created_at AS "createdAt", youtube_video_id AS "youtubeVideoId" FROM jukebox_songs WHERE room_id = $1 AND played = FALSE ORDER BY votes DESC, created_at ASC',
+        [roomId]
+      );
+      // Legacy title-only seed rows never actually play — keep them out of
+      // the live queue so they can't block the house song or user picks.
+      st.queue = rows
+        .filter((r) => r.youtubeVideoId || !String(r.id).startsWith('seed-'))
+        .map((r) => ({ ...r, votedBy: new Set(), createdAt: new Date(r.createdAt).getTime() || Date.now() }));
+    } catch (e) {
+      console.error('loadJukebox failed:', e.message);
+    }
+    // Jukebox Persistence v1 (`sq-jukebox-persist-v1`): restore the
+    // now-playing song after the queue loads, then overlay the
+    // restored queue votedBy flags onto the loaded queue.
+    const row = await ensureJukeboxNowPlayingLoaded(roomId);
+    overlayJukeboxVotes(roomId, row);
+    return st;
+  })();
+  return jukeboxLoadPromises[roomId];
 }
 
 async function saveJukeboxSong(roomId, song) {
@@ -1333,6 +1464,11 @@ function advanceJukebox(roomId) {
     if (st.defaultCooldownUntil && Date.now() < st.defaultCooldownUntil) {
       st.nowPlaying = null;
       broadcastJukebox(roomId);
+      // Jukebox Persistence v1 (`sq-jukebox-persist-v1`): the
+      // sit-out (nothing playing + live cooldown) is state too —
+      // persist the null + cooldown so a restart does not forget
+      // the bench and immediately replay the house song.
+      persistJukebox(roomId);
       return;
     }
     // Queue is dry: the house song takes the stage.
@@ -1345,6 +1481,10 @@ function advanceJukebox(roomId) {
   const waitMs = next.youtubeVideoId ? 10 * 60 * 1000 : SONG_MS;
   st.timer = setTimeout(() => advanceJukebox(roomId), waitMs);
   if (st.timer.unref) st.timer.unref();
+  // Jukebox Persistence v1 (`sq-jukebox-persist-v1`): a new song
+  // just started — save its snapshot (with startedAt) so a
+  // restart resumes it instead of skipping it entirely.
+  persistJukebox(roomId);
 }
 
 async function upsertPresence({ socketId, userId, roomId, name, firstName, skinId, avatarModel, x, y }) {
@@ -2820,6 +2960,11 @@ io.on('connection', (socket) => {
     await saveJukeboxSong(roomId, song);
     sortJukeboxQueue(st.queue);
     broadcastJukebox(roomId);
+    // Jukebox Persistence v1 (`sq-jukebox-persist-v1`): the votes
+    // count already persists via the songs table, but who voted
+    // lives only in the now-playing row — save it here, or a
+    // restart would let the same user vote twice on one song.
+    persistJukebox(roomId);
   });
 
   socket.on('skip_song', async ({ roomId }) => {
@@ -2845,6 +2990,11 @@ io.on('connection', (socket) => {
       advanceJukebox(roomId);
     } else {
       broadcastJukebox(roomId);
+      // Jukebox Persistence v1 (`sq-jukebox-persist-v1`): a skip
+      // vote changed the restored snapshot — save it, or a restart
+      // would forget the first vote and the song would need two
+      // fresh ones to skip.
+      persistJukebox(roomId);
     }
   });
 
