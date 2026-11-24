@@ -326,6 +326,11 @@ function describeItem(item) {
     pieceId: typeof item.pieceId === 'number' ? item.pieceId : null,
     decorKind: item?.type === ITEM_TYPES.DECORATION ? (item.decorKind || null) : null,
     breadKind: item?.type === ITEM_TYPES.FOOD ? (item.breadKind || null) : null,
+    // Hunger System v1 (`sq-hunger-v1`): whether this food came off
+    // the ground — litter / pond bits are trash food (eating one
+    // still counts as a bite, but makes you queasy for a minute).
+    // Bought breads (breadKind set) are never trash food.
+    trashFood: item?.type === ITEM_TYPES.FOOD ? Boolean(item.trashFood) : null,
     decorPrice: kindDef ? kindDef.price : null,
     // Feed the Ducks v2 (`sq-feed-ducks-v2`): food shows its remaining
     // feeds; legacy food without a usesLeft field counts as full (3).
@@ -386,6 +391,12 @@ export function addItem(item, inv = getInventory()) {
     // item is (roll / croissant / baguette). A kindless food item
     // is the bits of food from the ground.
     breadKind: typeof item.breadKind === 'string' ? item.breadKind : null,
+    // Hunger System v1 (`sq-hunger-v1`): food picked up off the
+    // ground is trash food — set at pickup time (see
+    // ItemsSystem.pickupTapAt) and carried through drops, mail
+    // and home storage, so a mailed trash croissant still makes
+    // the recipient queasy.
+    trashFood: item.type === ITEM_TYPES.FOOD ? Boolean(item.trashFood) : null,
     // Feed the Ducks v2 (`sq-feed-ducks-v2`): food carries its
     // remaining feeds; a fresh item is full (3), and a supplied count
     // is clamped to 3. Non-food keeps null.

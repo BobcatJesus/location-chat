@@ -462,6 +462,9 @@ export function normalizeFloorItems(input) {
       usesLeft: type === 'food' && Number.isFinite(Number(raw.usesLeft)) && Number(raw.usesLeft) >= 1
         ? Math.min(Math.floor(Number(raw.usesLeft)), 3)
         : null,
+      // Hunger System v1 (`sq-hunger-v1`): trash food dropped on
+      // the home floor stays trash food when picked back up.
+      trashFood: type === 'food' ? Boolean(raw.trashFood) : null,
       x: Math.max(0, Math.min(HOME_FLOOR_W, x)),
       y: Math.max(0, Math.min(HOME_FLOOR_H, y)),
     });
@@ -526,6 +529,9 @@ export function normalizeHomeItems(input) {
       usesLeft: type === 'food' && Number.isFinite(Number(raw.usesLeft)) && Number(raw.usesLeft) >= 1
         ? Math.min(Math.floor(Number(raw.usesLeft)), 3)
         : null,
+      // Hunger System v1 (`sq-hunger-v1`): trash food stored in
+      // the chest stays trash food when taken back out.
+      trashFood: type === 'food' ? Boolean(raw.trashFood) : null,
       createdAt: Number.isFinite(Number(raw.createdAt)) && Number(raw.createdAt) > 0
         ? Number(raw.createdAt)
         : null,

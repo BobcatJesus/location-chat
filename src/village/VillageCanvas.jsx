@@ -871,6 +871,10 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
           getState={() => gameRef.current?.scene?.getScene('VillageScene')?.itemsSystem?.getState?.()}
           getBadges={() => gameRef.current?.scene?.getScene('VillageScene')?.questManager?.getCompletions?.() || []}
           onUse={(id) => gameRef.current?.scene?.getScene('VillageScene')?.itemsSystem?.useItem?.(id) || { ok: false, reason: 'error' }}
+          // Hunger System v1 (`sq-hunger-v1`): the pocket's Eat
+          // button — one bite of food, its own path (never the
+          // ducks/cat Use path).
+          onEat={(id) => gameRef.current?.scene?.getScene('VillageScene')?.itemsSystem?.eatItem?.(id) || { ok: false, reason: 'error' }}
           onDrop={(id) => {
             // Drop on the home floor v1 (`sq-home-drop-v1`): in your
             // OWN home room, Drop puts a PERSISTED item on the floor

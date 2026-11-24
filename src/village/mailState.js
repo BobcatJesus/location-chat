@@ -207,6 +207,10 @@ export function cleanMailItem(raw = {}) {
     usesLeft: type === 'food' && Number.isFinite(Number(r.usesLeft)) && Number(r.usesLeft) >= 1
       ? Math.min(Math.floor(Number(r.usesLeft)), 3)
       : null,
+    // Hunger System v1 (`sq-hunger-v1`): trash food stays trash
+    // food through the mail — the recipient gets queasy too.
+    // Bought breads (breadKind set) are never trash food.
+    trashFood: type === 'food' ? Boolean(r.trashFood) : null,
     pieceId: null, // pieces never travel by mail (see above)
     createdAt: Number.isFinite(Number(r.createdAt)) && Number(r.createdAt) > 0
       ? Number(r.createdAt)

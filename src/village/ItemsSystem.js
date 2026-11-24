@@ -399,7 +399,19 @@ export class ItemsSystem {
     if (Math.hypot(player.gx - entry.x, player.gy - entry.y) > LITTER_PICKUP_RANGE) {
       return { ok: false, reason: 'too-far' };
     }
-    const res = addItem(entry.item || { type: entry.type });
+    const res = addItem((() => {
+      const pickupItem = entry.item || { type: entry.type };
+      // Hunger System v1 (`sq-hunger-v1`): food picked up off the
+      // ground is trash food — a dropped croissant by the bar, bits
+      // by the pond, or anything dropped on the floor. Bought breads
+      // carry a breadKind and are never trash food, even after a
+      // drop (dropItem preserves the kind). The flag is what makes
+      // eating it queasy.
+      if (pickupItem.type === ITEM_TYPES.FOOD && !pickupItem.breadKind) {
+        pickupItem.trashFood = true;
+      }
+      return pickupItem;
+    })());
     if (!res.ok && res.reason === 'inventory-full') {
       return { ok: false, reason: 'inventory-full' };
     }
@@ -467,6 +479,43 @@ export class ItemsSystem {
     return { ok: false, reason: 'nothing-to-feed' };
   }
 
+  /** Eat a bite of food (Hunger System v1, `sq-hunger-v1`): one
+   *  charge = one bite; 3 bites = full for 8 hours. This is its
+   *  OWN path — it never routes through useItem's duck/cat logic
+   *  above, and the charge is spent ONLY when the bite lands: the
+   *  already-full check happens BEFORE spending, so a refused bite
+   *  costs nothing. (The cat-cooldown edge — spend first, no-op
+   *  after — is not repeated here: takeBite cannot refuse once
+   *  the check above has passed, nothing else runs between the
+   *  two.) Returns { ok, used?, full?, bites?, trashFood?,
+   *  notice?, reason? } — `notice` is the exact line the pocket
+   *  panel shows for this bite (the scene toast sits under the
+   *  open pocket, so the bite result goes through the panel's
+   *  notice line, not onSystemNotice). */
+  eatItem(id) {
+    const item = getItem(id);
+    if (!item) return { ok: false, reason: 'not-found' };
+    if (item.type !== ITEM_TYPES.FOOD) return { ok: false, reason: 'not-food' };
+    const hunger = this.scene?.hungerSystem;
+    if (hunger && !hunger.isHungry()) {
+      return { ok: false, reason: 'already-full' };
+    }
+    const spent = spendFoodCharge(id);
+    if (!spent.ok) return { ok: false, reason: 'no-food' };
+    const wasTrashFood = Boolean(item.trashFood);
+    // The bite landed (the charge is spent) — apply it to the
+    // hunger state.
+    const res = hunger ? hunger.eatBite(wasTrashFood) : null;
+    return {
+      ok: true,
+      used: 'eat',
+      full: res ? res.full : false,
+      bites: res ? res.bites : null,
+      trashFood: wasTrashFood,
+      notice: res ? res.notice : 'Nom!',
+    };
+  }
+
   /** Drop an item on the ground where you stand (visible litter in
    * this room, this session). Puzzle pieces cannot be dropped — they
    * belong on the puzzle board. The Santa hat cannot be dropped
@@ -524,7 +573,12 @@ export class ItemsSystem {
     this._litter.push({
       id: `dropped-${removed.id}`,
       type: removed.type,
-      item: { type: removed.type, title: removed.title, text: removed.text, label: removed.label, blurb: removed.blurb },
+      // Hunger System v1 (`sq-hunger-v1`): a dropped item keeps
+      // what it was — a bought croissant keeps its breadKind (so
+      // picking it back up does not turn it into trash food) and a
+      // trash-food item keeps its trashFood flag, with its
+      // remaining charges intact either way.
+      item: { type: removed.type, title: removed.title, text: removed.text, label: removed.label, blurb: removed.blurb, breadKind: removed.breadKind, trashFood: removed.trashFood, usesLeft: removed.usesLeft },
       emoji: emojiMap[removed.type] || '📦',
       label: `dropped ${removed.label}`,
       x, y, textObj,

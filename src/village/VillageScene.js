@@ -9,6 +9,10 @@ import { SantaHatSystem } from './SantaHatSystem.js';
 // Temperature System v1 (`sq-temperature-v1`): seasonal cold/warm,
 // warm drinks (cocoa, coffee) and cold drinks (beer, iced coffee).
 import { TemperatureSystem } from './TemperatureSystem.js';
+// Hunger System v1 (`sq-hunger-v1`): hungry by default, any food
+// feeds you — 3 bites = full for 8 hours; trash food makes you
+// queasy for a minute.
+import { HungerSystem } from './HungerSystem.js';
 import { QuestManager } from './QuestManager.js';
 import { ItemsSystem } from './ItemsSystem.js';
 import { NoticeBoardSystem } from './NoticeBoardSystem.js';
@@ -706,6 +710,13 @@ export class VillageScene extends Phaser.Scene {
     // Client-side only — no server state, no quest.
     this.temperatureSystem = new TemperatureSystem(this);
     this.temperatureSystem.refresh();
+    // Hunger System v1 (`sq-hunger-v1`): hungry by default
+    // ("you're hungry..." once per spell); eat any food — 3 bites
+    // = full for 8 hours. Client-side only — no server state, no
+    // quest, no penalty. Trash food works fine but makes you
+    // queasy for a minute.
+    this.hungerSystem = new HungerSystem(this);
+    this.hungerSystem.refresh();
     // Wanderer quest: this room entry counts (after refresh, not in it).
     this.questManager?.noteRoomVisit();
     // Seasonal: pumpkins, bats, spooky tint in October.
@@ -3159,6 +3170,10 @@ export class VillageScene extends Phaser.Scene {
     // sq-temperature-v1: ticks the toast (1s) and the shiver /
     // sweat visuals (every frame, after player.sync()).
     this.temperatureSystem?.update(delta);
+    // sq-hunger-v1: ticks the hunger toast (1s) and the
+    // "hungry..." bubble / 🤢 visuals (every frame, after
+    // player.sync()).
+    this.hungerSystem?.update(delta);
     this.itemsSystem?.update(delta);
     this.questManager?.update(delta);
     this.halloween?.update(delta);
@@ -3582,6 +3597,8 @@ export class VillageScene extends Phaser.Scene {
     this.santaHatSystem = null;
     this.temperatureSystem?.destroy();
     this.temperatureSystem = null;
+    this.hungerSystem?.destroy();
+    this.hungerSystem = null;
     this.homeStorageSystem?.destroy();
     this.homeStorageSystem = null;
     this.questManager?.destroy();

@@ -21,6 +21,10 @@
 //     player is standing by the cafe cat (the "Put on the cat"
 //     button enables then).
 //   onUse(id) / onDrop(id) / onDispose(id) — return { ok, reason? }
+//   onEat(id) — Hunger System v1 (`sq-hunger-v1`): take one bite
+//     of a food item (one charge = one bite, 3 bites = full for 8
+//     hours). Returns { ok, notice?, reason? } — `notice` is the
+//     exact bite-result line this panel shows.
 //   onBuyBag() — returns { ok, reason? }
 //   onMakeFlyer(title, text) — returns { ok, reason? }
 //   onPinFlyer(id) — pin a flyer to this room's notice board (Notice
@@ -70,6 +74,10 @@ const REASON_TEXT = {
   'already-owned': 'You already have a bag.',
   'empty-flyer': 'A flyer needs a title and some text.',
   'not-usable': 'That item has no Use action.',
+  // Hunger System v1 (`sq-hunger-v1`): eating when already full
+  // spends nothing; only food can be eaten.
+  'already-full': "You're already full — save it for later.",
+  'not-food': 'Only food can be eaten.',
   'nothing-to-feed': 'No one here to feed right now — find the ducks at a pond or the cafe cat in Agora.',
   // Feed the Ducks v2 (`sq-feed-ducks-v2`): the E-key pond feed
   // refuses with this when the pocket holds no food.
@@ -109,7 +117,7 @@ const REASON_TEXT = {
 };
 
 export default function InventoryPanel({
-  getState, onUse, onDrop, onDispose, onBuyBag, onMakeFlyer, onPinFlyer, onPlaceDecoration, onPutHatOnCat, onSendMail, onGoToMailboxRoom, onOpenPuzzle, getBadges, onClose,
+  getState, onUse, onEat, onDrop, onDispose, onBuyBag, onMakeFlyer, onPinFlyer, onPlaceDecoration, onPutHatOnCat, onSendMail, onGoToMailboxRoom, onOpenPuzzle, getBadges, onClose,
 }) {
   const [state, setState] = useState(() => {
     try { return getState ? getState() : null; } catch { return null; }
@@ -207,7 +215,11 @@ export default function InventoryPanel({
     let res = { ok: false, reason: 'error' };
     try { res = fn ? fn() : res; } catch { res = { ok: false, reason: 'error' }; }
     if (res && res.ok) {
-      setNotice(okText || '');
+      // Hunger System v1 (`sq-hunger-v1`): the Eat button passes a
+      // function, so the notice line shows the bite's own result
+      // ("Still hungry... eat more." / "😋 Ahhh... full for most
+      // of the day." / the queasy line) instead of a fixed word.
+      setNotice(typeof okText === 'function' ? okText(res) : (okText || ''));
       refresh();
       return true;
     }
@@ -431,6 +443,23 @@ export default function InventoryPanel({
                           style={btnStyle}
                         >
                           Use 🍽️
+                        </button>
+                      )}
+                      {/* Hunger System v1 (`sq-hunger-v1`): a
+                          separate Eat button on food — one bite per
+                          tap (one charge), 3 bites and you're full
+                          for 8 hours. It never feeds the ducks or
+                          the cat; that is what Use is for. */}
+                      {item.type === 'food' && (
+                        <button
+                          onClick={() => run(
+                            () => onEat && onEat(item.id),
+                            (res) => (res && res.notice) || 'Nom!',
+                          )}
+                          title="Take a bite — one bite per tap, 3 bites and you're full for most of the day. Food from the ground works too, but it might make you queasy."
+                          style={btnStyle}
+                        >
+                          Eat 😋
                         </button>
                       )}
                       {item.type === 'puzzle-piece' && (
