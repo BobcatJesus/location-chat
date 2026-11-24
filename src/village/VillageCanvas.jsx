@@ -1202,36 +1202,38 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
         top: 12,
         left: 12,
         right: 116,
-        zIndex: 1000,
+        // Desktop menu (`sq-desktop-menu-v1`): the bar is just the ☰
+        // button on every screen now. While the menu is open the bar
+        // sits above the popup's dimmed backdrop, so clicking ☰
+        // again toggles it closed instead of the backdrop eating
+        // the click.
+        zIndex: showMenu ? 2001 : 1000,
         display: 'flex',
         gap: 8,
         flexWrap: 'wrap',
         alignItems: 'center',
         paddingBottom: 4,
       }}>
-        {isNarrow ? (
-          <button
-            onClick={() => setShowMenu(true)}
-            style={{
-              background: 'rgba(0,0,0,0.55)', color: '#fff', border: 'none',
-              borderRadius: 8, padding: '6px 14px',
-              minHeight: 44, display: 'flex', alignItems: 'center',
-              cursor: 'pointer', fontSize: 14, fontWeight: 'bold',
-              flexShrink: 0, whiteSpace: 'nowrap',
-            }}
-          >
-            ☰ Menu
-          </button>
-        ) : (
-          topBarButtons
-        )}
+        <button
+          onClick={() => setShowMenu((v) => !v)}
+          style={{
+            background: 'rgba(0,0,0,0.55)', color: '#fff', border: 'none',
+            borderRadius: 8, padding: '6px 14px',
+            minHeight: 44, display: 'flex', alignItems: 'center',
+            cursor: 'pointer', fontSize: 14, fontWeight: 'bold',
+            flexShrink: 0, whiteSpace: 'nowrap',
+          }}
+        >
+          ☰ Menu
+        </button>
       </div>
 
-      {/* Menu popup (`sq-mobile-move-v1`): narrow screens only — the whole
-          top bar lives here while the ☰ button is the only thing in the
-          bar itself. Closed by the literal X, or by tapping the dimmed
-          backdrop. */}
-      {isNarrow && showMenu && (
+      {/* Menu popup (`sq-mobile-move-v1`, desktop in
+          `sq-desktop-menu-v1`): the whole top bar lives here while
+          the ☰ button is the only thing in the bar itself, on every
+          screen. Closed by the literal X, by tapping the dimmed
+          backdrop, or by clicking ☰ again. */}
+      {showMenu && (
         <div
           style={{
             position: 'absolute', inset: 0, zIndex: 2000,
