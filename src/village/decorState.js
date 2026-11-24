@@ -35,12 +35,11 @@
 //     room, otherwise it stays placed and the pocket-full message
 //     shows. A moderator can remove ANY decoration; a moderator
 //     removal always discards it (same rule as the notice board).
-//   - State is IN-MEMORY per room, like the notice board, the
-//     puzzle and the trees: a Railway restart wipes placed
-//     decorations everywhere, INCLUDING Your Place. Home persistence
-//     (decorations at home surviving a restart) is NOT in v1 — it
-//     belongs with the 5-decoration Your Place badge kit, which
-//     needs to count home decorations persistently anyway.
+//   - State is persisted to Postgres per room (Placed Decorations
+//     Persistence v1, `sq-decor-persist-v1`): a Railway restart
+//     restores the placed decorations instead of wiping every room
+//     clean, including Your Place. Without a DB the decorations
+//     stay in-memory only.
 
 export const DEC_SHOP_MARKER_V1 = 'sq-dec-shop-v1';
 // Live reference so the marker survives minification (same pattern

@@ -72,6 +72,11 @@ import {
   loadNoticeBoardState,
 } from './noticeBoardPersist.js';
 import {
+  DECOR_ROOM_STATE_TABLE_SQL,
+  saveDecorState,
+  loadDecorState,
+} from './decorPersist.js';
+import {
   NOTICE_BOARD_MAX_FLYERS,
   createNoticeBoardState,
   pinFlyer,
@@ -382,6 +387,14 @@ async function initDb() {
   // which is excluded).
   await pool.query(NOTICE_BOARD_STATE_TABLE_SQL);
   console.log('✅ Postgres notice_board_state table ready');
+  // Placed decorations persistence (`sq-decor-persist-v1`): one
+  // row per room holding the serialized decor state, so a server
+  // restart restores the placed decorations instead of wiping
+  // every room clean. NOTE for the Dec 19 reset: the deliberate
+  // reset clears this table — placed decorations ARE room state
+  // (unlike mail, which is excluded).
+  await pool.query(DECOR_ROOM_STATE_TABLE_SQL);
+  console.log('✅ Postgres decor_room_state table ready');
   await authService.init();
 }
 
@@ -1066,15 +1079,55 @@ async function ensureNoticeBoardLoaded(roomId) {
   }
   return noticeBoardLoadPromises[roomId];
 }
-// Decoration Shop v1 (`sq-dec-shop-v1`): per-room placed
-// decorations, EVERY room (not just Agora — decorations are
-// placeable anywhere). In-memory like the notice board — a server
-// restart wipes placed decorations clean, including at home.
+// Decoration Shop v1 (`sq-dec-shop-v1`; persistence
+// `sq-decor-persist-v1`): per-room placed decorations, EVERY room
+// (not just Agora — decorations are placeable anywhere). The state
+// is persisted to Postgres (decor_room_state) on every place and
+// removal and loaded back lazily, so a server restart restores
+// the decorations instead of wiping them clean. Without a DB the
+// decorations stay in-memory only, exactly as before.
 // decorRooms[roomId] = { state }.
 const decorRooms = {};
+const decorRoomsLoaded = new Set(); // roomIds whose DB row has been read (or attempted)
+const decorLoadPromises = {}; // roomId -> in-flight load promise
 function decorRoom(roomId) {
   if (!decorRooms[roomId]) decorRooms[roomId] = { state: createDecorState() };
   return decorRooms[roomId];
+}
+// Save one room's decor state, never crashing the caller: a failed
+// save warns and the live broadcast still goes out (the in-memory
+// state is the live truth; the next place/removal retries the save).
+async function persistDecor(roomId) {
+  try {
+    await saveDecorState(pool, roomId, decorRoom(roomId).state);
+  } catch (e) {
+    console.warn('⚠️ decor persist failed:', e && e.message);
+  }
+}
+// Load a room's decorations from Postgres the first time they are
+// touched. Concurrent touches share one in-flight load, so a place
+// can never land on the default empty room while the real row is
+// still being read. A missing row, a down DB, or a bad row all
+// leave the default empty room in place. No repair step beyond
+// parseDecorState: there is no completion timer, and the parser
+// already cleans each decoration, caps at 30, and drops
+// malformed ones.
+async function ensureDecorLoaded(roomId) {
+  if (decorRoomsLoaded.has(roomId)) return decorRoom(roomId);
+  if (!decorLoadPromises[roomId]) {
+    decorLoadPromises[roomId] = (async () => {
+      const room = decorRoom(roomId);
+      try {
+        const loaded = await loadDecorState(pool, roomId);
+        if (loaded) room.state = loaded;
+      } catch (e) {
+        console.warn('⚠️ decor load failed:', e && e.message);
+      }
+      decorRoomsLoaded.add(roomId);
+      return room;
+    })();
+  }
+  return decorLoadPromises[roomId];
 }
 // Matches youtube.com/watch?v=, youtu.be/, youtube.com/embed/, youtube.com/shorts/
 const YOUTUBE_ID_RE = /(?:(?:www\.|music\.)?youtube\.com\/(?:watch\?[^#]*v=|embed\/|shorts\/|v\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/;
@@ -2476,12 +2529,16 @@ io.on('connection', (socket) => {
   // broadcasts the room so every player sees it. Each room has its
   // own decorations (decorRooms[roomId]). Buying itself is local
   // (coins + pocket on the client) — the server only owns placement.
-  socket.on('decor_place', ({ roomId, id, kind, x, y } = {}) => {
+  socket.on('decor_place', async ({ roomId, id, kind, x, y } = {}) => {
     if (!roomId) return;
     if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
     const userId = socketUserMap[socket.id] || socket.id;
     const rate = checkRateLimit(userId);
     if (!rate.allowed) return;
+    // Placed decorations persistence (`sq-decor-persist-v1`): load
+    // first, so a place can never land on the default empty room
+    // while the real row is still being read.
+    await ensureDecorLoaded(roomId);
     const room = decorRoom(roomId);
     const res = placeDecoration(room.state, {
       id,
@@ -2493,6 +2550,7 @@ io.on('connection', (socket) => {
     });
     if (!res.ok) return;
     io.to(roomId).emit('decor_state', serializeDecorState(room.state));
+    persistDecor(roomId);
   });
 
   // DECORATION REMOVAL: your own decoration, or any decoration if
@@ -2501,22 +2559,31 @@ io.on('connection', (socket) => {
   // happens to the decoration afterwards is the client's call (back
   // to the owner's pocket if they took it down and have room,
   // discarded otherwise — a moderator removal always discards it).
-  socket.on('decor_remove', ({ roomId, decorId } = {}) => {
+  socket.on('decor_remove', async ({ roomId, decorId } = {}) => {
     if (!roomId) return;
     if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
     const userId = socketUserMap[socket.id] || socket.id;
     const rate = checkRateLimit(userId);
     if (!rate.allowed) return;
+    // Placed decorations persistence (`sq-decor-persist-v1`): load
+    // first, so a removal can never run against the default empty
+    // room while the real row is still being read.
+    await ensureDecorLoaded(roomId);
     const room = decorRoom(roomId);
     const res = removeDecoration(room.state, decorId, userId, isGlobalModerator(userId));
     if (!res.ok) return;
     io.to(roomId).emit('decor_state', serializeDecorState(room.state));
+    persistDecor(roomId);
   });
 
   // DECORATION STATE: the room's decorations, sent when you join (or ask).
-  socket.on('get_decor', ({ roomId } = {}) => {
+  socket.on('get_decor', async ({ roomId } = {}) => {
     if (!roomId) return;
     if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    // Placed decorations persistence (`sq-decor-persist-v1`): load
+    // first, so a joiner never sees the default empty room while
+    // the real row is still being read.
+    await ensureDecorLoaded(roomId);
     socket.emit('decor_state', serializeDecorState(decorRoom(roomId).state));
   });
 
