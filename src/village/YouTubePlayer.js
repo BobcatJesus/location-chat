@@ -17,11 +17,17 @@
 //    onError and DO skip the song: those fail for every viewer equally.
 //    A failed API load reports through the same path so the queue moves on
 //    instead of pretending a song is playing.
+//
+// Jukebox Seek v1 (`sq-jukebox-seek-v1`): playYouTube accepts
+// callbacks.startSeconds, and jukeboxElapsedSeconds turns a server
+// startedAt into a clamped seek offset, so a late joiner (or a client
+// rejoining after a restart) starts mid-song instead of at 0:00.
 
 let apiPromise = null;
 let player = null;
 let playerReady = false;
 let pendingVideoId = null;
+let pendingStartSeconds = 0;
 let currentVideoId = null;
 let endedCallback = null;
 let errorCallback = null;
@@ -141,7 +147,29 @@ function disarmGestureUnlock() {
   window.removeEventListener('keydown', unlock);
 }
 
-function loadNow(videoId) {
+// Longest a YouTube song can run on the server (advanceJukebox gives
+// YouTube songs a 10-minute window). A seek offset is never allowed past
+// this — seeking near the end of a video risks an instant end event.
+export const JUKEBOX_SEEK_MAX_SECONDS = 600;
+
+// Clamp a raw seek offset (seconds) into [0, JUKEBOX_SEEK_MAX_SECONDS].
+// Anything missing, non-numeric, or <= 0 means "start from the beginning".
+function normalizeStartSeconds(value) {
+  if (!Number.isFinite(value)) return 0;
+  const s = Math.floor(value);
+  if (s <= 0) return 0;
+  return Math.min(s, JUKEBOX_SEEK_MAX_SECONDS);
+}
+
+// How far into the current song the room already is, in whole seconds,
+// from the server's startedAt (ms epoch). Returns 0 when startedAt is
+// missing or unusable, or the song hasn't started yet.
+export function jukeboxElapsedSeconds(startedAt, now = Date.now()) {
+  if (!Number.isFinite(startedAt) || !Number.isFinite(now)) return 0;
+  return normalizeStartSeconds((now - startedAt) / 1000);
+}
+
+function loadNow(videoId, startSeconds = 0) {
   currentVideoId = videoId;
   blocked = false;
   // If this browser hasn't seen a user gesture yet, sound-first playback
@@ -152,7 +180,11 @@ function loadNow(videoId) {
     ? navigator.userActivation.hasBeenActive
     : true;
   if (!hasGestured) { try { player.mute(); } catch {} }
-  try { player.loadVideoById(videoId); } catch {}
+  const offset = normalizeStartSeconds(startSeconds);
+  try {
+    if (offset > 0) player.loadVideoById({ videoId, startSeconds: offset });
+    else player.loadVideoById(videoId);
+  } catch {}
   startWatchdog();
 }
 
@@ -176,8 +208,10 @@ function ensurePlayer(YT) {
         if (desiredVolume != null) { try { player.setVolume(desiredVolume); } catch {} }
         if (pendingVideoId) {
           const vid = pendingVideoId;
+          const ss = pendingStartSeconds;
           pendingVideoId = null;
-          loadNow(vid);
+          pendingStartSeconds = 0;
+          loadNow(vid, ss);
         }
       },
       onStateChange: (e) => {
@@ -199,13 +233,16 @@ function ensurePlayer(YT) {
 
 /**
  * Play a YouTube video (audio only, hidden player).
- * callbacks: { onEnded(videoId), onError(videoId) }
+ * callbacks: { onEnded(videoId), onError(videoId), startSeconds }
+ * startSeconds (Jukebox Seek v1, `sq-jukebox-seek-v1`) starts the video
+ * that many seconds in; 0 / missing / unusable plays from the beginning.
  */
 export async function playYouTube(videoId, callbacks = {}) {
   if (!videoId) return false;
   endedCallback = callbacks.onEnded || null;
   errorCallback = callbacks.onError || null;
   currentVideoId = videoId;
+  const startSeconds = normalizeStartSeconds(callbacks.startSeconds);
   if (apiFailed) {
     // Report it like an embed error so the room's queue moves on
     // instead of sitting on a song this device can never play.
@@ -215,17 +252,21 @@ export async function playYouTube(videoId, callbacks = {}) {
     return false;
   }
   if (player && playerReady) {
-    loadNow(videoId);
+    loadNow(videoId, startSeconds);
     return true;
   }
-  // Player not ready yet: remember the request; onReady loads it.
+  // Player not ready yet: remember the request (id + seek offset);
+  // onReady loads it.
   pendingVideoId = videoId;
+  pendingStartSeconds = startSeconds;
   try {
     const YT = await loadApi();
     ensurePlayer(YT);
     if (playerReady && pendingVideoId === videoId) {
+      const ss = pendingStartSeconds;
       pendingVideoId = null;
-      loadNow(videoId);
+      pendingStartSeconds = 0;
+      loadNow(videoId, ss);
     }
     return true;
   } catch {
@@ -241,6 +282,7 @@ export function stopYouTube() {
   disarmGestureUnlock();
   blocked = false;
   pendingVideoId = null;
+  pendingStartSeconds = 0;
   try { player?.stopVideo(); } catch {}
   currentVideoId = null;
 }

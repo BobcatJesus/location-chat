@@ -33,7 +33,7 @@ import { RoomEditor } from './RoomEditor.js';
 import { OutdoorEditor } from './OutdoorEditor.js';
 import { Prop, PROP_DEFS } from './Prop.js';
 import { createAvatarEntity, preloadAvatarTextures } from '../game/entities/avatarFactory';
-import { playYouTube, stopYouTube, setYouTubeVolume, getYouTubeVideoId } from './YouTubePlayer.js';
+import { playYouTube, stopYouTube, setYouTubeVolume, getYouTubeVideoId, jukeboxElapsedSeconds } from './YouTubePlayer.js';
 import { HalloweenMode } from './HalloweenMode.js';
 import { DayNightMode } from './DayNightMode.js';
 import { normalizeAvatarModel } from '../game/entities/avatarModels';
@@ -2038,7 +2038,14 @@ export class VillageScene extends Phaser.Scene {
     this._ytWantedVid = vid;
     if (vid) {
       if (getYouTubeVideoId() === vid) return; // already playing
+      // Jukebox Seek v1 (`sq-jukebox-seek-v1`): start mid-song when
+      // joining late or rejoining after a restart — the server's
+      // startedAt says how far in the room already is. A client already
+      // playing this video never reloads (early return above), so this
+      // only fires on a fresh load. Missing/unusable startedAt seeks 0.
+      const startSeconds = jukeboxElapsedSeconds(nowPlaying?.startedAt);
       playYouTube(vid, {
+        startSeconds,
         onEnded: (endedVid) => {
           if (this.socket?.connected && this._ytSongId) {
             this.socket.emit('youtube_ended', { roomId: this.roomId, songId: this._ytSongId });
