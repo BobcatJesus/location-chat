@@ -253,25 +253,15 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
   const [approvedLayout, setApprovedLayout] = useState(null);
   const [interactKind, setInteractKind] = useState(null);
   const [questHud, setQuestHud] = useState(null);
-  // Quests popup (`sq-quests-popup-v1`): on narrow screens the
-  // persistent tracker box is replaced by a "Quests" button in the top
-  // bar; tapping it opens the quests as a popup, closed by a literal X.
+  // Quests popup (`sq-quests-popup-v1`, desktop in
+  // `sq-desktop-menu-v1.2`): quests live in the menu on every screen
+  // now — the left-side tracker box is gone. Tapping "Quests" opens
+  // them as a popup, closed by a literal X.
   const [showQuests, setShowQuests] = useState(false);
-  // Mobile menu (`sq-mobile-move-v1`): on narrow screens the whole top
-  // bar collapses to a single ☰ button; this opens it as a popup.
+  // Menu (`sq-mobile-move-v1`, desktop in `sq-desktop-menu-v1.2`):
+  // the whole top bar is a single ☰ button on every screen now;
+  // this opens it as a popup.
   const [showMenu, setShowMenu] = useState(false);
-  const [isNarrow, setIsNarrow] = useState(() =>
-    typeof window !== 'undefined' ? window.innerWidth <= 640 : false,
-  );
-  useEffect(() => {
-    const onResize = () => {
-      const narrow = window.innerWidth <= 640;
-      setIsNarrow(narrow);
-      if (!narrow) setShowQuests(false);
-    };
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, []);
   const questHudVersionRef = useRef(-1);
   const [roomPopulation, setRoomPopulation] = useState(1);
   const [cameraMode, setCameraMode] = useState('wide-follow');
@@ -1274,60 +1264,16 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
       )}
 
 
-      {/* Quest HUD as DOM, below the top bar: the in-canvas tracker and
-          banner sit underneath the DOM top bar on PC (zIndex 1000) and
-          can't be seen, so the DOM is the render path. Tracker is
-          persistent; banner shows ~5.5s per quest (click dismisses). */}
-      {/* Quests popup (`sq-quests-popup-v1`): the persistent box is
-          wide-screens only — on narrow screens the "Quests" button in
-          the top bar opens the popup instead, so this box never
-          covers the play area on a phone. */}
-      {!isNarrow && questHud?.trackerLines?.length > 0 && (
-        <div style={{
-          position: 'absolute', top: 116, left: 12, zIndex: 1000,
-          maxWidth: 'min(340px, calc(100vw - 24px))',
-          background: 'rgba(255,255,255,0.92)', color: '#1a4971',
-          borderRadius: 8, padding: '8px 10px', fontSize: 14, lineHeight: 1.35,
-          pointerEvents: 'none', whiteSpace: 'pre-line',
-          boxShadow: '0 2px 10px rgba(0,0,0,0.25)',
-        }}>
-          {questHud.trackerSections ? (
-            <>
-              <div style={{ whiteSpace: 'pre-line' }}>
-                {questHud.trackerSections.room.length > 0 ? questHud.trackerSections.room.join('\n') : '✅ All quests complete — more coming soon!'}
-              </div>
-              {/* Onboarding v1 (`sq-onboarding-v1`): the First Steps
-                  nudge, inside the tracker box so it can never
-                  overlap it — visible only while First Steps is the
-                  active quest and unfinished (QuestManager clears it
-                  the moment the quest completes). */}
-              {questHud.stepPrompt && (
-                <div style={{
-                  marginTop: 8, paddingTop: 6, borderTop: '1px solid rgba(146,64,14,0.35)',
-                  color: '#92400e', fontWeight: 'bold', whiteSpace: 'pre-line',
-                }}>
-                  {questHud.stepPrompt}
-                </div>
-              )}
-              {questHud.trackerSections.anywhere.length > 0 && (
-                <div style={{
-                  marginTop: 8, paddingTop: 6, borderTop: '1px solid rgba(26,73,113,0.3)',
-                  fontSize: 12.5, lineHeight: 1.35, color: '#3d6a8a', whiteSpace: 'pre-line',
-                }}>
-                  <div style={{ fontWeight: 'bold', fontSize: 12, letterSpacing: '0.04em', color: '#1a4971' }}>🌍 ANYWHERE QUESTS</div>
-                  {questHud.trackerSections.anywhere.join('\n')}
-                </div>
-              )}
-            </>
-          ) : (
-            questHud.trackerLines.join('\n')
-          )}
-        </div>
-      )}
+      {/* Left-side tracker box removed (`sq-desktop-menu-v1.2`):
+          it showed the same quests as the popup, so desktop had two
+          quest lists at once. Quests live in the menu popup only now
+          (room quests, First Steps prompt, anywhere quests). The
+          quest banner below is untouched — it still pops up on
+          progress and completion. */}
       {/* Quests popup (`sq-quests-popup-v1`, desktop in
-          `sq-desktop-menu-v1.1`): on every screen now. The content
-          mirrors the persistent box above (room quests, First Steps
-          prompt, anywhere quests) — keep the two in sync. Closed by
+          `sq-desktop-menu-v1.2`): on every screen now, and the only
+          quest list — the left-side tracker box is gone (room quests,
+          First Steps prompt, anywhere quests all live here). Closed by
           the literal X, or by tapping the dimmed backdrop. */}
       {showQuests && (
         <div
