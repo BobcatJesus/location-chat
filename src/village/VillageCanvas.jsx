@@ -233,7 +233,7 @@ function createDecahedronRoomFootprint(room = {}) {
   return points;
 }
 
-export default function VillageCanvas({ room, profile, onLeave, location, venueEvents: providedVenueEvents = [], canManageVenue = false, isModerator = false, onEnterRoom }) {
+export default function VillageCanvas({ room, profile, onLeave, location, venueEvents: providedVenueEvents = [], canManageVenue = false, isModerator = false, onEnterRoom, onCreateEvent }) {
   const BASE_WIDTH = 1600;
   const BASE_HEIGHT = 900;
   const containerRef = useRef(null);
@@ -1052,6 +1052,31 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
         >
           ← Return to map
         </button>
+        {/* Create Event top bar (`sq-create-event-topbar-v1`): "+ Create
+            event" used to float over this bar from app.jsx (top:12,
+            left:12, zIndex 1001), covering "Return to map" on every
+            screen where the player can manage the venue. It lives in
+            the bar now, so it wraps with the other buttons on mobile
+            instead of covering one. */}
+        {canManageVenue && onCreateEvent && (
+          <button
+            onClick={onCreateEvent}
+            style={{
+              background: '#fbbf24', color: '#111827', border: 'none',
+              borderRadius: 8,
+              padding: '6px 14px',
+              minHeight: 44,
+              display: 'flex', alignItems: 'center',
+              cursor: 'pointer',
+              fontSize: 14,
+              fontWeight: 'bold',
+              flexShrink: 0,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            + Create event
+          </button>
+        )}
         {/* Two Places v1 (`sq-two-places-v1`): there is NO 🏠 Home
             button any more. Your places are real locations — you
             enter one from the map when you are next to it (GPS

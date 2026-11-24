@@ -2023,15 +2023,14 @@ function App() {
                       path as tapping the room's pin on the map
                       (handleEnterRoom with the canonical room, GPS
                       gates included). */}
-                  <VillageCanvas room={osmRoom ? { ...osmRoom, id: osmRoom.id } : activeRoom} venueEvents={venueEvents} canManageVenue={venuePermissions.canManage} isModerator={venuePermissions.isModerator} profile={profile} location={location} onLeave={() => { setActiveScene('world'); setOsmRoom(null); }} onEnterRoom={(roomId, displayName) => openFeaturedRoomDirect(roomId, displayName)} />
+                  {/* Create Event top bar (`sq-create-event-topbar-v1`):
+                      "+ Create event" used to live here as an overlay
+                      (top:12, left:12, zIndex 1001) and covered
+                      "Return to map" in the room's top bar. It is in
+                      the top bar now — VillageCanvas renders it from
+                      the onCreateEvent prop below. */}
+                  <VillageCanvas room={osmRoom ? { ...osmRoom, id: osmRoom.id } : activeRoom} venueEvents={venueEvents} canManageVenue={venuePermissions.canManage} isModerator={venuePermissions.isModerator} profile={profile} location={location} onLeave={() => { setActiveScene('world'); setOsmRoom(null); }} onEnterRoom={(roomId, displayName) => openFeaturedRoomDirect(roomId, displayName)} onCreateEvent={openCreateEvent} />
                 </Suspense>
-                {venuePermissions.canManage && <button
-                  type="button"
-                  onClick={openCreateEvent}
-                  style={{ position: 'absolute', top: 12, left: 12, zIndex: 1001, background: '#fbbf24', color: '#111827', border: '2px solid #111827', padding: '7px 10px', fontFamily: 'Courier New', fontSize: 11, fontWeight: 'bold', cursor: 'pointer', boxShadow: '2px 2px 0 #000' }}
-                >
-                  + Create event
-                </button>}
                 {(activeRoom?.kind === 'user-created' || activeRoom?.kind === 'community') && (activeRoom.ownerId === (profile?.profile?.email || profile?.mode || 'guest') || activeRoom.ownerId === (profile?.profile?.characterName || '')) && (
                   <button
                     onClick={() => handleDeleteRoom(activeRoom)}
