@@ -1397,7 +1397,7 @@ export class VillageScene extends Phaser.Scene {
       // (yours comes back to your pocket; a moderator can take down
       // anyone's; someone else's just says whose it is).
       this.decorSystem?.pickupNearest();
-    } else if (kind === 'bar') {
+    } else if (kind === 'bar' || kind === 'coffee-bar') {
       this._tryBuyDrink();
     } else if (kind === 'shop') {
       // Bread Shop v1 (`sq-bread-shop-v1`): open the Register
@@ -1441,7 +1441,11 @@ export class VillageScene extends Phaser.Scene {
     if (this._nearestShopCounter() && this._shopStock().length > 0) return 'shop';
     if (this._nearestShelf()) return 'shelf';
     if (this._nearestJukebox()) return 'jukebox';
-    if (this._nearestBar()) return 'bar';
+    // Coffee bar mobile (`sq-coffee-bar-mobile-v1`): the Agora coffee
+    // bar gets its own kind, so the phone's interact button shows a
+    // coffee mug instead of a beer mug there.
+    const bar = this._nearestBar();
+    if (bar) return /coffee/i.test(bar.label || '') ? 'coffee-bar' : 'bar';
     return null;
   }
 
@@ -3312,6 +3316,10 @@ export class VillageScene extends Phaser.Scene {
     // a failed order flashes a "need coins" note instead, a wandered-off
     // customer gets a "no charge" note, and an order in flight shows as
     // "coming right up".
+    // Coffee bar mobile (`sq-coffee-bar-mobile-v1`): on a phone there is
+    // no E key — the prompts name the button to tap instead of "[E]".
+    const isTouchDevice = typeof window !== 'undefined' && ('ontouchstart' in window || (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0));
+    const eHint = (emoji) => (isTouchDevice ? `· tap ${emoji}` : '[E]');
     const nearBar = this._nearestBar();
     const myId = this.socket?.id || '__local__';
     const myOrderActive = this._drinkQueue.some((entry) => entry.socketId === myId)
@@ -3336,7 +3344,7 @@ export class VillageScene extends Phaser.Scene {
       // Decoration Shop v1: E at the Agora bar opens the shop
       // (coffee or a decoration), so the prompt says so.
       const isCoffeeBar = /coffee/i.test(nearBar?.label || '');
-      this.drinkPrompt.setText(bartender ? '🍺 Talk to the bartender to order · 2 coins' : (isCoffeeBar ? '🎄☕ Coffee bar — coffee or decorations [E]' : '🍺 Buy a drink · 2 coins [E]')).setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
+      this.drinkPrompt.setText(bartender ? '🍺 Talk to the bartender to order · 2 coins' : (isCoffeeBar ? `🎄☕ Coffee bar — coffee or decorations ${eHint('☕')}` : `🍺 Buy a drink · 2 coins ${eHint('🍺')}`)).setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
     } else if (nearBar && bartender && !nearBartender && !myOrderActive && !nearPond && !nearShelf && !nearJukebox) {
       this.drinkPrompt.setText('🍺 Get closer to the bartender to order').setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
     } else {
@@ -3350,7 +3358,7 @@ export class VillageScene extends Phaser.Scene {
     const nearShop = this._nearestShopCounter();
     const shopStock = nearShop ? this._shopStock() : [];
     if (nearShop && shopStock.length > 0 && !nearPond && !nearShelf && !nearJukebox) {
-      this.shopPrompt.setText('🛒 Buy bread · 3 coins [E]').setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
+      this.shopPrompt.setText(`🛒 Buy bread · 3 coins ${eHint('🛒')}`).setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
     } else {
       this.shopPrompt.setAlpha(0);
     }

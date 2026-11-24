@@ -403,6 +403,9 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
     shelf: ['📚', 'Browse the shelf'],
     jukebox: ['🎵', 'Open the jukebox'],
     bar: ['🍺', 'Order a drink'],
+    // Coffee bar mobile (`sq-coffee-bar-mobile-v1`): the Agora coffee
+    // bar gets a coffee mug, not a beer mug.
+    'coffee-bar': ['☕', 'Coffee bar'],
     // Bread Shop v1 (`sq-bread-shop-v1`): the Register counter in
     // a food-shop room.
     shop: ['🛒', 'Buy bread'],
