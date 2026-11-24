@@ -1,7 +1,12 @@
 // temperature.test.js — Temperature System v1 (`sq-temperature-v1`)
 // + v1.1 (`sq-temperature-v1.1`: shiver widened ±3px → ±6px, and a
 // 🥶 marker above the head while cold — the v1 shake was invisible
-// live because the camera follows the avatar).
+// live because the camera follows the avatar)
+// + v1.2 (`sq-temperature-v1.2`: payoff toasts when a matching
+// drink takes effect — "☕ Ahhh... you're warmed up for 30
+// minutes." / "🧊 Ahhh... you're cooled down for 30 minutes." —
+// v1 only told you that you were cold/warm, never that the drink
+// had fixed it, so the coffee felt like it did nothing).
 //
 // Fall + winter you are cold by default, spring + summer you are
 // warm by default; a matching drink (warm: cocoa/coffee, cool:
@@ -26,6 +31,8 @@ import {
   TEMP_EFFECT_MS,
   COLD_TOAST,
   WARM_TOAST,
+  WARMED_TOAST,
+  COOLED_TOAST,
   TEMP_DRINK_KINDS,
   TEMP_DRINK_KIND_IDS,
   TEMP_DRINK_PRICE,
@@ -59,6 +66,8 @@ describe('constants', () => {
     expect(TEMP_EFFECT_MS).toBe(30 * 60 * 1000);
     expect(COLD_TOAST).toBe("You're cold, get a warm drink");
     expect(WARM_TOAST).toBe("You're warm, get a cold drink");
+    expect(WARMED_TOAST).toBe("☕ Ahhh... you're warmed up for 30 minutes.");
+    expect(COOLED_TOAST).toBe("🧊 Ahhh... you're cooled down for 30 minutes.");
     expect(TEMP_DRINK_PRICE).toBe(2);
   });
 
@@ -265,21 +274,60 @@ describe('TemperatureSystem (stub scene)', () => {
     sys.destroy();
   });
 
+  it('toasts "warmed up" when a warm drink takes effect, and stays quiet for a wrong-season drink (v1.2)', () => {
+    const scene = makeScene();
+    const sys = new TemperatureSystem(scene);
+    const season = seasonFor(new Date());
+    if (season !== 'cold') { sys.destroy(); return; } // warm-season runs cover the cooled case below
+    sys.refresh();
+    expect(scene._notices).toEqual([COLD_TOAST]);
+    // A warm drink that takes effect says so out loud.
+    expect(sys.drinkWarm()).toBe(true);
+    expect(scene._notices).toEqual([COLD_TOAST, WARMED_TOAST]);
+    // A cold drink in the cold season is just a drink — no toast.
+    expect(sys.drinkCool()).toBe(false);
+    expect(scene._notices).toEqual([COLD_TOAST, WARMED_TOAST]);
+    // Re-drinking while comfortable refreshes the 30 minutes and
+    // says so again — it is feedback for the drink just taken.
+    expect(sys.drinkWarm()).toBe(true);
+    expect(scene._notices).toEqual([COLD_TOAST, WARMED_TOAST, WARMED_TOAST]);
+    sys.destroy();
+  });
+
+  it('toasts "cooled down" when a cold drink takes effect (v1.2)', () => {
+    const scene = makeScene();
+    const sys = new TemperatureSystem(scene);
+    const season = seasonFor(new Date());
+    if (season !== 'warm') { sys.destroy(); return; } // cold-season runs cover the warmed case above
+    sys.refresh();
+    expect(scene._notices).toEqual([WARM_TOAST]);
+    expect(sys.drinkCool()).toBe(true);
+    expect(scene._notices).toEqual([WARM_TOAST, COOLED_TOAST]);
+    expect(sys.drinkWarm()).toBe(false);
+    expect(scene._notices).toEqual([WARM_TOAST, COOLED_TOAST]);
+    sys.destroy();
+  });
+
   it('is calm while a drink is in effect, and the toast returns when it wears off', () => {
     const scene = makeScene();
     const sys = new TemperatureSystem(scene);
     const season = seasonFor(new Date());
-    // A matching drink ends the spell and the toast.
+    // A matching drink ends the spell and the toast — but the
+    // drink itself says so (v1.2 payoff toast), so the notices
+    // hold exactly that one toast, not the spell toast.
     const applied = season === 'cold' ? sys.drinkWarm() : sys.drinkCool();
     expect(applied).toBe(true);
-    expect(scene._notices).toHaveLength(0);
+    expect(scene._notices).toEqual([season === 'cold' ? WARMED_TOAST : COOLED_TOAST]);
     // Fast-forward past the 30 minutes: the notification returns.
     sys.state = season === 'cold'
       ? { ...sys.state, warmUntil: Date.now() - 1000 }
       : { ...sys.state, coolUntil: Date.now() - 1000 };
     sys._lastCheckMs = 0;
     sys.update();
-    expect(scene._notices).toEqual([season === 'cold' ? COLD_TOAST : WARM_TOAST]);
+    expect(scene._notices).toEqual([
+      season === 'cold' ? WARMED_TOAST : COOLED_TOAST,
+      season === 'cold' ? COLD_TOAST : WARM_TOAST,
+    ]);
     sys.destroy();
   });
 

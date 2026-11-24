@@ -37,6 +37,12 @@ export const TEMP_EFFECT_MS = 30 * 60 * 1000;
 /** The exact notification texts (user-decided wording). */
 export const COLD_TOAST = "You're cold, get a warm drink";
 export const WARM_TOAST = "You're warm, get a cold drink";
+// sq-temperature-v1.2: the payoff toasts — v1 only told you that
+// you were cold/warm, never that the drink had fixed it, so the
+// coffee felt like it did nothing. Shown when a matching drink
+// takes effect (only then, never for a wrong-season drink).
+export const WARMED_TOAST = "☕ Ahhh... you're warmed up for 30 minutes.";
+export const COOLED_TOAST = "🧊 Ahhh... you're cooled down for 30 minutes.";
 
 /** The two seasons. 'cold' covers fall + winter, 'warm' covers
  *  spring + summer. */

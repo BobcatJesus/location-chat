@@ -31,6 +31,8 @@
 import { DEPTH } from './depth.js';
 import {
   TEMP_MARKER_V1,
+  WARMED_TOAST,
+  COOLED_TOAST,
   exposureFor,
   refreshTemperature,
   applyDrink,
@@ -93,6 +95,10 @@ export class TemperatureSystem {
     if (res.applied) {
       saveTemperatureState(this.state);
       this._tick(Date.now());
+      // sq-temperature-v1.2: the payoff toast — the drink working
+      // needs saying out loud, the shiver stopping alone was too
+      // quiet to notice.
+      try { this.scene?.onSystemNotice?.(WARMED_TOAST); } catch {}
     }
     return res.applied;
   }
@@ -105,6 +111,8 @@ export class TemperatureSystem {
     if (res.applied) {
       saveTemperatureState(this.state);
       this._tick(Date.now());
+      // sq-temperature-v1.2: the cool mirror of the warmed toast.
+      try { this.scene?.onSystemNotice?.(COOLED_TOAST); } catch {}
     }
     return res.applied;
   }
