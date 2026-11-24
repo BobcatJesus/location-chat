@@ -24,6 +24,9 @@
 //                 it is a trash can), or 1-click ground litter by the
 //                 entrance / rug. Throw it away at the trash can
 //                 (inventory "Throw away", only when standing by it).
+//                 Hunger v1.1 (`sq-hunger-v1.1`): 1-in-3 the can yields
+//                 bits of food instead of trash — trash food, so eating
+//                 it makes you queasy (Hunger v1).
 //   note        — 3-click search under Table 4 (the puzzle's decoy
 //                 table) — one-time per profile. Readable.
 //   diary       — 3-click search behind the north-east plant
@@ -32,7 +35,8 @@
 //                 decoy couch) — one-time seeded flyer per profile;
 //                 or MAKE one in the inventory (5 coins, title+text).
 //   food        — 1-click ground litter: a croissant by the Agora
-//                 coffee bar, and bits of food by any pond. Use it
+//                 coffee bar, and bits of food by any pond — or 1-in-3
+//                 from the trash can (Hunger v1.1). Use it
 //                 near ducks (feeds them) or near the cafe cat.
 //   cigarettes  — 3-click search behind the portrait on the north
 //                 wall — one-time per profile.
@@ -90,6 +94,17 @@ function defaultAgoraLitter() {
     { id: 'litter-trash-rug', type: ITEM_TYPES.TRASH, emoji: '🗑️', label: 'a bit of trash by the rug', x: 480, y: 560 },
     { id: 'litter-food-bar', type: ITEM_TYPES.FOOD, emoji: '🥐', label: 'a dropped croissant by the coffee bar', x: 500, y: 205 },
   ];
+}
+
+// Hunger v1.1 (`sq-hunger-v1.1`): the trash can sometimes yields bits
+// of food instead of trash — 1-in-3 digs (builder default; the user
+// only said "sometimes"). The food carries trashFood: true, so eating
+// it triggers the queasy gag (Hunger v1). Pure for testability: the
+// live path passes Math.random().
+export const TRASH_CAN_FOOD_CHANCE = 1 / 3;
+export function rollTrashCanYield(roll) {
+  if (roll < TRASH_CAN_FOOD_CHANCE) return { type: ITEM_TYPES.FOOD, trashFood: true };
+  return { type: ITEM_TYPES.TRASH };
 }
 
 export class ItemsSystem {
@@ -230,7 +245,9 @@ export class ItemsSystem {
   _itemForSpot(spot) {
     switch (spot.kind) {
       case ITEM_TYPES.TRASH:
-        return { type: ITEM_TYPES.TRASH };
+        // Hunger v1.1 (`sq-hunger-v1.1`): 1-in-3 the trash can yields
+        // bits of food instead of trash.
+        return rollTrashCanYield(Math.random());
       case ITEM_TYPES.NOTE: {
         const note = SEEDED_NOTES[0];
         return { type: ITEM_TYPES.NOTE, title: note.title, text: note.text };
