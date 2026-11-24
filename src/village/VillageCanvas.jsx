@@ -958,10 +958,12 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
         📋 Review
       </button>
       )}
-      {/* Quests popup (`sq-quests-popup-v1`): narrow screens only —
-          the persistent tracker box below is hidden there, so this
-          button is the way in. Tapping it opens the quests popup. */}
-      {isNarrow && (
+      {/* Quests popup (`sq-quests-popup-v1`, desktop in
+          `sq-desktop-menu-v1.1`): in the menu on every screen now —
+          on narrow screens the persistent tracker box is hidden, so
+          this button is the way in; on desktop it opens the same
+          popup over the tracker box. Tapping it opens the quests
+          popup. */}
         <button
           onClick={() => { setShowMenu(false); setShowQuests(true); }}
           style={{
@@ -974,7 +976,6 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
         >
           🎯 Quests
         </button>
-      )}
     </>
   );
 
@@ -1323,11 +1324,12 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
           )}
         </div>
       )}
-      {/* Quests popup (`sq-quests-popup-v1`): narrow screens only. The
-          content mirrors the persistent box above (room quests, First
-          Steps prompt, anywhere quests) — keep the two in sync. Closed
-          by the literal X, or by tapping the dimmed backdrop. */}
-      {isNarrow && showQuests && (
+      {/* Quests popup (`sq-quests-popup-v1`, desktop in
+          `sq-desktop-menu-v1.1`): on every screen now. The content
+          mirrors the persistent box above (room quests, First Steps
+          prompt, anywhere quests) — keep the two in sync. Closed by
+          the literal X, or by tapping the dimmed backdrop. */}
+      {showQuests && (
         <div
           style={{
             position: 'absolute', inset: 0, zIndex: 2000,
