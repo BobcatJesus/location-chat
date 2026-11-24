@@ -1,5 +1,10 @@
 // hungryCat.test.js — Hungry Cat v1 (`sq-hungry-cat-v1`).
 //
+// Hungry Cat v1.3 (`sq-hungry-cat-v1.3`): hunger does NOT end when
+// the window does — if nobody feeds her, she stays hungry until
+// fed, and that feed pays the +3 whenever it lands. A feed while
+// she is not hungry never pays the quest.
+//
 // The cafe cat gets hungry twice a day (morning + evening, Chicago
 // time) on a server timer. While hungry she shows a "hungry..."
 // bubble; feeding her a treat completes the new "Feed the Hungry
@@ -136,11 +141,28 @@ describe('refreshCatHunger', () => {
     expect(state.hungry).toBe(true);
     expect(changed).toBe(false);
   });
-  it('clears at window end when nobody fed her', () => {
+  it('stays hungry past the window end when nobody fed her (v1.3)', () => {
     const hungry = refreshCatHunger(createCatHungerState(), { now: NOV_23_0800, asleep: false }).state;
     const { state, changed } = refreshCatHunger(hungry, { now: NOV_23_1000, asleep: false });
+    expect(state.hungry).toBe(true);
+    expect(state.windowId).toBe('2026-11-23-morning');
+    expect(changed).toBe(false);
+  });
+  it('hunger carries into the next window with a fresh feeder (v1.3)', () => {
+    const hungry = refreshCatHunger(createCatHungerState(), { now: NOV_23_0800, asleep: false }).state;
+    const { state, changed } = refreshCatHunger(hungry, { now: NOV_23_1830, asleep: false });
+    expect(state).toEqual({ windowId: '2026-11-23-evening', hungry: true, fedBy: null });
+    expect(changed).toBe(false);
+    const fed = feedCatHunger(state, { now: NOV_23_1830, userId: 'bob@test' });
+    expect(fed.ok).toBe(true);
+    expect(fed.state).toEqual({ windowId: '2026-11-23-evening', hungry: false, fedBy: 'bob@test' });
+  });
+  it('a fed cat stays fed between windows (v1.3)', () => {
+    let s = refreshCatHunger(createCatHungerState(), { now: NOV_23_0800, asleep: false }).state;
+    s = feedCatHunger(s, { now: NOV_23_0930, userId: 'alice@test' }).state;
+    const { state, changed } = refreshCatHunger(s, { now: NOV_23_1200, asleep: false });
     expect(state.hungry).toBe(false);
-    expect(changed).toBe(true);
+    expect(changed).toBe(false);
   });
   it('a new window resets the feeder and hungers again', () => {
     let s = refreshCatHunger(createCatHungerState(), { now: NOV_23_0800, asleep: false }).state;
@@ -177,14 +199,14 @@ describe('feedCatHunger', () => {
     expect(res.ok).toBe(false);
     expect(res.reason).toBe('not-hungry');
   });
-  it('feeding after the window ended is refused as window-over', () => {
-    // Stale hungry state (e.g. the tick had not run yet): the feed
-    // itself checks the window, so a late feed cannot complete.
+  it('feeding after the window ended still pays while she is hungry (v1.3)', () => {
+    // Stale hungry state (e.g. the tick had not run yet): hunger no
+    // longer ends at the window's close, so a late feed completes
+    // the window's quest — the feed pays whenever she is hungry.
     const stale = { windowId: '2026-11-23-morning', hungry: true, fedBy: null };
-    const res = feedCatHunger(stale, { now: NOV_23_1000, userId: 'alice@test' });
-    expect(res.ok).toBe(false);
-    expect(res.reason).toBe('window-over');
-    expect(res.state.hungry).toBe(false);
+    const res = feedCatHunger(stale, { now: NOV_23_1200, userId: 'alice@test' });
+    expect(res.ok).toBe(true);
+    expect(res.state).toEqual({ windowId: '2026-11-23-morning', hungry: false, fedBy: 'alice@test' });
   });
 });
 

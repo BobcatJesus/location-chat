@@ -277,12 +277,16 @@ export class CafeCat {
    *  opts.fed (Hungry Cat v1) marks a FOOD treat (only the
    *  ItemsSystem treat path sends it — a hand pet never does): the
    *  server checks whether she is hungry and, if so, completes the
-   *  hungry-cat quest for the first feeder in this window. */
+   *  hungry-cat quest for the first feeder in this window.
+   *  Hungry Cat v1.2 (`sq-hungry-cat-v1.2`): returns whether the pet
+   *  LANDED (true) or no-op'd (false — no cat, asleep, or inside
+   *  the 5s cooldown). Callers that spend something on a pet — the
+   *  treat path spends a food charge — must check this first. */
   petCat(local = true, opts = {}) {
-    if (!this.cat || !this.cat.container || !this.cat.container.active) return;
-    if (this.asleep) return;
+    if (!this.cat || !this.cat.container || !this.cat.container.active) return false;
+    if (this.asleep) return false;
     const now = Date.now();
-    if (this.petCooldown && now < this.petCooldown) return;
+    if (this.petCooldown && now < this.petCooldown) return false;
     this.petCooldown = now + PET_COOLDOWN_MS;
     playPurr();
     this.cat.hopMs = 320;
@@ -315,6 +319,7 @@ export class CafeCat {
     if (local) {
       try { this.scene.socket?.emit('pet_cat', { roomId: this.scene.roomId, fed: Boolean(opts?.fed) }); } catch {}
     }
+    return true;
   }
 
   /** A remote player petted the cat: react locally, no re-broadcast. */

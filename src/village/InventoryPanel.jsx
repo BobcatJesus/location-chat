@@ -83,6 +83,9 @@ const REASON_TEXT = {
   // refuses with this when the pocket holds no food.
   'no-food': NO_FOOD_MESSAGE,
   'cat-asleep': 'The cat is asleep — she wakes up when someone new walks in.',
+  // Hungry Cat v1.2 (`sq-hungry-cat-v1.2`): the treat path refuses
+  // during the cat's 5s pet cooldown instead of eating the food.
+  'cat-cooldown': 'Wait a moment — she is still enjoying the last pet.',
   'not-near-trash-can': 'Walk to the Agora trash can to throw this away.',
   'not-trash': 'Only trash can be thrown away.',
   'puzzle-piece-use-board': 'Place it on the puzzle board — that frees the slot.',

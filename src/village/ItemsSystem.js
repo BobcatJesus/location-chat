@@ -481,11 +481,17 @@ export class ItemsSystem {
       // the hungry-cat quest for the first feeder in this window.
       // (Shared file with Feed the Ducks v2 — extract that kit
       // first, then this one on top.)
-      try { this.scene.cafeCat.petCat(true, { fed: true }); } catch {}
-      // One charge from the tapped item (not the whole item). The
-      // pet-cooldown edge is pre-existing: petCat can no-op inside
-      // its 5s cooldown, and the charge is spent anyway — it now
-      // costs 1 feed instead of a whole item.
+      // Hungry Cat v1.2 (`sq-hungry-cat-v1.2`): petCat now reports
+      // whether the pet landed. Inside its 5s cooldown it no-ops,
+      // so the charge is spent ONLY when the pet landed — a tap
+      // during the cooldown keeps the food and says so, instead of
+      // eating it and faking the success message.
+      let landed = false;
+      try { landed = Boolean(this.scene.cafeCat.petCat(true, { fed: true })); } catch {}
+      if (!landed) {
+        return { ok: false, reason: 'cat-cooldown' };
+      }
+      // One charge from the tapped item (not the whole item).
       spendFoodCharge(id);
       try { this.scene?.onSystemNotice?.('🐱 The cat gobbles up the treat!'); } catch {}
       return { ok: true, used: 'cat' };

@@ -6,10 +6,17 @@
 // saying "hungry..."; feeding her a treat (food, one charge — the
 // Feed the Ducks v2 treat path) completes the new "Feed the Hungry
 // Cat" quest: +3 coins on top of the usual +1 pet coin. She is one
-// shared cat, so the FIRST feeder in a window ends the hunger — a
-// second feeder in the same window gets the usual treat but no
-// quest. The quest is repeatable: it comes back at the next window,
-// twice a day, so it can be farmed.
+// shared cat, so the FIRST feeder while she is hungry ends the
+// hunger — a second feeder gets the usual treat but no quest. The
+// quest is repeatable: it comes back at the next window, twice a
+// day, so it can be farmed. Hungry Cat v1.3
+// (`sq-hungry-cat-v1.3`): hunger does NOT end when the window
+// does — if nobody feeds her in the window, she stays hungry (the
+// bubble stays up) until someone feeds her, and that feed pays the
+// +3 whenever it lands, inside a window or between windows. A feed
+// while she is NOT hungry never pays the quest (the treat still
+// happens: pet + +1 coin + the charge). Each new window re-arms her
+// if she was fed, so the quest comes back twice a day either way.
 //
 // This module is pure (no Phaser, no socket, no localStorage) so
 // the window math and the hunger state machine are unit-testable,
@@ -35,9 +42,11 @@ export const HUNGRY_CAT_BUBBLE_TEXT = 'hungry...';
 export const HUNGRY_CAT_TIMEZONE = 'America/Chicago';
 
 /** Hunger windows, as minutes since midnight in Chicago time.
- *  Morning 7:00–10:00, evening 17:00–20:00. A window lasts 3
- *  hours: if nobody feeds her, the hunger simply ends when the
- *  window does. */
+ *  Morning 7:00–10:00, evening 17:00–20:00. A window STARTS a
+ *  hunger spell (if she was fed); it does NOT end one — Hungry Cat
+ *  v1.3 (`sq-hungry-cat-v1.3`): if nobody feeds her in the window,
+ *  she stays hungry until fed, and that feed pays whenever it
+ *  lands. */
 // sq-hungry-cat-v1.1: windows widened from 8–10am + 6–8pm to
 // 7–10am + 5–8pm (3 hours each) so they are easier to catch.
 export const HUNGRY_CAT_WINDOWS = [
@@ -142,48 +151,50 @@ export function serializeCatHunger(state = {}) {
  *  { state, changed } — `changed` is true only when the hungry
  *  flag flips, so the server only broadcasts on a real change.
  *
- *  - Outside a window: hunger is off.
+ *  - Outside a window: hunger does NOT turn on (a spell only
+ *    starts at a window). Hungry Cat v1.3 (`sq-hungry-cat-v1.3`):
+ *    it does NOT turn off either — if nobody fed her in the
+ *    window, she stays hungry until fed.
  *  - A new window resets fedBy (a fresh chance for everyone) and
  *    hunger starts — unless she is asleep, in which case hunger
  *    WAITS: it does not activate until she wakes (the tick runs
  *    again after the wake, and the join_room wake path refreshes
- *    it immediately).
+ *    it immediately). Hunger CARRIES OVER into the new window when
+ *    she was still hungry: she stays hungry, only fedBy resets.
  *  - If she falls asleep WHILE hungry, hunger stays true (it
  *    waits, it does not clear) — the bubble hides because she is
- *    asleep, and comes back when she wakes, as long as the window
- *    is still open.
+ *    asleep, and comes back when she wakes, whenever that is.
  *  - Once fed (fedBy set), hunger stays off until the next window. */
 export function refreshCatHunger(state, { now = new Date(), asleep = false, windows = HUNGRY_CAT_WINDOWS } = {}) {
   const win = hungerWindowFor(now, windows);
   let { windowId, hungry, fedBy } = state || {};
   let changed = false;
-  if (!win.active) {
-    if (hungry) { hungry = false; changed = true; }
-  } else {
+  if (win.active) {
     if (win.windowId !== windowId) {
       windowId = win.windowId;
       fedBy = null;
-      if (hungry) { hungry = false; changed = true; }
     }
     if (!fedBy && !asleep && !hungry) { hungry = true; changed = true; }
     if (fedBy && hungry) { hungry = false; changed = true; }
   }
+  // Outside a window there is nothing to do: hunger neither starts
+  // nor ends here (v1.3 — it ends only on a feed).
   return { state: { windowId: windowId || null, hungry, fedBy: fedBy || null }, changed };
 }
 
-/** A player fed the cat a treat. Only the FIRST feeder in a window
- *  completes the quest: returns { state, ok: true } and ends the
- *  hunger, or { state, ok: false, reason } — 'not-hungry' (she is
- *  not hungry right now), 'window-over' (the window ended since
- *  the hunger started), 'already-fed' (someone else fed her this
- *  window). The caller's treat still happened either way (the pet
- *  + the +1 coin + the charge) — only the quest is refused. */
+/** A player fed the cat a treat. Only the FIRST feeder while she
+ *  is hungry completes the quest: returns { state, ok: true } and
+ *  ends the hunger, or { state, ok: false, reason } — 'not-hungry'
+ *  (she is not hungry right now), 'already-fed' (someone else fed
+ *  her while she was hungry). Hungry Cat v1.3
+ *  (`sq-hungry-cat-v1.3`): the feed pays WHENEVER she is hungry —
+ *  inside a window or between windows (the window the hunger
+ *  belongs to rides on the state, so a late feed still completes
+ *  that window's quest). There is no 'window-over' refusal anymore.
+ *  The caller's treat still happened either way (the pet + the +1
+ *  coin + the charge) — only the quest is refused. */
 export function feedCatHunger(state, { now = new Date(), userId, windows = HUNGRY_CAT_WINDOWS } = {}) {
-  const win = hungerWindowFor(now, windows);
   if (!state?.hungry) return { state: { ...(state || createCatHungerState()) }, ok: false, reason: 'not-hungry' };
-  if (!win.active || win.windowId !== state.windowId) {
-    return { state: { ...state, hungry: false }, ok: false, reason: 'window-over' };
-  }
   if (state.fedBy) return { state: { ...state }, ok: false, reason: 'already-fed' };
   return { state: { ...state, hungry: false, fedBy: userId || null }, ok: true };
 }
