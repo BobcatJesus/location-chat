@@ -77,6 +77,11 @@ import {
   loadDecorState,
 } from './decorPersist.js';
 import {
+  CAT_ROOM_STATE_TABLE_SQL,
+  saveCatState,
+  loadCatState,
+} from './catPersist.js';
+import {
   NOTICE_BOARD_MAX_FLYERS,
   createNoticeBoardState,
   pinFlyer,
@@ -395,6 +400,15 @@ async function initDb() {
   // (unlike mail, which is excluded).
   await pool.query(DECOR_ROOM_STATE_TABLE_SQL);
   console.log('✅ Postgres decor_room_state table ready');
+  // Cat State persistence (`sq-cat-persist-v1`): one row per room
+  // holding the combined cat state (pets/asleep + hunger with
+  // fedBy), so a server restart restores the cat instead of
+  // waking her, resetting the pet count, and forgetting who fed
+  // her this window. NOTE for the Dec 19 reset: the deliberate
+  // reset clears this table — the cat IS room state (unlike mail,
+  // which is excluded).
+  await pool.query(CAT_ROOM_STATE_TABLE_SQL);
+  console.log('✅ Postgres cat_room_state table ready');
   await authService.init();
 }
 
@@ -506,13 +520,19 @@ const jukeboxRooms = {};
 const pumpkinLit = {};
 // Cafe cat: per-room shared state { pets, asleep } — 3 pets puts the cat
 // to sleep in a sunbeam; a new player walking in wakes it back up.
+// Persisted to Postgres (Cat State Persistence v1,
+// `sq-cat-persist-v1`) together with the hunger state, so a server
+// restart restores her instead of waking her and resetting the
+// pet count. Without a DB the cat stays in-memory only, exactly
+// as before.
 const catState = {};
 const CATS_PETS_TO_SLEEP = 3;
 // Hungry Cat v1 (`sq-hungry-cat-v1`): per-room hunger state —
 // catHunger[roomId] = { windowId, hungry, fedBy }. In-memory like
-// the cat itself: a server restart forgets who fed her this window,
-// so the window becomes completable again (see the restart story in
-// the kit report). The windows come from HUNGRY_CAT_WINDOWS
+// the cat itself: a server restart restores who fed her this
+// window instead of making the window completable again (Cat
+// State Persistence v1, `sq-cat-persist-v1` — the sleep and
+// hunger states persist together, one row per room). The windows come from HUNGRY_CAT_WINDOWS
 // (7–10am + 5–8pm Chicago time), overridable with the
 // HUNGRY_CAT_WINDOWS env var ("7-10,17-20") — the tuning seam, and
 // what the protocol harness uses to cover "now".
@@ -525,16 +545,78 @@ function hungerRoom(roomId) {
   return catHunger[roomId];
 }
 /** Refresh one room's hunger for right now; broadcast only when the
- *  hungry flag flips. Returns { state, changed }. */
-function refreshRoomHunger(roomId) {
+ *  hungry flag flips. Returns { state, changed }. Loads the room's
+ *  persisted cat state first, so a tick after a restart never runs
+ *  on a fresh default while the real row is still unread. */
+async function refreshRoomHunger(roomId) {
+  await ensureCatLoaded(roomId);
   const res = refreshCatHunger(hungerRoom(roomId), {
     now: new Date(),
     asleep: Boolean(catState[roomId]?.asleep),
     windows: HUNGER_WINDOWS,
   });
   catHunger[roomId] = res.state;
-  if (res.changed) io.to(roomId).emit('cat_hunger', serializeCatHunger(res.state));
+  if (res.changed) {
+    io.to(roomId).emit('cat_hunger', serializeCatHunger(res.state));
+    persistCat(roomId);
+  }
   return res;
+}
+const catsLoaded = new Set(); // roomIds whose DB row has been read (or attempted)
+const catLoadPromises = {}; // roomId -> in-flight load promise
+// Save one room's combined cat state (pets/asleep + full hunger
+// with fedBy), never crashing the caller: a failed save warns
+// and the live broadcast still goes out (the in-memory state is
+// the live truth; the next pet/feed/wake retries the save).
+async function persistCat(roomId) {
+  try {
+    await saveCatState(pool, roomId, {
+      pets: catState[roomId]?.pets ?? 0,
+      asleep: Boolean(catState[roomId]?.asleep),
+      hunger: hungerRoom(roomId),
+    });
+  } catch (e) {
+    console.warn('⚠️ cat persist failed:', e && e.message);
+  }
+}
+// Load a room's cat state from Postgres the first time it is
+// touched. Concurrent touches share one in-flight load, so a pet
+// can never land on a fresh default while the real row is still
+// being read. A missing row, a down DB, or a bad row all leave
+// the default fresh cat in place. After a successful load the
+// hunger tick runs with now + the loaded asleep flag, so a window
+// that opened or closed while the server was down applies through
+// the same code path the live server already uses — and a tick
+// that changed anything (new window, fedBy reset, hunger flip)
+// is written straight back.
+async function ensureCatLoaded(roomId) {
+  if (catsLoaded.has(roomId)) return;
+  if (!catLoadPromises[roomId]) {
+    catLoadPromises[roomId] = (async () => {
+      try {
+        const loaded = await loadCatState(pool, roomId);
+        if (loaded) {
+          catState[roomId] = { pets: loaded.pets, asleep: loaded.asleep };
+          catHunger[roomId] = loaded.hunger;
+          const before = { ...loaded.hunger };
+          const tick = refreshCatHunger(catHunger[roomId], {
+            now: new Date(),
+            asleep: Boolean(loaded.asleep),
+            windows: HUNGER_WINDOWS,
+          });
+          catHunger[roomId] = tick.state;
+          if (tick.changed) io.to(roomId).emit('cat_hunger', serializeCatHunger(tick.state));
+          if (tick.state.windowId !== before.windowId || tick.state.fedBy !== before.fedBy || tick.state.hungry !== before.hungry) {
+            persistCat(roomId);
+          }
+        }
+      } catch (e) {
+        console.warn('⚠️ cat load failed:', e && e.message);
+      }
+      catsLoaded.add(roomId);
+    })();
+  }
+  return catLoadPromises[roomId];
 }
 // Quests (Quest Wrapper v1): per-room state
 //   questState[roomId][questId] = { shared, users: { [userId]: { count, completed } } }
@@ -1604,7 +1686,7 @@ setInterval(() => {
 // get the state from get_cat_hunger; a sleeping cat's hunger waits
 // (refreshCatHunger does not activate while she is asleep).
 setInterval(() => {
-  try { refreshRoomHunger('agora-houston'); } catch {}
+  try { refreshRoomHunger('agora-houston').catch(() => {}); } catch {}
 }, 30000);
 
 // 2. Real-Time Socket Event Handlers
@@ -1652,9 +1734,15 @@ io.on('connection', (socket) => {
     socket.join(roomId);
 
     // A new player walking in wakes a sleeping cafe cat back up.
+    // Cat State Persistence v1 (`sq-cat-persist-v1`): load the
+    // room's cat row first, so the wake check reads the real
+    // persisted state — a cat asleep before the restart still
+    // wakes when someone walks in, and the woken state is saved.
+    await ensureCatLoaded(roomId);
     if (catState[roomId]?.asleep) {
       catState[roomId] = { pets: 0, asleep: false };
       io.to(roomId).emit('cat_state', { pets: 0, asleep: false });
+      persistCat(roomId);
       // Hungry Cat v1 (`sq-hungry-cat-v1`): hunger waits while she
       // sleeps — if she wakes inside a window she is hungry again
       // right away (the tick would catch it within 30s, but the
@@ -1664,7 +1752,7 @@ io.on('connection', (socket) => {
       // was already true while she slept (no flip, no broadcast)
       // and the room still needs to hear she is hungry again.
       if (roomId === 'agora-houston') {
-        const woken = refreshRoomHunger(roomId);
+        const woken = await refreshRoomHunger(roomId);
         if (!woken.changed && woken.state.hungry) {
           io.to(roomId).emit('cat_hunger', serializeCatHunger(woken.state));
         }
@@ -1831,12 +1919,16 @@ io.on('connection', (socket) => {
 
   // PET THE CAFE CAT (shared Agora interaction — petting is counted
   // per room; 3 pets puts the cat to sleep in a sunbeam for everyone)
-  socket.on('pet_cat', ({ roomId, fed } = {}) => {
+  socket.on('pet_cat', async ({ roomId, fed } = {}) => {
     if (!roomId || roomId !== 'agora-houston') return;
     if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
     const userId = socketUserMap[socket.id] || socket.id;
     const rate = checkRateLimit(userId);
     if (!rate.allowed) return;
+    // Cat State Persistence v1 (`sq-cat-persist-v1`): load before
+    // mutating, so a pet after a restart counts from the real
+    // persisted pet count instead of a fresh 0.
+    await ensureCatLoaded(roomId);
     if (!catState[roomId]) catState[roomId] = { pets: 0, asleep: false };
     const state = catState[roomId];
     if (state.asleep) return;
@@ -1879,11 +1971,16 @@ io.on('connection', (socket) => {
         });
       }
     }
+    // Cat State Persistence v1 (`sq-cat-persist-v1`): save after
+    // every mutation — the pet above, and the feed (fedBy) when
+    // one landed. Fire-and-forget: persistCat warns, never throws.
+    persistCat(roomId);
   });
 
-  socket.on('get_cat', ({ roomId } = {}) => {
+  socket.on('get_cat', async ({ roomId } = {}) => {
     if (!roomId || roomId !== 'agora-houston') return;
     if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    await ensureCatLoaded(roomId);
     const state = catState[roomId] || { pets: 0, asleep: false };
     socket.emit('cat_state', { pets: state.pets, asleep: state.asleep });
   });
@@ -1893,15 +1990,13 @@ io.on('connection', (socket) => {
   // next to get_cat), and refreshed here so a window that opened
   // while nobody was around is live the moment someone asks. The
   // 30s tick covers players already in the room.
-  socket.on('get_cat_hunger', ({ roomId } = {}) => {
+  socket.on('get_cat_hunger', async ({ roomId } = {}) => {
     if (!roomId || roomId !== 'agora-houston') return;
     if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
-    const res = refreshCatHunger(hungerRoom(roomId), {
-      now: new Date(),
-      asleep: Boolean(catState[roomId]?.asleep),
-      windows: HUNGER_WINDOWS,
-    });
-    catHunger[roomId] = res.state;
+    // Cat State Persistence v1 (`sq-cat-persist-v1`): the refresh
+    // loads the persisted row first, so a window that opened
+    // while nobody was around is live the moment someone asks.
+    const res = await refreshRoomHunger(roomId);
     socket.emit('cat_hunger', serializeCatHunger(res.state));
   });
 

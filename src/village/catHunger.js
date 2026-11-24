@@ -132,12 +132,31 @@ export function hungerWindowFor(date = new Date(), windows = HUNGRY_CAT_WINDOWS)
   return { windowId: null, period: null, active: false };
 }
 
-/** Fresh per-room hunger state (server-side, in-memory like the
- *  cat's pets/asleep and the puzzle). windowId is the window this
+/** Fresh per-room hunger state. windowId is the window this
  *  state belongs to; fedBy is the user id that fed her this window
- *  (null until the first feeder ends it). */
+ *  (null until the first feeder ends it). Persisted to Postgres
+ *  (Cat State Persistence v1, `sq-cat-persist-v1`) together with
+ *  the cat's pets/asleep — a restart restores it instead of
+ *  forgetting who fed her this window. */
 export function createCatHungerState() {
   return { windowId: null, hungry: false, fedBy: null };
+}
+
+/** Repair a stored hunger state (Cat State Persistence v1,
+ *  `sq-cat-persist-v1`): never trust the row blindly. windowId is
+ *  a string or null, hungry a boolean, fedBy a user id string or
+ *  null; anything else (missing pieces, wrong types) falls back
+ *  to the fresh state. No window math here — the caller runs the
+ *  refreshCatHunger tick after loading, so a window that opened
+ *  or closed while the server was down applies through the same
+ *  code path the live server already uses. */
+export function parseCatHungerState(raw = {}) {
+  const r = raw && typeof raw === 'object' ? raw : {};
+  return {
+    windowId: typeof r.windowId === 'string' && r.windowId ? r.windowId : null,
+    hungry: r.hungry === true,
+    fedBy: typeof r.fedBy === 'string' && r.fedBy ? r.fedBy : null,
+  };
 }
 
 /** The wire shape for `cat_hunger`: hungry + which window, nothing
