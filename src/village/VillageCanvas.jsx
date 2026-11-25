@@ -248,7 +248,6 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
   const [chatRecipient, setChatRecipient] = useState('players');
   const [messages, setMessages] = useState([]);
   const [draft, setDraft] = useState('');
-  const [showEditHint, setShowEditHint] = useState(false);
   const [systemNotice, setSystemNotice] = useState('');
   const [coinBalance, setCoinBalance] = useState(() => getCoins());
   const [showInteriorSketch, setShowInteriorSketch] = useState(false);
@@ -603,16 +602,13 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
     time: new Date().toISOString(),
   }, null, 2);
 
+  // Edit-hint banner removed (sq-remove-edit-hint-v1): the
+  // "Edit Mode: press ~ to toggle" bar no longer shows on room
+  // entry. ~ and the Edit button still toggle the editor.
   useEffect(() => {
     window.__chatInputFocused = false;
     return () => { window.__chatInputFocused = false; };
   }, []);
-
-  useEffect(() => {
-    setShowEditHint(true);
-    const timer = setTimeout(() => setShowEditHint(false), 7000);
-    return () => clearTimeout(timer);
-  }, [roomSignature]);
 
   useEffect(() => {
     setCameraMode(preferredCameraMode);
@@ -780,7 +776,6 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
     const scene = gameRef.current?.scene?.getScene('VillageScene');
     if (scene?.sys?.isActive()) {
       scene.toggleEditor?.();
-      setShowEditHint(false);
     }
   };
 
@@ -1172,26 +1167,6 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
           getState={() => gameRef.current?.scene?.getScene('VillageScene')?.getPlayerBadges?.(openPlayerBadges.socketId)}
           onClose={() => setOpenPlayerBadges(null)}
         />
-      )}
-      {showEditHint && (
-        <div style={{
-          position: 'absolute',
-          top: 116,
-          left: '50%',
-          transform: 'translateX(-50%)',
-          zIndex: 1001,
-          pointerEvents: 'none',
-          background: '#0f172aee',
-          border: '1px solid #334155',
-          borderRadius: 8,
-          padding: '8px 12px',
-          color: '#e2e8f0',
-          fontFamily: 'Courier New, monospace',
-          fontSize: 12,
-          boxShadow: '0 4px 14px rgba(0,0,0,0.35)',
-        }}>
-          {outdoorMode ? 'Outdoor Edit Mode' : 'Edit Mode'}: press <strong>~</strong> to toggle
-        </div>
       )}
       {systemNotice && (
         <div style={{
