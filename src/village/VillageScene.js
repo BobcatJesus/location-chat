@@ -40,6 +40,7 @@ import { createAvatarEntity, preloadAvatarTextures } from '../game/entities/avat
 import { playYouTube, stopYouTube, setYouTubeVolume, getYouTubeVideoId, jukeboxElapsedSeconds } from './YouTubePlayer.js';
 import { HalloweenMode } from './HalloweenMode.js';
 import { DayNightMode } from './DayNightMode.js';
+import { SnowfallMode } from './snowfall.js'; // Snowfall v1 (`sq-snowfall-v1`)
 import { normalizeAvatarModel } from '../game/entities/avatarModels';
 import { isOutdoorLocation } from './outdoorRoomDetection.js';
 
@@ -755,6 +756,12 @@ export class VillageScene extends Phaser.Scene {
     // module itself no-ops indoors (see DayNightMode.js).
     this.dayNight = new DayNightMode(this);
     this.dayNight.start();
+    // Snowfall v1 (`sq-snowfall-v1`): gentle snow in outdoor rooms
+    // through December; the module itself no-ops indoors or
+    // outside December (see snowfall.js). `?snow=1` forces it on
+    // for testing.
+    this.snowfall = new SnowfallMode(this);
+    this.snowfall.start();
     this._feedCooldownMs = 0;
     this.feedPrompt = this.add.text(0, 0, '🦆 Feed the ducks [E]', {
       fontSize: '15px',
@@ -3411,6 +3418,7 @@ export class VillageScene extends Phaser.Scene {
     this.questManager?.update(delta);
     this.halloween?.update(delta);
     this.dayNight?.update(delta);
+    this.snowfall?.update(delta); // Snowfall v1 (`sq-snowfall-v1`)
     // No-E on mobile (`sq-no-e-mobile-v1`): on a phone there is no E
     // key, so the floating prompts drop the " [E]" suffix. The drink
     // prompts below already said "· tap" on touch — same idea.
@@ -3858,6 +3866,8 @@ export class VillageScene extends Phaser.Scene {
     this.halloween = null;
     this.dayNight?.destroy();
     this.dayNight = null;
+    this.snowfall?.destroy(); // Snowfall v1 (`sq-snowfall-v1`)
+    this.snowfall = null;
     this.feedPrompt?.destroy();
     this.duckPrompt?.destroy();
     this.shelfPrompt?.destroy();
