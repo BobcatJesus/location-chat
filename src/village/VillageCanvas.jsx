@@ -755,12 +755,16 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
       // Canvas renderer is more reliable than WebGL in constrained embedded browsers.
       type: Phaser.CANVAS,
       parent: el,
-      width: BASE_WIDTH,
-      height: BASE_HEIGHT,
+      // Portrait fill v1 (`sq-portrait-fill-v1`): size the game from the
+      // container (WorldMapCanvas already does this) and let the canvas
+      // resize with the window instead of fitting a fixed 1600x900 —
+      // a portrait phone gets a tall view of the room, not a strip.
+      width: el.clientWidth || BASE_WIDTH,
+      height: el.clientHeight || BASE_HEIGHT,
       backgroundColor: '#0f172a',
       scene: VillageScene,
       scale: {
-        mode: Phaser.Scale.FIT,
+        mode: Phaser.Scale.RESIZE,
         autoCenter: Phaser.Scale.CENTER_BOTH,
       },
     };

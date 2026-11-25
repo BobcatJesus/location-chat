@@ -38,6 +38,10 @@ import { showHangPrompt } from './promptPriority.js'; // Christmas Quests v1.2 (
 import { pickLayout } from './layoutPicker.js';
 import { RoomEditor } from './RoomEditor.js';
 import { OutdoorEditor } from './OutdoorEditor.js';
+// Portrait fill v1 (`sq-portrait-fill-v1`): pure camera math so the
+// zoom adapts to the real viewport once the canvas stops being a fixed
+// 1600x900 FIT box.
+import { resolveFollowCamera, resolveOverviewZoom, resolveOverviewAvatarScale } from './portraitCamera.js';
 import { Prop, PROP_DEFS } from './Prop.js';
 import { createAvatarEntity, preloadAvatarTextures } from '../game/entities/avatarFactory';
 import { playYouTube, stopYouTube, setYouTubeVolume, getYouTubeVideoId, jukeboxElapsedSeconds } from './YouTubePlayer.js';
@@ -925,13 +929,29 @@ export class VillageScene extends Phaser.Scene {
     this.lastPos = { x: this.player.gx, y: this.player.gy };
 
     // Camera
-    this.cameras.main.setZoom(FOLLOW_ZOOM);
     const layoutBounds = this.layout?.width && this.layout?.height
       ? { x: 0, y: 0, w: this.layout.width, h: this.layout.height }
       : (this.roomLayout?.getBoundaryBounds?.() || { x: 0, y: 0, w: 1600, h: 900 });
     const cameraW = Math.max(1600, Math.ceil(layoutBounds.x + layoutBounds.w));
     const cameraH = Math.max(900, Math.ceil(layoutBounds.y + layoutBounds.h));
     this.cameras.main.setBounds(0, 0, cameraW, cameraH);
+    // Portrait fill v1 (`sq-portrait-fill-v1`): remember the bounds so
+    // the zoom helper can keep the viewport inside them. The zoom itself
+    // is applied by _applyCameraMode below (and again on every resize),
+    // which resolves it for this viewport instead of hardcoding
+    // FOLLOW_ZOOM — on a portrait phone that would show only a ~205-unit
+    // slice of the room.
+    this._cameraBounds = { w: cameraW, h: cameraH };
+    this._applyCameraMode();
+
+    // Portrait fill v1 (`sq-portrait-fill-v1`): with Scale.RESIZE the
+    // canvas follows the window (rotation, split-screen, resize) — re-apply
+    // the camera so the zoom and centering track the new viewport.
+    this._onScaleResize = () => {
+      if (this._isShuttingDown) return;
+      this._applyCameraMode();
+    };
+    this.scale.on('resize', this._onScaleResize);
     this._emitRoomPopulation();
 
     // Input
@@ -1202,7 +1222,18 @@ export class VillageScene extends Phaser.Scene {
 
     if (this.cameraMode === 'overview') {
       const b = this.roomLayout.getBoundaryBounds();
-      const fitZoom = Math.max(0.95, Math.min(2.4, Math.min(this.scale.width / Math.max(1, b.w), this.scale.height / Math.max(1, b.h)) * 1.2));
+      // Portrait fill v1 (`sq-portrait-fill-v1`): fit the whole room —
+      // the old 0.95 floor could not fit a wide room on a portrait phone.
+      const fitZoom = resolveOverviewZoom({
+        viewportW: this.scale.width,
+        viewportH: this.scale.height,
+        boundsW: b.w,
+        boundsH: b.h,
+      });
+      this._resolvedCamera = {
+        zoom: fitZoom,
+        avatarScale: resolveOverviewAvatarScale({ fitZoom, baseAvatarScale: OVERVIEW_AVATAR_SCALE }),
+      };
       cam.stopFollow();
       cam.setZoom(fitZoom);
       cam.centerOn(b.x + b.w / 2, b.y + b.h / 2);
@@ -1210,26 +1241,51 @@ export class VillageScene extends Phaser.Scene {
       return;
     }
 
-    const followZoom = this.cameraMode === 'ultra-close-follow'
+    const baseZoom = this.cameraMode === 'ultra-close-follow'
       ? ULTRA_CLOSE_FOLLOW_ZOOM
       : this.cameraMode === 'close-follow'
       ? CLOSE_FOLLOW_ZOOM
       : this.cameraMode === 'wide-follow'
         ? WIDE_FOLLOW_ZOOM
         : FOLLOW_ZOOM;
-    cam.setZoom(followZoom);
+    // Portrait fill v1 (`sq-portrait-fill-v1`): resolve the zoom for this
+    // viewport — a portrait phone zooms out so a useful slice of the room
+    // stays visible — and keep the avatar the same size on screen.
+    this._resolvedCamera = resolveFollowCamera({
+      viewportW: this.scale.width,
+      viewportH: this.scale.height,
+      baseZoom,
+      baseAvatarScale: this._baseAvatarScale(),
+      boundsW: this._cameraBounds?.w ?? 1600,
+      boundsH: this._cameraBounds?.h ?? 900,
+    });
+    cam.setZoom(this._resolvedCamera.zoom);
     if (this.player?.avatar) {
       cam.startFollow(this.player.avatar, true, 0.1, 0.1);
     }
     this._applyAvatarVisualScale();
   }
 
-  _currentAvatarScale() {
-    if (this.cameraMode === 'overview') return OVERVIEW_AVATAR_SCALE;
+  // Base (desktop) avatar visual scale for the current follow mode —
+  // the portrait fill multiplies this by baseZoom/zoom so the avatar
+  // keeps its on-screen size when the zoom drops.
+  _baseAvatarScale() {
     if (this.cameraMode === 'ultra-close-follow') return ULTRA_CLOSE_AVATAR_SCALE;
     if (this.cameraMode === 'close-follow') return CLOSE_AVATAR_SCALE;
     if (this.cameraMode === 'wide-follow') return WIDE_AVATAR_SCALE;
     return FOLLOW_AVATAR_SCALE;
+  }
+
+  _currentAvatarScale() {
+    // Portrait fill v1 (`sq-portrait-fill-v1`): the resolved camera (set
+    // by _applyCameraMode) carries the compensated avatar scale, so the
+    // avatar stays the same size on screen when the zoom drops on a
+    // portrait phone. Before the first resolve, fall back to the mode's
+    // base scale.
+    if (this.cameraMode === 'overview') {
+      return this._resolvedCamera?.avatarScale ?? OVERVIEW_AVATAR_SCALE;
+    }
+    return this._resolvedCamera?.avatarScale ?? this._baseAvatarScale();
   }
 
   _applyAvatarVisualScale() {
@@ -1247,9 +1303,14 @@ export class VillageScene extends Phaser.Scene {
   }
 
   _resolveInitialSpawn() {
-    const defaultSpawn = { x: this.scale.width / 2, y: this.scale.height / 2 };
-    const roomSpawn = this.layout?.spawnF1 || defaultSpawn;
     const boundaryBounds = this.roomLayout?.getBoundaryBounds?.() || null;
+    // Portrait fill v1 (`sq-portrait-fill-v1`): the fallback spawn used
+    // to be the viewport center, which moves with the screen aspect —
+    // the room's own center is the aspect-independent fallback.
+    const defaultSpawn = boundaryBounds
+      ? { x: boundaryBounds.x + boundaryBounds.w / 2, y: boundaryBounds.y + boundaryBounds.h / 2 }
+      : { x: this.scale.width / 2, y: this.scale.height / 2 };
+    const roomSpawn = this.layout?.spawnF1 || defaultSpawn;
 
     // Outdoor rooms are large and irregular; spawn near the boundary center so
     // the local player reliably starts inside the visible area.
@@ -3958,6 +4019,10 @@ export class VillageScene extends Phaser.Scene {
     window.removeEventListener('keydown', this._onKeyDown);
     window.removeEventListener('keyup', this._onKeyUp);
     window.removeEventListener('blur', this._onWindowBlur);
+    // Portrait fill v1 (`sq-portrait-fill-v1`): drop the resize listener
+    // so a restarted scene does not stack camera re-applies.
+    try { this.scale?.off('resize', this._onScaleResize); } catch {}
+    this._onScaleResize = null;
     this.socket?.removeAllListeners?.();
     this.socket?.disconnect();
     this.socket = null;
