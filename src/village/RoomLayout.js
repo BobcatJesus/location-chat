@@ -121,7 +121,11 @@ const SOLID_ZONE_TYPES = new Set([
   'magazine_rack',
   'book_table',
   'cafe_counter',
-  'cafe_table',
+  // sq-table-blocking-v1.1: cafe tables are WALK-THROUGH. v1 shrank their
+  // solid box 60x60 -> 24x24 and the user still snagged on them, so no
+  // box at all now — a box is still a box. The drawn table is unchanged
+  // and the tables stay in interactZones (still clickable); only the
+  // solidity is gone.
   'toy_display',
   'cd_rack',
   'bathroom',
@@ -887,25 +891,15 @@ export class RoomLayout {
     const h = Number(z?.h);
     const x = Number(z?.x);
     const y = Number(z?.y);
-    // Cafe tables carry no w/h (their size is the fixed drawn circle) — handle
-    // them before the size guard below, or they would never register as solid.
-    // sq-table-blocking-v1: only the table's pedestal blocks. The old 60x60
-    // box (the full drawn circle) made a radius-16 player see a 92x92 no-go
-    // zone around every table, so walking around them snagged constantly.
-    // A 24x24 centre box (the lamppost precedent: only the post blocks)
-    // cuts the no-go zone to 56x56 — players can walk close to a table's
-    // edge and slip between tables. The drawn table is unchanged.
-    if (String(z?.type || '').toLowerCase() === 'cafe_table') {
-      if (!Number.isFinite(x) || !Number.isFinite(y)) return;
-      const r = 12;
-      this.staticSolidZones.push({
-        left: x - r,
-        top: y - r,
-        right: x + r,
-        bottom: y + r,
-      });
-      return;
-    }
+    // sq-table-blocking-v1.1: cafe tables are WALK-THROUGH — they register
+    // no solid box at all. 'cafe_table' is out of SOLID_ZONE_TYPES above,
+    // so _isZoneSolid is false for them and this function is never even
+    // called; and even a stray `solid: true` flag could not register a
+    // box here, because the generic path below needs w/h and cafe tables
+    // carry none (their size is the fixed drawn circle). The old v1
+    // 24x24 pedestal branch is deleted, not left behind. The tables are
+    // still drawn and still join interactZones (still clickable) — only
+    // the solidity is gone.
     if (!Number.isFinite(w) || !Number.isFinite(h) || !Number.isFinite(x) || !Number.isFinite(y)) return;
     if (w <= 0 || h <= 0) return;
     // Trees are rendered bottom-anchored: the sprite's base (trunk foot) sits at
