@@ -889,9 +889,15 @@ export class RoomLayout {
     const y = Number(z?.y);
     // Cafe tables carry no w/h (their size is the fixed drawn circle) — handle
     // them before the size guard below, or they would never register as solid.
+    // sq-table-blocking-v1: only the table's pedestal blocks. The old 60x60
+    // box (the full drawn circle) made a radius-16 player see a 92x92 no-go
+    // zone around every table, so walking around them snagged constantly.
+    // A 24x24 centre box (the lamppost precedent: only the post blocks)
+    // cuts the no-go zone to 56x56 — players can walk close to a table's
+    // edge and slip between tables. The drawn table is unchanged.
     if (String(z?.type || '').toLowerCase() === 'cafe_table') {
       if (!Number.isFinite(x) || !Number.isFinite(y)) return;
-      const r = 30;
+      const r = 12;
       this.staticSolidZones.push({
         left: x - r,
         top: y - r,
