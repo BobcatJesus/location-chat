@@ -69,6 +69,19 @@ export const TRIM_TREE_BADGE = {
   emoji: '🎄',
 };
 
+/** The Christmas Lights badge — Christmas Lights v1
+ *  (`sq-christmas-lights-v1`): not a QuestManager quest either
+ *  (the lights are a shared group quest like the tree and the
+ *  puzzle, so its def lives here). id must match what
+ *  ChristmasLightsQuest and the server use ('christmas-lights').
+ *  Earned once ever for helping light the Agora. */
+export const CHRISTMAS_LIGHTS_BADGE = {
+  id: 'christmas-lights',
+  title: 'Christmas Lights',
+  description: 'Help light up the Agora for Christmas.',
+  emoji: '💡',
+};
+
 /** The Hungry Cat badge — Hungry Cat v1 (`sq-hungry-cat-v1`): not
  *  a QuestManager quest either (the hunger quest is repeatable,
  *  twice a day, so it lives outside the one-time quest flow — see

@@ -5,6 +5,7 @@ import { CafeCat } from './CafeCat.js';
 import { HiddenKey } from './HiddenKey.js';
 import { PuzzleQuest } from './PuzzleQuest.js';
 import { TrimTreeQuest } from './TrimTreeQuest.js';
+import { ChristmasLightsQuest } from './ChristmasLightsQuest.js'; // Christmas Lights v1 (`sq-christmas-lights-v1`)
 import { SantaHatSystem } from './SantaHatSystem.js';
 // Temperature System v1 (`sq-temperature-v1`): seasonal cold/warm,
 // warm drinks (cocoa, coffee) and cold drinks (beer, iced coffee).
@@ -683,6 +684,11 @@ export class VillageScene extends Phaser.Scene {
     // elsewhere): the big Christmas tree(s) + the free ornament box.
     this.trimTreeQuest = new TrimTreeQuest(this);
     this.trimTreeQuest.refresh();
+    // Christmas Lights (Agora only — ChristmasLightsQuest itself
+    // no-ops elsewhere): the wall light strands + the free lights
+    // box in the south-east corner.
+    this.christmasLightsQuest = new ChristmasLightsQuest(this);
+    this.christmasLightsQuest.refresh();
     // Items + inventory v1 (Agora hidden search; ground litter also
     // by any pond): pocket/bag, trash, flyers, notes, diary, food,
     // cigarette box. Puzzle pieces live in this inventory too.
@@ -804,6 +810,14 @@ export class VillageScene extends Phaser.Scene {
 
     // Trim the Tree interaction (Agora): ornament box / tree.
     this.treePrompt = this.add.text(0, 0, '🎄 Take an ornament [E]', {
+      fontSize: '15px',
+      color: '#7c2d12',
+      backgroundColor: 'rgba(255,255,255,0.85)',
+      padding: { x: 8, y: 4 },
+    }).setOrigin(0.5, 1).setDepth(DEPTH.UI).setAlpha(0);
+
+    // Christmas Lights interaction (Agora): lights box / north wall.
+    this.lightsPrompt = this.add.text(0, 0, '💡 Take a light string [E]', {
       fontSize: '15px',
       color: '#7c2d12',
       backgroundColor: 'rgba(255,255,255,0.85)',
@@ -1020,6 +1034,13 @@ export class VillageScene extends Phaser.Scene {
       // box or the tree both walks you there and acts on it.
       try { this.trimTreeQuest?.boxTapAt(ptr.worldX, ptr.worldY); } catch {}
       try { this.trimTreeQuest?.treeTapAt(ptr.worldX, ptr.worldY); } catch {}
+      // Christmas Lights v1: a click on the lights box takes one
+      // (free), a click on the north wall above the coffee bar hangs
+      // the one you are carrying. Tap-to-move still happens below,
+      // so clicking the box or the wall both walks you there and
+      // acts on it.
+      try { this.christmasLightsQuest?.boxTapAt(ptr.worldX, ptr.worldY); } catch {}
+      try { this.christmasLightsQuest?.hangTapAt(ptr.worldX, ptr.worldY); } catch {}
       // Santa Hat v1: a click behind the Christmas tree counts as
       // one search tap (3 taps finds the hat). Silent unless it
       // finds it — no hint about where the hat hides. A FULL pocket
@@ -1418,6 +1439,12 @@ export class VillageScene extends Phaser.Scene {
     } else if (kind === 'trim-tree') {
       // Trim the Tree v1: hang the ornament I am carrying.
       this.trimTreeQuest?.hangOrnament();
+    } else if (kind === 'lights-box') {
+      // Christmas Lights v1: take a free light string from the box.
+      this.christmasLightsQuest?.takeLight();
+    } else if (kind === 'christmas-lights') {
+      // Christmas Lights v1: hang the light string I am carrying.
+      this.christmasLightsQuest?.hangLight();
     } else if (kind === 'notice-board') {
       // Notice board v1: open the pinned-flyers board.
       this.noticeBoardSystem?.openBoard();
@@ -1480,6 +1507,8 @@ export class VillageScene extends Phaser.Scene {
     if (this.puzzleQuest?.nearestTable(this.player.gx, this.player.gy)) return 'puzzle-table';
     if (this.trimTreeQuest?.nearestBox(this.player.gx, this.player.gy)) return 'tree-box';
     if (this.trimTreeQuest?.nearestTree(this.player.gx, this.player.gy)) return 'trim-tree';
+    if (this.christmasLightsQuest?.nearestBox(this.player.gx, this.player.gy)) return 'lights-box';
+    if (this.christmasLightsQuest?.nearestHangSpot(this.player.gx, this.player.gy)) return 'christmas-lights';
     if (this.noticeBoardSystem?.nearestBoard(this.player.gx, this.player.gy)) return 'notice-board';
     // Mailbox v1: the post box at the player's nearest park (or the
     // fallback public place) — after the board, before the chest.
@@ -2570,6 +2599,11 @@ export class VillageScene extends Phaser.Scene {
       this.trimTreeQuest?.applyState(payload);
     });
 
+    // Christmas Lights state (Agora, shared for the whole room).
+    socket.on('lights_state', (payload = {}) => {
+      this.christmasLightsQuest?.applyState(payload);
+    });
+
     // Notice board state (shared for the whole room — one board
     // per room, in-memory on the server like the puzzle).
     socket.on('board_state', (payload = {}) => {
@@ -2666,6 +2700,13 @@ export class VillageScene extends Phaser.Scene {
     // handling lives in TrimTreeQuest.applyState).
     socket.on('tree_completed', () => {
       try { socket.emit('get_tree', { roomId: this.roomId }); } catch {}
+    });
+
+    // The room lit up — re-ask for the canonical state (same
+    // missed-broadcast cover; completion handling lives in
+    // ChristmasLightsQuest.applyState).
+    socket.on('lights_completed', () => {
+      try { socket.emit('get_lights', { roomId: this.roomId }); } catch {}
     });
 
     // The server's canonical day/night phase (outdoor venues render
@@ -3399,6 +3440,7 @@ export class VillageScene extends Phaser.Scene {
     this.hiddenKey?.update(delta);
     this.puzzleQuest?.update(delta);
     this.trimTreeQuest?.update(delta);
+    this.christmasLightsQuest?.update(delta); // Christmas Lights v1 (`sq-christmas-lights-v1`)
     this.santaHatSystem?.update(delta);
     // sq-temperature-v1: ticks the toast (1s) and the shiver /
     // sweat visuals (every frame, after player.sync()).
@@ -3492,6 +3534,21 @@ export class VillageScene extends Phaser.Scene {
       this.treePrompt.setAlpha(0);
     }
 
+    // Christmas Lights: prompt near the lights box (take one) or
+    // near the north wall (hang the one you are carrying — or grab
+    // one from the box first). Same hidden-rule silence as the tree.
+    const nearLightsBox = this.christmasLightsQuest?.nearestBox(this.player.gx, this.player.gy);
+    const nearLightsWall = this.christmasLightsQuest?.nearestHangSpot(this.player.gx, this.player.gy);
+    if (nearLightsBox && !nearPond && !nearCat && !nearTable) {
+      this.lightsPrompt.setText(noE('💡 Take a light string [E]')).setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
+    } else if (nearLightsWall && !nearPond && !nearCat && !nearTable) {
+      this.lightsPrompt.setText(
+        this.christmasLightsQuest?.carrying ? noE('💡 Hang the lights [E]') : '💡 Grab a light string from the box first',
+      ).setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
+    } else {
+      this.lightsPrompt.setAlpha(0);
+    }
+
     // Bookshelf: prompt near interactable shelves (duck prompt takes priority).
     const nearShelf = this._nearestShelf();
     if (nearShelf && !nearPond) {
@@ -3503,7 +3560,7 @@ export class VillageScene extends Phaser.Scene {
     // Decoration Shop v1: prompt near a placed decoration (pick it
     // up if it is yours; someone else's just says whose it is).
     const nearDecor = this.decorSystem?.nearestDecoration(this.player.gx, this.player.gy);
-    if (nearDecor && !nearPond && !nearCat && !nearTable && !nearBox && !nearTree) {
+    if (nearDecor && !nearPond && !nearCat && !nearTable && !nearBox && !nearTree && !nearLightsBox && !nearLightsWall) {
       this.decorPrompt.setText(
         nearDecor.mine
           ? noE(`🎄 Pick up your ${nearDecor.label} [E]`)
@@ -3835,6 +3892,8 @@ export class VillageScene extends Phaser.Scene {
     this.puzzleQuest = null;
     this.trimTreeQuest?.destroy();
     this.trimTreeQuest = null;
+    this.christmasLightsQuest?.destroy(); // Christmas Lights v1 (`sq-christmas-lights-v1`)
+    this.christmasLightsQuest = null;
     this.itemsSystem?.destroy();
     this.itemsSystem = null;
     this.noticeBoardSystem?.destroy();
@@ -3860,6 +3919,7 @@ export class VillageScene extends Phaser.Scene {
     this.hatPrompt?.destroy();
     this.puzzlePrompt?.destroy();
     this.treePrompt?.destroy();
+    this.lightsPrompt?.destroy(); // Christmas Lights v1 (`sq-christmas-lights-v1`)
     this.decorPrompt?.destroy();
     this.mailPrompt?.destroy();
     this.halloween?.destroy();
@@ -3905,6 +3965,7 @@ export class VillageScene extends Phaser.Scene {
     this.hiddenKey?.refresh();
     this.puzzleQuest?.refresh();
     this.trimTreeQuest?.refresh();
+    this.christmasLightsQuest?.refresh(); // Christmas Lights v1 (`sq-christmas-lights-v1`)
     this.itemsSystem?.refresh();
     // Notice board everywhere v1: re-resolve the board for this
     // floor (upper floors have no board — _board goes null, so the

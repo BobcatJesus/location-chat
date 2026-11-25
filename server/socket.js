@@ -36,6 +36,12 @@ import {
   serializeTreeState,
 } from '../src/village/treeState.js';
 import {
+  LIGHTS_MARKER_V1,
+  createLightState,
+  hangLight,
+  serializeLightState,
+} from '../src/village/lightState.js';
+import {
   HAT_MARKER_V1,
   createHatState,
   findHat,
@@ -716,7 +722,7 @@ const QUEST_DEFS = {
 // completions can't be recovered: no persistent record of past
 // puzzle contributors exists anywhere (the puzzle state resets
 // every round).
-const BADGE_QUEST_IDS = new Set([...Object.keys(QUEST_DEFS), 'group-puzzle', 'trim-tree', HUNGRY_CAT_QUEST_ID]);
+const BADGE_QUEST_IDS = new Set([...Object.keys(QUEST_DEFS), 'group-puzzle', 'trim-tree', 'christmas-lights', HUNGRY_CAT_QUEST_ID]);
 const userBadges = {};
 function badgeMapFor(userId) {
   if (!userBadges[userId]) userBadges[userId] = {};
@@ -1102,6 +1108,23 @@ async function ensureTreeLoaded(roomId) {
     })();
   }
   return treeLoadPromises[roomId];
+}
+// Christmas Lights (Christmas Lights v1, `sq-christmas-lights-v1`):
+// per-room state lightRooms[roomId] = { state }. Agora only. The
+// state is IN-MEMORY ONLY in v1 — a server restart wipes the
+// strands, exactly like Trim the Tree before `sq-tree-persist-v1`.
+// A persistence piece can follow the same pattern later (a
+// lights_room_state table + lazy load + save on hang). Unlike the
+// tree there is NO second round: 25 counted strings light the
+// room and the quest is done for the venue. The server enforces
+// the hidden first-only rule (hangLight counts only a player's
+// first hang), room membership, and rate limits; it does not
+// verify the box take or the walk to the wall — same trust level
+// as the tree's box take and the puzzle's hidden-search clicks.
+const lightRooms = {};
+function lightRoom(roomId) {
+  if (!lightRooms[roomId]) lightRooms[roomId] = { state: createLightState() };
+  return lightRooms[roomId];
 }
 // Santa Hat (Santa Hat v1, `sq-santa-hat-v1`; persistence
 // `sq-hat-persist-v1`): ONE hat hidden behind the Christmas tree
@@ -2526,6 +2549,51 @@ io.on('connection', (socket) => {
     // is still being read.
     await ensureTreeLoaded(roomId);
     socket.emit('tree_state', serializeTreeState(treeRoom(roomId).state));
+  });
+
+  // CHRISTMAS LIGHTS (Christmas Lights v1, `sq-christmas-lights-v1`
+  // — Agora only). One player hung a light string on the north
+  // wall: the server enforces the hidden first-only rule (only a
+  // player's first hang counts toward the 25 — later hangs still
+  // succeed and render as extra bulbs, they just don't count),
+  // then broadcasts the new state to the room. When the 25th
+  // counted string lands, the room is lit: everyone hears about
+  // it, and every counted contributor earns the Christmas Lights
+  // badge (once ever). In-memory only in v1 — a server restart
+  // wipes the strands (see the lightRooms comment above).
+  socket.on('light_hang', ({ roomId } = {}) => {
+    if (!roomId || roomId !== 'agora-houston') return;
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const userId = socketUserMap[socket.id] || socket.id;
+    const rate = checkRateLimit(userId);
+    if (!rate.allowed) return;
+    const room = lightRoom(roomId);
+    const res = hangLight(room.state, userId);
+    if (!res.ok) return;
+    io.to(roomId).emit('lights_state', serializeLightState(room.state));
+    if (res.finished) {
+      io.to(roomId).emit('lights_completed', {
+        contributors: [...res.contributors],
+      });
+      // Quest badges v1: every counted contributor earns the
+      // Christmas Lights badge, once ever — tell the room about
+      // each of them.
+      for (const contributorId of [...res.contributors]) {
+        if (awardBadge(contributorId, 'christmas-lights', Date.now())) {
+          const sid = socketIdForUser(contributorId);
+          if (sid) {
+            io.to(roomId).emit('player_badges', { socketId: sid, userId: contributorId, badges: badgesArrayFor(contributorId) });
+          }
+        }
+      }
+    }
+  });
+
+  // CHRISTMAS LIGHTS STATE: the room's strands, sent when you join (or ask).
+  socket.on('get_lights', ({ roomId } = {}) => {
+    if (!roomId || roomId !== 'agora-houston') return;
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    socket.emit('lights_state', serializeLightState(lightRoom(roomId).state));
   });
 
   // SANTA HAT (Santa Hat v1, `sq-santa-hat-v1`): one hat hidden

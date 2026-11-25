@@ -74,6 +74,7 @@ import {
   BADGES_BACKFILL_MARKER_V1_1,
   GROUP_PUZZLE_BADGE,
   TRIM_TREE_BADGE,
+  CHRISTMAS_LIGHTS_BADGE,
   badgeListFrom,
   completionsFromSaved,
   mergeBadgeMaps,
@@ -421,6 +422,22 @@ export class QuestManager {
     entry.count = 1;
     entry.completedAt = Date.now();
     this.saved[TRIM_TREE_BADGE.id] = entry;
+    saveSaved(this.saved);
+    this._bumpHud();
+    return true;
+  }
+
+  /** Record the Christmas Lights badge: I helped light the Agora
+   *  (ChristmasLightsQuest calls this from _onLightsCompleted).
+   *  Once ever — the server awards the same badge to every
+   *  contributor, so both paths converge on one entry. */
+  recordLightsCompletion() {
+    const entry = this.saved[CHRISTMAS_LIGHTS_BADGE.id] || { count: 0, completed: false };
+    if (entry.completed) return false;
+    entry.completed = true;
+    entry.count = 1;
+    entry.completedAt = Date.now();
+    this.saved[CHRISTMAS_LIGHTS_BADGE.id] = entry;
     saveSaved(this.saved);
     this._bumpHud();
     return true;
@@ -779,6 +796,19 @@ export class QuestManager {
         tree.allDone
           ? '🎄 Trim the Tree — both trees complete! 🎉'
           : `🎄 Trim the Tree (Tree ${tree.tree})  ${tree.counted}/${tree.total}`,
+      );
+    }
+    // Christmas Lights v1 (`sq-christmas-lights-v1`): the shared
+    // wall strands ride along under the room quest too — "💡
+    // Christmas Lights X/25". Only the count shows (the hidden
+    // first-only rule is never explained here). A lit room reads
+    // as complete.
+    const lights = this.scene?.christmasLightsQuest?.getProgress?.();
+    if (lights) {
+      room.push(
+        lights.completed
+          ? '💡 Christmas Lights — Agora is fully lit! 🎉'
+          : `💡 Christmas Lights  ${lights.counted}/${lights.total}`,
       );
     }
     for (const q of this.anywhereQuests()) {
