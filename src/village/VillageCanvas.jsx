@@ -30,6 +30,10 @@ import { isHomeRoom } from './homeStorage.js';
 import { getDistanceMeters } from '../geo';
 import { ROOMS, getAllRooms } from '../../rooms/rooms.js';
 import { getVenueEvents } from '../../lib/venueEvents.js';
+// Quest messages mobile v1.1 (`sq-quest-messages-mobile-v1.1`):
+// narrow-screen sizing for the quest banner + toast (see
+// questMessageStyle.js).
+import { isNarrowQuestViewport, questMessageStyles } from './questMessageStyle.js';
 // Mailbox v1.1 (`sq-mailbox-v1.1`): the "Go to my mailbox" seam —
 // close the pocket, then enter the mailbox room through the
 // app-level entry (same path as a map pin).
@@ -255,6 +259,12 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
   const [approvedLayout, setApprovedLayout] = useState(null);
   const [interactKind, setInteractKind] = useState(null);
   const [questHud, setQuestHud] = useState(null);
+  // Quest messages mobile v1.1 (`sq-quest-messages-mobile-v1.1`):
+  // narrow screens get smaller banner/toast boxes (see
+  // questMessageStyle.js). Recomputed on resize/rotation below.
+  const [isNarrow, setIsNarrow] = useState(
+    () => typeof window !== 'undefined' && isNarrowQuestViewport(window.innerWidth),
+  );
   // Quests popup (`sq-quests-popup-v1`, desktop in
   // `sq-desktop-menu-v1.2`): quests live in the menu on every screen
   // now — the left-side tracker box is gone. Tapping "Quests" opens
@@ -359,6 +369,15 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
       } catch { /* scene not ready yet */ }
     }, 500);
     return () => clearInterval(t);
+  }, []);
+
+  // Quest messages mobile v1.1 (`sq-quest-messages-mobile-v1.1`):
+  // keep the narrow flag live across rotation/resize.
+  useEffect(() => {
+    const update = () => setIsNarrow(isNarrowQuestViewport(window.innerWidth));
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
   }, []);
 
   const dismissQuestBanner = () => {
@@ -1011,6 +1030,11 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
     </>
   );
 
+  // Quest messages mobile v1.1 (`sq-quest-messages-mobile-v1.1`):
+  // banner/toast sizing for this viewport (desktop values are the
+  // exact ones the top-right v1 kit shipped).
+  const msgStyles = questMessageStyles(isNarrow);
+
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%' }}>
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
@@ -1377,15 +1401,19 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
               onClick={dismissQuestBanner}
               title="Click to dismiss"
               style={{
-                width: 'min(360px, calc(100vw - 24px))',
+                width: msgStyles.bannerWidth,
                 background: 'rgba(255,255,255,0.95)', color: '#1a4971',
-                borderRadius: 8, padding: '10px 14px', fontSize: 15, textAlign: 'left',
+                borderRadius: 8, padding: msgStyles.bannerPadding, fontSize: msgStyles.bannerFontSize, textAlign: 'left',
                 cursor: 'pointer', boxShadow: '0 2px 12px rgba(0,0,0,0.3)',
                 pointerEvents: 'auto',
               }}
             >
-              <div style={{ fontWeight: 'bold', fontSize: 16 }}>{questHud.banner.emoji} {questHud.banner.title}</div>
-              <div>{questHud.banner.description}</div>
+              <div style={{ fontWeight: 'bold', fontSize: msgStyles.bannerTitleFontSize }}>{questHud.banner.emoji} {questHud.banner.title}</div>
+              {/* Quest messages mobile v1.1 (`sq-quest-messages-mobile-v1.1`):
+                  narrow screens drop the description line — title +
+                  reward carry the meaning, and the description is the
+                  longest part. Desktop shows it exactly as before. */}
+              {msgStyles.showDescription && (<div>{questHud.banner.description}</div>)}
               {/* Onboarding v1: a 0-coin reward (First Steps) shows no
                   reward line — never "Reward: +0 coins". */}
               {questHud.banner.rewardCoins > 0 && (<div>Reward: +{questHud.banner.rewardCoins} coins</div>)}
@@ -1393,9 +1421,9 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
           )}
           {questHud?.toast && (
             <div style={{
-              maxWidth: 'min(360px, calc(100vw - 24px))',
+              maxWidth: msgStyles.toastMaxWidth,
               background: 'rgba(255,255,255,0.94)', color: '#14532d',
-              borderRadius: 8, padding: '10px 14px', fontSize: 16, fontWeight: 'bold',
+              borderRadius: 8, padding: msgStyles.toastPadding, fontSize: msgStyles.toastFontSize, fontWeight: 'bold',
               textAlign: 'left', pointerEvents: 'none',
               boxShadow: '0 2px 12px rgba(0,0,0,0.3)',
             }}>
