@@ -13,10 +13,21 @@
 //     the app is minors-safe; the mailbox must not require or
 //     encourage sharing any real address or personal information.)
 //   - SEND: from your pocket, pick an item, type the recipient's
-//     code, confirm → the package goes to their inbox. Sending is
-//     FREE in v1 (no coins). An unknown code refuses the send and
-//     the item stays in your pocket (pending pattern, like pinning
-//     a flyer: the item leaves only on server confirm).
+//     code, confirm → the package goes to their inbox. Sending
+//     costs ONE SHEET of gift wrapping paper (Gift Wrapping Paper
+//     v1, `sq-gift-wrap-v1` — 2 coins a sheet at the Agora bar), so
+//     a gift never travels unwrapped. The sheet is spent only when
+//     the server confirms the send (same pending pattern as the
+//     item itself). A send with no paper is REFUSED ('no-paper')
+//     and the item stays in your pocket. An unknown code refuses
+//     the send and the item stays in your pocket (pending pattern,
+//     like pinning a flyer: the item leaves only on server confirm).
+//     The server requires the `wrapped` flag on every send — a raw
+//     socket emit without it is refused ('not-wrapped'). Honest
+//     limit: the inventory lives client-side (localStorage), so the
+//     server can only verify the flag is present, not count the
+//     sender's sheets — the same trust boundary as coins and pocket
+//     contents everywhere else in the game.
 //   - PICKUP: your mailbox sits at your nearest park; if no park
 //     is close, at the nearest public place instead. Mail waits in
 //     your inbox until you go there and collect it. The mailbox is
@@ -78,6 +89,9 @@
 //     / one-per-room server state — sending them would fork their
 //     state machines). The mailbox key cannot be sent either
 //     (sending your only key would lock you out of your own mail).
+//     Gift wrapping paper cannot be sent either (Gift Wrapping
+//     Paper v1, `sq-gift-wrap-v1`): it is the supply, not a gift —
+//     sending it would double-charge (the paper plus the wrap).
 //     The refusal lives in cleanMailItem, so BOTH the client and
 //     the server enforce it — a raw socket emit cannot smuggle one
 //     through.
@@ -94,6 +108,9 @@ export const MAILBOX_MARKER_V1_1 = 'sq-mailbox-v1.1';
 // MailSystem so it survives minification into the built bundle (a
 // comment alone would be stripped).
 export const MAILBOX_MARKER_V1_2 = 'sq-mailbox-v1.2';
+// Gift Wrapping Paper v1 (`sq-gift-wrap-v1`): live marker string,
+// referenced by MailSystem the same way.
+export const GIFT_WRAP_MARKER_V1 = 'sq-gift-wrap-v1';
 
 // A park room counts as "nearby" inside this range; beyond it the
 // mailbox falls back to the nearest open-access room.
@@ -156,9 +173,11 @@ export function isValidMailboxCode(code) {
 
 // --- sendable items -------------------------------------------------------
 // Everything EXCEPT puzzle pieces (round-scoped), the Santa hat
-// (one-per-room server state) and the mailbox key itself (sending
-// your only key would lock you out of your own mail).
-export const MAIL_UNSENDABLE_TYPES = new Set(['puzzle-piece', 'santa-hat', 'mailbox-key']);
+// (one-per-room server state), the mailbox key itself (sending
+// your only key would lock you out of your own mail) and gift
+// wrapping paper (Gift Wrapping Paper v1, `sq-gift-wrap-v1` — the
+// supply, not a gift; sending it would double-charge).
+export const MAIL_UNSENDABLE_TYPES = new Set(['puzzle-piece', 'santa-hat', 'mailbox-key', 'wrapping-paper']);
 
 /** May this item type travel by mail at all? */
 export function isSendableItemType(type) {
@@ -166,9 +185,13 @@ export function isSendableItemType(type) {
 }
 
 // --- packages -------------------------------------------------------------
-/** A mailed package: { id, fromUserId, fromName, item, sentAt }.
+/** A mailed package: { id, fromUserId, fromName, item, sentAt, wrapped }.
  *  `item` is the stored-item shape the inventory keeps
- *  ({ id, type, label, blurb, text, title, decorKind, usesLeft }). */
+ *  ({ id, type, label, blurb, text, title, decorKind, usesLeft }).
+ *  `wrapped` is true when the gift travelled wrapped (Gift
+ *  Wrapping Paper v1, `sq-gift-wrap-v1` — every send since then
+ *  is wrapped; packages from before the kit have no flag and read
+ *  as unwrapped). */
 export function createMailState() {
   return {
     packages: [], // oldest first
@@ -239,6 +262,14 @@ export function cleanPackage(raw = {}) {
     sentAt: Number.isFinite(Number(r.sentAt)) && Number(r.sentAt) > 0
       ? Number(r.sentAt)
       : Date.now(),
+    // Gift Wrapping Paper v1 (`sq-gift-wrap-v1`): the wrapped flag
+    // travels with the package so the recipient sees a wrapped
+    // gift. Only an explicit true counts — a missing flag (a
+    // package from before the kit, or a forged one) reads as
+    // unwrapped. The server's mail_send handler refuses sends
+    // without the flag, so a stored package from a live send is
+    // always wrapped; this repair only covers legacy rows.
+    wrapped: r.wrapped === true,
   };
 }
 
@@ -282,6 +313,10 @@ export function serializeMailState(state) {
       fromName: String(p.fromName || 'Someone'),
       item: { ...p.item },
       sentAt: Number(p.sentAt) || 0,
+      // Gift Wrapping Paper v1 (`sq-gift-wrap-v1`): the wrapped
+      // flag persists with the package (mail_inbox JSONB) so a
+      // restart does not unwrap a gift.
+      wrapped: p.wrapped === true,
     })),
     unread: (s.packages || []).length,
   };

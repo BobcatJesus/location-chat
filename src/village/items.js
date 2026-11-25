@@ -77,6 +77,22 @@ export const INVENTORY_FULL_MESSAGE =
   'Your pocket is full — place a piece on the puzzle board first.';
 export const INVENTORY_FULL_GENERIC =
   'Your pocket is full — use, drop, or throw something away to make room.';
+// Gift Wrapping Paper v1 (`sq-gift-wrap-v1`): 2 coins a sheet —
+// the price the user approved (cheap consumable, same as a
+// coffee). One sheet wraps one mailed package.
+export const WRAPPING_PAPER_PRICE_COINS = 2;
+// The shop row the Agora bar sells (DecorSystem.getShopState
+// returns this as `supplies`): the same shape as a DECOR_KINDS
+// entry, so the shop panel renders it with the same card. The kind
+// is the plain string here because this const sits above ITEM_TYPES
+// in the file — it must match ITEM_TYPES.WRAPPING_PAPER.
+export const WRAPPING_PAPER_SHOP = {
+  kind: 'wrapping-paper',
+  emoji: '🎁',
+  label: 'Gift Wrapping Paper',
+  blurb: 'One sheet wraps one gift you send by mail. Stacks in your pocket — buy as many as you like.',
+  price: WRAPPING_PAPER_PRICE_COINS,
+};
 
 // --- item types -----------------------------------------------------------
 export const ITEM_TYPES = {
@@ -97,6 +113,13 @@ export const ITEM_TYPES = {
   // sending it would lock you out of your own mail), and can be
   // left at home (home storage) until you need it.
   MAILBOX_KEY: 'mailbox-key',
+  // Gift Wrapping Paper v1 (`sq-gift-wrap-v1`): a consumable
+  // supply, bought at the Agora bar (2 coins a sheet). One sheet
+  // wraps one mailed package — sending by mail costs a sheet, so
+  // a gift never travels unwrapped. Stacks: all your sheets live
+  // in ONE pocket slot with a count (see sheetsLeft), like food's
+  // feeds. Cannot be sent itself (it is the supply, not a gift).
+  WRAPPING_PAPER: 'wrapping-paper',
 };
 
 // label / emoji / one-line blurb per type. `readable` items open a
@@ -168,6 +191,15 @@ export const ITEM_DEFS = {
   [ITEM_TYPES.MAILBOX_KEY]: {
     emoji: '🔑', label: 'Mailbox key',
     blurb: 'The key to your mailbox. Keep it in your pocket to open your mail — or leave it at home until you need it.',
+    readable: false, usable: false, disposable: false,
+  },
+  // Gift Wrapping Paper v1 (`sq-gift-wrap-v1`): a consumable
+  // supply, not a gift — it can never be sent (see
+  // MAIL_UNSENDABLE_TYPES in mailState.js). One sheet wraps one
+  // mailed package. Stacks in one pocket slot (see sheetsLeft).
+  [ITEM_TYPES.WRAPPING_PAPER]: {
+    emoji: '🎁', label: 'Gift Wrapping Paper',
+    blurb: 'Pretty paper for wrapping a gift. You need one sheet to send anything by mail — buy more at the Agora bar.',
     readable: false, usable: false, disposable: false,
   },
 };
@@ -335,6 +367,10 @@ function describeItem(item) {
     // Feed the Ducks v2 (`sq-feed-ducks-v2`): food shows its remaining
     // feeds; legacy food without a usesLeft field counts as full (3).
     usesLeft: item?.type === ITEM_TYPES.FOOD ? foodUsesLeft(item) : null,
+    // Gift Wrapping Paper v1 (`sq-gift-wrap-v1`): a stack shows
+    // its sheet count; legacy paper without a sheetsLeft field
+    // counts as one sheet (see wrappingPaperSheets).
+    sheetsLeft: item?.type === ITEM_TYPES.WRAPPING_PAPER ? wrappingPaperSheets(item) : null,
     emoji: kindDef?.emoji || def.emoji || '📦',
     label: item.label || kindDef?.label || def.label || 'Item',
     blurb: item.blurb || kindDef?.blurb || def.blurb || '',
@@ -404,6 +440,14 @@ export function addItem(item, inv = getInventory()) {
       ? (Number.isFinite(Number(item.usesLeft)) && Number(item.usesLeft) >= 1
         ? Math.min(Math.floor(Number(item.usesLeft)), FOOD_FEEDS_PER_ITEM)
         : FOOD_FEEDS_PER_ITEM)
+      : null,
+    // Gift Wrapping Paper v1 (`sq-gift-wrap-v1`): a stack carries
+    // its sheet count; a supplied count below 1 counts as one
+    // sheet. Non-paper keeps null.
+    sheetsLeft: item.type === ITEM_TYPES.WRAPPING_PAPER
+      ? (Number.isFinite(Number(item.sheetsLeft)) && Number(item.sheetsLeft) >= 1
+        ? Math.floor(Number(item.sheetsLeft))
+        : 1)
       : null,
     createdAt: Date.now(),
   };
@@ -478,6 +522,89 @@ export function spendFoodCharge(preferredId = null, inv = getInventory()) {
   }
   saveInventory(inv);
   return { ok: true, chargesLeft: Math.max(0, left), removed: left <= 0, itemId: target.id };
+}
+
+// --- gift wrapping paper (Gift Wrapping Paper v1, `sq-gift-wrap-v1`) -----
+// One sheet wraps one mailed package. Sheets STACK in a single
+// pocket slot with a count (sheetsLeft), like food's feeds —
+// buying more paper never eats a second slot. Paper granted
+// before this kit has no sheetsLeft field: it counts as one sheet,
+// never stranded.
+
+/** Sheet count on a wrapping-paper item (null for anything else).
+ *  Legacy paper without a sheetsLeft field counts as one. */
+export function wrappingPaperSheets(item) {
+  if (!item || item.type !== ITEM_TYPES.WRAPPING_PAPER) return null;
+  const n = Number(item?.sheetsLeft);
+  if (!Number.isFinite(n) || n < 1) return 1;
+  return Math.floor(n);
+}
+
+/** The wrapping-paper stack in the pocket, or null. */
+export function findWrappingPaper(inv = getInventory()) {
+  return (inv.items || []).find((it) => it?.type === ITEM_TYPES.WRAPPING_PAPER) || null;
+}
+
+/** Does the pocket hold at least one sheet? */
+export function hasWrappingPaper(inv = getInventory()) {
+  return wrappingPaperCount(inv) >= 1;
+}
+
+/** Total sheets in the pocket (0 when there is no stack). */
+export function wrappingPaperCount(inv = getInventory()) {
+  const stack = findWrappingPaper(inv);
+  return stack ? wrappingPaperSheets(stack) : 0;
+}
+
+/**
+ * Buy a sheet of gift wrapping paper at the Agora bar: 2 coins.
+ * A stack already in the pocket just grows by one — no new slot,
+ * so a full pocket never blocks topping up. Without a stack the
+ * pocket-full check comes FIRST, so a full pocket never takes
+ * your coins. A failed add after paying refunds the coins (same
+ * shape as buyDecoration). Returns { ok, item?, price?, reason? }
+ * — 'not-enough-coins', 'inventory-full'.
+ */
+export function buyWrappingPaper(inv = getInventory()) {
+  const stack = findWrappingPaper(inv);
+  if (!stack && inv.items.length >= capacity(inv)) return { ok: false, reason: 'inventory-full' };
+  if (getCoins() < WRAPPING_PAPER_PRICE_COINS) return { ok: false, reason: 'not-enough-coins' };
+  if (!spendCoins(WRAPPING_PAPER_PRICE_COINS)) return { ok: false, reason: 'not-enough-coins' };
+  if (stack) {
+    const idx = inv.items.findIndex((it) => it.id === stack.id);
+    if (idx < 0) {
+      try { earnCoins(WRAPPING_PAPER_PRICE_COINS, 'paper-refund'); } catch {}
+      return { ok: false, reason: 'error' };
+    }
+    inv.items[idx] = { ...inv.items[idx], sheetsLeft: wrappingPaperSheets(stack) + 1 };
+    saveInventory(inv);
+    return { ok: true, item: describeItem(inv.items[idx]), price: WRAPPING_PAPER_PRICE_COINS };
+  }
+  const res = addItem({ type: ITEM_TYPES.WRAPPING_PAPER, sheetsLeft: 1 }, getInventory());
+  if (!res.ok) {
+    try { earnCoins(WRAPPING_PAPER_PRICE_COINS, 'paper-refund'); } catch {}
+    return { ok: false, reason: res.reason || 'error' };
+  }
+  return { ok: true, item: res.item, price: WRAPPING_PAPER_PRICE_COINS };
+}
+
+/** Spend ONE sheet of wrapping paper — the single sheet-spending
+ *  helper the mail send goes through. Returns { ok, sheetsLeft?,
+ *  removed?, itemId?, reason? } — reason is 'no-paper' when the
+ *  pocket holds no paper. At 0 sheets the stack leaves the pocket. */
+export function spendWrappingSheet(inv = getInventory()) {
+  const stack = findWrappingPaper(inv);
+  if (!stack) return { ok: false, reason: 'no-paper' };
+  const idx = inv.items.findIndex((it) => it.id === stack.id);
+  if (idx < 0) return { ok: false, reason: 'no-paper' };
+  const left = wrappingPaperSheets(stack) - 1;
+  if (left <= 0) {
+    inv.items.splice(idx, 1);
+  } else {
+    inv.items[idx] = { ...inv.items[idx], sheetsLeft: left };
+  }
+  saveInventory(inv);
+  return { ok: true, sheetsLeft: Math.max(0, left), removed: left <= 0, itemId: stack.id };
 }
 
 // --- puzzle pieces in the pocket ------------------------------------------

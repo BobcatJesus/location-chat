@@ -20,11 +20,17 @@
 // Props:
 //   getState() — () => { items: [{ kind, emoji, label, blurb,
 //     price }], breads: [{ kind, emoji, label, blurb, price }],
-//     coins, full, roomId } (DecorSystem.getShopState)
+//     supplies: [{ kind, emoji, label, blurb, price }],
+//     hasPaper, paperSheets, coins, full, roomId }
+//     (DecorSystem.getShopState)
 //   onBuyCoffee() — returns { ok, reason? } (the instant coffee
 //     buy, same as pressing E at the bar used to do)
 //   onBuyDecoration(kind) — returns { ok, item?, price?, reason? }
 //     (DecorSystem.buyDecoration)
+//   onBuySupply(kind) — returns { ok, item?, price?, reason? }
+//     (Gift Wrapping Paper v1, `sq-gift-wrap-v1`:
+//     DecorSystem.buySupply — 2 coins a sheet, stacks in the
+//     pocket, one sheet wraps one mailed gift)
 //   onBuyBread(kind) — returns { ok, item?, price?, reason? }
 //     (Bread Shop v1, DecorSystem.buyBread — a bread is a FOOD
 //     item, 3 feeds, ducks or cat)
@@ -45,7 +51,7 @@ const REASON_TEXT = {
   error: 'Something went wrong — try again.',
 };
 
-export default function DecorShopPanel({ getState, onBuyCoffee, onBuyDecoration, onBuyBread, onBuyDrink, onClose }) {
+export default function DecorShopPanel({ getState, onBuyCoffee, onBuyDecoration, onBuyBread, onBuyDrink, onBuySupply, onClose }) {
   const [state, setState] = useState(() => {
     try { return getState ? getState() : null; } catch { return null; }
   });
@@ -93,6 +99,9 @@ export default function DecorShopPanel({ getState, onBuyCoffee, onBuyDecoration,
   // hot cocoa and iced coffee in their own section, between
   // coffee and breads — warm and cold drinks for the seasons.
   const drinks = state.drinks || [];
+  // Gift Wrapping Paper v1 (`sq-gift-wrap-v1`): the bar also sells
+  // wrapping paper, in its own section after the decorations.
+  const supplies = state.supplies || [];
   const coins = Number(state.coins) || 0;
 
   return (
@@ -132,7 +141,8 @@ export default function DecorShopPanel({ getState, onBuyCoffee, onBuyDecoration,
         <div style={{ fontSize: 13, marginTop: 6, color: '#3d6a8a' }}>
           A coffee, or a decoration for your place — or a park tree,
           or anywhere. Decorations go into your pocket; place them
-          from the 🎒 panel and everyone here will see them.
+          from the 🎒 panel and everyone here will see them. Gift
+          wrapping paper wraps one gift you send by mail.
         </div>
 
         <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -271,6 +281,53 @@ export default function DecorShopPanel({ getState, onBuyCoffee, onBuyDecoration,
                   )}
                   disabled={blocked}
                   title={state.full
+                    ? 'Your pocket is full — make room first'
+                    : !afford ? `Need ${item.price} coins` : `Buy a ${item.label} for ${item.price} coins`}
+                  style={{
+                    ...btnStyle, flexShrink: 0,
+                    opacity: blocked ? 0.55 : 1,
+                    cursor: blocked ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  Buy · {item.price} 🪙
+                </button>
+              </div>
+            );
+          })}
+
+          {/* Gift Wrapping Paper v1 (`sq-gift-wrap-v1`): the bar
+              sells wrapping paper too — one sheet wraps one gift
+              you send by mail. It stacks in one pocket slot, so a
+              full pocket never blocks topping up a stack you
+              already have (only a first sheet needs room). */}
+          {supplies.map((item) => {
+            const afford = coins >= item.price;
+            const blocked = (state.full && !state.hasPaper) || !afford;
+            return (
+              <div
+                key={item.kind}
+                style={{
+                  border: '1px solid #e2b46c', borderRadius: 8, padding: '10px 12px',
+                  background: '#fffdf5', display: 'flex', justifyContent: 'space-between',
+                  alignItems: 'center', gap: 8,
+                }}
+              >
+                <div>
+                  <div style={{ fontWeight: 'bold', fontSize: 14 }}>
+                    {item.emoji} {item.label}
+                    {state.hasPaper ? ` · ${state.paperSheets || 0} ${(state.paperSheets || 0) === 1 ? 'sheet' : 'sheets'} in your pocket` : ''}
+                  </div>
+                  <div style={{ fontSize: 12.5, color: '#3d6a8a', marginTop: 2 }}>
+                    {item.blurb}
+                  </div>
+                </div>
+                <button
+                  onClick={() => runBuy(
+                    () => onBuySupply && onBuySupply(item.kind),
+                    `🎁 Gift wrapping paper bought — 2 coins. You need one sheet to send a gift by mail!`,
+                  )}
+                  disabled={blocked}
+                  title={state.full && !state.hasPaper
                     ? 'Your pocket is full — make room first'
                     : !afford ? `Need ${item.price} coins` : `Buy a ${item.label} for ${item.price} coins`}
                   style={{

@@ -28,6 +28,15 @@
 // (offline, rate-limited), leaves the item in your pocket.
 // Nothing is ever lost by sending.
 //
+// Gift Wrapping Paper v1 (`sq-gift-wrap-v1`): sending costs ONE
+// SHEET of gift wrapping paper (2 coins a sheet at the Agora
+// bar). The sheet is checked before the send is even attempted
+// ('no-paper' refusal, item stays) and spent only when the
+// server confirms the send — same pending pattern as the item
+// itself. The send carries `wrapped: true` and the server refuses
+// any send without it ('not-wrapped'), so a gift never travels
+// unwrapped. The recipient sees the package as wrapped (🎁).
+//
 // COLLECTING: Take asks the server for the package FIRST
 // (mail_collect_result); only when the result arrives AND the
 // pocket has room does the item land in the pocket — and only
@@ -61,6 +70,7 @@ import {
   MAILBOX_MARKER_V1,
   MAILBOX_MARKER_V1_1,
   MAILBOX_MARKER_V1_2,
+  GIFT_WRAP_MARKER_V1,
   MAILBOX_W,
   MAILBOX_H,
   MAILBOX_OPEN_RANGE,
@@ -85,6 +95,10 @@ import {
   getInventoryState,
   ensureMailboxKey,
   hasMailboxKey,
+  // Gift Wrapping Paper v1 (`sq-gift-wrap-v1`): sending costs one
+  // sheet; the sheet leaves only on the server's confirm.
+  hasWrappingPaper,
+  spendWrappingSheet,
 } from './items.js';
 import { getHomeItems, findHomeRooms } from './homeStorage.js';
 
@@ -104,6 +118,9 @@ export class MailSystem {
     // sq-mailbox-v1.2 — marker for the v1.2 landing check (live
     // reference, same reason).
     this.markerV12 = MAILBOX_MARKER_V1_2;
+    // sq-gift-wrap-v1 — marker for the gift-wrap landing check
+    // (live reference, same reason).
+    this.markerGiftWrap = GIFT_WRAP_MARKER_V1;
     this.state = createMailState();
     this._mailbox = null; // { x, y, w, h, roomId, roomName, isPark } — null when this room is not my mailbox room
     this._gfx = null; // Phaser graphics for the post box
@@ -453,7 +470,12 @@ export class MailSystem {
    *  item leaves the pocket ONLY when the server confirms the send
    *  (see onSendResult) — an unknown code, or a send that never
    *  lands, leaves the item in your pocket. Returns
-   *  { ok, pending?, reason? }. */
+   *  { ok, pending?, reason? }.
+   *
+   *  Gift Wrapping Paper v1 (`sq-gift-wrap-v1`): the send is
+   *  refused up front ('no-paper') when the pocket holds no
+   *  wrapping paper — no emit, nothing spent. The sheet itself is
+   *  spent in onSendResult, only on the server's ok. */
   sendMail(itemId, code) {
     if (!this.enabled) return { ok: false, reason: 'not-available' };
     if (!this.scene?.socket?.connected) return { ok: false, reason: 'offline' };
@@ -463,6 +485,9 @@ export class MailSystem {
     if (!item) return { ok: false, reason: 'not-found' };
     const cleaned = cleanMailItem(item);
     if (!cleaned) return { ok: false, reason: 'not-sendable' };
+    // sq-gift-wrap-v1 — no paper, no send: refuse before any emit,
+    // so a refused send costs nothing (no sheet, no item).
+    if (!hasWrappingPaper()) return { ok: false, reason: 'no-paper' };
     const packageId = `mail-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
     const fromName = this._displayName();
     this._pendingSends.set(packageId, {
@@ -480,6 +505,9 @@ export class MailSystem {
         code: cleanCode,
         item: cleaned,
         fromName,
+        // sq-gift-wrap-v1 — the server refuses any send without
+        // this flag ('not-wrapped'); the package is stored wrapped.
+        wrapped: true,
       });
     } catch {
       const pending = this._pendingSends.get(packageId);
@@ -491,7 +519,13 @@ export class MailSystem {
   }
 
   /** The server answered a send: ok → the item leaves the pocket
-   *  (the slot frees up); fail → it stays, with the reason. */
+   *  (the slot frees up); fail → it stays, with the reason.
+   *
+   *  Gift Wrapping Paper v1 (`sq-gift-wrap-v1`): on ok, one sheet
+   *  of wrapping paper leaves with the gift — spent here, only on
+   *  the server's confirm, never on a refusal or a timeout. A
+   *  failed spend (paper vanished in another tab) never blocks
+   *  the item leaving: the send already happened server-side. */
   onSendResult(payload = {}) {
     const packageId = String(payload.packageId || '');
     const pending = this._pendingSends.get(packageId);
@@ -503,6 +537,9 @@ export class MailSystem {
       return;
     }
     try {
+      // sq-gift-wrap-v1 — spend the sheet first: the gift is
+      // wrapped, the paper is used up.
+      try { spendWrappingSheet(); } catch {}
       const removed = removeItem(pending.itemId);
       if (removed) {
         const name = typeof payload.recipientName === 'string' && payload.recipientName.trim()
@@ -522,6 +559,13 @@ export class MailSystem {
       case 'unknown-code': return 'No mailbox with that code — check it and try again.';
       case 'self-send': return 'That’s your own code — send it to a friend instead.';
       case 'not-sendable': return 'That can’t be sent by mail.';
+      // Gift Wrapping Paper v1 (`sq-gift-wrap-v1`): the two new
+      // refusals. 'no-paper' is the client-side check (pocket
+      // empty); 'not-wrapped' is the server's flag check — it
+      // should never surface from a normal client, which always
+      // sends the flag, but the words are the same either way.
+      case 'no-paper': return 'You need gift wrapping paper to send a gift — buy some at the Agora bar.';
+      case 'not-wrapped': return 'That gift needs wrapping paper — buy some at the Agora bar.';
       case 'inbox-full': return 'Their mailbox is full — try again later.';
       case 'rate-limited': return 'You’re sending too fast — try again in a bit.';
       default: return 'Something went wrong — try again.';
@@ -544,6 +588,9 @@ export class MailSystem {
     }
     this._pendingCollects.set(pkg.id, {
       item: { ...pkg.item },
+      // Gift Wrapping Paper v1 (`sq-gift-wrap-v1`): the wrapped
+      // flag, so the collect toast can say it was a wrapped gift.
+      wrapped: pkg.wrapped === true,
       timer: setTimeout(() => {
         if (!this._pendingCollects.has(pkg.id)) return;
         this._pendingCollects.delete(pkg.id);
@@ -600,10 +647,16 @@ export class MailSystem {
     } catch {}
     // Both channels again: the scene toast (mailbox closed) and
     // the mail notice (the mailbox panel sits above the toast).
+    // Gift Wrapping Paper v1 (`sq-gift-wrap-v1`): a wrapped
+    // package says so — the gift inside is the plain item, the
+    // wrap was the packaging.
+    const gotText = pending.wrapped
+      ? `📬 You got a wrapped gift: ${res.item.label || 'a gift'}!`
+      : `📬 You got ${res.item.label || 'a gift'}!`;
     try {
-      this.scene?.onSystemNotice?.(`📬 You got ${res.item.label || 'a gift'}!`);
+      this.scene?.onSystemNotice?.(gotText);
     } catch {}
-    this._postMailNotice(`📬 You got ${res.item.label || 'a gift'}!`);
+    this._postMailNotice(gotText);
   }
 
   /** Take All: collect oldest-first, as many as fit right now.

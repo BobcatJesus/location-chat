@@ -165,6 +165,10 @@ export const HOME_ITEM_TYPES = [
   'cigarettes',
   'puzzle-piece',
   'mailbox-key',
+  // Gift Wrapping Paper v1 (`sq-gift-wrap-v1`): paper can be left
+  // in the chest — its sheet count rides along (see sheetsLeft
+  // below), so a stored stack comes back whole.
+  'wrapping-paper',
 ];
 
 const HOME_ITEM_TYPE_SET = new Set(HOME_ITEM_TYPES);
@@ -465,6 +469,12 @@ export function normalizeFloorItems(input) {
       // Hunger System v1 (`sq-hunger-v1`): trash food dropped on
       // the home floor stays trash food when picked back up.
       trashFood: type === 'food' ? Boolean(raw.trashFood) : null,
+      // Gift Wrapping Paper v1 (`sq-gift-wrap-v1`): paper dropped
+      // on the home floor keeps its sheet count, same as the chest
+      // store — a stack picked back up is still a stack.
+      sheetsLeft: type === 'wrapping-paper' && Number.isFinite(Number(raw.sheetsLeft)) && Number(raw.sheetsLeft) >= 1
+        ? Math.floor(Number(raw.sheetsLeft))
+        : null,
       x: Math.max(0, Math.min(HOME_FLOOR_W, x)),
       y: Math.max(0, Math.min(HOME_FLOOR_H, y)),
     });
@@ -532,6 +542,12 @@ export function normalizeHomeItems(input) {
       // Hunger System v1 (`sq-hunger-v1`): trash food stored in
       // the chest stays trash food when taken back out.
       trashFood: type === 'food' ? Boolean(raw.trashFood) : null,
+      // Gift Wrapping Paper v1 (`sq-gift-wrap-v1`): paper stored
+      // in the chest keeps its sheet count (a stack taken back out
+      // is still a stack, same as food's feeds above).
+      sheetsLeft: type === 'wrapping-paper' && Number.isFinite(Number(raw.sheetsLeft)) && Number(raw.sheetsLeft) >= 1
+        ? Math.floor(Number(raw.sheetsLeft))
+        : null,
       createdAt: Number.isFinite(Number(raw.createdAt)) && Number(raw.createdAt) > 0
         ? Number(raw.createdAt)
         : null,

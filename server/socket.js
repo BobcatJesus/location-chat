@@ -2847,11 +2847,19 @@ io.on('connection', (socket) => {
   // recipient's inbox. The item leaves the SENDER's pocket only
   // when this handler answers ok (mail_send_result) — an unknown
   // code, a full inbox, or a rate limit leaves the item in the
-  // pocket. Sending is FREE in v1 (no coins). The recipient gets
-  // mail_arrived + their fresh inbox when they are online; when
-  // they are offline the package simply waits in their inbox until
-  // they log in and ask for it (get_mail).
-  socket.on('mail_send', async ({ roomId, packageId, code, item, fromName } = {}) => {
+  // pocket. Gift Wrapping Paper v1 (`sq-gift-wrap-v1`): sending
+  // costs one sheet of wrapping paper (2 coins a sheet at the
+  // Agora bar) — the client checks its pocket and spends the sheet
+  // only on this handler's ok, and the send carries `wrapped: true`.
+  // This handler refuses any send without the flag ('not-wrapped'):
+  // a raw socket emit cannot send an unwrapped gift. Honest limit:
+  // the inventory lives client-side (localStorage), so the server
+  // verifies the flag is present, not the sender's sheet count —
+  // the same trust boundary as coins and pocket contents. The
+  // recipient gets mail_arrived + their fresh inbox when they are
+  // online; when they are offline the package simply waits in their
+  // inbox until they log in and ask for it (get_mail).
+  socket.on('mail_send', async ({ roomId, packageId, code, item, fromName, wrapped } = {}) => {
     if (!roomId) return;
     if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
     const userId = socketUserMap[socket.id] || socket.id;
@@ -2881,6 +2889,12 @@ io.on('connection', (socket) => {
       socket.emit('mail_send_result', { packageId, ok: false, reason: 'not-sendable' });
       return;
     }
+    // sq-gift-wrap-v1 — a gift never travels unwrapped: refuse any
+    // send that does not carry the wrapped flag.
+    if (wrapped !== true) {
+      socket.emit('mail_send_result', { packageId, ok: false, reason: 'not-wrapped' });
+      return;
+    }
     // Mail persistence (`sq-mail-persist-v1`): load the
     // recipient's inbox BEFORE mutating it — an offline
     // recipient's persisted mail must load first, or the save
@@ -2896,6 +2910,9 @@ io.on('connection', (socket) => {
         : (rooms[roomId][socket.id]?.name || 'Someone'),
       item: cleanItem,
       sentAt: Date.now(),
+      // sq-gift-wrap-v1 — the package is stored wrapped (the
+      // flag was required above), so the recipient sees 🎁.
+      wrapped: true,
     });
     if (!res.ok) {
       socket.emit('mail_send_result', {

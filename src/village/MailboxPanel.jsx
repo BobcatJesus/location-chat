@@ -130,7 +130,12 @@ export default function MailboxPanel({ getState, onCollect, onCollectAll, onClos
                   }}
                 >
                   <div style={{ fontWeight: 'bold', fontSize: 14 }}>
-                    {pkg.item?.emoji || '📦'} {pkg.item?.title || pkg.item?.label || 'A gift'}
+                    {/* Gift Wrapping Paper v1 (`sq-gift-wrap-v1`):
+                        a wrapped package shows as a wrapped gift
+                        (🎁 + label) — the item inside is unchanged. */}
+                    {pkg.wrapped
+                      ? `🎁 ${pkg.item?.title || pkg.item?.label || 'A gift'}`
+                      : `${pkg.item?.emoji || '📦'} ${pkg.item?.title || pkg.item?.label || 'A gift'}`}
                   </div>
                   <div style={{ fontSize: 12.5, color: '#3d6a8a', marginTop: 2 }}>
                     From {pkg.fromName || 'Someone'}

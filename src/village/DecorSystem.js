@@ -63,6 +63,12 @@ import {
   isFull,
   buyDecoration,
   buyBread,
+  // Gift Wrapping Paper v1 (`sq-gift-wrap-v1`): the shop also
+  // sells wrapping paper (a supply, not a decoration).
+  WRAPPING_PAPER_SHOP,
+  buyWrappingPaper,
+  hasWrappingPaper,
+  wrappingPaperCount,
 } from './items.js';
 // Bread Shop v1 (`sq-bread-shop-v1`): the stock table lives in
 // breadShop.js — one function keyed by shop type.
@@ -158,6 +164,14 @@ export class DecorSystem {
       // sells hot cocoa (warm drink) and iced coffee (cold drink)
       // alongside coffee — 2 coins each, same as coffee.
       drinks: TEMP_DRINK_KIND_IDS.map((id) => ({ ...TEMP_DRINK_KINDS[id] })),
+      // Gift Wrapping Paper v1 (`sq-gift-wrap-v1`): the bar also
+      // sells wrapping paper — a supply, not a decoration (it can
+      // never be placed). `hasPaper` lets the panel keep the Buy
+      // button live when the pocket is full but a stack already
+      // exists: topping up a stack needs no new slot.
+      supplies: [{ ...WRAPPING_PAPER_SHOP }],
+      hasPaper: hasWrappingPaper(),
+      paperSheets: wrappingPaperCount(),
       coins: getCoins(),
       full: isFull(),
       roomId: this.scene?.roomId || '',
@@ -357,6 +371,24 @@ export class DecorSystem {
     if (res && res.ok) {
       try {
         this.scene?.onSystemNotice?.(`🍞 You bought a ${res.item.label} for ${res.price} coins — it's in your pocket. Feed the ducks or the cat!`);
+      } catch {}
+    }
+    return res;
+  }
+
+  /** Buy gift wrapping paper (Gift Wrapping Paper v1,
+   *  `sq-gift-wrap-v1`): 2 coins a sheet, it stacks in your
+   *  pocket — one sheet wraps one gift you send by mail. A kind
+   *  that is not wrapping paper is refused ('bad-kind'); topping
+   *  up an existing stack works even with a full pocket (no new
+   *  slot needed — see items.buyWrappingPaper). */
+  buySupply(kind) {
+    if (!this.shopEnabled) return { ok: false, reason: 'not-available' };
+    if (String(kind || '').trim() !== WRAPPING_PAPER_SHOP.kind) return { ok: false, reason: 'bad-kind' };
+    const res = buyWrappingPaper();
+    if (res && res.ok) {
+      try {
+        this.scene?.onSystemNotice?.(`🎁 You bought gift wrapping paper for ${res.price} coins — it's in your pocket. You need one sheet to send a gift by mail!`);
       } catch {}
     }
     return res;

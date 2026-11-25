@@ -72,6 +72,9 @@ export const FLOOR_LITTER_EMOJI_BY_TYPE = {
   food: '🥐',
   cigarettes: '🚬',
   decoration: '🎄',
+  // Gift Wrapping Paper v1 (`sq-gift-wrap-v1`): dropped paper
+  // shows as a gift box on the floor.
+  'wrapping-paper': '🎁',
 };
 
 // The never-drop list, inlined as plain strings so this module
@@ -139,6 +142,12 @@ export function cleanFloorLitterEntry(raw = {}) {
     usesLeft: type === 'food' && Number.isFinite(Number(item.usesLeft ?? r.usesLeft)) && Number(item.usesLeft ?? r.usesLeft) >= 1
       ? Math.min(Math.floor(Number(item.usesLeft ?? r.usesLeft)), 3)
       : null,
+    // Gift Wrapping Paper v1 (`sq-gift-wrap-v1`): dropped paper
+    // keeps its sheet count; non-paper keeps null. Paper without
+    // a usable count arrives as one sheet (addItem defaults it).
+    sheetsLeft: type === 'wrapping-paper' && Number.isFinite(Number(item.sheetsLeft ?? r.sheetsLeft)) && Number(item.sheetsLeft ?? r.sheetsLeft) >= 1
+      ? Math.floor(Number(item.sheetsLeft ?? r.sheetsLeft))
+      : null,
     emoji: FLOOR_LITTER_EMOJI_BY_TYPE[type] || '📦',
     x: Math.max(0, Math.min(MAX_X, Math.round(x))),
     y: Math.max(0, Math.min(MAX_Y, Math.round(y))),
@@ -166,6 +175,9 @@ export function litterPocketItem(entry) {
     breadKind: entry.breadKind ?? null,
     trashFood: entry.trashFood ?? null,
     usesLeft: entry.usesLeft ?? null,
+    // Gift Wrapping Paper v1 (`sq-gift-wrap-v1`): a picked-up
+    // stack keeps its sheet count.
+    sheetsLeft: entry.sheetsLeft ?? null,
   };
   if (item.type === 'food' && !item.breadKind) item.trashFood = true;
   return item;

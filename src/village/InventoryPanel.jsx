@@ -102,7 +102,12 @@ const REASON_TEXT = {
   // notice channel too (MailSystem._sendReasonText) — they are
   // listed here so a direct send path shows the same words.
   'mailbox-key-no-drop': 'You can’t drop your mailbox key — you’d lock yourself out of your own mail.',
-  'not-sendable': 'That can’t be sent by mail — puzzle pieces, the Santa hat and your mailbox key stay with you.',
+  'not-sendable': 'That can’t be sent by mail — puzzle pieces, the Santa hat, your mailbox key and gift wrapping paper stay with you.',
+  // Gift Wrapping Paper v1 (`sq-gift-wrap-v1`): sending costs one
+  // sheet of wrapping paper. 'no-paper' is the client-side check
+  // (pocket empty); 'not-wrapped' is the server's flag check.
+  'no-paper': 'You need gift wrapping paper to send a gift — buy some at the Agora bar.',
+  'not-wrapped': 'That gift needs wrapping paper — buy some at the Agora bar.',
   'bad-code': 'That doesn’t look like a mailbox code — it’s 5 letters.',
   'unknown-code': 'No mailbox with that code — check it and try again.',
   'self-send': 'That’s your own code — send it to a friend instead.',
@@ -424,6 +429,11 @@ export default function InventoryPanel({
                           bits of food shows its remaining feeds. */}
                       {item.type === 'food' && item.usesLeft != null
                         ? ` · ${item.usesLeft} ${item.usesLeft === 1 ? 'feed' : 'feeds'} left` : ''}
+                      {/* Gift Wrapping Paper v1 (`sq-gift-wrap-v1`):
+                          a stack shows its sheet count, like food
+                          shows feeds. */}
+                      {item.type === 'wrapping-paper' && item.sheetsLeft != null
+                        ? ` · ${item.sheetsLeft} ${item.sheetsLeft === 1 ? 'sheet' : 'sheets'}` : ''}
                     </div>
                     <div style={{ fontSize: 12.5, color: '#3d6a8a', marginTop: 2 }}>
                       {/* Places Sync v1 (`sq-places-sync-v1`): the
@@ -550,8 +560,11 @@ export default function InventoryPanel({
                           hat can't be sent (round-scoped /
                           one-per-room server state), and the mailbox
                           key can't be sent either (it's the key to
-                          your own mail). */}
-                      {item.type !== 'puzzle-piece' && item.type !== 'santa-hat' && item.type !== 'mailbox-key' && sendTarget?.id !== item.id && (
+                          your own mail). Gift Wrapping Paper v1
+                          (`sq-gift-wrap-v1`): wrapping paper can't
+                          be sent either — it is the supply, not a
+                          gift. */}
+                      {item.type !== 'puzzle-piece' && item.type !== 'santa-hat' && item.type !== 'mailbox-key' && item.type !== 'wrapping-paper' && sendTarget?.id !== item.id && (
                         <button
                           onClick={() => { setSendTarget(item); setSendCode(''); setNotice(''); }}
                           title="Send this to a friend's mailbox — type their 5-letter mailbox code. It leaves your pocket once their mailbox confirms it"
@@ -570,7 +583,9 @@ export default function InventoryPanel({
                         <div style={{ fontSize: 12.5, color: '#3d6a8a', marginTop: 2 }}>
                           Type their 5-letter mailbox code — a game
                           code, nothing real. It leaves your pocket
-                          once their mailbox confirms it. Sending is free.
+                          once their mailbox confirms it. Sending
+                          uses one sheet of gift wrapping paper —
+                          buy some at the Agora bar if you&apos;re out.
                         </div>
                         <input
                           value={sendCode}
