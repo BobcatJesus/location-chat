@@ -2554,21 +2554,31 @@ io.on('connection', (socket) => {
 
   // CHRISTMAS LIGHTS (Christmas Lights v1, `sq-christmas-lights-v1`
   // — Agora only; v1.2 `sq-christmas-multi-v1.2` — every hang
-  // counts). One player hung a light string on the north wall:
-  // the server counts every hang toward the 25, then broadcasts
-  // the new state to the room. When the 25th counted string lands,
-  // the room is lit: everyone hears about it, and every counted
-  // contributor earns the Christmas Lights badge (once ever).
+  // counts; v1.4 `sq-christmas-lights-v1.4` — the bulb lights
+  // nearest to where the player hung it). One player hung a light
+  // string on a strand: the server counts every hang toward the
+  // 25, lights the nearest unlit slot to the hang spot the client
+  // sent (falling back to the first unlit slot when no spot
+  // arrives), then broadcasts the new state to the room. When the
+  // 25th counted string lands, the room is lit: everyone hears
+  // about it, and every counted contributor earns the Christmas
+  // Lights badge (once ever).
   // In-memory only in v1 — a server restart wipes the strands
   // (see the lightRooms comment above).
-  socket.on('light_hang', ({ roomId } = {}) => {
+  socket.on('light_hang', ({ roomId, x, y } = {}) => {
     if (!roomId || roomId !== 'agora-houston') return;
     if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
     const userId = socketUserMap[socket.id] || socket.id;
     const rate = checkRateLimit(userId);
     if (!rate.allowed) return;
     const room = lightRoom(roomId);
-    const res = hangLight(room.state, userId);
+    // v1.4 (`sq-christmas-lights-v1.4`): the hang spot rides with
+    // the emit — validated here, never trusted blindly. No usable
+    // spot (an old client) falls back to the first unlit slot.
+    const spot = Number.isFinite(Number(x)) && Number.isFinite(Number(y))
+      ? { x: Number(x), y: Number(y) }
+      : null;
+    const res = hangLight(room.state, userId, spot);
     if (!res.ok) return;
     io.to(roomId).emit('lights_state', serializeLightState(room.state));
     if (res.finished) {

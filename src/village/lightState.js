@@ -1,7 +1,11 @@
 // lightState.js — shared Christmas Lights rules (Christmas Lights v1,
 // `sq-christmas-lights-v1`; v1.1 `sq-christmas-lights-v1.1` — hang range
 // 170 -> 100, see LIGHTS_HANG_RANGE; v1.2 `sq-christmas-multi-v1.2` —
-// every hang counts, the one-per-person rule is gone).
+// every hang counts, the one-per-person rule is gone; v1.4
+// `sq-christmas-lights-v1.4` — the bulb lights nearest to where the
+// player hung it: state carries `lit`, the slot indices in the order
+// they lit, instead of lighting slots[0..counted) no matter where
+// the player stood).
 //
 // Pure logic, no Phaser and no Node APIs, so BOTH sides import it:
 //   - server/socket.js (canonical room state, validates every hang)
@@ -96,6 +100,11 @@ export function bulbColor(index) {
 export function createLightState() {
   return {
     counted: 0, // strings hung (0..25) — the X/25 number; every hang counts (v1.2)
+    // v1.4 (`sq-christmas-lights-v1.4`): the slot indices that are
+    // lit, in the order they lit — the bulb appears nearest to where
+    // its string was hung, so a corner hang lights a corner bulb,
+    // not slot 0 on the far north wall. counted === lit.length.
+    lit: [],
     contributors: [], // user ids who hung at least once (the badge list)
     hungBy: {}, // userId -> total hangs (per-hang coin payment reads this)
     completed: false,
@@ -121,8 +130,12 @@ export function lightsProgress(state) {
 /** Plain JSON copy safe to send over the socket. */
 export function serializeLightState(state) {
   const s = state || createLightState();
+  const counted = Math.max(0, Math.min(LIGHTS_TOTAL, Number(s.counted) || 0));
   return {
-    counted: Math.max(0, Math.min(LIGHTS_TOTAL, Number(s.counted) || 0)),
+    counted,
+    // v1.4 (`sq-christmas-lights-v1.4`): the lit slot indices ride
+    // with the state, so every client draws the same bulbs.
+    lit: repairLit(counted, s.lit),
     contributors: [...new Set((s.contributors || []).map((u) => String(u)).filter(Boolean))].slice(0, 50),
     hungBy: Object.fromEntries(
       Object.entries(s.hungBy || {})
@@ -133,6 +146,28 @@ export function serializeLightState(state) {
     completedAt: Number(s.completedAt) || 0,
     total: LIGHTS_TOTAL,
   };
+}
+
+/**
+ * Repair a `lit` list against `counted`: keep the valid, distinct,
+ * in-range indices in their order, then fill any shortfall with
+ * the first unlit slots in the old fixed order (0, 1, 2, ...).
+ * That fill is also what an old state without `lit` at all repairs
+ * to — its bulbs keep the old fixed-order look. Always returns
+ * exactly `counted` entries. v1.4 (`sq-christmas-lights-v1.4`).
+ */
+function repairLit(counted, rawLit) {
+  const lit = [];
+  if (Array.isArray(rawLit)) {
+    for (const n of rawLit) {
+      const i = Number(n);
+      if (Number.isInteger(i) && i >= 0 && i < LIGHTS_TOTAL && !lit.includes(i)) lit.push(i);
+    }
+  }
+  for (let i = 0; lit.length < counted && i < LIGHTS_TOTAL; i++) {
+    if (!lit.includes(i)) lit.push(i);
+  }
+  return lit.slice(0, counted);
 }
 
 /** Validate an incoming state object (never trust the wire). */
@@ -156,18 +191,57 @@ export function parseLightState(raw) {
   // A completed room's counted number is always the full 25 — a
   // wire state that claims "complete" with fewer is repaired.
   if (s.completed) s.counted = LIGHTS_TOTAL;
+  // v1.4 (`sq-christmas-lights-v1.4`): `lit` must match `counted`
+  // exactly — an old state without it repairs to the first N slots
+  // in the old fixed order, so its bulbs stay where they were.
+  s.lit = repairLit(s.counted, raw.lit);
   return s;
 }
 
 /**
+ * The slot a hang at `spot` ({ x, y } room coords) should light:
+ * the NEAREST unlit slot, by Euclidean distance to the slot
+ * coords. With no usable spot (old client, offline path) it falls
+ * back to the first unlit slot — the old behaviour. Returns -1
+ * when every slot is lit. Pure, so tests can call it without a
+ * server. v1.4 (`sq-christmas-lights-v1.4`).
+ */
+export function nearestUnlitSlot(state, spot) {
+  const s = state || createLightState();
+  const lit = new Set(Array.isArray(s.lit) ? s.lit : []);
+  const hasSpot = spot && Number.isFinite(Number(spot.x)) && Number.isFinite(Number(spot.y));
+  let best = -1;
+  let bestD = Infinity;
+  for (let i = 0; i < LIGHTS_TOTAL; i++) {
+    if (lit.has(i)) continue;
+    if (!hasSpot) return i; // no spot: first unlit slot, the old behaviour
+    const slot = LIGHTS_BULB_SLOTS[i];
+    const d = Math.hypot(Number(spot.x) - slot.x, Number(spot.y) - slot.y);
+    if (d < bestD) {
+      bestD = d;
+      best = i;
+    }
+  }
+  return best;
+}
+
+/**
  * One player hung a light string on the wall. Returns
- * { ok, counted, finished, contributors }.
+ * { ok, counted, finished, contributors, litSlot }.
  *
  * MULTI-HANG (v1.2, `sq-christmas-multi-v1.2`): every hang counts
  * toward the 25 — no per-person cap, no extras. The 25th hang
  * finishes the room. `counted` is always true on a successful hang.
+ *
+ * NEAREST SLOT (v1.4, `sq-christmas-lights-v1.4`): `spot` is the
+ * hang spot the player actually used ({ x, y } — the bar wall or a
+ * corner, sent by the client). The slot nearest to it lights, and
+ * its index is appended to `lit` — so the bulb appears where the
+ * player hung the string. A slot never lights twice: the pick only
+ * considers unlit slots. No spot (old client, offline path) lights
+ * the first unlit slot, the old behaviour.
  */
-export function hangLight(state, userId) {
+export function hangLight(state, userId, spot) {
   const s = state || createLightState();
   if (s.completed) return { ok: false, reason: 'already-complete' };
   const uid = String(userId || '');
@@ -175,13 +249,18 @@ export function hangLight(state, userId) {
   s.hungBy[uid] = (Number(s.hungBy[uid]) || 0) + 1;
   if (!s.contributors.includes(uid)) s.contributors.push(uid);
   s.counted += 1;
+  const litSlot = nearestUnlitSlot(s, spot);
+  if (litSlot >= 0) {
+    if (!Array.isArray(s.lit)) s.lit = [];
+    s.lit.push(litSlot);
+  }
   let finished = false;
   if (s.counted >= LIGHTS_TOTAL) {
     s.completed = true;
     s.completedAt = Date.now();
     finished = true;
   }
-  return { ok: true, counted: true, finished, contributors: [...s.contributors] };
+  return { ok: true, counted: true, finished, contributors: [...s.contributors], litSlot };
 }
 
 // ---- per-hang coin payment (v1.2, `sq-christmas-multi-v1.2`) ----

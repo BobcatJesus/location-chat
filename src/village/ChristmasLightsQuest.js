@@ -7,6 +7,10 @@
 // v1.3 `sq-christmas-lights-v1.3` — the hang spot is now a LIST:
 // the bar wall plus a spot on the strands at each corner of the
 // cafe, so hanging works from any corner, not just the bar).
+// v1.4 `sq-christmas-lights-v1.4` — the bulb lights nearest to
+// where the player hung it: the hang spot rides with the
+// `light_hang` emit, the server lights the nearest unlit slot to
+// it, and the strands draw state.lit instead of slots[0..counted).
 //
 // A box of FREE light strings sits in the south-east corner of
 // Agora. Take one, walk to any strand — the north wall above the
@@ -378,25 +382,38 @@ export class ChristmasLightsQuest {
   }
 
   /** Hang the light string I am carrying on a strand (v1.3,
-   *  `sq-christmas-lights-v1.3`: the bar wall or any corner). */
-  hangLight() {
+   *  `sq-christmas-lights-v1.3`: the bar wall or any corner).
+   *  `spot` is the hang spot actually used — the tap path passes
+   *  its spot in; the E-key path finds the nearest spot to the
+   *  player (v1.4, `sq-christmas-lights-v1.4`: the spot rides with
+   *  the emit, so the server lights the bulb nearest to where the
+   *  player hung it instead of slot 0 on the far north wall). */
+  hangLight(spot) {
     if (!this.enabled) return { ok: false, reason: 'not-available' };
     if (!this.carrying) return { ok: false, reason: 'no-lights' };
     if (this.state.completed) return { ok: false, reason: 'all-done' };
     this._pendingHang = true;
     this.carrying = false;
     this._updateCarryIndicator();
+    const useSpot = spot || this._spotForHang();
     const socket = this.scene?.socket;
     if (socket?.connected) {
       // The server validates and broadcasts the new state to the
       // room; applyState confirms it — and v1.1
       // (`sq-christmas-lights-v1.1`) toasts the lit count there,
       // from the server-confirmed state, instead of guessing here.
-      try { socket.emit('light_hang', { roomId: this.scene.roomId }); } catch {}
+      // v1.4 (`sq-christmas-lights-v1.4`): the hang spot goes with
+      // the emit so the bulb lands where the player stood.
+      try {
+        socket.emit('light_hang', {
+          roomId: this.scene.roomId,
+          ...(useSpot ? { x: useSpot.x, y: useSpot.y } : {}),
+        });
+      } catch {}
       return { ok: true, pending: true };
     }
     // Offline: apply locally so the quest still works solo.
-    const res = hangLight(this.state, this._myUserId());
+    const res = hangLight(this.state, this._myUserId(), useSpot);
     if (!res.ok) return res;
     if (res.counted) this.iCounted = true;
     // v1.2 (`sq-christmas-multi-v1.2`): pay for this hang now, from
@@ -409,6 +426,14 @@ export class ChristmasLightsQuest {
     this._afterLocalChange(res.finished ? null : `💡 You hung a string of lights! (${this.state.counted} of ${LIGHTS_TOTAL} lit)`);
     if (res.finished) this._onLightsCompleted(this.state);
     return { ok: true, counted: res.counted };
+  }
+
+  /** The hang spot the player is standing at (E key) — the nearest
+   *  in-range spot, or null. v1.4 (`sq-christmas-lights-v1.4`). */
+  _spotForHang() {
+    const player = this.scene?.player;
+    if (!player) return null;
+    return this.nearestHangSpot(player.gx, player.gy);
   }
 
   _afterLocalChange(notice) {
@@ -452,7 +477,9 @@ export class ChristmasLightsQuest {
     if (Math.hypot(player.gx - spot.x, player.gy - spot.y) > LIGHTS_HANG_RANGE) {
       return { ok: false, reason: 'too-far' };
     }
-    const res = this.hangLight();
+    // v1.4 (`sq-christmas-lights-v1.4`): the tap spot rides with
+    // the hang, so the bulb lights on the strand that was clicked.
+    const res = this.hangLight(spot);
     return { ...res, hung: res.ok };
   }
 
@@ -542,10 +569,14 @@ export class ChristmasLightsQuest {
     this._drawWire(g, LIGHTS_BULB_SLOTS.slice(0, 10));
     this._drawWire(g, LIGHTS_BULB_SLOTS.slice(10, 17));
     this._drawWire(g, LIGHTS_BULB_SLOTS.slice(17, 25));
-    // Counted bulbs, in their slots, in hang order.
-    for (let i = 0; i < Math.min(state.counted, LIGHTS_TOTAL); i++) {
-      const slot = LIGHTS_BULB_SLOTS[i];
-      if (slot) this._drawBulb(g, slot.x, slot.y, bulbColor(i), state.completed);
+    // Counted bulbs, in their slots, in hang order (v1.4,
+    // `sq-christmas-lights-v1.4`): state.lit lists the lit slot
+    // indices in the order they lit — the bulb appears nearest to
+    // where its string was hung. NOT slots[0..counted), which lit
+    // the far north wall first no matter where the player stood.
+    for (const idx of (state.lit || [])) {
+      const slot = LIGHTS_BULB_SLOTS[idx];
+      if (slot) this._drawBulb(g, slot.x, slot.y, bulbColor(idx), state.completed);
     }
     // Counter-front strand — stage 4+ (19+ counted): a warm line
     // of bulbs along the front of the coffee bar (y 178, x 440-1160).

@@ -5,6 +5,9 @@
 // per counted hang, badge once per person.
 // v1.3 (`sq-christmas-lights-v1.3`): the hang spot is a list — the
 // bar wall plus a spot on the strands at each corner of the cafe.
+// v1.4 (`sq-christmas-lights-v1.4`): the bulb lights nearest to
+// where the player hung it — the hang spot rides with the emit and
+// the strands draw state.lit instead of slots[0..counted).
 // Quest-level tests with a stubbed scene (no Phaser needed — the
 // drawing calls go through a chainable `add` stub).
 
@@ -101,7 +104,10 @@ describe('v1.1 hang toast carries the lit count', () => {
     const q = new ChristmasLightsQuest(scene);
     expect(q.takeLight()).toMatchObject({ ok: true });
     expect(q.hangLight()).toMatchObject({ ok: true, pending: true });
-    expect(emitted).toEqual([['light_hang', { roomId: 'agora-houston' }]]);
+    // v1.4 (`sq-christmas-lights-v1.4`): the hang spot rides with
+    // the emit — the fake player stands at the bar front (800,
+    // 250), so the bar spot (800, 190) goes with it.
+    expect(emitted).toEqual([['light_hang', { roomId: 'agora-houston', x: 800, y: 190 }]]);
     // No toast yet — the count is not known until the server answers.
     expect(notices.join('\n')).not.toContain('You hung a string of lights!');
     // Server confirms: three counted in the room, I am one of them.
@@ -364,5 +370,70 @@ describe('v1.3 multi-spot hangs — the bar wall plus each corner', () => {
     q.carrying = true;
     expect(q.hangTapAt(NE.x, NE.y)).toMatchObject({ ok: true, hung: true });
     expect(q.state.counted).toBe(2);
+  });
+});
+
+describe('v1.4 — the bulb lights where the player hung it', () => {
+  it('an offline tap-hang at the SE corner lights an east-wall slot, not slot 0', () => {
+    const { scene } = fakeScene({ player: { gx: 1420, gy: 690 } });
+    const q = new ChristmasLightsQuest(scene);
+    q.carrying = true;
+    const res = q.hangTapAt(1420, 620);
+    expect(res).toMatchObject({ ok: true, hung: true });
+    expect(q.state.counted).toBe(1);
+    // Nearest slot to the SE spot (1420, 620) is (1490, 613), index 15.
+    expect(q.state.lit).toEqual([15]);
+  });
+
+  it('the E-key hang at the bar lights a north-wall slot offline', () => {
+    const { scene } = fakeScene(); // player at the bar front (800, 250)
+    const q = new ChristmasLightsQuest(scene);
+    q.carrying = true;
+    const res = q.hangLight();
+    expect(res).toMatchObject({ ok: true });
+    expect(q.state.counted).toBe(1);
+    // Nearest slot to the bar spot (800, 190) is (866, 112), index 5.
+    expect(q.state.lit).toEqual([5]);
+  });
+
+  it('a second hang at a different corner lights a different nearby slot', () => {
+    const { scene } = fakeScene();
+    const q = new ChristmasLightsQuest(scene);
+    q.carrying = true;
+    q.hangLight(); // bar -> slot 5
+    expect(q.state.lit).toEqual([5]);
+    // Walk to the SE corner and tap-hang there.
+    scene.player = { gx: 1420, gy: 690 };
+    q.carrying = true;
+    const res = q.hangTapAt(1420, 620);
+    expect(res).toMatchObject({ ok: true, hung: true });
+    expect(q.state.counted).toBe(2);
+    expect(q.state.lit).toEqual([5, 15]);
+  });
+
+  it('the online E-key hang sends the hang spot with the emit', () => {
+    const { scene, emitted } = fakeScene({
+      player: { gx: 1420, gy: 690 },
+      socket: { connected: true, emit: (ev, data) => emitted.push([ev, data]) },
+    });
+    const q = new ChristmasLightsQuest(scene);
+    q.carrying = true;
+    const res = q.hangLight();
+    expect(res).toMatchObject({ ok: true, pending: true });
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0][0]).toBe('light_hang');
+    expect(emitted[0][1]).toEqual({ roomId: 'agora-houston', x: 1420, y: 620 });
+  });
+
+  it('the online tap-hang sends the tapped spot with the emit', () => {
+    const { scene, emitted } = fakeScene({
+      player: { gx: 220, gy: 240 },
+      socket: { connected: true, emit: (ev, data) => emitted.push([ev, data]) },
+    });
+    const q = new ChristmasLightsQuest(scene);
+    q.carrying = true;
+    const res = q.hangTapAt(220, 170);
+    expect(res).toMatchObject({ ok: true, hung: true });
+    expect(emitted[0][1]).toEqual({ roomId: 'agora-houston', x: 220, y: 170 });
   });
 });
