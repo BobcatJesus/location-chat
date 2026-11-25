@@ -119,6 +119,21 @@ export const QUESTS = [
     emoji: '🔑',
   },
   // Anywhere quests (roomId '*') — active in every room at once.
+  // Catch a Litterbug v1 (`sq-litterbug-quest-v1`): tap fresh
+  // litter (marked "!") within 15 seconds of the drop — a real
+  // player's drop, or a Shepherd Park NPC's cup. One catch
+  // completes it; the badge is automatic like every quest.
+  {
+    id: 'litterbug',
+    title: 'Catch a Litterbug',
+    description: 'Catch someone littering — tap fresh litter (marked !) within 15 seconds of the drop. A real player or a park NPC, either one counts.',
+    roomId: '*',
+    kind: 'solo',
+    event: 'litterbug-caught',
+    target: 1,
+    rewardCoins: 5,
+    emoji: '🚨',
+  },
   {
     id: 'wanderer',
     title: 'Wanderer',

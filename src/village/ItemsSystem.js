@@ -147,12 +147,20 @@ export class ItemsSystem {
     // send failure reason (the pocket panel shows it).
     let mail = null;
     try { mail = this.scene?.mailSystem?.getState?.() || null; } catch {}
+    // Shared Floor Litter v1 (`sq-shared-litter-v1`): same notice
+    // channel as decorations — the latest drop / pickup news
+    // (timeout, or a late confirm) for the pocket panel's own
+    // notice line.
+    let litterNotice = { text: '', seq: 0 };
+    try { litterNotice = this.scene?.floorLitterSystem?.getLitterNotice?.() || litterNotice; } catch {}
     return {
       ...state,
       decorNotice: decorNotice.text || '',
       decorNoticeSeq: decorNotice.seq || 0,
       hatNotice: hatNotice.text || '',
       hatNoticeSeq: hatNotice.seq || 0,
+      litterNotice: litterNotice.text || '',
+      litterNoticeSeq: litterNotice.seq || 0,
       mailboxCode: mail?.mailboxCode || '',
       mailPackages: mail?.packages || [],
       mailUnread: mail?.unread || 0,
@@ -539,13 +547,21 @@ export class ItemsSystem {
     };
   }
 
-  /** Drop an item on the ground where you stand (visible litter in
-   * this room, this session). Puzzle pieces cannot be dropped — they
+  /** Drop an item on the ground where you stand (Shared Floor
+   * Litter v1, `sq-shared-litter-v1`): visible litter in this room
+   * that EVERYONE in the room can see and pick up — not the old
+   * session-local drop. Puzzle pieces cannot be dropped — they
    * belong on the puzzle board. The Santa hat cannot be dropped
    * either (Santa Hat v1): it is a shared room item with server
    * state, and dropping it as session litter would strand it — the
    * server would say "carried" while the hat sat somewhere nobody
-   * can see once the litter despawns. */
+   * can see once the litter despawns. The mailbox key cannot be
+   * dropped either (Mailbox v1): dropping it would lock you out
+   * of your own mail. In your OWN home room Drop goes through the
+   * home floor store instead (VillageCanvas routes it there) —
+   * this method refuses there as a guard. The item leaves the
+   * pocket only when the server confirms the drop (see
+   * FloorLitterSystem) — a refused drop costs nothing. */
   /** Send a pocket item to the player with this mailbox code
    *  (Mailbox v1, `sq-mailbox-v1`): delegated to MailSystem; the
    *  item leaves the pocket only on the server's confirm. */
@@ -578,35 +594,19 @@ export class ItemsSystem {
     if (item.type === ITEM_TYPES.SANTA_HAT) {
       return { ok: false, reason: 'santa-hat-no-drop' };
     }
-    const removed = removeItem(id);
-    if (!removed) return { ok: false, reason: 'not-found' };
-    const player = this.scene?.player;
-    const x = player?.gx ?? 800;
-    const y = player?.gy ?? 450;
-    const emojiMap = {
-      [ITEM_TYPES.TRASH]: '🗑️', [ITEM_TYPES.FLYER]: '📄', [ITEM_TYPES.NOTE]: '📝',
-      [ITEM_TYPES.DIARY]: '📖', [ITEM_TYPES.FOOD]: '🥐', [ITEM_TYPES.CIGARETTES]: '🚬',
-    };
-    let textObj = null;
-    try {
-      textObj = this.scene.add.text(x, y, emojiMap[removed.type] || '📦', { fontSize: '22px' });
-      textObj.setOrigin(0.5, 0.5);
-      textObj.setDepth(DEPTH.ACTOR_MIN + Math.round(y));
-    } catch {}
-    this._litter.push({
-      id: `dropped-${removed.id}`,
-      type: removed.type,
-      // Hunger System v1 (`sq-hunger-v1`): a dropped item keeps
-      // what it was — a bought croissant keeps its breadKind (so
-      // picking it back up does not turn it into trash food) and a
-      // trash-food item keeps its trashFood flag, with its
-      // remaining charges intact either way.
-      item: { type: removed.type, title: removed.title, text: removed.text, label: removed.label, blurb: removed.blurb, breadKind: removed.breadKind, trashFood: removed.trashFood, usesLeft: removed.usesLeft },
-      emoji: emojiMap[removed.type] || '📦',
-      label: `dropped ${removed.label}`,
-      x, y, textObj,
-    });
-    return { ok: true, dropped: removed };
+    // Drop on the home floor v1: in your own home room Drop goes
+    // through the home floor store (VillageCanvas routes it there);
+    // this is only a guard for a direct call.
+    if (this.scene?.homeStorageSystem?.enabled) {
+      return { ok: false, reason: 'at-home' };
+    }
+    // Shared Floor Litter v1 (`sq-shared-litter-v1`): the drop
+    // goes through the server so everyone in the room sees it, and
+    // the item leaves the pocket only on the server's confirm —
+    // FloorLitterSystem owns the pending / timeout / confirm, the
+    // same shape as placing a decoration.
+    return this.scene?.floorLitterSystem?.dropItem?.(id)
+      || { ok: false, reason: 'not-available' };
   }
 
   /** Throw trash away — only while standing by the Agora trash can.
@@ -696,6 +696,15 @@ export class ItemsSystem {
    * the pocket (the slot frees up). Called by SantaHatSystem on
    * the hat_state broadcast that shows it on the cat. */
   confirmPlacedHat(itemId) {
+    const removed = removeItem(itemId);
+    return { ok: Boolean(removed), item: removed };
+  }
+
+  /** The server confirmed a shared-litter drop: the item leaves
+   * the pocket (the slot frees up). Called by FloorLitterSystem
+   * on the floor_litter broadcast (or drop_item_result) that
+   * shows it. */
+  confirmDroppedItem(itemId) {
     const removed = removeItem(itemId);
     return { ok: Boolean(removed), item: removed };
   }

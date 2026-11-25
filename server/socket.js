@@ -101,6 +101,33 @@ import {
   removeDecoration,
   serializeDecorState,
 } from '../src/village/decorState.js';
+// Shared Floor Litter v1 (`sq-shared-litter-v1`): dropped pocket
+// items are visible to everyone in the room. The pure state rules
+// (cleaning, cap, claims) live in floorLitterState.js so the
+// server stays authoritative over every drop and pickup.
+import {
+  createFloorLitterState,
+  addFloorLitter,
+  claimFloorLitter,
+  confirmFloorLitterClaim,
+  cancelFloorLitterClaim,
+  sweepFloorLitterClaims,
+  serializeFloorLitterState,
+  litterPocketItem,
+} from '../src/village/floorLitterState.js';
+// Catch a Litterbug v1 (`sq-litterbug-quest-v1`): fresh litter is
+// catchable for 15s, and Shepherd Park NPCs drop cups on a timer.
+// The pure freshness / catch / NPC rules live in litterbugState.js
+// so the server stays authoritative over every catch.
+import {
+  LITTERBUG_NPC_ROOM_ID,
+  LITTERBUG_NPC_COOLDOWN_MS,
+  LITTERBUG_NPC_CUP,
+  isNpcLitter,
+  isLitterbugNpcLabel,
+  npcIdForLabel,
+  validateLitterbugCatch,
+} from '../src/village/litterbugState.js';
 // Hungry Cat v1 (`sq-hungry-cat-v1`): the cat gets hungry twice a
 // day (morning + evening, Chicago time) on a server timer — the
 // pure window math + hunger state machine live in catHunger.js so
@@ -658,6 +685,11 @@ const QUEST_DEFS = {
   'golden-key': { target: 1, rewardCoins: 5 },
   'wanderer': { target: 3, rewardCoins: 4 },
   'bartenders-errand': { target: 3, rewardCoins: 5 },
+  // Catch a Litterbug v1 (`sq-litterbug-quest-v1`): tap fresh
+  // litter (marked "!") within 15 seconds of the drop — a real
+  // player's drop, or a Shepherd Park NPC's cup. One catch
+  // completes it; the badge is automatic like every quest.
+  'litterbug': { target: 1, rewardCoins: 5 },
 };
 // Quest badges (Quest Completions / Badges v1,
 // `sq-quest-badges-v1`): one badge per completed quest, per player,
@@ -1226,6 +1258,36 @@ async function ensureDecorLoaded(roomId) {
     })();
   }
   return decorLoadPromises[roomId];
+}
+// Shared Floor Litter v1 (`sq-shared-litter-v1`): per-room dropped
+// items everyone in the room can see and pick up.
+// floorLitterRooms[roomId] = { state }.
+// IN-MEMORY ONLY — a restart wipes floor litter. That is fine on
+// purpose: it is litter, and the item already left the dropper's
+// pocket either way (a restart never resurrects a dropped item
+// into a pocket). No Postgres table, no persistence module. Home
+// rooms never use this — their drops go through the per-player
+// home floor store, and the server refuses drop_item there.
+const floorLitterRooms = {};
+function floorLitterRoom(roomId) {
+  if (!floorLitterRooms[roomId]) floorLitterRooms[roomId] = { state: createFloorLitterState() };
+  return floorLitterRooms[roomId];
+}
+function broadcastFloorLitter(roomId) {
+  io.to(roomId).emit('floor_litter', serializeFloorLitterState(floorLitterRoom(roomId).state));
+}
+// Catch a Litterbug v1 (`sq-litterbug-quest-v1`): when each
+// patrolling NPC last dropped a cup, per room — the cooldown that
+// dedupes the many clients rolling their own NPC timer at once.
+// Key `${roomId}:${npcLabel}` -> Date.now() of the last accepted
+// NPC drop. In-memory like the litter itself; a restart resets it.
+const npcLitterLastDrop = new Map();
+// Restore pickup claims that expired while nobody was looking
+// (a picker that never confirmed). Returns true when anything
+// came back — the caller broadcasts then.
+function sweepFloorLitter(roomId) {
+  const { restored } = sweepFloorLitterClaims(floorLitterRoom(roomId).state, Date.now());
+  return restored > 0;
 }
 // Matches youtube.com/watch?v=, youtu.be/, youtube.com/embed/, youtube.com/shorts/
 const YOUTUBE_ID_RE = /(?:(?:www\.|music\.)?youtube\.com\/(?:watch\?[^#]*v=|embed\/|shorts\/|v\/)|youtu\.be\/)([A-Za-z0-9_-]{11})/;
@@ -2820,6 +2882,194 @@ io.on('connection', (socket) => {
     // the real row is still being read.
     await ensureDecorLoaded(roomId);
     socket.emit('decor_state', serializeDecorState(decorRoom(roomId).state));
+  });
+
+  // SHARED FLOOR LITTER (Shared Floor Litter v1,
+  // `sq-shared-litter-v1`): dropping a pocket item puts it on the
+  // floor where you stand, visible to everyone in the room. The
+  // item leaves the DROPPER's pocket only when this handler
+  // answers ok (drop_item_result) — a refused drop (room full,
+  // never-drop type, rate limit) leaves the item in the pocket.
+  // The server stamps droppedBy / droppedByName / droppedAt
+  // itself: the quest kit needs the dropper and the time, and a
+  // client must not be able to fake either.
+  socket.on('drop_item', ({ roomId, id, item, x, y } = {}) => {
+    if (!roomId) return;
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const userId = socketUserMap[socket.id] || socket.id;
+    if (isHomeRoom(roomId)) {
+      socket.emit('drop_item_result', { id: String(id || ''), ok: false, reason: 'not-home' });
+      return;
+    }
+    const rate = checkRateLimit(userId);
+    if (!rate.allowed) {
+      socket.emit('drop_item_result', { id: String(id || ''), ok: false, reason: 'rate-limited' });
+      return;
+    }
+    const restored = sweepFloorLitter(roomId);
+    const room = floorLitterRoom(roomId);
+    const res = addFloorLitter(room.state, {
+      ...(item && typeof item === 'object' ? item : {}),
+      // The envelope id wins over any id inside the snapshot, and
+      // the dropper / time are server-set — a client cannot fake
+      // who dropped it or when.
+      id,
+      x,
+      y,
+      droppedBy: userId,
+      droppedByName: rooms[roomId][socket.id]?.name || 'Someone',
+      droppedAt: Date.now(),
+    });
+    if (!res.ok) {
+      socket.emit('drop_item_result', { id: String(id || ''), ok: false, reason: res.reason });
+      if (restored) broadcastFloorLitter(roomId);
+      return;
+    }
+    socket.emit('drop_item_result', { id: res.entry.id, ok: true });
+    broadcastFloorLitter(roomId);
+  });
+
+  // FLOOR LITTER PICKUP: anyone's litter is pickable,
+  // first-come-wins. The entry is CLAIMED for the picker (not
+  // removed outright): the server answers with the item, and the
+  // claim only settles when the picker confirms it landed in
+  // their pocket (pickup_floor_item_confirm). A second picker
+  // racing the same entry is told it is gone.
+  socket.on('pickup_floor_item', ({ roomId, litterId } = {}) => {
+    if (!roomId) return;
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const userId = socketUserMap[socket.id] || socket.id;
+    if (isHomeRoom(roomId)) {
+      socket.emit('pickup_floor_item_result', { litterId: String(litterId || ''), ok: false, reason: 'not-home' });
+      return;
+    }
+    const rate = checkRateLimit(userId);
+    if (!rate.allowed) {
+      socket.emit('pickup_floor_item_result', { litterId: String(litterId || ''), ok: false, reason: 'rate-limited' });
+      return;
+    }
+    const restored = sweepFloorLitter(roomId);
+    const room = floorLitterRoom(roomId);
+    const res = claimFloorLitter(room.state, litterId, userId, Date.now());
+    if (!res.ok) {
+      socket.emit('pickup_floor_item_result', { litterId: String(litterId || ''), ok: false, reason: res.reason });
+      if (restored) broadcastFloorLitter(roomId);
+      return;
+    }
+    socket.emit('pickup_floor_item_result', {
+      litterId: res.entry.id,
+      ok: true,
+      item: litterPocketItem(res.entry),
+    });
+    broadcastFloorLitter(roomId);
+  });
+
+  // FLOOR LITTER PICKUP CONFIRM: the item landed in the picker's
+  // pocket — the claim settles and the entry is gone for good.
+  // No broadcast needed: the floor_litter that went out at pickup
+  // already shows it gone.
+  socket.on('pickup_floor_item_confirm', ({ roomId, litterId } = {}) => {
+    if (!roomId) return;
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const userId = socketUserMap[socket.id] || socket.id;
+    confirmFloorLitterClaim(floorLitterRoom(roomId).state, litterId, userId);
+  });
+
+  // FLOOR LITTER PICKUP CANCEL: the picker's pocket filled in the
+  // meantime — the entry goes back on the floor, visible again.
+  socket.on('pickup_floor_item_cancel', ({ roomId, litterId } = {}) => {
+    if (!roomId) return;
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const userId = socketUserMap[socket.id] || socket.id;
+    const res = cancelFloorLitterClaim(floorLitterRoom(roomId).state, litterId, userId);
+    if (res.ok) broadcastFloorLitter(roomId);
+  });
+
+  // FLOOR LITTER STATE: the room's litter, sent when you join (or ask).
+  socket.on('get_floor_litter', ({ roomId } = {}) => {
+    if (!roomId) return;
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    if (sweepFloorLitter(roomId)) broadcastFloorLitter(roomId);
+    socket.emit('floor_litter', serializeFloorLitterState(floorLitterRoom(roomId).state));
+  });
+
+  // NPC LITTER DROP (Catch a Litterbug v1,
+  // `sq-litterbug-quest-v1`): a client reports that a Shepherd
+  // Park NPC dropped a cup at its current position. The NPCs are
+  // client-side — the server does not track them — so the report
+  // is validated, not trusted: shepherd-park only, the label must
+  // be one of the known patrollers, and a per-NPC cooldown
+  // (2 minutes) dedupes the many clients rolling at once. The
+  // cup goes through the SAME shared-litter path as a player
+  // drop, so everyone in the room sees it (with its "!") and the
+  // catch validation is uniform. Fire-and-forget: no result is
+  // sent — a refused report just never appears on the floor.
+  socket.on('npc_litter_drop', ({ roomId, id, npcLabel, x, y } = {}) => {
+    if (!roomId || roomId !== LITTERBUG_NPC_ROOM_ID) return;
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    if (!isLitterbugNpcLabel(npcLabel)) return;
+    const userId = socketUserMap[socket.id] || socket.id;
+    const rate = checkRateLimit(userId);
+    if (!rate.allowed) return;
+    const key = `${roomId}:${npcLabel}`;
+    const last = npcLitterLastDrop.get(key) || 0;
+    if (Date.now() - last < LITTERBUG_NPC_COOLDOWN_MS) return;
+    const restored = sweepFloorLitter(roomId);
+    const room = floorLitterRoom(roomId);
+    const res = addFloorLitter(room.state, {
+      ...LITTERBUG_NPC_CUP,
+      id,
+      x,
+      y,
+      droppedBy: npcIdForLabel(npcLabel),
+      droppedByName: String(npcLabel),
+      droppedAt: Date.now(),
+    });
+    if (!res.ok) {
+      if (restored) broadcastFloorLitter(roomId);
+      return;
+    }
+    npcLitterLastDrop.set(key, Date.now());
+    broadcastFloorLitter(roomId);
+  });
+
+  // LITTERBUG CATCH (Catch a Litterbug v1,
+  // `sq-litterbug-quest-v1`): tapping FRESH litter (within 15s of
+  // the drop) catches the litterer. The server validates against
+  // the room's floor-litter state — the entry must exist, be
+  // fresh, and not be the catcher's own. On success the room is
+  // told who got caught (so every client can show the 🚨
+  // LITTERBUG! label) and the catcher gets an ok to record quest
+  // progress. The litter STAYS on the floor — a catch is not
+  // cleanup — and more than one witness can catch the same litter.
+  socket.on('litterbug_catch', ({ roomId, litterId } = {}) => {
+    if (!roomId) return;
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const userId = socketUserMap[socket.id] || socket.id;
+    const rate = checkRateLimit(userId);
+    if (!rate.allowed) {
+      socket.emit('litterbug_catch_result', { litterId: String(litterId || ''), ok: false, reason: 'rate-limited' });
+      return;
+    }
+    sweepFloorLitter(roomId);
+    const room = floorLitterRoom(roomId);
+    const res = validateLitterbugCatch(room.state, litterId, userId, Date.now());
+    if (!res.ok) {
+      socket.emit('litterbug_catch_result', { litterId: String(litterId || ''), ok: false, reason: res.reason });
+      return;
+    }
+    const entry = res.entry;
+    const catcherName = rooms[roomId][socket.id]?.name || 'Someone';
+    io.to(roomId).emit('litterbug_caught', {
+      roomId,
+      litterId: entry.id,
+      littererId: entry.droppedBy,
+      littererName: entry.droppedByName,
+      catcherId: userId,
+      catcherName,
+      npc: isNpcLitter(entry),
+    });
+    socket.emit('litterbug_catch_result', { litterId: entry.id, ok: true });
   });
 
   // DAY/NIGHT: answer with the canonical phase (see currentTimePhase

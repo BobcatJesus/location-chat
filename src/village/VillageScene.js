@@ -18,6 +18,10 @@ import { ItemsSystem } from './ItemsSystem.js';
 import { NoticeBoardSystem } from './NoticeBoardSystem.js';
 import { MailSystem } from './MailSystem.js';
 import { DecorSystem } from './DecorSystem.js';
+import { FloorLitterSystem } from './FloorLitterSystem.js';
+// Catch a Litterbug v1 (`sq-litterbug-quest-v1`): how long the
+// 🚨 LITTERBUG! label rides above the litterer.
+import { LITTERBUG_LABEL_MS } from './litterbugState.js';
 import { HomeStorageSystem } from './HomeStorageSystem.js';
 import { hasBag as inventoryHasBag, INVENTORY_FULL_MESSAGE, getInventory, findFoodItem, spendFoodCharge, NO_FOOD_MESSAGE } from './items.js';
 // Bread Shop v1 (`sq-bread-shop-v1`): the stock table — one
@@ -693,6 +697,21 @@ export class VillageScene extends Phaser.Scene {
     // itself is Agora only (DecorSystem enforces that).
     this.decorSystem = new DecorSystem(this);
     this.decorSystem.refresh();
+    // Shared Floor Litter v1 (`sq-shared-litter-v1`): dropped
+    // pocket items on the floor, visible to everyone in the room
+    // — server-synced, anyone can pick them up. Every room except
+    // home rooms (their drops go through the home floor store).
+    this.floorLitterSystem = new FloorLitterSystem(this);
+    this.floorLitterSystem.refresh();
+    // Catch a Litterbug v1 (`sq-litterbug-quest-v1`): a confirmed
+    // catch counts toward the quest — the server already said ok,
+    // so recordEvent is the only thing left to do.
+    this.floorLitterSystem.onCatchConfirmed = () => {
+      try { this.questManager?.recordEvent('litterbug-caught'); } catch {}
+    };
+    // Litterbug labels live here (littererId -> { textObj, until,
+    // resolve }) — see _showLitterbugLabel / _updateLitterbugLabels.
+    this._litterbugLabels = new Map();
     // Your Place v1 (`sq-your-place-v1`): the storage chest in your
     // own home room — Store / Take / Unload All. Home-room only;
     // the system itself no-ops everywhere else.
@@ -1010,6 +1029,15 @@ export class VillageScene extends Phaser.Scene {
       try {
         const lr = this.itemsSystem?.pickupTapAt(ptr.worldX, ptr.worldY);
         if (lr && lr.reason === 'inventory-full') {
+          this.onSystemNotice?.(`🎒 ${INVENTORY_FULL_MESSAGE}`);
+        }
+      } catch {}
+      // Shared Floor Litter v1: a click on shared litter picks it
+      // up (if you are standing close enough). A full pocket
+      // refuses it — the litter stays on the floor.
+      try {
+        const flr = this.floorLitterSystem?.litterTapAt(ptr.worldX, ptr.worldY);
+        if (flr && flr.reason === 'inventory-full') {
           this.onSystemNotice?.(`🎒 ${INVENTORY_FULL_MESSAGE}`);
         }
       } catch {}
@@ -1387,10 +1415,19 @@ export class VillageScene extends Phaser.Scene {
     } else if (kind === 'floor-item') {
       // Drop on the home floor v1: pick the nearest dropped item
       // back up (a full pocket refuses it — the scene shows the
-      // standard message, same as the litter pickup).
-      const res = this.homeStorageSystem?.pickupNearest();
-      if (res && res.reason === 'inventory-full') {
-        this.onSystemNotice?.(`🎒 ${INVENTORY_FULL_MESSAGE}`);
+      // standard message, same as the litter pickup). In a home
+      // room that is the home floor store; anywhere else it is the
+      // shared floor litter (anyone's litter is pickable).
+      if (this.homeStorageSystem?.nearestFloorItem(this.player.gx, this.player.gy)) {
+        const res = this.homeStorageSystem?.pickupNearest();
+        if (res && res.reason === 'inventory-full') {
+          this.onSystemNotice?.(`🎒 ${INVENTORY_FULL_MESSAGE}`);
+        }
+      } else {
+        const res = this.floorLitterSystem?.pickupNearest();
+        if (res && res.reason === 'inventory-full') {
+          this.onSystemNotice?.(`🎒 ${INVENTORY_FULL_MESSAGE}`);
+        }
       }
     } else if (kind === 'decoration') {
       // Decoration Shop v1: pick up the nearest placed decoration
@@ -1433,6 +1470,10 @@ export class VillageScene extends Phaser.Scene {
     if (this.mailSystem?.nearestMailbox(this.player.gx, this.player.gy)) return 'mailbox';
     if (this.homeStorageSystem?.nearestChest(this.player.gx, this.player.gy)) return 'storage-chest';
     if (this.homeStorageSystem?.nearestFloorItem(this.player.gx, this.player.gy)) return 'floor-item';
+    // Shared Floor Litter v1 (`sq-shared-litter-v1`): shared
+    // litter on the floor, same kind as a home floor item — the
+    // E key / mobile button picks it up the same way.
+    if (this.floorLitterSystem?.nearestLitter(this.player.gx, this.player.gy)) return 'floor-item';
     if (this.decorSystem?.nearestDecoration(this.player.gx, this.player.gy)) return 'decoration';
     // Bread Shop v1 (`sq-bread-shop-v1`): the Register counter in
     // a food-shop room. Checked before the shelves — the counter
@@ -2204,6 +2245,10 @@ export class VillageScene extends Phaser.Scene {
       // the server stored during a disconnect window never came
       // back until something else triggered a refresh.
       socket.emit('get_decor', { roomId: this.roomId });
+      // Shared Floor Litter v1 (`sq-shared-litter-v1`): re-request
+      // the room's floor litter on (re)connect, so a drop made
+      // during a disconnect window comes back.
+      socket.emit('get_floor_litter', { roomId: this.roomId });
       socket.emit('get_jukebox', { roomId: this.roomId });
       socket.emit('get_pumpkins', { roomId: this.roomId });
       socket.emit('get_cat', { roomId: this.roomId });
@@ -2519,6 +2564,39 @@ export class VillageScene extends Phaser.Scene {
     // room, in-memory on the server like the notice board).
     socket.on('decor_state', (payload = {}) => {
       this.decorSystem?.applyState(payload);
+    });
+
+    // Shared floor litter (shared for the whole room — one set per
+    // room, in-memory on the server like the notice board).
+    socket.on('floor_litter', (payload = {}) => {
+      this.floorLitterSystem?.applyState(payload);
+    });
+
+    // Shared litter drop answer (per drop): ok → the item leaves
+    // the pocket; fail → it stays, with the reason.
+    socket.on('drop_item_result', (payload = {}) => {
+      this.floorLitterSystem?.onDropResult(payload);
+    });
+
+    // Shared litter pickup answer (per pickup): ok → the item
+    // lands in the pocket (then the client confirms); fail → it
+    // stays on the floor, with the reason.
+    socket.on('pickup_floor_item_result', (payload = {}) => {
+      this.floorLitterSystem?.onPickupResult(payload);
+    });
+
+    // Catch a Litterbug v1 (`sq-litterbug-quest-v1`): the answer
+    // to my catch attempt — ok records quest progress (inside
+    // the litter system), fail just says why.
+    socket.on('litterbug_catch_result', (payload = {}) => {
+      this.floorLitterSystem?.onCatchResult(payload);
+    });
+
+    // Catch a Litterbug v1 (`sq-litterbug-quest-v1`): someone in
+    // this room got caught littering — show the 🚨 LITTERBUG!
+    // label above them for a minute.
+    socket.on('litterbug_caught', (payload = {}) => {
+      this._showLitterbugLabel(payload);
     });
 
     // Santa Hat state (Agora, shared for the whole room — one hat,
@@ -2957,6 +3035,115 @@ export class VillageScene extends Phaser.Scene {
     return null;
   }
 
+  // ---- 🚨 LITTERBUG! labels (Catch a Litterbug v1,
+  // `sq-litterbug-quest-v1`) -------------------------------------------
+  //
+  // On `litterbug_caught` every client in the room shows
+  // "🚨 LITTERBUG!" above the litterer for a minute — a real
+  // player (their avatar), an NPC (its sprite), or yourself. The
+  // label is cosmetic only: the litterer loses no coins, ever.
+  // Labels are scene-level text, repositioned every frame like
+  // the cat's "hungry..." bubble — the target may be walking.
+  // A label is keyed by litterer id so a second catch of the
+  // same litterer just refreshes the minute instead of stacking.
+
+  /** Show (or refresh) the 🚨 LITTERBUG! label for a caught
+   * litterer. Payload: { littererId, littererName, npc }. */
+  _showLitterbugLabel(payload = {}) {
+    const littererId = String(payload.littererId || '');
+    if (!littererId) return;
+    const target = this._resolveLitterbugTarget(payload);
+    if (!target) return;
+    const until = Date.now() + LITTERBUG_LABEL_MS;
+    const existing = this._litterbugLabels?.get(target.key);
+    if (existing) {
+      existing.until = until;
+      existing.resolve = target.resolve;
+      return;
+    }
+    let textObj = null;
+    try {
+      textObj = this.add.text(0, 0, '🚨 LITTERBUG!', {
+        fontSize: '16px',
+        color: '#ffffff',
+        backgroundColor: 'rgba(120,0,0,0.85)',
+        padding: { x: 6, y: 3 },
+      });
+      textObj.setOrigin(0.5, 1);
+      textObj.setDepth(DEPTH.ACTOR_MIN + 500);
+    } catch {}
+    if (!textObj) return;
+    if (!this._litterbugLabels) this._litterbugLabels = new Map();
+    this._litterbugLabels.set(target.key, { textObj, until, resolve: target.resolve });
+  }
+
+  /** Where the litterer is right now — { x, y } for the label
+   * anchor, or null when they are gone. */
+  _resolveLitterbugTarget(payload = {}) {
+    const littererId = String(payload.littererId || '');
+    const littererName = String(payload.littererName || '');
+    if (payload.npc) {
+      const npc = (this.staticNpcs || []).find((n) => n && n.name === littererName);
+      if (!npc) return null;
+      return {
+        key: `npc:${littererName}`,
+        resolve: () => ({ x: npc.gx, y: npc.gy }),
+      };
+    }
+    // Myself: the litterer id is my own user id.
+    if (littererId && this.userId && String(this.userId) === littererId) {
+      return {
+        key: `user:${littererId}`,
+        resolve: () => (this.player ? { x: this.player.gx, y: this.player.gy } : null),
+      };
+    }
+    // Another player: match by socket id or by user key. (Guests
+    // share the 'guest' id, so a guest viewer may see a fellow
+    // guest's label on themself instead — a pre-existing identity
+    // quirk, not something this kit can fix. Logged-in players
+    // are exact.)
+    for (const [sid, remotePlayer] of this.remotePlayers.entries()) {
+      if (!remotePlayer) continue;
+      if (sid === littererId
+        || remotePlayer.userKey === `user:${littererId}`
+        || remotePlayer.userKey === `socket:${littererId}`
+        || (remotePlayer.userId && String(remotePlayer.userId) === littererId)) {
+        return {
+          key: `user:${littererId}`,
+          resolve: () => ({ x: remotePlayer.gx, y: remotePlayer.gy }),
+        };
+      }
+    }
+    return null;
+  }
+
+  /** Every frame: ride each label above its (possibly walking)
+   * target, and drop expired ones (or ones whose target left). */
+  _updateLitterbugLabels() {
+    const labels = this._litterbugLabels;
+    if (!labels || labels.size === 0) return;
+    const now = Date.now();
+    for (const [key, label] of [...labels.entries()]) {
+      let pos = null;
+      try { pos = label.resolve?.(); } catch {}
+      if (!pos || now >= label.until) {
+        try { label.textObj?.destroy(); } catch {}
+        labels.delete(key);
+        continue;
+      }
+      try {
+        label.textObj?.setPosition(pos.x, pos.y - 56).setAlpha(1);
+      } catch {}
+    }
+  }
+
+  _clearLitterbugLabels() {
+    for (const label of this._litterbugLabels?.values() || []) {
+      try { label.textObj?.destroy(); } catch {}
+    }
+    this._litterbugLabels?.clear();
+  }
+
   /** Open another player's badges panel (DOM, via VillageCanvas). */
   _openPlayerBadges(socketId) {
     const remotePlayer = this.remotePlayers.get(socketId);
@@ -3205,6 +3392,13 @@ export class VillageScene extends Phaser.Scene {
     // player.sync()).
     this.hungerSystem?.update(delta);
     this.itemsSystem?.update(delta);
+    // Shared Floor Litter v1: the litter system's 1s tick was
+    // never wired until Catch a Litterbug v1
+    // (`sq-litterbug-quest-v1`) needed it — it expires the "!"
+    // markers, rolls NPC litter drops, and re-spawns litter after
+    // a floor switch.
+    this.floorLitterSystem?.update(delta);
+    this._updateLitterbugLabels();
     this.questManager?.update(delta);
     this.halloween?.update(delta);
     this.dayNight?.update(delta);
@@ -3632,6 +3826,9 @@ export class VillageScene extends Phaser.Scene {
     this.mailSystem = null;
     this.decorSystem?.destroy();
     this.decorSystem = null;
+    this.floorLitterSystem?.destroy();
+    this.floorLitterSystem = null;
+    this._clearLitterbugLabels?.();
     this.santaHatSystem?.destroy();
     this.santaHatSystem = null;
     this.temperatureSystem?.destroy();
@@ -3701,6 +3898,9 @@ export class VillageScene extends Phaser.Scene {
     // Decoration Shop v1: re-resolve the room's decorations for
     // this floor (placed decorations re-draw after the switch).
     this.decorSystem?.refresh();
+    // Shared Floor Litter v1: re-resolve the room's floor litter
+    // for this floor (shared litter re-draws after the switch).
+    this.floorLitterSystem?.refresh();
     this.questManager?.noteRoomVisit();
     this._emitFloorStatus();
     this.roomLayout.setDynamicSolids(this.customZones);
