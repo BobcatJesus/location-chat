@@ -1359,34 +1359,49 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
           </div>
         </div>
       )}
-      {questHud?.banner && (
-        <div
-          onClick={dismissQuestBanner}
-          title="Click to dismiss"
-          style={{
-            position: 'absolute', top: 116, left: '50%', transform: 'translateX(-50%)',
-            zIndex: 1001, width: 'min(360px, calc(100vw - 24px))',
-            background: 'rgba(255,255,255,0.95)', color: '#1a4971',
-            borderRadius: 8, padding: '10px 14px', fontSize: 15, textAlign: 'center',
-            cursor: 'pointer', boxShadow: '0 2px 12px rgba(0,0,0,0.3)',
-          }}
-        >
-          <div style={{ fontWeight: 'bold', fontSize: 16 }}>{questHud.banner.emoji} {questHud.banner.title}</div>
-          <div>{questHud.banner.description}</div>
-          {/* Onboarding v1: a 0-coin reward (First Steps) shows no
-              reward line — never "Reward: +0 coins". */}
-          {questHud.banner.rewardCoins > 0 && (<div>Reward: +{questHud.banner.rewardCoins} coins</div>)}
-        </div>
-      )}
-      {questHud?.toast && (
+      {/* Quest messages top-right v1 (`sq-quest-messages-topright-v1`):
+          the banner and toast used to sit centred (banner top:116,
+          toast top:30%) and covered the avatar. They now dock in one
+          top-right column below the room chips (In room / Footprint /
+          Floor end around top:94), banner above toast, so they never
+          overlap each other. The banner stays click-to-dismiss; the
+          toast stays pointerEvents 'none' so it never blocks taps. */}
+      {(questHud?.banner || questHud?.toast) && (
         <div style={{
-          position: 'absolute', top: '30%', left: '50%', transform: 'translate(-50%, -50%)',
-          zIndex: 1001, background: 'rgba(255,255,255,0.94)', color: '#14532d',
-          borderRadius: 8, padding: '10px 14px', fontSize: 16, fontWeight: 'bold',
-          textAlign: 'center', pointerEvents: 'none',
-          boxShadow: '0 2px 12px rgba(0,0,0,0.3)',
+          position: 'absolute', top: 116, right: 12, zIndex: 1001,
+          display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-end',
+          pointerEvents: 'none',
         }}>
-          {questHud.toast}
+          {questHud?.banner && (
+            <div
+              onClick={dismissQuestBanner}
+              title="Click to dismiss"
+              style={{
+                width: 'min(360px, calc(100vw - 24px))',
+                background: 'rgba(255,255,255,0.95)', color: '#1a4971',
+                borderRadius: 8, padding: '10px 14px', fontSize: 15, textAlign: 'left',
+                cursor: 'pointer', boxShadow: '0 2px 12px rgba(0,0,0,0.3)',
+                pointerEvents: 'auto',
+              }}
+            >
+              <div style={{ fontWeight: 'bold', fontSize: 16 }}>{questHud.banner.emoji} {questHud.banner.title}</div>
+              <div>{questHud.banner.description}</div>
+              {/* Onboarding v1: a 0-coin reward (First Steps) shows no
+                  reward line — never "Reward: +0 coins". */}
+              {questHud.banner.rewardCoins > 0 && (<div>Reward: +{questHud.banner.rewardCoins} coins</div>)}
+            </div>
+          )}
+          {questHud?.toast && (
+            <div style={{
+              maxWidth: 'min(360px, calc(100vw - 24px))',
+              background: 'rgba(255,255,255,0.94)', color: '#14532d',
+              borderRadius: 8, padding: '10px 14px', fontSize: 16, fontWeight: 'bold',
+              textAlign: 'left', pointerEvents: 'none',
+              boxShadow: '0 2px 12px rgba(0,0,0,0.3)',
+            }}>
+              {questHud.toast}
+            </div>
+          )}
         </div>
       )}
 

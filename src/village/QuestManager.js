@@ -88,7 +88,14 @@ const QUESTS_PREFIX = 'location-chat-quests';
 
 // How long the quest banner stays up before fading (ms). It also
 // goes away early if the player clicks / taps it.
-const QUEST_BANNER_MS = 5500;
+// Quest messages top-right v1 (`sq-quest-messages-topright-v1`):
+// was 5500ms — the user asked for 25s so an unread message has
+// time to be noticed without sitting in the middle of the screen.
+const QUEST_BANNER_MS = 25000;
+
+// How long the quest toast stays up before fading (ms). Was 4500ms
+// inline in _showToast; same 25s ask as the banner.
+const QUEST_TOAST_MS = 25000;
 
 // Who owns this quest progress? Same per-profile scoping as
 // CoinWallet: the profile email (guests get their own guest email),
@@ -683,7 +690,7 @@ export class QuestManager {
   }
 
   /**
-   * Big top-centre banner when a quest first starts: emoji + title,
+   * Big top-right banner when a quest first starts: emoji + title,
    * the one-line description, and the reward. Built generically from
    * the quest definition, so future quests get one for free.
    * Shows once per session per quest: never for a quest already
@@ -885,10 +892,10 @@ export class QuestManager {
     this._toastText = text;
     this._bumpHud();
     if (this.domHud) {
-      // DOM renders it; clear it on the same 4.5s schedule.
+      // DOM renders it; clear it on the same 25s schedule.
       try {
         if (this._toastTimer) this._toastTimer.remove();
-        this._toastTimer = this.scene.time.delayedCall(4500, () => {
+        this._toastTimer = this.scene.time.delayedCall(QUEST_TOAST_MS, () => {
           this._toastText = null;
           this._toastTimer = null;
           this._bumpHud();
@@ -917,7 +924,7 @@ export class QuestManager {
       this.toast.setOrigin(0.5, 0.5);
       this.toast.setScrollFactor(0);
       this.toast.setDepth(DEPTH.UI + 1);
-      this._toastTimer = scene.time.delayedCall(4500, () => {
+      this._toastTimer = scene.time.delayedCall(QUEST_TOAST_MS, () => {
         try {
           scene.tweens.add({
             targets: this.toast, alpha: 0, duration: 600,
