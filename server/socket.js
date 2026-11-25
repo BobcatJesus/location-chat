@@ -57,6 +57,19 @@ import {
   releaseHat,
   serializeHatState,
 } from '../src/village/hatState.js';
+// Santa's Lost Present v1 (`sq-santas-lost-present-v1`): one
+// present hidden at the foot of tree 2 in Agora, one find per
+// player per Chicago day. The pure daily rules live in
+// presentState.js so the server stays authoritative over the
+// daily rule and the badge.
+import {
+  PRESENT_ID,
+  PRESENT_MARKER_V1,
+  createPresentState,
+  chicagoDateString,
+  findPresent,
+  serializePresentState,
+} from '../src/village/presentState.js';
 import {
   HAT_ROOM_STATE_TABLE_SQL,
   saveHatState,
@@ -758,7 +771,7 @@ const QUEST_DEFS = {
 // completions can't be recovered: no persistent record of past
 // puzzle contributors exists anywhere (the puzzle state resets
 // every round).
-const BADGE_QUEST_IDS = new Set([...Object.keys(QUEST_DEFS), 'group-puzzle', 'trim-tree', 'christmas-lights', 'build-a-snowman', HUNGRY_CAT_QUEST_ID]);
+const BADGE_QUEST_IDS = new Set([...Object.keys(QUEST_DEFS), 'group-puzzle', 'trim-tree', 'christmas-lights', 'build-a-snowman', HUNGRY_CAT_QUEST_ID, PRESENT_ID]); // Santa's Lost Present v1 (`sq-santas-lost-present-v1`): the present is NOT in QUEST_DEFS (the one-time quest_progress flow cannot express a daily repeat, and a bad client could complete it without finding it) — it joins the set explicitly, like 'build-a-snowman'.
 const userBadges = {};
 function badgeMapFor(userId) {
   if (!userBadges[userId]) userBadges[userId] = {};
@@ -1290,6 +1303,23 @@ async function ensureSnowLoaded(roomId) {
   }
   return snowLoadPromises[roomId];
 }
+// Santa's Lost Present (Santa's Lost Present v1,
+// `sq-santas-lost-present-v1`): ONE present hidden at the foot of
+// tree 2 in Agora, one find per player per Chicago day. The state
+// is IN-MEMORY only in v1 (like the other quests at birth): a
+// server restart resets the daily-found dates — a player could
+// re-find it that day — but the badge stays (the badge system
+// persists it). presentRooms[roomId] = { state } where state is
+// { foundBy: { userId: 'YYYY-MM-DD' } }. The server validates the
+// daily rule and the badge; it does not verify the 3 search clicks
+// or the walk to the spot (same as the hat — the client counts
+// clicks, the server decides who found it today).
+const presentRooms = {};
+function presentRoom(roomId) {
+  if (!presentRooms[roomId]) presentRooms[roomId] = { state: createPresentState() };
+  return presentRooms[roomId];
+}
+
 // Santa Hat (Santa Hat v1, `sq-santa-hat-v1`; persistence
 // `sq-hat-persist-v1`): ONE hat hidden behind the Christmas tree
 // in Agora. The state is persisted to Postgres (hat_room_state) on
@@ -2927,6 +2957,48 @@ io.on('connection', (socket) => {
     if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
     await ensureHatLoaded(roomId);
     socket.emit('hat_state', serializeHatState(hatRoom(roomId).state));
+  });
+
+  // SANTA'S LOST PRESENT (Santa's Lost Present v1,
+  // `sq-santas-lost-present-v1`): one present hidden at the foot
+  // of tree 2 in Agora, one find per player per Chicago day. The
+  // client counts 3 search clicks at the spot, then asks here —
+  // the server decides whether it is really today (one find per
+  // player per day) and awards the badge, once ever. The +5 coins
+  // are paid client-side on the present_state confirm (the
+  // lights v1.2 pattern), NOT here. A refusal answers the
+  // requester directly (present_result) so the client can show
+  // the notice; a success broadcasts the room state so everyone
+  // sees the find.
+  socket.on('present_find', ({ roomId } = {}) => {
+    if (!roomId || roomId !== 'agora-houston') return;
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const userId = socketUserMap[socket.id] || socket.id;
+    const rate = checkRateLimit(userId);
+    if (!rate.allowed) return;
+    const today = chicagoDateString(new Date());
+    const room = presentRoom(roomId);
+    const res = findPresent(room.state, userId, today);
+    if (!res.ok) {
+      socket.emit('present_result', { ok: false, reason: res.reason, questId: PRESENT_ID });
+      return;
+    }
+    io.to(roomId).emit('present_state', serializePresentState(room.state, today));
+    // Quest badges v1: the badge is once ever (awardBadge is
+    // idempotent) — coins come every daily find, the badge only
+    // the first time.
+    if (awardBadge(userId, PRESENT_ID, Date.now())) {
+      io.to(roomId).emit('player_badges', { socketId: socket.id, userId, badges: badgesArrayFor(userId) });
+    }
+  });
+
+  // SANTA'S LOST PRESENT STATE: your today status, sent when you
+  // join (or ask) — whether you already found it today.
+  socket.on('get_present', ({ roomId } = {}) => {
+    if (!roomId || roomId !== 'agora-houston') return;
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const today = chicagoDateString(new Date());
+    socket.emit('present_state', serializePresentState(presentRoom(roomId).state, today));
   });
 
   // NOTICE BOARD (Notice Board v1, `sq-notice-board-v1`; boards in

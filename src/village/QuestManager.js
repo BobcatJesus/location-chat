@@ -76,6 +76,7 @@ import {
   TRIM_TREE_BADGE,
   CHRISTMAS_LIGHTS_BADGE,
   BUILD_A_SNOWMAN_BADGE,
+  SANTAS_PRESENT_BADGE,
   badgeListFrom,
   completionsFromSaved,
   mergeBadgeMaps,
@@ -491,6 +492,30 @@ export class QuestManager {
     return true;
   }
 
+  /** Record the Santa's Lost Present badge: I found Santa's lost
+   *  present hidden in Agora (SantasPresentSystem calls this from
+   *  the confirmed find). Once ever — the quest itself is
+   *  repeatable (once a day, +5 coins every day), but the badge is
+   *  earned on the FIRST find only, like the puzzle/tree badges.
+   *  The server awards the same badge (awardBadge is once-ever),
+   *  so both paths converge on one entry. The coins are paid on
+   *  every server-confirmed find, NOT here — this only records the
+   *  badge. Note this marks saved['santas-lost-present']
+   *  completed, but the quest is NOT in QUESTS, so refresh() /
+   *  anywhereQuests() never see it and the one-time quest flow is
+   *  untouched. */
+  recordSantasPresentCompletion() {
+    const entry = this.saved[SANTAS_PRESENT_BADGE.id] || { count: 0, completed: false };
+    if (entry.completed) return false;
+    entry.completed = true;
+    entry.count = 1;
+    entry.completedAt = Date.now();
+    this.saved[SANTAS_PRESENT_BADGE.id] = entry;
+    saveSaved(this.saved);
+    this._bumpHud();
+    return true;
+  }
+
   /** Public banner for other systems (e.g. TrimTreeQuest): show the
    *  big top-centre quest banner for a quest-like object
    *  { id, emoji, title, description, rewardCoins }. Same once-per-
@@ -846,6 +871,20 @@ export class QuestManager {
         snowman.completed
           ? '⛄ Build a Snowman — a snowman stands in Shepherd Park! 🎉'
           : `⛄ Build a Snowman  ${snowman.counted}/${snowman.total}`,
+      );
+    }
+    // Santa's Lost Present v1 (`sq-santas-lost-present-v1`): the
+    // hidden present rides along under the room quest too — "🎁
+    // Santa's Lost Present 0/1" while it is still hidden today.
+    // Once found, the line says so and that it hides again
+    // tomorrow — the quest is repeatable daily, so a plain
+    // "complete!" would lie about tomorrow.
+    const present = this.scene?.santasPresentSystem?.getProgress?.();
+    if (present) {
+      room.push(
+        present.foundToday
+          ? "🎁 Santa's Lost Present — found! It hides again tomorrow."
+          : "🎁 Santa's Lost Present  0/1",
       );
     }
     for (const q of this.anywhereQuests()) {

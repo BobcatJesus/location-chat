@@ -110,6 +110,22 @@ export const HUNGRY_CAT_BADGE = {
   emoji: '🐱',
 };
 
+/** The Santa's Lost Present badge — Santa's Lost Present v1
+ *  (`sq-santas-lost-present-v1`): not a QuestManager quest either
+ *  (the present is a repeatable-daily hidden search, like the
+ *  Hungry Cat — the one-time quest flow cannot express "found
+ *  today / findable again tomorrow" — so its def lives here, like
+ *  the snowman/lights/tree). id must match what
+ *  SantasPresentSystem and the server use ('santas-lost-present').
+ *  Earned once ever, on the FIRST find; the +5 coins still come
+ *  on every daily find after that. */
+export const SANTAS_PRESENT_BADGE = {
+  id: 'santas-lost-present',
+  title: "Santa's Lost Present",
+  description: "Find Santa's lost present hidden in Agora.",
+  emoji: '🎁',
+};
+
 /** Every quest id that can earn a badge (solo quests + group puzzle + trim the tree). */
 export const BADGE_QUEST_IDS = [
   ...QUESTS.map((q) => q.id),
@@ -121,6 +137,12 @@ export const BADGE_QUEST_IDS = [
   CHRISTMAS_LIGHTS_BADGE.id,
   BUILD_A_SNOWMAN_BADGE.id,
   HUNGRY_CAT_BADGE.id,
+  // Santa's Lost Present (`sq-santas-lost-present-v1`): the def
+  // exists above, and this id must be in the list (and in
+  // getBadgeDef below) or an earned present badge never renders —
+  // the same miss the lights badge fix (sq-lights-badge-fix-v1)
+  // caught for 'christmas-lights'.
+  SANTAS_PRESENT_BADGE.id,
 ];
 
 const BADGE_ID_SET = new Set(BADGE_QUEST_IDS);
@@ -139,6 +161,7 @@ export function getBadgeDef(questId) {
   if (questId === CHRISTMAS_LIGHTS_BADGE.id) return { ...CHRISTMAS_LIGHTS_BADGE };
   if (questId === BUILD_A_SNOWMAN_BADGE.id) return { ...BUILD_A_SNOWMAN_BADGE };
   if (questId === HUNGRY_CAT_BADGE.id) return { ...HUNGRY_CAT_BADGE };
+  if (questId === SANTAS_PRESENT_BADGE.id) return { ...SANTAS_PRESENT_BADGE };
   const q = getQuest(questId);
   if (!q) return null;
   return {

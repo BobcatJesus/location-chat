@@ -8,6 +8,7 @@ import { TrimTreeQuest } from './TrimTreeQuest.js';
 import { ChristmasLightsQuest } from './ChristmasLightsQuest.js'; // Christmas Lights v1 (`sq-christmas-lights-v1`)
 import { SnowmanQuest } from './SnowmanQuest.js'; // Build a Snowman v1 (`sq-build-snowman-v1`)
 import { SantaHatSystem } from './SantaHatSystem.js';
+import { SantasPresentSystem } from './SantasPresentSystem.js'; // Santa's Lost Present v1 (`sq-santas-lost-present-v1`)
 // Temperature System v1 (`sq-temperature-v1`): seasonal cold/warm,
 // warm drinks (cocoa, coffee) and cold drinks (beer, iced coffee).
 import { TemperatureSystem } from './TemperatureSystem.js';
@@ -758,6 +759,12 @@ export class VillageScene extends Phaser.Scene {
     // itself no-ops everywhere else.
     this.santaHatSystem = new SantaHatSystem(this);
     this.santaHatSystem.refresh();
+    // Santa's Lost Present v1 (`sq-santas-lost-present-v1`): one
+    // present hidden at the foot of tree 2 in Agora — find it once
+    // per Chicago day, badge once ever. Agora only; the system
+    // itself no-ops everywhere else.
+    this.santasPresentSystem = new SantasPresentSystem(this);
+    this.santasPresentSystem.refresh();
     // Temperature System v1 (`sq-temperature-v1`): fall/winter you
     // are cold (shiver + "You're cold, get a warm drink"),
     // spring/summer you are warm (sweat + "You're warm, get a
@@ -1100,6 +1107,21 @@ export class VillageScene extends Phaser.Scene {
         if (hr && hr.reason === 'inventory-full') {
           this.onSystemNotice?.(`🎒 ${INVENTORY_FULL_MESSAGE}`);
         } else if (hr && hr.reason === 'offline') {
+          this.onSystemNotice?.('You seem to be offline — try again when you’re connected.');
+        }
+      } catch {}
+      // Santa's Lost Present v1: a click at the foot of tree 2
+      // counts as one search tap (3 taps finds the present). Silent
+      // unless it finds it — no hint about where the present hides.
+      // A second find the same day is refused with a notice (the
+      // taps still counted, so the refusal fires once on the 3rd
+      // tap, not on every click at the tree); offline, the find
+      // refuses.
+      try {
+        const pr = this.santasPresentSystem?.searchTapAt(ptr.worldX, ptr.worldY);
+        if (pr && pr.reason === 'already-found-today') {
+          this.onSystemNotice?.('🎁 You already found Santa\'s present today — it hides again tomorrow!');
+        } else if (pr && pr.reason === 'offline') {
           this.onSystemNotice?.('You seem to be offline — try again when you’re connected.');
         }
       } catch {}
@@ -2772,6 +2794,17 @@ export class VillageScene extends Phaser.Scene {
       this.santaHatSystem?.applyState(payload);
     });
 
+    // Santa's Lost Present state (Agora, per player per Chicago
+    // day — the server's canonical daily rule, in-memory like the
+    // hat). present_result is the answer to my own find attempt
+    // (a same-day refusal); present_state is the room broadcast.
+    socket.on('present_state', (payload = {}) => {
+      this.santasPresentSystem?.applyState(payload);
+    });
+    socket.on('present_result', (payload = {}) => {
+      this.santasPresentSystem?.onFindResult(payload);
+    });
+
     // Your Place state (per player — only your own stored items,
     // in-memory on the server like badges).
     socket.on('home_state', (payload = {}) => {
@@ -3588,6 +3621,7 @@ export class VillageScene extends Phaser.Scene {
     this.christmasLightsQuest?.update(delta); // Christmas Lights v1 (`sq-christmas-lights-v1`)
     this.snowmanQuest?.update(delta); // Build a Snowman v1 (`sq-build-snowman-v1`)
     this.santaHatSystem?.update(delta);
+    this.santasPresentSystem?.update(delta); // Santa's Lost Present v1 (`sq-santas-lost-present-v1`)
     // sq-temperature-v1: ticks the toast (1s) and the shiver /
     // sweat visuals (every frame, after player.sync()).
     this.temperatureSystem?.update(delta);

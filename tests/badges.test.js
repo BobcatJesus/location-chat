@@ -8,6 +8,8 @@ import {
   GROUP_PUZZLE_BADGE,
   TRIM_TREE_BADGE,
   CHRISTMAS_LIGHTS_BADGE,
+  BUILD_A_SNOWMAN_BADGE,
+  SANTAS_PRESENT_BADGE,
   BADGE_QUEST_IDS,
   isBadgeQuestId,
   getBadgeDef,
@@ -39,6 +41,8 @@ describe('badge defs', () => {
     expect(BADGE_QUEST_IDS).toContain('group-puzzle');
     expect(BADGE_QUEST_IDS).toContain('trim-tree');
     expect(BADGE_QUEST_IDS).toContain('christmas-lights');
+    expect(BADGE_QUEST_IDS).toContain('build-a-snowman');
+    expect(BADGE_QUEST_IDS).toContain('santas-lost-present');
   });
 
   it('resolves the group puzzle def (not a QuestManager quest)', () => {
@@ -61,6 +65,18 @@ describe('badge defs', () => {
     expect(def).toMatchObject({ id: 'christmas-lights', emoji: '💡' });
     expect(def.title).toBe(CHRISTMAS_LIGHTS_BADGE.title);
     expect(isBadgeQuestId('christmas-lights')).toBe(true);
+  });
+
+  // Santa's Lost Present (`sq-santas-lost-present-v1`): the def
+  // exists in badges.js, and the id must be in BADGE_QUEST_IDS
+  // and getBadgeDef, or an earned present badge never renders —
+  // the same miss the lights badge fix (sq-lights-badge-fix-v1)
+  // caught for 'christmas-lights'.
+  it('resolves the santas lost present def (not a QuestManager quest)', () => {
+    const def = getBadgeDef('santas-lost-present');
+    expect(def).toMatchObject({ id: 'santas-lost-present', emoji: '🎁' });
+    expect(def.title).toBe(SANTAS_PRESENT_BADGE.title);
+    expect(isBadgeQuestId('santas-lost-present')).toBe(true);
   });
 
   it('resolves a solo quest def from quests.js', () => {
