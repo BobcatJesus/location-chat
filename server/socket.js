@@ -79,6 +79,11 @@ import {
   loadTreeState,
 } from './treePersist.js';
 import {
+  LIGHTS_ROOM_STATE_TABLE_SQL,
+  saveLightState,
+  loadLightState,
+} from './lightPersist.js';
+import {
   NOTICE_BOARD_STATE_TABLE_SQL,
   saveNoticeBoardState,
   loadNoticeBoardState,
@@ -431,6 +436,14 @@ async function initDb() {
   // excluded).
   await pool.query(TREE_ROOM_STATE_TABLE_SQL);
   console.log('✅ Postgres tree_room_state table ready');
+  // Lights persistence (`sq-lights-persist-v1`): one row per room
+  // holding the serialized lights state, so a server restart
+  // restores the strands instead of wiping the group effort
+  // toward 25. NOTE for the Dec 19 reset: the deliberate reset
+  // clears this table — the lights ARE room state (unlike mail,
+  // which is excluded).
+  await pool.query(LIGHTS_ROOM_STATE_TABLE_SQL);
+  console.log('✅ Postgres lights_room_state table ready');
   // Notice board persistence (`sq-notice-board-persist-v1`): one
   // row per room holding the serialized board state, so a server
   // restart restores the pinned flyers instead of wiping every
@@ -1152,22 +1165,60 @@ async function ensureTreeLoaded(roomId) {
 }
 // Christmas Lights (Christmas Lights v1, `sq-christmas-lights-v1`;
 // v1.2 `sq-christmas-multi-v1.2` — every hang counts, no
-// one-per-person rule):
+// one-per-person rule; persistence `sq-lights-persist-v1`):
 // per-room state lightRooms[roomId] = { state }. Agora only. The
-// state is IN-MEMORY ONLY in v1 — a server restart wipes the
-// strands, exactly like Trim the Tree before `sq-tree-persist-v1`.
-// A persistence piece can follow the same pattern later (a
-// lights_room_state table + lazy load + save on hang). Unlike the
-// tree there is NO second round: 25 counted strings light the
-// room and the quest is done for the venue. The server enforces
-// multi-hang counting (hangLight counts every hang), room
-// membership, and rate limits; it does not verify the box take or
-// the walk to the wall — same trust level as the tree's box take
-// and the puzzle's hidden-search clicks.
+// state is persisted to Postgres (lights_room_state) on every
+// hang and loaded back lazily, so a server restart restores the
+// strands in whatever state they were in instead of wiping them.
+// Without a DB the lights stay in-memory only, exactly as
+// before. Unlike the tree there is NO second round: 25 counted
+// strings light the room and the quest is done for the venue.
+// The server enforces multi-hang counting (hangLight counts
+// every hang), room membership, and rate limits; it does not
+// verify the box take or the walk to the wall — same trust level
+// as the tree's box take and the puzzle's hidden-search clicks.
 const lightRooms = {};
+const lightRoomsLoaded = new Set(); // roomIds whose DB row has been read (or attempted)
+const lightLoadPromises = {}; // roomId -> in-flight load promise
 function lightRoom(roomId) {
   if (!lightRooms[roomId]) lightRooms[roomId] = { state: createLightState() };
   return lightRooms[roomId];
+}
+// Save one room's lights state, never crashing the caller: a
+// failed save warns and the live broadcast still goes out (the
+// in-memory state is the live truth; the next hang retries the
+// save). Mirrors persistTree above.
+async function persistLight(roomId) {
+  try {
+    await saveLightState(pool, roomId, lightRoom(roomId).state);
+  } catch (e) {
+    console.warn('⚠️ lights persist failed:', e && e.message);
+  }
+}
+// Load a room's lights from Postgres the first time they are
+// touched. Concurrent touches share one in-flight load, so a
+// hang can never land on the default bare strands while the
+// real row is still being read. A missing row, a down DB, or a
+// bad row all leave the default bare strands in place. No repair
+// step beyond parseLightState: it already repairs a missing or
+// short `lit` list to the first N slots and forces a completed
+// room's counted to 25. Mirrors ensureTreeLoaded above.
+async function ensureLightLoaded(roomId) {
+  if (lightRoomsLoaded.has(roomId)) return lightRoom(roomId);
+  if (!lightLoadPromises[roomId]) {
+    lightLoadPromises[roomId] = (async () => {
+      const room = lightRoom(roomId);
+      try {
+        const loaded = await loadLightState(pool, roomId);
+        if (loaded) room.state = loaded;
+      } catch (e) {
+        console.warn('⚠️ lights load failed:', e && e.message);
+      }
+      lightRoomsLoaded.add(roomId);
+      return room;
+    })();
+  }
+  return lightLoadPromises[roomId];
 }
 // Build a Snowman (Build a Snowman v1, `sq-build-snowman-v1`):
 // per-room state snowRooms[roomId] = { state }. Shepherd Park
@@ -2621,14 +2672,18 @@ io.on('connection', (socket) => {
   // 25th counted string lands, the room is lit: everyone hears
   // about it, and every counted contributor earns the Christmas
   // Lights badge (once ever).
-  // In-memory only in v1 — a server restart wipes the strands
-  // (see the lightRooms comment above).
-  socket.on('light_hang', ({ roomId, x, y } = {}) => {
+  // Persistence (`sq-lights-persist-v1`): the state is saved to
+  // Postgres on every hang, so a restart restores the strands.
+  socket.on('light_hang', async ({ roomId, x, y } = {}) => {
     if (!roomId || roomId !== 'agora-houston') return;
     if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
     const userId = socketUserMap[socket.id] || socket.id;
     const rate = checkRateLimit(userId);
     if (!rate.allowed) return;
+    // Lights persistence (`sq-lights-persist-v1`): load first, so
+    // a hang can never land on the default bare strands while the
+    // real row is still being read.
+    await ensureLightLoaded(roomId);
     const room = lightRoom(roomId);
     // v1.4 (`sq-christmas-lights-v1.4`): the hang spot rides with
     // the emit — validated here, never trusted blindly. No usable
@@ -2639,6 +2694,7 @@ io.on('connection', (socket) => {
     const res = hangLight(room.state, userId, spot);
     if (!res.ok) return;
     io.to(roomId).emit('lights_state', serializeLightState(room.state));
+    persistLight(roomId);
     if (res.finished) {
       io.to(roomId).emit('lights_completed', {
         contributors: [...res.contributors],
@@ -2658,9 +2714,13 @@ io.on('connection', (socket) => {
   });
 
   // CHRISTMAS LIGHTS STATE: the room's strands, sent when you join (or ask).
-  socket.on('get_lights', ({ roomId } = {}) => {
+  socket.on('get_lights', async ({ roomId } = {}) => {
     if (!roomId || roomId !== 'agora-houston') return;
     if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    // Lights persistence (`sq-lights-persist-v1`): load first, so
+    // a joiner never sees the default bare strands while the real
+    // row is still being read.
+    await ensureLightLoaded(roomId);
     socket.emit('lights_state', serializeLightState(lightRoom(roomId).state));
   });
 
