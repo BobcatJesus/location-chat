@@ -87,6 +87,7 @@ import {
   loadJukeboxNowPlaying,
   jukeboxRemainingMs,
   JUKEBOX_MIN_REMAINING_MS,
+  shouldSkipSong,
 } from './jukeboxPersist.js';
 import {
   NOTICE_BOARD_MAX_FLYERS,
@@ -1310,7 +1311,7 @@ const DEFAULT_JUKEBOX_SONG = {
   addedByName: 'Side Quest',
   votes: 0,
 };
-const SKIP_VOTES_NEEDED = 2;
+
 
 function jukeboxState(roomId) {
   if (!jukeboxRooms[roomId]) jukeboxRooms[roomId] = { queue: [], nowPlaying: null, timer: null };
@@ -1323,7 +1324,11 @@ function sortJukeboxQueue(queue) {
 
 function publicJukeboxState(roomId, userId) {
   const st = jukeboxRooms[roomId];
-  if (!st) return { nowPlaying: null, queue: [] };
+  // Jukebox Solo Skip v1 (`sq-jukebox-solo-skip-v1`): the panel shows
+  // "Skip (1 vote)" when the viewer is alone in the room, "Skip
+  // (2 votes)" otherwise — the server knows the room size.
+  const roomSize = rooms[roomId] ? Object.keys(rooms[roomId]).length : 0;
+  if (!st) return { nowPlaying: null, queue: [], roomSize };
   const nowPlaying = st.nowPlaying
     ? {
         id: st.nowPlaying.id,
@@ -1344,7 +1349,7 @@ function publicJukeboxState(roomId, userId) {
     voted: userId ? s.votedBy.has(userId) : false,
     youtubeVideoId: s.youtubeVideoId || null,
   }));
-  return { nowPlaying, queue };
+  return { nowPlaying, queue, roomSize };
 }
 
 const jukeboxNowPlayingLoaded = new Set(); // roomIds whose now-playing row has been read (or attempted)
@@ -3235,7 +3240,11 @@ io.on('connection', (socket) => {
       return;
     }
     np.skipVotes.add(userId);
-    if (np.skipVotes.size >= SKIP_VOTES_NEEDED) {
+    // Jukebox Solo Skip v1 (`sq-jukebox-solo-skip-v1`): one vote is
+    // enough when the voter is alone in the room — two votes would
+    // be unreachable. Otherwise the usual 2 distinct votes.
+    const roomSize = Object.keys(rooms[roomId]).length;
+    if (shouldSkipSong({ skipVotes: np.skipVotes.size, roomSize, isAdder: false })) {
       benchDefault();
       advanceJukebox(roomId);
     } else {

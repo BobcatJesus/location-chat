@@ -9,6 +9,11 @@ import { isYouTubeBlocked } from './YouTubePlayer.js';
 export default function JukeboxPanel({ roomId, onClose, getSocket }) {
   const [nowPlaying, setNowPlaying] = useState(null);
   const [queue, setQueue] = useState([]);
+  // Jukebox Solo Skip v1 (`sq-jukebox-solo-skip-v1`): room size from
+  // the server, so the Skip button states the true threshold —
+  // 1 vote when alone in the room, 2 otherwise. Null = unknown
+  // (old state), which falls back to 2.
+  const [roomSize, setRoomSize] = useState(null);
   const [showTitleForm, setShowTitleForm] = useState(false);
   const [title, setTitle] = useState('');
   const [artist, setArtist] = useState('');
@@ -41,9 +46,10 @@ export default function JukeboxPanel({ roomId, onClose, getSocket }) {
       pendingYouTubeChargeRef.current = false;
     }
 
-    const onJukeboxState = ({ nowPlaying: np, queue: q }) => {
+    const onJukeboxState = ({ nowPlaying: np, queue: q, roomSize: rs }) => {
       setNowPlaying(np || null);
       setQueue(Array.isArray(q) ? q : []);
+      if (Number.isFinite(rs)) setRoomSize(rs);
       setLoaded(true);
       setCoins(getCoins());
     };
@@ -172,7 +178,7 @@ export default function JukeboxPanel({ roomId, onClose, getSocket }) {
               borderRadius: 999, fontWeight: 700, fontFamily: 'inherit',
             }}
           >
-            ⏭ Skip (2 votes)
+            ⏭ Skip ({roomSize === 1 ? '1 vote' : '2 votes'})
           </button>
         </>
       ) : (

@@ -103,6 +103,29 @@ export function jukeboxRemainingMs(song, now = Date.now()) {
   return jukeboxSongDurationMs(song) - (Number(now) - Number(song.startedAt));
 }
 
+// Jukebox Solo Skip v1 (`sq-jukebox-solo-skip-v1`): skipping needs
+// 2 votes, so a player ALONE in a room could never skip someone
+// else's song — one vote, two needed, adder gone. One vote is
+// enough when the room holds a single player.
+/** Distinct votes needed to skip when the room is not solo. */
+export const SKIP_VOTES_NEEDED = 2;
+
+/** Votes needed to skip: 1 when alone in the room, else 2. An
+ *  unknown room size (missing / NaN) counts as solo — demanding
+ *  2 votes from an unknown room could strand a song forever. */
+export function votesNeededToSkip(roomSize) {
+  const n = Number(roomSize);
+  return Number.isFinite(n) && n > 1 ? SKIP_VOTES_NEEDED : 1;
+}
+
+/** Whether the song should advance after a skip vote: the adder
+ *  always skips outright; anyone else needs votesNeededToSkip
+ *  distinct votes. skipVotes is a count, not a Set. */
+export function shouldSkipSong({ skipVotes, roomSize, isAdder }) {
+  if (isAdder) return true;
+  return Number(skipVotes) >= votesNeededToSkip(roomSize);
+}
+
 /** Fresh jukebox room state: nothing playing, no cooldown, no votes. */
 export function createJukeboxRoomState() {
   return { nowPlaying: null, defaultCooldownUntil: null, votedBy: {} };
