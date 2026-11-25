@@ -84,6 +84,11 @@ import {
   loadLightState,
 } from './lightPersist.js';
 import {
+  SNOWMAN_ROOM_STATE_TABLE_SQL,
+  saveSnowState,
+  loadSnowState,
+} from './snowPersist.js';
+import {
   NOTICE_BOARD_STATE_TABLE_SQL,
   saveNoticeBoardState,
   loadNoticeBoardState,
@@ -444,6 +449,14 @@ async function initDb() {
   // which is excluded).
   await pool.query(LIGHTS_ROOM_STATE_TABLE_SQL);
   console.log('✅ Postgres lights_room_state table ready');
+  // Snowman persistence (`sq-snowman-persist-v1`): one row per room
+  // holding the serialized snowman state, so a server restart
+  // restores the snowman instead of wiping the group effort
+  // toward 15. NOTE for the Dec 19 reset: the deliberate reset
+  // clears this table — the snowman IS room state (unlike mail,
+  // which is excluded).
+  await pool.query(SNOWMAN_ROOM_STATE_TABLE_SQL);
+  console.log('✅ Postgres snowman_room_state table ready');
   // Notice board persistence (`sq-notice-board-persist-v1`): one
   // row per room holding the serialized board state, so a server
   // restart restores the pinned flyers instead of wiping every
@@ -1220,22 +1233,62 @@ async function ensureLightLoaded(roomId) {
   }
   return lightLoadPromises[roomId];
 }
-// Build a Snowman (Build a Snowman v1, `sq-build-snowman-v1`):
-// per-room state snowRooms[roomId] = { state }. Shepherd Park
-// only. The state is IN-MEMORY ONLY in v1 — a server restart
-// wipes the snowman, exactly like the lights/tree before their
-// persistence pieces. A persistence piece can follow the same
-// pattern later (a snowman_room_state table + lazy load + save on
-// add). Unlike the tree there is NO second round: 15 counted
-// snowballs build the snowman and the quest is done for the venue.
-// The server enforces multi-hang counting (addSnowball counts
-// every add), room membership, and rate limits; it does not verify
-// the pile take or the walk to the snowman — same trust level as
-// the lights' box take and the tree's box take.
+// Build a Snowman (Build a Snowman v1, `sq-build-snowman-v1`;
+// persistence `sq-snowman-persist-v1`): per-room state
+// snowRooms[roomId] = { state }. Shepherd Park only. The state
+// is persisted to Postgres (snowman_room_state) on every
+// snowball add and loaded back lazily, so a server restart
+// restores the snowman in whatever state he was in instead of
+// wiping him. Without a DB the snowman stays in-memory only,
+// exactly as before. Unlike the tree there is NO second round:
+// 15 counted snowballs build the snowman and the quest is done
+// for the venue. The server enforces multi-hang counting
+// (addSnowball counts every add), room membership, and rate
+// limits; it does not verify the pile take or the walk to the
+// snowman — same trust level as the lights' box take and the
+// tree's box take.
 const snowRooms = {};
+const snowRoomsLoaded = new Set(); // roomIds whose DB row has been read (or attempted)
+const snowLoadPromises = {}; // roomId -> in-flight load promise
 function snowRoom(roomId) {
   if (!snowRooms[roomId]) snowRooms[roomId] = { state: createSnowState() };
   return snowRooms[roomId];
+}
+// Save one room's snowman state, never crashing the caller: a
+// failed save warns and the live broadcast still goes out (the
+// in-memory state is the live truth; the next add retries the
+// save). Mirrors persistLight above.
+async function persistSnow(roomId) {
+  try {
+    await saveSnowState(pool, roomId, snowRoom(roomId).state);
+  } catch (e) {
+    console.warn('⚠️ snowman persist failed:', e && e.message);
+  }
+}
+// Load a room's snowman from Postgres the first time it is
+// touched. Concurrent touches share one in-flight load, so an
+// add can never land on the default bare patch while the real
+// row is still being read. A missing row, a down DB, or a bad
+// row all leave the default bare patch in place. No repair step
+// beyond parseSnowState: it already clamps counted to 0..15 and
+// forces a completed snowman's counted to 15. Mirrors
+// ensureLightLoaded above.
+async function ensureSnowLoaded(roomId) {
+  if (snowRoomsLoaded.has(roomId)) return snowRoom(roomId);
+  if (!snowLoadPromises[roomId]) {
+    snowLoadPromises[roomId] = (async () => {
+      const room = snowRoom(roomId);
+      try {
+        const loaded = await loadSnowState(pool, roomId);
+        if (loaded) room.state = loaded;
+      } catch (e) {
+        console.warn('⚠️ snowman load failed:', e && e.message);
+      }
+      snowRoomsLoaded.add(roomId);
+      return room;
+    })();
+  }
+  return snowLoadPromises[roomId];
 }
 // Santa Hat (Santa Hat v1, `sq-santa-hat-v1`; persistence
 // `sq-hat-persist-v1`): ONE hat hidden behind the Christmas tree
@@ -2732,18 +2785,23 @@ io.on('connection', (socket) => {
   // snowball lands, the snowman stands: everyone hears about it,
   // and every counted contributor earns the Build a Snowman badge
   // (once ever).
-  // In-memory only in v1 — a server restart wipes the snowman
-  // (see the snowRooms comment above).
-  socket.on('snow_add', ({ roomId } = {}) => {
+  // Persistence (`sq-snowman-persist-v1`): the state is saved to
+  // Postgres on every add, so a restart restores the snowman.
+  socket.on('snow_add', async ({ roomId } = {}) => {
     if (!roomId || roomId !== 'shepherd-park') return;
     if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
     const userId = socketUserMap[socket.id] || socket.id;
     const rate = checkRateLimit(userId);
     if (!rate.allowed) return;
+    // Snowman persistence (`sq-snowman-persist-v1`): load first, so
+    // an add can never land on the default bare patch while the
+    // real row is still being read.
+    await ensureSnowLoaded(roomId);
     const room = snowRoom(roomId);
     const res = addSnowball(room.state, userId);
     if (!res.ok) return;
     io.to(roomId).emit('snow_state', serializeSnowState(room.state));
+    persistSnow(roomId);
     if (res.finished) {
       io.to(roomId).emit('snow_completed', {
         contributors: [...res.contributors],
@@ -2763,9 +2821,13 @@ io.on('connection', (socket) => {
   });
 
   // BUILD A SNOWMAN STATE: the room's snowman, sent when you join (or ask).
-  socket.on('get_snowman', ({ roomId } = {}) => {
+  socket.on('get_snowman', async ({ roomId } = {}) => {
     if (!roomId || roomId !== 'shepherd-park') return;
     if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    // Snowman persistence (`sq-snowman-persist-v1`): load first, so
+    // a joiner never sees the default bare patch while the real
+    // row is still being read.
+    await ensureSnowLoaded(roomId);
     socket.emit('snow_state', serializeSnowState(snowRoom(roomId).state));
   });
 
