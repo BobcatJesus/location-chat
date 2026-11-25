@@ -8,7 +8,7 @@ import { TrimTreeQuest } from './TrimTreeQuest.js';
 import { ChristmasLightsQuest } from './ChristmasLightsQuest.js'; // Christmas Lights v1 (`sq-christmas-lights-v1`)
 import { SnowmanQuest } from './SnowmanQuest.js'; // Build a Snowman v1 (`sq-build-snowman-v1`)
 import { SantaHatSystem } from './SantaHatSystem.js';
-import { SantasPresentSystem } from './SantasPresentSystem.js'; // Santa's Lost Present v1 (`sq-santas-lost-present-v1`)
+import { SantasPresentSystem } from './SantasPresentSystem.js'; // Santa's Lost Present v1.1 (`sq-santas-lost-present-v1.1`)
 // Temperature System v1 (`sq-temperature-v1`): seasonal cold/warm,
 // warm drinks (cocoa, coffee) and cold drinks (beer, iced coffee).
 import { TemperatureSystem } from './TemperatureSystem.js';
@@ -759,8 +759,8 @@ export class VillageScene extends Phaser.Scene {
     // itself no-ops everywhere else.
     this.santaHatSystem = new SantaHatSystem(this);
     this.santaHatSystem.refresh();
-    // Santa's Lost Present v1 (`sq-santas-lost-present-v1`): one
-    // present hidden at the foot of tree 2 in Agora — find it once
+    // Santa's Lost Present v1.1 (`sq-santas-lost-present-v1.1`): one
+    // present hidden under Table 4 in Agora — find it once
     // per Chicago day, badge once ever. Agora only; the system
     // itself no-ops everywhere else.
     this.santasPresentSystem = new SantasPresentSystem(this);
@@ -1110,12 +1110,12 @@ export class VillageScene extends Phaser.Scene {
           this.onSystemNotice?.('You seem to be offline — try again when you’re connected.');
         }
       } catch {}
-      // Santa's Lost Present v1: a click at the foot of tree 2
+      // Santa's Lost Present v1.1: a click under Table 4
       // counts as one search tap (3 taps finds the present). Silent
       // unless it finds it — no hint about where the present hides.
       // A second find the same day is refused with a notice (the
       // taps still counted, so the refusal fires once on the 3rd
-      // tap, not on every click at the tree); offline, the find
+      // tap, not on every click under the table); offline, the find
       // refuses.
       try {
         const pr = this.santasPresentSystem?.searchTapAt(ptr.worldX, ptr.worldY);
@@ -3621,7 +3621,7 @@ export class VillageScene extends Phaser.Scene {
     this.christmasLightsQuest?.update(delta); // Christmas Lights v1 (`sq-christmas-lights-v1`)
     this.snowmanQuest?.update(delta); // Build a Snowman v1 (`sq-build-snowman-v1`)
     this.santaHatSystem?.update(delta);
-    this.santasPresentSystem?.update(delta); // Santa's Lost Present v1 (`sq-santas-lost-present-v1`)
+    this.santasPresentSystem?.update(delta); // Santa's Lost Present v1.1 (`sq-santas-lost-present-v1.1`)
     // sq-temperature-v1: ticks the toast (1s) and the shiver /
     // sweat visuals (every frame, after player.sync()).
     this.temperatureSystem?.update(delta);

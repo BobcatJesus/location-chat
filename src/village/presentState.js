@@ -1,5 +1,5 @@
-// presentState.js — Santa's Lost Present (Santa's Lost Present v1,
-// `sq-santas-lost-present-v1`).
+// presentState.js — Santa's Lost Present (Santa's Lost Present
+// v1.1, `sq-santas-lost-present-v1.1`).
 //
 // Pure logic, no Phaser and no Node APIs, so BOTH sides import it:
 //   - server/socket.js (canonical daily rule: one find per player
@@ -34,7 +34,7 @@
 // A persistence piece can follow the same pattern later.
 
 export const PRESENT_ID = 'santas-lost-present';
-export const PRESENT_MARKER_V1 = 'sq-santas-lost-present-v1';
+export const PRESENT_MARKER = 'sq-santas-lost-present-v1.1';
 // BUILDER DEFAULT — the user never set the amount: 5 coins per
 // find, same as the other Christmas quests. Say so if it should change.
 export const PRESENT_REWARD_COINS = 5;
@@ -44,26 +44,38 @@ export const PRESENT_HIDE_RADIUS = 50; // click zone around the hiding spot
 export const PRESENT_PENDING_TIMEOUT_MS = 5000; // a find waits 5s for the server (decor pattern)
 export const PRESENT_TIMEZONE = 'America/Chicago';
 
-// Hiding spot: at the FOOT of tree 2 (west side, 190,470), mirroring
-// the hat at tree 1's foot (1400,430). Derived from _drawTree in
-// TrimTreeQuest.js: the trunk is fillRect(-14, -34, 28, 38) relative
-// to the tree spot, so tree 2's trunk spans x 176–204, y 436–474.
-// The spot sits 16px north of the trunk's top edge (436), centred
-// on the trunk's x — (190, 420) — tucked under the lowest tier's
-// foliage at the foot of the tree, exactly like the hat.
+// Hiding spot: UNDER Table 4 (west side, 300,640) — v1.1 moved it
+// here from the foot of tree 2 (190,420), because tree 2 only
+// renders after tree 1 is completed (TrimTreeQuest.js: tree 2 is
+// drawn only `if (this.state.trees[0]?.completed)`), so while
+// tree 1 is unfinished the v1 landmark does not exist at all.
+// Table 4 is the opposite: a static entry in the Agora layout
+// (layouts/agora.js: { type: 'cafe_table', x: 300, y: 640,
+// label: 'Table 4', interact: true }), drawn unconditionally as a
+// 60px circle (r=30, RoomLayout.js 'cafe_table' case) — it is
+// always in the room. The spot is the table's centre (300,640):
+// cafe tables carry no w/h, so the table's zone centre IS (300,640).
 // Clear of everything else in Agora (all distances from the spot):
-//   hat spot (1400,430) 1210px · lights box (1430,770) 1290px ·
-//   tree box (170,760) 341px · lights SW hang spot (180,600) 180px ·
-//   Table 4 (300,640) 246px · SW plant (130,690) 277px · puzzle
-//   table (800,410) 610px · cat sunbeam (~1117,583) 940px.
-// The tree is NOT solid (TrimTreeQuest), so the player can walk
-// right up to the trunk and stand within the 140px search range.
-// Cross-talk, accepted like the hat: the spot sits inside tree 2's
-// own click zone, so clicks here count toward BOTH a present tap
-// and hanging an ornament — the player is standing at the foot of
-// the tree clicking the tree, and the present is right there
-// behind the wood.
-export const PRESENT_HIDE_SPOT = { x: 190, y: 420 };
+//   hat spot (1400,430) 1120px · lights box (1430,770) 1137px ·
+//   tree box (170,760) 177px · lights SW hang spot (180,600) 126px ·
+//   Table 1 (300,280) 360px · Table 2 (1180,300) 943px ·
+//   Table 3 (1260,640) 960px · SW plant (130,690) 177px ·
+//   puzzle table (800,410) 550px · tree 2 spot (190,470) 202px ·
+//   cat sunbeam (~1117,583) 819px.
+// The player stands within the 140px search range by walking up
+// to the table — the same reach the puzzle's under-table pieces
+// (Tables 1-3) already rely on, so the spot is reachable on foot.
+// SHARED ZONE, known and accepted (the trash-can precedent:
+// ItemsSystem.js documents that one click on the trash can counts
+// toward BOTH a hidden item and a puzzle piece): the note
+// ('note-table4', ItemsSystem) hides at this exact spot too — it
+// resolves to zoneCenter(Table 4), which is (300,640), with a
+// 60px hit circle, while the present's hide radius is 50px. So a
+// player who has not found the note yet finds BOTH the note and
+// the present with the same 3 clicks under Table 4. The note is
+// one-time per profile, so after it is found the zone feeds the
+// present alone (one find per Chicago day, as before).
+export const PRESENT_HIDE_SPOT = { x: 300, y: 640 };
 // Agora bounds (1600x900, RoomLayout.js roomBoundary): the spot
 // must sit inside them, and the search range must be reachable.
 export const PRESENT_ROOM_BOUNDS = { xMin: 0, yMin: 0, xMax: 1600, yMax: 900 };

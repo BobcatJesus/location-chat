@@ -57,14 +57,14 @@ import {
   releaseHat,
   serializeHatState,
 } from '../src/village/hatState.js';
-// Santa's Lost Present v1 (`sq-santas-lost-present-v1`): one
-// present hidden at the foot of tree 2 in Agora, one find per
+// Santa's Lost Present v1.1 (`sq-santas-lost-present-v1.1`): one
+// present hidden under Table 4 in Agora, one find per
 // player per Chicago day. The pure daily rules live in
 // presentState.js so the server stays authoritative over the
 // daily rule and the badge.
 import {
   PRESENT_ID,
-  PRESENT_MARKER_V1,
+  PRESENT_MARKER,
   createPresentState,
   chicagoDateString,
   findPresent,
@@ -771,7 +771,7 @@ const QUEST_DEFS = {
 // completions can't be recovered: no persistent record of past
 // puzzle contributors exists anywhere (the puzzle state resets
 // every round).
-const BADGE_QUEST_IDS = new Set([...Object.keys(QUEST_DEFS), 'group-puzzle', 'trim-tree', 'christmas-lights', 'build-a-snowman', HUNGRY_CAT_QUEST_ID, PRESENT_ID]); // Santa's Lost Present v1 (`sq-santas-lost-present-v1`): the present is NOT in QUEST_DEFS (the one-time quest_progress flow cannot express a daily repeat, and a bad client could complete it without finding it) — it joins the set explicitly, like 'build-a-snowman'.
+const BADGE_QUEST_IDS = new Set([...Object.keys(QUEST_DEFS), 'group-puzzle', 'trim-tree', 'christmas-lights', 'build-a-snowman', HUNGRY_CAT_QUEST_ID, PRESENT_ID]); // Santa's Lost Present v1.1 (`sq-santas-lost-present-v1.1`): the present is NOT in QUEST_DEFS (the one-time quest_progress flow cannot express a daily repeat, and a bad client could complete it without finding it) — it joins the set explicitly, like 'build-a-snowman'.
 const userBadges = {};
 function badgeMapFor(userId) {
   if (!userBadges[userId]) userBadges[userId] = {};
@@ -1303,9 +1303,9 @@ async function ensureSnowLoaded(roomId) {
   }
   return snowLoadPromises[roomId];
 }
-// Santa's Lost Present (Santa's Lost Present v1,
-// `sq-santas-lost-present-v1`): ONE present hidden at the foot of
-// tree 2 in Agora, one find per player per Chicago day. The state
+// Santa's Lost Present (Santa's Lost Present v1.1,
+// `sq-santas-lost-present-v1.1`): ONE present hidden under
+// Table 4 in Agora, one find per player per Chicago day. The state
 // is IN-MEMORY only in v1 (like the other quests at birth): a
 // server restart resets the daily-found dates — a player could
 // re-find it that day — but the badge stays (the badge system
@@ -2959,9 +2959,9 @@ io.on('connection', (socket) => {
     socket.emit('hat_state', serializeHatState(hatRoom(roomId).state));
   });
 
-  // SANTA'S LOST PRESENT (Santa's Lost Present v1,
-  // `sq-santas-lost-present-v1`): one present hidden at the foot
-  // of tree 2 in Agora, one find per player per Chicago day. The
+  // SANTA'S LOST PRESENT (Santa's Lost Present v1.1,
+  // `sq-santas-lost-present-v1.1`): one present hidden under
+  // Table 4 in Agora, one find per player per Chicago day. The
   // client counts 3 search clicks at the spot, then asks here —
   // the server decides whether it is really today (one find per
   // player per day) and awards the badge, once ever. The +5 coins

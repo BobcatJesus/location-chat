@@ -1,11 +1,11 @@
 // SantasPresentSystem.js — Santa's Lost Present (Santa's Lost
-// Present v1, `sq-santas-lost-present-v1`).
+// Present v1.1, `sq-santas-lost-present-v1.1`).
 //
 // Owned by VillageScene, same shape as SantaHatSystem /
 // SnowmanQuest: constructed in create(), ticked in update(),
 // destroyed in shutdown(), refreshed on floor switches. Agora only.
 //
-// The loop: ONE present hides at the foot of tree 2 in Agora, one
+// The loop: ONE present hides under Table 4 in Agora, one
 // find per player per Chicago day. Find it by clicking at the
 // hiding spot 3 times (hidden-search, hat/puzzle pattern —
 // scene-level pointerdown + distance checks, never per-object
@@ -34,7 +34,7 @@
 import { DEPTH } from './depth.js';
 import {
   PRESENT_ID,
-  PRESENT_MARKER_V1,
+  PRESENT_MARKER,
   PRESENT_REWARD_COINS,
   PRESENT_SEARCH_CLICKS,
   PRESENT_SEARCH_RANGE,
@@ -79,8 +79,8 @@ function currentOwner() {
 export class SantasPresentSystem {
   constructor(scene) {
     this.scene = scene;
-    // sq-santas-lost-present-v1 — marker for the v1 landing check.
-    this.marker = PRESENT_MARKER_V1;
+    // sq-santas-lost-present-v1.1 — marker for the v1.1 landing check.
+    this.marker = PRESENT_MARKER;
     this.questId = PRESENT_ID;
     this.state = createPresentState();
     this._searchTaps = 0; // taps at the hiding spot this room visit
@@ -257,7 +257,8 @@ export class SantasPresentSystem {
    *  (one find per player per Chicago day). Taps still count when
    *  already found today, so a player deliberately searching again
    *  hears the refusal once on the 3rd tap — not spammed on every
-   *  click at the foot of tree 2 (which also hangs ornaments).
+   *  click under Table 4 (which also hides the note — one click
+   *  counts toward both searches, the trash-can precedent).
    *  Offline, the find refuses — a shared daily find cannot be
    *  confirmed without the server (no local fallback: an offline
    *  find would be a phantom).

@@ -1,12 +1,12 @@
-// presentState.test.js — Santa's Lost Present v1
-// (`sq-santas-lost-present-v1`). Pure logic only: the Chicago
+// presentState.test.js — Santa's Lost Present v1.1
+// (`sq-santas-lost-present-v1.1`). Pure logic only: the Chicago
 // date, the one-find-per-day rule, serialize/parse, and the
 // date-keyed coin guard.
 
 import { describe, it, expect } from 'vitest';
 import {
   PRESENT_ID,
-  PRESENT_MARKER_V1,
+  PRESENT_MARKER,
   PRESENT_REWARD_COINS,
   PRESENT_SEARCH_CLICKS,
   PRESENT_SEARCH_RANGE,
@@ -26,7 +26,7 @@ import {
 describe('identity + constants', () => {
   it('is the santas-lost-present quest', () => {
     expect(PRESENT_ID).toBe('santas-lost-present');
-    expect(PRESENT_MARKER_V1).toBe('sq-santas-lost-present-v1');
+    expect(PRESENT_MARKER).toBe('sq-santas-lost-present-v1.1');
   });
 
   it('pays 5 coins per find (builder default)', () => {
@@ -149,8 +149,9 @@ describe('owedPresentFind — the date-keyed coin guard', () => {
 
 describe('hiding spot — inside the Agora and clear of the room', () => {
   // The REAL Agora spots, imported from the modules that own them
-  // (not hardcoded guesses): tree 1 + tree 2, both ornament boxes,
-  // the lights box + hang spots, the hat spot, the puzzle table.
+  // (not hardcoded guesses): the hat spot, both ornament boxes,
+  // the lights box + hang spots, the puzzle table, and — for the
+  // present itself — Table 4, straight out of the Agora layout.
   it('sits inside the 1600x900 Agora bounds with room to stand', () => {
     expect(PRESENT_HIDE_SPOT.x).toBeGreaterThanOrEqual(PRESENT_ROOM_BOUNDS.xMin + 40);
     expect(PRESENT_HIDE_SPOT.x).toBeLessThanOrEqual(PRESENT_ROOM_BOUNDS.xMax - 40);
@@ -158,22 +159,40 @@ describe('hiding spot — inside the Agora and clear of the room', () => {
     expect(PRESENT_HIDE_SPOT.y).toBeLessThanOrEqual(PRESENT_ROOM_BOUNDS.yMax - 40);
   });
 
-  it('is the foot of tree 2, mirroring the hat at tree 1', async () => {
-    const { TREE_SPOTS } = await import('../src/village/TrimTreeQuest.js');
+  it('is under Table 4, at the table centre from the real Agora layout', async () => {
+    const { agora } = await import('../src/village/layouts/agora.js');
     const { HAT_HIDE_SPOT } = await import('../src/village/hatState.js');
-    const tree2 = TREE_SPOTS[1];
-    // 16px north of tree 2's trunk top (trunk top = spot y - 34),
-    // centred on the trunk's x — the same derivation as the hat.
-    expect(PRESENT_HIDE_SPOT.x).toBe(tree2.x);
-    expect(PRESENT_HIDE_SPOT.y).toBe(tree2.y - 34 - 16);
-    // And the hat is the same shape at tree 1.
+    const zones = agora.floors[0].zones;
+    const table4 = zones.find((z) => z.type === 'cafe_table' && /Table 4/.test(z.label || ''));
+    expect(table4).toBeTruthy();
+    // The table is a static layout entry (always rendered — unlike
+    // tree 2, which only appears after tree 1 completes), and a
+    // cafe table is a 60px circle (r=30) centred on (x, y).
+    expect(PRESENT_HIDE_SPOT.x).toBe(table4.x);
+    expect(PRESENT_HIDE_SPOT.y).toBe(table4.y);
+    // And the hat is the same shape at tree 1 (still there).
+    const { TREE_SPOTS } = await import('../src/village/TrimTreeQuest.js');
     expect(HAT_HIDE_SPOT.x).toBe(TREE_SPOTS[0].x);
     expect(HAT_HIDE_SPOT.y).toBe(TREE_SPOTS[0].y - 34 - 16);
   });
 
-  it('is clear of the hat, both boxes, the lights, and the tables', async () => {
+  it('shares Table 4 with the note — same centre, by construction', async () => {
+    // The note ('note-table4', ItemsSystem) resolves to
+    // zoneCenter(Table 4), and cafe tables carry no w/h, so the
+    // note's spot IS the table centre — exactly where the present
+    // hides. One click under Table 4 counts toward both searches
+    // (the trash-can precedent); the note is one-time per profile,
+    // so after it is found the zone feeds the present alone.
+    const { agora } = await import('../src/village/layouts/agora.js');
+    const zones = agora.floors[0].zones;
+    const table4 = zones.find((z) => z.type === 'cafe_table' && /Table 4/.test(z.label || ''));
+    const noteSpot = { x: table4.x + (table4.w || 0) / 2, y: table4.y + (table4.h || 0) / 2 };
+    expect(Math.hypot(PRESENT_HIDE_SPOT.x - noteSpot.x, PRESENT_HIDE_SPOT.y - noteSpot.y)).toBe(0);
+  });
+
+  it('is clear of the hat, both boxes, the lights, and the other tables', async () => {
     const { HAT_HIDE_SPOT } = await import('../src/village/hatState.js');
-    const { TREE_BOX_POS } = await import('../src/village/TrimTreeQuest.js');
+    const { TREE_BOX_POS, TREE_SPOTS } = await import('../src/village/TrimTreeQuest.js');
     const { LIGHTS_BOX_POS, LIGHTS_HANG_SPOTS } = await import('../src/village/ChristmasLightsQuest.js');
     const near = (p, min) => {
       const d = Math.hypot(PRESENT_HIDE_SPOT.x - p.x, PRESENT_HIDE_SPOT.y - p.y);
@@ -183,13 +202,16 @@ describe('hiding spot — inside the Agora and clear of the room', () => {
     near(TREE_BOX_POS, 150); // the ornament box
     near(LIGHTS_BOX_POS, 500); // the lights box
     for (const spot of LIGHTS_HANG_SPOTS) near(spot, 100); // every hang spot
-    // Cafe tables (TrimTreeQuest builder comment): Table 1
-    // (300,280), Table 3 (1260,640), Table 4 (300,640).
-    for (const table of [{ x: 300, y: 280 }, { x: 1260, y: 640 }, { x: 300, y: 640 }]) {
+    // The other cafe tables (Table 1 (300,280), Table 2
+    // (1180,300), Table 3 (1260,640)) — Table 4 IS the spot now.
+    for (const table of [{ x: 300, y: 280 }, { x: 1180, y: 300 }, { x: 1260, y: 640 }]) {
       near(table, 150);
     }
     // The SW plant (130,690 — puzzle piece 6) and the puzzle table (800,410).
     near({ x: 130, y: 690 }, 150);
     near({ x: 800, y: 410 }, 300);
+    // And the old v1 spot — the foot of tree 2 (190,470) — the
+    // present no longer hides there (tree 2 may not exist yet).
+    near(TREE_SPOTS[1], 150);
   });
 });

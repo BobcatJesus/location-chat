@@ -1,7 +1,7 @@
-// santasPresent.test.js — Santa's Lost Present v1
-// (`sq-santas-lost-present-v1`). Quest-level tests with a stubbed
+// santasPresent.test.js — Santa's Lost Present v1.1
+// (`sq-santas-lost-present-v1.1`). Quest-level tests with a stubbed
 // scene (no Phaser needed — the drawing calls go through a
-// chainable `add` stub). 3 clicks at the foot of tree 2, one find
+// chainable `add` stub). 3 clicks under Table 4, one find
 // per player per Chicago day, badge once ever, +5 coins per find.
 // The hiding spot is checked against the REAL Agora layout, not
 // hardcoded guesses (see presentState.test.js).
