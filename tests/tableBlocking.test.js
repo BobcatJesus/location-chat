@@ -1,4 +1,5 @@
-// tableBlocking.test.js — Table Blocking v1.1 (`sq-table-blocking-v1.1`).
+// tableBlocking.test.js — Table Blocking v1.1 (`sq-table-blocking-v1.1`)
+// and Prop Table Blocking v1 (`sq-prop-table-blocking-v1`).
 //
 // v1 shrank the cafe tables' solid box 60x60 -> 24x24 and the user still
 // snagged on them, so v1.1 makes cafe tables WALK-THROUGH: no solid box
@@ -6,6 +7,13 @@
 // stay in interactZones (still clickable) — only the solidity is gone.
 // The generic 'table' zone (Collab Commons) was never solid and still
 // isn't; the puzzle table never had a solid box either.
+//
+// v1 turned out to fix the WRONG tables: the user meant the brown cartoony
+// pedestal tables, which are PLACED FURNITURE (prop_table_round custom
+// zones, 72x72 box from setDynamicSolids), not the flat cafe-table circles.
+// This file's prop-table block pins that fix: prop tables register no
+// dynamic box, everything else keeps its full box, and the cafe-table
+// walk-through still holds.
 
 import { describe, it, expect } from 'vitest';
 import { RoomLayout } from '../src/village/RoomLayout.js';
@@ -129,5 +137,79 @@ describe('cafe table blocking', () => {
     const through = rl.resolveAgainstSolids(300, 240, 300, 320, PLAYER_RADIUS);
     expect(through.x).toBe(300);
     expect(through.y).toBe(320);
+  });
+});
+
+// sq-prop-table-blocking-v1: placed brown tables (prop_table_round custom
+// zones) are WALK-THROUGH — no dynamic solid box. setDynamicSolids is
+// called after drawFloor (drawFloor itself calls it with []), so the tests
+// set the zones explicitly.
+describe('prop table blocking', () => {
+  it('registers NO dynamic box for a placed prop_table_round zone, and the player walks straight through its centre', () => {
+    const rl = drawLayout(layoutWithZones([]));
+    const table = {
+      type: 'prop_table_round', frameKey: 'prop_table_round',
+      x: 500, y: 450, w: 72, h: 72, solid: true, label: 'Table',
+    };
+    rl.setDynamicSolids([table]);
+    expect(rl.dynamicSolidZones).toHaveLength(0);
+    // No box at all — not the 72x72 catalog box, nothing.
+    expect(rl.collidesWithSolid(500, 450, PLAYER_RADIUS)).toBe(false);
+    expect(rl.collidesWithSolid(500, 450 + 36, PLAYER_RADIUS)).toBe(false);
+    const through = rl.resolveAgainstSolids(500, 400, 500, 500, PLAYER_RADIUS);
+    expect(through.x).toBe(500);
+    expect(through.y).toBe(500);
+  });
+
+  it('registers NO dynamic box for a legacy table zone (type table, frameKey prop_table_round)', () => {
+    const rl = drawLayout(layoutWithZones([]));
+    rl.setDynamicSolids([{
+      type: 'table', frameKey: 'prop_table_round',
+      x: 500, y: 450, w: 72, h: 72, solid: true, label: 'Table',
+    }]);
+    expect(rl.dynamicSolidZones).toHaveLength(0);
+    expect(rl.collidesWithSolid(500, 450, PLAYER_RADIUS)).toBe(false);
+  });
+
+  it('keeps the full dynamic box for a non-table custom zone of similar size', () => {
+    const rl = drawLayout(layoutWithZones([]));
+    rl.setDynamicSolids([{
+      type: 'prop_bookshelf', frameKey: 'prop_bookshelf',
+      x: 500, y: 450, w: 120, h: 50, solid: true, label: 'Bookshelf',
+    }]);
+    expect(rl.dynamicSolidZones).toHaveLength(1);
+    expect(rl.dynamicSolidZones[0]).toEqual({ left: 440, top: 425, right: 560, bottom: 475 });
+    expect(rl.collidesWithSolid(500, 450, PLAYER_RADIUS)).toBe(true);
+  });
+
+  it('keeps the full dynamic box for a counter that shares the table frameKey (service_counter_h)', () => {
+    // service_counter_h and coffee_bar_h share frameKey 'prop_table_round'
+    // but render as zones (renderAsZone), not as table sprites — they
+    // must stay solid. This pins the match-on-type (not frameKey) rule.
+    const rl = drawLayout(layoutWithZones([]));
+    rl.setDynamicSolids([{
+      type: 'service_counter_h', frameKey: 'prop_table_round', renderAsZone: 'counter',
+      x: 500, y: 450, w: 240, h: 42, solid: true, label: 'Counter',
+    }]);
+    expect(rl.dynamicSolidZones).toHaveLength(1);
+    expect(rl.dynamicSolidZones[0]).toEqual({ left: 380, top: 429, right: 620, bottom: 471 });
+    expect(rl.collidesWithSolid(500, 450, PLAYER_RADIUS)).toBe(true);
+  });
+
+  it('keeps the cafe-table walk-through when prop tables are present', () => {
+    const rl = drawLayout(agora);
+    rl.setDynamicSolids([{
+      type: 'prop_table_round', frameKey: 'prop_table_round',
+      x: 800, y: 450, w: 72, h: 72, solid: true, label: 'Table',
+    }]);
+    // No dynamic box for the prop table…
+    expect(rl.dynamicSolidZones).toHaveLength(0);
+    expect(rl.collidesWithSolid(800, 450, PLAYER_RADIUS)).toBe(false);
+    // …and the cafe tables still have no static box either.
+    const tables = agora.floors[0].zones.filter((z) => z.type === 'cafe_table');
+    expect(tables).toHaveLength(4);
+    for (const t of tables) {
+      expect(rl.collidesWithSolid(t.x, t.y, PLAYER_RADIUS)).toBe(false);
+    }
   });
 });

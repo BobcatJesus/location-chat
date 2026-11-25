@@ -133,6 +133,21 @@ const SOLID_ZONE_TYPES = new Set([
   'jukebox',
 ]);
 
+// sq-prop-table-blocking-v1: a custom zone is a placed brown table when its
+// type is the catalog table ('prop_table_round') or the legacy 'table' type,
+// and it renders as a Prop sprite (no renderAsZone). Match on TYPE, not
+// frameKey: frameKey 'prop_table_round' is shared by service_counter_h and
+// coffee_bar_h (furnitureCatalog.js), which render as zones (renderAsZone
+// 'counter' / 'cafe_counter') and must stay solid — matching on frameKey
+// would wrongly make placed counters walk-through.
+function isPropTableZone(z) {
+  if (!z) return false;
+  const type = String(z.type || '').toLowerCase();
+  if (type !== 'prop_table_round' && type !== 'table') return false;
+  if (z.renderAsZone) return false;
+  return true;
+}
+
 export class RoomLayout {
   constructor(scene, layout) {
     this.scene = scene;
@@ -951,6 +966,17 @@ export class RoomLayout {
   setDynamicSolids(customZones = []) {
     this.dynamicSolidZones = (customZones || [])
       .map((z) => {
+        // sq-prop-table-blocking-v1: placed brown tables are WALK-THROUGH.
+        // A prop_table_round zone (catalog w:72, h:72) got a 72x72 box
+        // centred on (x, y) — with the radius-16 player that's a 104x104
+        // no-go zone, bigger than the 72x56 sprite itself (bottom-anchored,
+        // so the box sticks out 36px below the sprite's base: invisible
+        // wall the player bumps into — furnitureCatalog.js warns about
+        // exactly this). The tables stay drawn (Prop sprites via
+        // _renderSavedProps) and stay clickable (interactZones are set in
+        // the draw loop below, separate from this path); only the solidity
+        // is gone.
+        if (isPropTableZone(z)) return null;
         const w = Number(z?.w || 0);
         const h = Number(z?.h || 0);
         const x = Number(z?.x);
