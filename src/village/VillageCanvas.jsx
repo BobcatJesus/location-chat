@@ -17,6 +17,9 @@ import PlayerBadgesPanel from './PlayerBadgesPanel.jsx';
 import InteriorSketchModal from './InteriorSketchModal.jsx';
 import ModQueuePanel from './ModQueuePanel.jsx';
 import { getCoins } from './CoinWallet.js';
+// Agora Graphic-Novel Reskin v1 (`sq-agora-reskin-v1`): the comic
+// style test toggle — localStorage flag, default off (original look).
+import { isComicStyleOn, setComicStyleOn } from './comicStyle.js';
 import { buildAutoLayout } from './AutoLayout.js';
 import { isOutdoorLocation } from './outdoorRoomDetection.js';
 import { bookstore } from './layouts/bookstore.js';
@@ -262,6 +265,9 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
   // the whole top bar is a single ☰ button on every screen now;
   // this opens it as a popup.
   const [showMenu, setShowMenu] = useState(false);
+  // Comic style test (`sq-agora-reskin-v1`): mirrors the
+  // localStorage flag so the menu button shows the current state.
+  const [comicStyle, setComicStyle] = useState(() => isComicStyleOn());
   const questHudVersionRef = useRef(-1);
   const [roomPopulation, setRoomPopulation] = useState(1);
   const [cameraMode, setCameraMode] = useState('wide-follow');
@@ -819,6 +825,27 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
   // fragment, used by the wide bar (as a row) and by the narrow menu
   // popup (as a column). Every action also closes the menu — a no-op
   // on wide screens, where the menu is never open.
+  // Agora Graphic-Novel Reskin v1 (`sq-agora-reskin-v1`): the comic
+  // style test toggle. Flipping the flag restarts the CURRENT scene
+  // — VillageScene.shutdown() tears it down (socket listeners off,
+  // systems destroyed, incl. the cat) and create() re-runs preload
+  // + create with the new flag, so the Agora redraws and the cat
+  // swaps frames. No rebuild, no push; flipping back restores the
+  // original instantly. restart() with no data is safe: init()
+  // falls back to VillageScene._boot (the same room). Works from
+  // any room — it only changes the Agora's look. If the scene is
+  // not up yet the flag is still flipped and the next room entry
+  // picks it up.
+  const toggleComicStyle = () => {
+    const next = setComicStyleOn(!isComicStyleOn());
+    setComicStyle(next);
+    setShowMenu(false);
+    try {
+      const scene = gameRef.current?.scene?.getScene('VillageScene');
+      if (scene?.scene?.restart) scene.scene.restart();
+    } catch { /* scene not ready yet — flag still flipped */ }
+  };
+
   const topBarButtons = (
     <>
       {/* Leave rename v1 (sq-leave-rename-v1): the button says what it
@@ -965,6 +992,26 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
           }}
         >
           🎯 Quests
+        </button>
+      {/* Comic style test (`sq-agora-reskin-v1`): flips the Agora
+          between the original look and the graphic-novel reskin
+          instantly — no rebuild, no push. The scene restarts so
+          the room redraws and the cat swaps frames; flipping it
+          back restores the original right away. */}
+        <button
+          onClick={toggleComicStyle}
+          title="Test the graphic-novel look for the Agora — tap again to go right back to the original"
+          style={{
+            background: comicStyle ? '#fbbf24' : 'rgba(0,0,0,0.55)',
+            color: comicStyle ? '#111827' : '#fff',
+            border: 'none',
+            borderRadius: 8, padding: '6px 14px',
+            minHeight: 44, display: 'flex', alignItems: 'center',
+            cursor: 'pointer', fontSize: 14, fontWeight: 'bold',
+            flexShrink: 0, whiteSpace: 'nowrap',
+          }}
+        >
+          🎨 Comic style: {comicStyle ? 'on' : 'off'}
         </button>
     </>
   );

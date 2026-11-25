@@ -20,6 +20,7 @@
 
 import { DEPTH } from './depth.js';
 import { HUNGRY_CAT_BUBBLE_TEXT } from './catHunger.js';
+import { comicCatKey } from './comicStyle.js';
 
 const AGORA_ROOM_ID = 'agora-houston';
 const WANDER_SPEED = 26;   // px/sec
@@ -61,9 +62,13 @@ function playPurr() {
 // Awake = the side view, facing right; it flips when she walks left.
 // If the textures are missing for any reason, fall back to the vector
 // calico drawn below.
+// Agora Graphic-Novel Reskin v1 (`sq-agora-reskin-v1`): the comic
+// cat frames live under '<base>-comic'; the flag picks the key, so
+// the originals are untouched and the toggle swaps the cat too.
 function makeCatBody(scene) {
-  if (scene?.textures?.exists('cat-side')) {
-    const img = scene.add.image(0, -2, 'cat-side');
+  const key = comicCatKey('cat-side');
+  if (scene?.textures?.exists(key)) {
+    const img = scene.add.image(0, -2, key);
     // Small on purpose: an avatar is ~64-76 units tall, so ~26 tall
     // puts her top well below the avatar's knees.
     img.setDisplaySize(26, 27);
@@ -136,13 +141,15 @@ function makeSantaHatAsleep(scene) {
 // Curled up asleep — the user's exact sleeping-cat image, Z bubble
 // and all. The floating 💤 stays too, so the zzzs are unmistakable.
 function makeCurledBody(scene) {
-  if (scene?.textures?.exists('cat-sleep')) {
-    const img = scene.add.image(0, 0, 'cat-sleep');
+  const sleepKey = comicCatKey('cat-sleep');
+  if (scene?.textures?.exists(sleepKey)) {
+    const img = scene.add.image(0, 0, sleepKey);
     img.setDisplaySize(30, 30);
     return img;
   }
-  if (scene?.textures?.exists('cat-side')) {
-    const img = scene.add.image(0, 2, 'cat-side');
+  const sideKey = comicCatKey('cat-side');
+  if (scene?.textures?.exists(sideKey)) {
+    const img = scene.add.image(0, 2, sideKey);
     img.setDisplaySize(26, 17);
     return img;
   }

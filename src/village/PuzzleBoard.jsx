@@ -26,13 +26,18 @@
 
 import React, { useEffect, useState } from 'react';
 import { PUZZLE_IMAGE_URL, PUZZLE_SIZE, pieceHome } from './puzzleState.js';
+// Agora Graphic-Novel Reskin v1 (`sq-agora-reskin-v1`): when the
+// comic test is on, the puzzle picture is the comic cat so the
+// board matches the live cat.
+import { isComicStyleOn } from './comicStyle.js';
 
 const TILE_PX = 96;
+const COMIC_PUZZLE_IMAGE_URL = '/assets/sprites/comic/cat-threequarter.png';
 
-function tileStyle(pieceId) {
+function tileStyle(pieceId, imageUrl) {
   const home = pieceHome(pieceId);
   return {
-    backgroundImage: `url(${PUZZLE_IMAGE_URL})`,
+    backgroundImage: `url(${imageUrl || PUZZLE_IMAGE_URL})`,
     backgroundSize: '300% 300%',
     backgroundPosition: `${home.col * 50}% ${home.row * 50}%`,
   };
@@ -44,6 +49,8 @@ export default function PuzzleBoard({ getBoardState, onPlace, onClose }) {
   });
   const [selected, setSelected] = useState(null); // pieceId, click-to-place (tray OR board)
   const [notice, setNotice] = useState('');
+  // Comic test on -> the puzzle picture is the comic cat.
+  const puzzleImageUrl = isComicStyleOn() ? COMIC_PUZZLE_IMAGE_URL : PUZZLE_IMAGE_URL;
 
   // The board is shared: poll for other players' finds/placements
   // while it is open (same 500ms rhythm as the quest HUD poll).
@@ -191,7 +198,7 @@ export default function PuzzleBoard({ getBoardState, onPlace, onClose }) {
                     background: pieceId != null ? '#fef3c7' : 'rgba(180,83,9,0.08)',
                     cursor: pieceId != null || selected != null ? 'pointer' : 'default',
                     boxShadow: isSelected ? '0 0 0 2px #93c5fd' : undefined,
-                    ...(pieceId != null ? tileStyle(pieceId) : {}),
+                    ...(pieceId != null ? tileStyle(pieceId, puzzleImageUrl) : {}),
                   }}
                   title={pieceId != null ? 'Placed — click to pick it up and move it' : 'Empty — drag a piece here'}
                 />
@@ -223,7 +230,7 @@ export default function PuzzleBoard({ getBoardState, onPlace, onClose }) {
                   width: 64, height: 64, borderRadius: 6, cursor: 'grab',
                   border: selected === id ? '3px solid #1a4971' : '2px solid #f59e0b',
                   boxShadow: selected === id ? '0 0 0 2px #93c5fd' : undefined,
-                  ...tileStyle(id),
+                  ...tileStyle(id, puzzleImageUrl),
                 }}
               />
             ))}

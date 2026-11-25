@@ -1,6 +1,7 @@
 import { DEPTH } from './depth.js';
 import { C, SPINES } from './layouts/bookstore.js';
 import { resolveNoticeBoardSpot } from './noticeBoardPlacement.js';
+import { isComicStyleOn } from './comicStyle.js';
 
 const LABEL_STYLE = {
   fontSize: '8px', fontFamily: 'Courier New, monospace',
@@ -22,6 +23,27 @@ const ROOM_EDGE_CORE = 0xf8f1dc;
 const ROOM_EDGE_TRIM = 0x6a8f5d;
 const ROOM_EDGE_SHADOW = 0x000000;
 const ROOM_INNER_SHADOW = 0x1f2937;
+
+// Agora Graphic-Novel Reskin v1 (`sq-agora-reskin-v1`): warm comic
+// palette + ink, as a TOGGLEABLE TEST. Used ONLY for the Agora AND
+// only while the test flag is on (menu toggle, localStorage
+// `sidequest-comic-test`, see comicStyle.js). The gate is
+// `_isComicAgora()` = `_isAgora()` (layout id/name contains 'agora',
+// e.g. the shipped layout's id 'agora-houston') or the scene's
+// roomId, AND the flag on. Flag off -> the Agora draws EXACTLY as
+// before; the off path never runs the new palette/outline code.
+// Every other room keeps its current look; no global palette or
+// style is changed. No collision, zone position, size or gameplay
+// geometry is changed anywhere.
+const AGORA_INK = 0x2b2118; // warm near-black comic ink
+const AGORA_FLOOR_WOOD = 0xd9a05b;
+const AGORA_PLANK_SEAM = 0xb57e3e;
+
+function isAgoraLayout(layout = {}) {
+  const id = String(layout?.id || '').toLowerCase();
+  const name = String(layout?.name || '').toLowerCase();
+  return id.includes('agora') || name.includes('agora');
+}
 
 function isParkLayout(layout = {}) {
   const id = String(layout.id || '').toLowerCase();
@@ -126,6 +148,7 @@ export class RoomLayout {
     this.debugGfx = scene.add.graphics().setDepth(DEPTH.UI - 2).setVisible(false);
     this.debugLabels = [];
     this.destroyed = false;
+    this._agoraCouchIndex = 0; // Agora reskin: alternates couch colours
   }
 
   _canDraw() {
@@ -192,6 +215,13 @@ export class RoomLayout {
       this._drawMcDonaldsAmbient(W, H);
     }
     this._drawOutsideRoomMask(W, H, carpetColor);
+    // Agora reskin (`sq-agora-reskin-v1`): comic wood floor, plank
+    // seams, halftone dots and an ink frame — Agora only, drawn once
+    // with the room (no per-frame cost). Other rooms skip this.
+    if (this._isComicAgora()) {
+      this._agoraCouchIndex = 0;
+      this._drawAgoraFloor();
+    }
 
     // Draw all zones
     // Notice Board everywhere v1 (`sq-notice-board-everywhere-v1`):
@@ -243,6 +273,113 @@ export class RoomLayout {
     }
 
     this._redrawDebugOverlay();
+  }
+
+  // Agora reskin (`sq-agora-reskin-v1`): true only for the Agora
+  // (shipped layout id 'agora-houston', or the scene's roomId as a
+  // fallback for server-approved layouts that rename the layout).
+  _isAgora() {
+    return isAgoraLayout(this.layout)
+      || String(this.scene?.roomId || '').toLowerCase() === 'agora-houston';
+  }
+
+  // Comic gate: the reskin draws only for the Agora AND the test
+  // flag on (menu toggle, localStorage `sidequest-comic-test`).
+  // Flag off -> the Agora draws exactly as before; the off path
+  // never runs the new palette/outline code.
+  _isComicAgora() {
+    return this._isAgora() && isComicStyleOn();
+  }
+
+  // Agora reskin: warm wood-plank floor with halftone dots and a thick
+  // ink frame, painted inside the room polygon. Drawn once per floor
+  // draw into the room graphics object (gfx.clear() removes it on the
+  // next redraw, so there is no extra object to track or destroy).
+  // Visual only — no zone, collision or geometry changes.
+  _drawAgoraFloor() {
+    const g = this.gfx;
+    const boundary = this.roomBoundary;
+    const points = boundary?.type === 'polygon' && Array.isArray(boundary.points) && boundary.points.length >= 3
+      ? boundary.points
+      : [
+        { x: boundary.x, y: boundary.y },
+        { x: boundary.x + boundary.w, y: boundary.y },
+        { x: boundary.x + boundary.w, y: boundary.y + boundary.h },
+        { x: boundary.x, y: boundary.y + boundary.h },
+      ];
+    const minX = Math.min(...points.map((p) => p.x));
+    const maxX = Math.max(...points.map((p) => p.x));
+    const minY = Math.min(...points.map((p) => p.y));
+    const maxY = Math.max(...points.map((p) => p.y));
+
+    // Warm wood floor.
+    g.fillStyle(AGORA_FLOOR_WOOD, 1);
+    g.beginPath();
+    g.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) g.lineTo(points[i].x, points[i].y);
+    g.closePath();
+    g.fillPath();
+
+    // Plank seams: horizontal scanline segments clipped to the polygon.
+    g.lineStyle(2, AGORA_PLANK_SEAM, 0.55);
+    let row = 0;
+    for (let y = minY + 44; y < maxY; y += 44, row++) {
+      for (const [x1, x2] of this._scanlineSegments(y, points)) {
+        g.lineBetween(x1, y, x2, y);
+      }
+      // Staggered vertical joints, one short seam per plank row.
+      const offset = row % 2 === 0 ? 90 : 0;
+      for (let x = minX + offset; x < maxX; x += 180) {
+        if (this._pointInPolygon(x, y + 2, points) && this._pointInPolygon(x, y + 42, points)) {
+          g.lineBetween(x, y + 2, x, y + 42);
+        }
+      }
+    }
+
+    // Halftone dots: sparse and faint so the floor stays readable —
+    // players, litter and puzzle spots must stay clearly visible.
+    g.fillStyle(AGORA_INK, 0.07);
+    for (let y = minY + 18; y < maxY; y += 36) {
+      for (let x = minX + 18; x < maxX; x += 36) {
+        if (this._pointInPolygon(x, y, points)) g.fillCircle(x, y, 2);
+      }
+    }
+
+    // Comic frame: thick ink boundary (the mask's green trim + cream
+    // core strokes sit underneath and are covered by it).
+    g.lineStyle(5, AGORA_INK, 1);
+    g.beginPath();
+    g.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) g.lineTo(points[i].x, points[i].y);
+    g.closePath();
+    g.strokePath();
+  }
+
+  // Horizontal scanline of y across a polygon → [[x1, x2], ...] segments.
+  _scanlineSegments(y, points) {
+    const xs = [];
+    for (let i = 0; i < points.length; i++) {
+      const a = points[i];
+      const b = points[(i + 1) % points.length];
+      if ((a.y <= y && b.y > y) || (b.y <= y && a.y > y)) {
+        xs.push(a.x + ((y - a.y) / (b.y - a.y)) * (b.x - a.x));
+      }
+    }
+    xs.sort((p, q) => p - q);
+    const segs = [];
+    for (let i = 0; i + 1 < xs.length; i += 2) segs.push([xs[i], xs[i + 1]]);
+    return segs;
+  }
+
+  // Ray-cast point-in-polygon test.
+  _pointInPolygon(x, y, points) {
+    let inside = false;
+    for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+      const xi = points[i].x, yi = points[i].y;
+      const xj = points[j].x, yj = points[j].y;
+      if (((yi > y) !== (yj > y)) && (x < ((xj - xi) * (y - yi)) / (yj - yi) + xi)) inside = !inside;
+    }
+    return inside;
   }
 
   _drawOutsideRoomMask(worldW, worldH, carpetColor) {
@@ -998,7 +1135,7 @@ export class RoomLayout {
       case 'wall_polygon': {
         const points = Array.isArray(z.points) ? z.points : [];
         if (points.length < 3) break;
-        g.lineStyle(5, C.WALL, 1);
+        g.lineStyle(5, this._isComicAgora() ? AGORA_INK : C.WALL, 1);
         g.beginPath();
         g.moveTo(points[0].x, points[0].y);
         for (let i = 1; i < points.length; i++) g.lineTo(points[i].x, points[i].y);
@@ -1014,9 +1151,11 @@ export class RoomLayout {
         // In polygon outdoor rooms, avoid rectangular entry mats that read as
         // box overlays against irregular footprint borders.
         if (!(this.roomBoundary?.type === 'polygon' && isParkLayout(this.layout))) {
-          g.fillStyle(C.ENTRY_MAT, 1);
+          // Agora reskin (`sq-agora-reskin-v1`): warm cream mat, ink outline.
+          const agora = this._isComicAgora();
+          g.fillStyle(agora ? 0xfdf3d8 : C.ENTRY_MAT, 1);
           g.fillRect(x, y, w, h);
-          g.lineStyle(2, C.WALL, 1);
+          g.lineStyle(agora ? 3 : 2, agora ? AGORA_INK : C.WALL, 1);
           g.strokeRect(x, y, w, h);
         }
         this._lbl(x + w / 2, y + h / 2, z.label, LABEL_STYLE, 0.5, 0.5);
@@ -1035,6 +1174,21 @@ export class RoomLayout {
         break;
 
       case 'counter':
+        if (this._isComicAgora()) {
+          // Agora reskin (`sq-agora-reskin-v1`): warm orange coffee bar
+          // with a cream tile band and an ink outline.
+          g.fillStyle(0xe07840, 1);
+          g.fillRect(x, y, w, h);
+          g.fillStyle(0xfdf3d8, 1);
+          g.fillRect(x + 6, y + 6, w - 12, 14);
+          g.lineStyle(1.5, AGORA_INK, 0.5);
+          for (let tx = x + 30; tx < x + w - 10; tx += 34) g.lineBetween(tx, y + 6, tx, y + 20);
+          g.lineStyle(3, AGORA_INK, 1);
+          g.strokeRect(x, y, w, h);
+          this._lbl(x + w / 2, y + h / 2, z.label, LABEL_STYLE, 0.5, 0.5);
+          if (z.interact) this.interactZones.push(z);
+          break;
+        }
         if (isMcDonaldsLayout(this.layout)) {
           g.fillStyle(0xd62828, 1);
           g.fillRect(x, y, w, h);
@@ -1118,10 +1272,16 @@ export class RoomLayout {
         // 60px across — a cafe table for 2-4, about twice an avatar's width.
         // Was r=22 (44px): smaller than a person is wide.
         const r = 30;
-        g.fillStyle(0x4a3728, 1);
+        // Agora reskin (`sq-agora-reskin-v1`): warm wood top, ink ring.
+        const agora = this._isComicAgora();
+        g.fillStyle(agora ? 0xd9a05b : 0x4a3728, 1);
         g.fillCircle(x, y, r);
-        g.lineStyle(1.5, C.WALL, 1);
+        g.lineStyle(agora ? 3 : 1.5, agora ? AGORA_INK : C.WALL, 1);
         g.strokeCircle(x, y, r);
+        if (agora) {
+          g.lineStyle(1.5, AGORA_INK, 0.5);
+          g.strokeCircle(x, y, r - 9);
+        }
         // Tables with interact:true join interactZones so the group
         // puzzle can resolve its under-table pieces to real tables.
         if (z.interact) this.interactZones.push(z);
@@ -1131,14 +1291,23 @@ export class RoomLayout {
       case 'plant': {
         // Potted plant: terracotta pot + green foliage. Small solid
         // footprint — z.x/z.y are the top-left corner.
-        g.fillStyle(0xb45309, 1);
+        // Agora reskin (`sq-agora-reskin-v1`): warmer pot, brighter
+        // foliage, ink outlines.
+        const agora = this._isComicAgora();
+        g.fillStyle(agora ? 0xc65d3a : 0xb45309, 1);
         g.fillRect(x + 6, y + h - 16, w - 12, 14);
-        g.fillStyle(0x228b22, 1);
+        g.fillStyle(agora ? 0x3fae5a : 0x228b22, 1);
         g.fillCircle(x + w / 2, y + h * 0.32, Math.min(w, h) * 0.32);
-        g.fillStyle(0x2e9e4f, 1);
+        g.fillStyle(agora ? 0x2f9e4f : 0x2e9e4f, 1);
         g.fillCircle(x + w * 0.3, y + h * 0.45, Math.min(w, h) * 0.24);
         g.fillCircle(x + w * 0.7, y + h * 0.45, Math.min(w, h) * 0.24);
-        g.lineStyle(1.5, C.WALL, 1);
+        if (agora) {
+          g.lineStyle(2, AGORA_INK, 0.9);
+          g.strokeCircle(x + w / 2, y + h * 0.32, Math.min(w, h) * 0.32);
+          g.strokeCircle(x + w * 0.3, y + h * 0.45, Math.min(w, h) * 0.24);
+          g.strokeCircle(x + w * 0.7, y + h * 0.45, Math.min(w, h) * 0.24);
+        }
+        g.lineStyle(agora ? 3 : 1.5, agora ? AGORA_INK : C.WALL, 1);
         g.strokeRect(x + 6, y + h - 16, w - 12, 14);
         if (z.interact) this.interactZones.push(z);
         break;
@@ -1146,11 +1315,14 @@ export class RoomLayout {
 
       case 'rug': {
         // Flat rug — walkable, never solid (solid:false on the zone).
-        g.fillStyle(0x9b2c2c, 1);
+        // Agora reskin (`sq-agora-reskin-v1`): terracotta rug, cream
+        // inner border, ink outline.
+        const agora = this._isComicAgora();
+        g.fillStyle(agora ? 0xd96c3f : 0x9b2c2c, 1);
         g.fillRoundedRect(x, y, w, h, 10);
-        g.lineStyle(2, 0xd9a441, 1);
+        g.lineStyle(agora ? 3 : 2, agora ? AGORA_INK : 0xd9a441, 1);
         g.strokeRoundedRect(x, y, w, h, 10);
-        g.lineStyle(1, 0xd9a441, 0.7);
+        g.lineStyle(agora ? 1.5 : 1, agora ? 0xfdf3d8 : 0xd9a441, agora ? 0.9 : 0.7);
         g.strokeRoundedRect(x + 10, y + 10, w - 20, h - 20, 6);
         if (z.interact) this.interactZones.push(z);
         break;
@@ -1159,9 +1331,12 @@ export class RoomLayout {
       case 'portrait': {
         // Framed portrait hanging on a wall: dark frame, warm canvas,
         // a sun and a simple hill. Not solid — it hangs above the floor.
-        g.fillStyle(0x3b2f1d, 1);
+        // Agora reskin (`sq-agora-reskin-v1`): darker frame, warmer
+        // canvas, ink outline.
+        const agora = this._isComicAgora();
+        g.fillStyle(agora ? 0x4a2f1d : 0x3b2f1d, 1);
         g.fillRect(x, y, w, h);
-        g.fillStyle(0xf6d8a0, 1);
+        g.fillStyle(agora ? 0xfbe3ae : 0xf6d8a0, 1);
         g.fillRect(x + 6, y + 6, w - 12, h - 12);
         g.fillStyle(0xfbbf24, 1);
         g.fillCircle(x + w * 0.72, y + h * 0.3, Math.min(w, h) * 0.12);
@@ -1172,7 +1347,7 @@ export class RoomLayout {
         g.lineTo(x + w - 6, y + h - 6);
         g.closePath();
         g.fillPath();
-        g.lineStyle(2, C.WALL, 1);
+        g.lineStyle(agora ? 3 : 2, agora ? AGORA_INK : C.WALL, 1);
         g.strokeRect(x, y, w, h);
         if (z.label) this._lbl(x + w / 2, y + h + 4, z.label, LABEL_STYLE, 0.5, 0);
         if (z.interact) this.interactZones.push(z);
@@ -1185,14 +1360,17 @@ export class RoomLayout {
         // solid — it hangs above the floor. `variant: 'post'` (parks)
         // is the same board on two wooden posts by the entrance
         // instead of a wall board.
+        // Agora reskin (`sq-agora-reskin-v1`): warmer frame + cork,
+        // ink outline. Post boards (parks) keep the original posts.
+        const agora = this._isComicAgora();
         if (z.variant === 'post') {
           g.fillStyle(0x5b3a1e, 1);
           g.fillRect(x + 14, y + h, 10, 46);
           g.fillRect(x + w - 24, y + h, 10, 46);
         }
-        g.fillStyle(0x5b3a1e, 1);
+        g.fillStyle(agora ? 0x7a4a28 : 0x5b3a1e, 1);
         g.fillRect(x - 4, y - 4, w + 8, h + 8);
-        g.fillStyle(0xd9a441, 1);
+        g.fillStyle(agora ? 0xfbe3ae : 0xd9a441, 1);
         g.fillRect(x, y, w, h);
         // Mini pinned flyers (decoration only — the real list lives
         // in the DOM panel; the count here never pretends to match).
@@ -1210,7 +1388,7 @@ export class RoomLayout {
           g.fillStyle(m.pin, 1);
           g.fillCircle(m.mx + m.mw / 2, m.my, 3);
         }
-        g.lineStyle(2, C.WALL, 1);
+        g.lineStyle(agora ? 3 : 2, agora ? AGORA_INK : C.WALL, 1);
         g.strokeRect(x - 4, y - 4, w + 8, h + 8);
         // The label sits below the posts on a post board, below the
         // frame on a wall board.
@@ -1223,11 +1401,13 @@ export class RoomLayout {
         // Small trash can: grey cylinder with a darker lid. The group
         // puzzle's piece 5 hides here (PuzzleQuest.js resolves it from
         // this zone by type / label).
-        g.fillStyle(0x6b7280, 1);
+        // Agora reskin (`sq-agora-reskin-v1`): warm grey, ink outline.
+        const agora = this._isComicAgora();
+        g.fillStyle(agora ? 0x8a7f72 : 0x6b7280, 1);
         g.fillRoundedRect(x, y + 6, w, h - 6, 4);
-        g.fillStyle(0x4b5563, 1);
+        g.fillStyle(agora ? 0x5d5347 : 0x4b5563, 1);
         g.fillRoundedRect(x - 2, y, w + 4, 10, 4);
-        g.lineStyle(1.5, C.WALL, 1);
+        g.lineStyle(agora ? 3 : 1.5, agora ? AGORA_INK : C.WALL, 1);
         g.strokeRoundedRect(x, y + 6, w, h - 6, 4);
         if (z.label) this._lbl(x + w / 2, y - 8, z.label, LABEL_STYLE, 0.5, 1);
         if (z.interact) this.interactZones.push(z);
@@ -1373,28 +1553,39 @@ export class RoomLayout {
         // hardcoded 140x50 for every couch — which made the cafe "chairs"
         // (couch zones placed around tables) render as 140px sofa slabs.
         const cw = z.w || 140, ch = z.h || 50;
-        g.fillStyle(C.COUCH, 1);
+        // Agora reskin (`sq-agora-reskin-v1`): warm comic couches,
+        // alternating terracotta / sage so the two sofas read as a
+        // pair. `_agoraCouchIndex` is reset each comic floor draw.
+        const agora = this._isComicAgora();
+        const couchFill = agora
+          ? [0xd96c3f, 0x7a9e6d][this._agoraCouchIndex % 2]
+          : C.COUCH;
+        if (agora) this._agoraCouchIndex += 1;
+        g.fillStyle(couchFill, 1);
         g.fillRect(x, y, cw, ch);
-        g.lineStyle(1.5, C.WALL, 1);
+        g.lineStyle(agora ? 3 : 1.5, agora ? AGORA_INK : C.WALL, 1);
         g.strokeRect(x, y, cw, ch);
         // Cushion division
-        g.lineStyle(1, C.WALL, 0.5);
+        g.lineStyle(agora ? 1.5 : 1, agora ? AGORA_INK : C.WALL, agora ? 0.7 : 0.5);
         g.lineBetween(x + cw / 2, y, x + cw / 2, y + ch);
         break;
       }
 
-      case 'window':
-        g.fillStyle(C.WINDOW, 0.6);
+      case 'window': {
+        // Agora reskin (`sq-agora-reskin-v1`): ink frame, warm sky.
+        const agora = this._isComicAgora();
+        g.fillStyle(agora ? 0xfbe3ae : C.WINDOW, agora ? 0.85 : 0.6);
         g.fillRect(x, y, w, h);
-        g.lineStyle(2, 0x5ba4cf, 1);
+        g.lineStyle(agora ? 3 : 2, agora ? AGORA_INK : 0x5ba4cf, 1);
         g.strokeRect(x, y, w, h);
         // Window pane lines
-        g.lineStyle(1, 0x5ba4cf, 0.5);
+        g.lineStyle(1, agora ? AGORA_INK : 0x5ba4cf, 0.5);
         for (let wx = x + 80; wx < x + w - 40; wx += 80) {
           g.lineBetween(wx, y, wx, y + h);
         }
         this._lbl(x + w / 2, y + h / 2, z.label, LABEL_STYLE, 0.5, 0.5);
         break;
+      }
 
       case 'screen':
         // Theater projection screen with subtle bezel and glow.
@@ -1420,6 +1611,13 @@ export class RoomLayout {
         break;
 
       case 'sign':
+        if (this._isComicAgora()) {
+          // Agora reskin (`sq-agora-reskin-v1`): wooden-sign label.
+          this._lbl(x + (w || 0) / 2, y + (h || 0) / 2, z.label, {
+            ...SIGN_STYLE, color: '#ffe9b0', backgroundColor: '#7a4a28',
+          }, 0.5, 0.5);
+          break;
+        }
         if (isMcDonaldsLayout(this.layout)) {
           this._lbl(x + (w || 0) / 2, y + (h || 0) / 2, z.label, {
             ...SIGN_STYLE,
@@ -1508,10 +1706,14 @@ export class RoomLayout {
   _drawJukebox(x, y, w, h, label) {
     const g = this.gfx;
     if (!g || !this._canDraw()) return;
+    // Agora reskin (`sq-agora-reskin-v1`): red/cream comic cabinet
+    // with an ink outline; every other room keeps the dark cabinet.
+    // The neon arch, strips and title window are unchanged.
+    const agora = this._isComicAgora();
     // Cabinet body — dark with chrome trim
-    g.fillStyle(0x1a1a24, 1);
+    g.fillStyle(agora ? 0xc0392b : 0x1a1a24, 1);
     g.fillRect(x, y, w, h);
-    g.lineStyle(3, 0xc0c8d0, 1);
+    g.lineStyle(agora ? 4 : 3, agora ? AGORA_INK : 0xc0c8d0, 1);
     g.strokeRect(x, y, w, h);
     // Arched top in neon amber
     g.fillStyle(0xffb02e, 1);

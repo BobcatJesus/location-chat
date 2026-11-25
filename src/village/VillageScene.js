@@ -563,6 +563,15 @@ export class VillageScene extends Phaser.Scene {
     this.load.image('cat-front', '/assets/sprites/cat-front.png');
     this.load.image('cat-threequarter', '/assets/sprites/cat-threequarter.png');
     this.load.image('cat-back', '/assets/sprites/cat-back.png');
+    // Agora Graphic-Novel Reskin v1 (`sq-agora-reskin-v1`): the comic
+    // cat set — loaded under '<base>-comic' keys alongside the
+    // originals, so CafeCat can pick by flag and the toggle's scene
+    // restart swaps the cat with no extra load. Originals untouched.
+    this.load.image('cat-sleep-comic', '/assets/sprites/comic/cat-sleep.png');
+    this.load.image('cat-side-comic', '/assets/sprites/comic/cat-side.png');
+    this.load.image('cat-front-comic', '/assets/sprites/comic/cat-front.png');
+    this.load.image('cat-threequarter-comic', '/assets/sprites/comic/cat-threequarter.png');
+    this.load.image('cat-back-comic', '/assets/sprites/comic/cat-back.png');
     this.load.image('sq-jackolantern', '/assets/sprites/halloween/jackolantern.png');
     this.load.image('sq-ghost', '/assets/sprites/halloween/ghost.png');
     this.load.image('sq-batmist', '/assets/sprites/halloween/bat-mist.png');
