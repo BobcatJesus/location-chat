@@ -1,5 +1,6 @@
 // treePersist.test.js — Trim the Tree persistence
-// (`sq-tree-persist-v1`).
+// (`sq-tree-persist-v1`; v1.2 `sq-christmas-multi-v1.2` — every
+// hang counts, so the mid-tree fixture is 7 counted, not 5+2).
 //
 // Piece 4 of the room-state persistence fix: the trees are saved
 // to Postgres on every hang and loaded back lazily, so a server
@@ -58,8 +59,8 @@ const NOW = Date.now();
 function midTreeState() {
   const s = createTreeState();
   for (let i = 1; i <= 5; i++) hangOrnament(s, `user-${i}`);
-  hangOrnament(s, 'user-1'); // extra — second hang, renders only
-  hangOrnament(s, 'user-2'); // extra
+  hangOrnament(s, 'user-1'); // second hang — counts too (v1.2)
+  hangOrnament(s, 'user-2'); // second hang — counts too (v1.2)
   return s;
 }
 
@@ -108,18 +109,18 @@ describe('save/load round-trip', () => {
     expect(serializeTreeState(loaded)).toEqual(serializeTreeState(before));
   });
 
-  it('restores a mid-tree-1 state: counted, extras, hungBy, contributors', async () => {
+  it('restores a mid-tree-1 state: counted, hungBy, contributors', async () => {
     const pool = makeFakePool();
     const before = midTreeState();
     expect(before.active).toBe(0);
-    expect(before.trees[0].counted).toBe(5);
-    expect(before.trees[0].extras).toBe(2);
+    expect(before.trees[0].counted).toBe(7);
+    expect(before.trees[0]).not.toHaveProperty('extras');
     await saveTreeState(pool, ROOM, before);
     const loaded = await loadTreeState(pool, ROOM);
     expect(serializeTreeState(loaded)).toEqual(serializeTreeState(before));
     expect(loaded.active).toBe(0);
-    expect(loaded.trees[0].counted).toBe(5);
-    expect(loaded.trees[0].extras).toBe(2);
+    expect(loaded.trees[0].counted).toBe(7);
+    expect(loaded.trees[0]).not.toHaveProperty('extras');
     expect(loaded.trees[0].contributors).toEqual(['user-1', 'user-2', 'user-3', 'user-4', 'user-5']);
     expect(loaded.trees[0].hungBy).toEqual({ 'user-1': 2, 'user-2': 2, 'user-3': 1, 'user-4': 1, 'user-5': 1 });
     expect(loaded.trees[0].completed).toBe(false);
@@ -161,7 +162,7 @@ describe('save/load round-trip', () => {
     expect(pool.queries.filter((q) => /INSERT INTO tree_room_state/i.test(q.text))).toHaveLength(2);
     expect(pool.queries[0].text).toMatch(/ON CONFLICT \(room_id\)/);
     const loaded = await loadTreeState(pool, ROOM);
-    expect(loaded.trees[0].counted).toBe(5);
+    expect(loaded.trees[0].counted).toBe(7);
   });
 });
 
@@ -280,21 +281,22 @@ describe('restart-restore flow', () => {
 describe('load-before-mutate simulation', () => {
   it('persisted mid-tree state + fresh cache -> load -> hang -> save -> reload shows the hang', async () => {
     const pool = makeFakePool();
-    // Before the "restart": five counted hangs, saved.
+    // Before the "restart": seven counted hangs, saved (five first
+    // hangs + two repeat hangs — every hang counts in v1.2).
     await saveTreeState(pool, ROOM, midTreeState());
     // The restart drops the in-memory cache; the first touch after
     // it loads the row (ensureTreeLoaded) BEFORE mutating.
     const cache = await loadTreeState(pool, ROOM);
-    expect(cache.trees[0].counted).toBe(5);
+    expect(cache.trees[0].counted).toBe(7);
     const res = hangOrnament(cache, 'user-6');
     expect(res.ok).toBe(true);
     expect(res.counted).toBe(true);
     await saveTreeState(pool, ROOM, cache);
-    // A second restart (or another device) sees six counted hangs
+    // A second restart (or another device) sees eight counted hangs
     // and the new contributor — the pre-restart progress was not
     // overwritten by the bare trees.
     const after = await loadTreeState(pool, ROOM);
-    expect(after.trees[0].counted).toBe(6);
+    expect(after.trees[0].counted).toBe(8);
     expect(after.trees[0].contributors).toContain('user-6');
   });
 

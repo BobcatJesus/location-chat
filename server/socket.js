@@ -1109,7 +1109,9 @@ async function ensureTreeLoaded(roomId) {
   }
   return treeLoadPromises[roomId];
 }
-// Christmas Lights (Christmas Lights v1, `sq-christmas-lights-v1`):
+// Christmas Lights (Christmas Lights v1, `sq-christmas-lights-v1`;
+// v1.2 `sq-christmas-multi-v1.2` — every hang counts, no
+// one-per-person rule):
 // per-room state lightRooms[roomId] = { state }. Agora only. The
 // state is IN-MEMORY ONLY in v1 — a server restart wipes the
 // strands, exactly like Trim the Tree before `sq-tree-persist-v1`.
@@ -1117,10 +1119,10 @@ async function ensureTreeLoaded(roomId) {
 // lights_room_state table + lazy load + save on hang). Unlike the
 // tree there is NO second round: 25 counted strings light the
 // room and the quest is done for the venue. The server enforces
-// the hidden first-only rule (hangLight counts only a player's
-// first hang), room membership, and rate limits; it does not
-// verify the box take or the walk to the wall — same trust level
-// as the tree's box take and the puzzle's hidden-search clicks.
+// multi-hang counting (hangLight counts every hang), room
+// membership, and rate limits; it does not verify the box take or
+// the walk to the wall — same trust level as the tree's box take
+// and the puzzle's hidden-search clicks.
 const lightRooms = {};
 function lightRoom(roomId) {
   if (!lightRooms[roomId]) lightRooms[roomId] = { state: createLightState() };
@@ -2498,10 +2500,9 @@ io.on('connection', (socket) => {
   });
 
   // TRIM THE TREE (Trim the Tree v1, `sq-trim-tree-v1` — Agora
-  // only). One player hung an ornament on the ACTIVE tree: the
-  // server enforces the hidden first-only rule (only a player's
-  // first hang per tree counts toward the 25 — later hangs still
-  // succeed and render as extras, they just don't count), then
+  // only; v1.2 `sq-christmas-multi-v1.2` — every hang counts).
+  // One player hung an ornament on the ACTIVE tree: the server
+  // counts every hang toward the 25 (no per-person cap), then
   // broadcasts the new state to the room. When the 25th counted
   // ornament lands, the tree finishes: everyone hears about it,
   // every counted contributor earns the Trim the Tree badge (once
@@ -2552,15 +2553,14 @@ io.on('connection', (socket) => {
   });
 
   // CHRISTMAS LIGHTS (Christmas Lights v1, `sq-christmas-lights-v1`
-  // — Agora only). One player hung a light string on the north
-  // wall: the server enforces the hidden first-only rule (only a
-  // player's first hang counts toward the 25 — later hangs still
-  // succeed and render as extra bulbs, they just don't count),
-  // then broadcasts the new state to the room. When the 25th
-  // counted string lands, the room is lit: everyone hears about
-  // it, and every counted contributor earns the Christmas Lights
-  // badge (once ever). In-memory only in v1 — a server restart
-  // wipes the strands (see the lightRooms comment above).
+  // — Agora only; v1.2 `sq-christmas-multi-v1.2` — every hang
+  // counts). One player hung a light string on the north wall:
+  // the server counts every hang toward the 25, then broadcasts
+  // the new state to the room. When the 25th counted string lands,
+  // the room is lit: everyone hears about it, and every counted
+  // contributor earns the Christmas Lights badge (once ever).
+  // In-memory only in v1 — a server restart wipes the strands
+  // (see the lightRooms comment above).
   socket.on('light_hang', ({ roomId } = {}) => {
     if (!roomId || roomId !== 'agora-houston') return;
     if (!rooms[roomId] || !rooms[roomId][socket.id]) return;

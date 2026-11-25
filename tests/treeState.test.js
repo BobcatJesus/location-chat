@@ -1,5 +1,6 @@
-// treeState.test.js — Trim the Tree v1 (`sq-trim-tree-v1`).
-// Pure logic only: hidden first-only counting, 25 to finish,
+// treeState.test.js — Trim the Tree v1 (`sq-trim-tree-v1`),
+// v1.2 (`sq-christmas-multi-v1.2` — every hang counts).
+// Pure logic only: multi-hang counting, 25 to finish,
 // second tree in the same venue, max 2 trees, fill stages,
 // ornament slots, serialize / parse.
 
@@ -9,7 +10,6 @@ import {
   TREE_TOTAL,
   TREE_MAX,
   TREE_ORNAMENT_SLOTS,
-  TREE_EXTRA_SLOTS,
   ornamentStyle,
   createTreeState,
   treesDone,
@@ -37,10 +37,9 @@ describe('tree constants', () => {
     expect(TREE_MAX).toBe(2);
   });
 
-  it('has 25 ornament slots and 20 extra slots, all inside the tree triangle', () => {
+  it('has 25 ornament slots, all inside the tree triangle', () => {
     expect(TREE_ORNAMENT_SLOTS).toHaveLength(25);
-    expect(TREE_EXTRA_SLOTS).toHaveLength(20);
-    for (const s of [...TREE_ORNAMENT_SLOTS, ...TREE_EXTRA_SLOTS]) {
+    for (const s of TREE_ORNAMENT_SLOTS) {
       // Inside the triangle: |dx| shrinks toward the top (dy -275).
       const h = -s.dy;
       const halfWidth = 108 * (1 - h / 285);
@@ -76,20 +75,20 @@ describe('fill stages', () => {
   });
 });
 
-describe('hangOrnament — the hidden first-only rule', () => {
-  it('counts a player’s first hang and ignores their later hangs', () => {
+describe('hangOrnament — every hang counts (v1.2)', () => {
+  it('counts every hang, including repeats by the same player', () => {
     const s = createTreeState();
     const first = hangOrnament(s, 'alice');
     expect(first).toMatchObject({ ok: true, counted: true, treeFinished: false, tree: 1 });
     expect(s.trees[0].counted).toBe(1);
     const second = hangOrnament(s, 'alice');
-    expect(second).toMatchObject({ ok: true, counted: false });
-    expect(s.trees[0].counted).toBe(1);
-    expect(s.trees[0].extras).toBe(1);
+    expect(second).toMatchObject({ ok: true, counted: true });
+    expect(s.trees[0].counted).toBe(2);
+    expect(s.trees[0]).not.toHaveProperty('extras');
     const third = hangOrnament(s, 'alice');
-    expect(third.counted).toBe(false);
-    expect(s.trees[0].counted).toBe(1);
-    expect(s.trees[0].extras).toBe(2);
+    expect(third.counted).toBe(true);
+    expect(s.trees[0].counted).toBe(3);
+    expect(s.trees[0].hungBy.alice).toBe(3);
   });
 
   it('counts a second player’s first hang', () => {
@@ -109,7 +108,7 @@ describe('hangOrnament — the hidden first-only rule', () => {
 });
 
 describe('two trees per venue', () => {
-  it('finishes tree 1 at 25 distinct firsts and activates tree 2', () => {
+  it('finishes tree 1 at 25 hangs and activates tree 2', () => {
     const s = createTreeState();
     const users = Array.from({ length: 25 }, (_, i) => `user-${i}`);
     const results = hangMany(s, users);
@@ -123,17 +122,16 @@ describe('two trees per venue', () => {
     expect(activeTreeProgress(s)).toMatchObject({ tree: 2, counted: 0, total: 25 });
   });
 
-  it('tree 2 is a fresh round — tree 1 contributors count again', () => {
+  it('tree 2 is a fresh round — the same players count again, repeatedly', () => {
     const s = createTreeState();
     hangMany(s, Array.from({ length: 25 }, (_, i) => `user-${i}`));
-    // A tree-1 contributor's first hang on tree 2 counts.
+    // A tree-1 contributor's hangs on tree 2 count — every one.
     const res = hangOrnament(s, 'user-0');
     expect(res).toMatchObject({ ok: true, counted: true, tree: 2 });
     expect(s.trees[1].counted).toBe(1);
-    // ...but their second hang on tree 2 is an extra again.
-    expect(hangOrnament(s, 'user-0').counted).toBe(false);
-    expect(s.trees[1].counted).toBe(1);
-    expect(s.trees[1].extras).toBe(1);
+    expect(hangOrnament(s, 'user-0').counted).toBe(true);
+    expect(s.trees[1].counted).toBe(2);
+    expect(s.trees[1]).not.toHaveProperty('extras');
   });
 
   it('finishes tree 2 and then refuses further hangs (max 2)', () => {
@@ -148,12 +146,18 @@ describe('two trees per venue', () => {
     expect(hangOrnament(s, 'someone-new')).toMatchObject({ ok: false, reason: 'all-done' });
   });
 
-  it('one player alone can never finish a tree', () => {
+  it('one player alone CAN finish a tree now (v1.2)', () => {
     const s = createTreeState();
-    for (let i = 0; i < 30; i++) hangOrnament(s, 'solo');
-    expect(s.trees[0].counted).toBe(1);
-    expect(s.trees[0].extras).toBe(29);
-    expect(s.trees[0].completed).toBe(false);
+    let finish;
+    for (let i = 0; i < 25; i++) finish = hangOrnament(s, 'solo');
+    expect(finish).toMatchObject({ ok: true, counted: true, treeFinished: true, tree: 1 });
+    expect(s.trees[0].counted).toBe(25);
+    expect(s.trees[0].completed).toBe(true);
+    expect(s.active).toBe(1); // tree 2 appears
+    expect(s.trees[0]).not.toHaveProperty('extras');
+    // ...and the same player keeps counting on tree 2.
+    expect(hangOrnament(s, 'solo').counted).toBe(true);
+    expect(s.trees[1].counted).toBe(1);
   });
 });
 
@@ -164,8 +168,8 @@ describe('serialize / parse', () => {
     hangOrnament(s, 'alice');
     hangOrnament(s, 'bob');
     const parsed = parseTreeState(serializeTreeState(s));
-    expect(parsed.trees[0].counted).toBe(2);
-    expect(parsed.trees[0].extras).toBe(1);
+    expect(parsed.trees[0].counted).toBe(3);
+    expect(parsed.trees[0]).not.toHaveProperty('extras');
     expect(parsed.trees[0].contributors).toEqual(['alice', 'bob']);
     expect(parsed.trees[0].hungBy).toEqual({ alice: 2, bob: 1 });
     expect(parsed.active).toBe(0);
@@ -181,7 +185,7 @@ describe('serialize / parse', () => {
     });
     expect(parsed.active).toBe(-1); // both trees complete -> -1
     expect(parsed.trees[0].counted).toBe(25); // completed repairs counted to 25
-    expect(parsed.trees[0].extras).toBe(0);
+    expect(parsed.trees[0]).not.toHaveProperty('extras');
     expect(parsed.trees[0].contributors).toEqual([]);
     expect(parsed.trees[1].counted).toBe(25);
     expect(parsed.trees[1].completed).toBe(true);

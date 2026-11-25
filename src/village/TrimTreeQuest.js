@@ -1,36 +1,35 @@
-// TrimTreeQuest.js — Trim the Tree (Trim the Tree v1, `sq-trim-tree-v1`).
+// TrimTreeQuest.js — Trim the Tree (Trim the Tree v1, `sq-trim-tree-v1`;
+// v1.2 `sq-christmas-multi-v1.2` — every hang counts, the
+// one-per-person rule is gone, and coins pay per counted hang).
 //
 // A BIG Christmas tree stands in Agora, and an ornament box sits in
 // a corner of the room. Ornaments are FREE: walk to the box, press E
 // (or click it) to take one, walk to the tree, press E (or click the
 // tree) to hang it. 25 counted ornaments finish a tree; the tree
-// fills in STAGES as more people contribute (bare → sparse → half
+// fills in STAGES as more ornaments go up (bare → sparse → half
 // → full) — one ornament alone does not change the tree's stage.
 // The state is SHARED: everyone in the room sees the same tree,
 // the same count, the same ornaments (server/socket.js `tree_hang`
 // / `get_tree`, in-memory per room like the group puzzle).
 //
-// HIDDEN RULE (never explained in the UI — no text anywhere says
-// it): a player can hang as many ornaments as they like and the
-// process always works, but only their FIRST ornament on a tree
-// counts toward the 25. Extras still render on the tree (the player
-// sees their ornament go up) — they just do not advance the fill
-// stage or the X/25 counter. The tracker only ever shows X/25, and
-// the hang feedback is IDENTICAL for a counted hang and an extra
-// one, or the rule would leak.
+// MULTI-HANG (v1.2, `sq-christmas-multi-v1.2` — user decision):
+// every hang counts toward the 25, no per-person cap — there are
+// not 25 users yet to finish a tree the old way. The tracker
+// shows X/25 and the hang feedback states the count plainly;
+// there is nothing left to hide.
 //
 // Two trees per venue: when tree 1 is finished, tree 2 appears in
-// the SAME room (Agora). Tree 2 is a fresh round — everyone's first
-// ornament counts again on tree 2. A finished tree STAYS finished
-// (it is decor — no 60s auto-reset like the puzzle). Max 2 trees:
-// once tree 2 is done, the quest is over for the venue until a
-// server restart wipes the in-memory state.
+// the SAME room (Agora). Tree 2 is a fresh round — everyone counts
+// again on tree 2. A finished tree STAYS finished
+// (it is decor, not a puzzle that resets); there is no auto-reset.
+// Max 2 trees: once tree 2 is done, the quest is over for the
+// venue until a server restart wipes the in-memory state.
 //
-// Reward (BUILDER DECISION — the user never picked one): a badge
-// (wired into the existing badges system, one badge per completed
-// quest, once ever) + 5 coins to each counted contributor per tree,
-// same as the Group Puzzle. The user can change this without
-// touching the tree logic.
+// Reward: a badge (wired into the existing badges system, one
+// badge per completed quest, once ever) + 5 coins per counted
+// hang, paid client-side as hangs land (see _payForCountedHangs —
+// the paid count is tracked per profile per tree in localStorage,
+// so a hang pays exactly once, including across a refresh).
 //
 // Owned by VillageScene: constructed in create(), ticked in update(),
 // destroyed in shutdown(), refreshed on floor switches. Agora only
@@ -48,7 +47,6 @@ import {
   TREE_BOX_TAKE_RANGE,
   TREE_HANG_RANGE,
   TREE_ORNAMENT_SLOTS,
-  TREE_EXTRA_SLOTS,
   ornamentStyle,
   createTreeState,
   activeTreeProgress,
@@ -92,9 +90,20 @@ const TREE_LIGHT_SPOTS = [
   { dx: 0, dy: -160 }, { dx: -25, dy: -145 },
 ];
 
-// Per-profile paid-tree guard (same profile scoping as QuestManager
-// / PuzzleQuest): a counted contributor is paid +5 exactly once per
-// tree they helped finish.
+// Per-profile paid-tree counts (v1.2, `sq-christmas-multi-v1.2`):
+// coins pay +5 per COUNTED hang, as hangs land — not once per tree
+// on completion. The guard is a per-profile, per-tree count of
+// hangs already paid for, in localStorage under
+// 'sidequest-tree-paid-counts' ({ owner -> { 1: n, 2: m } }). The
+// guard is written BEFORE the async wallet call, so a double
+// broadcast can never pay twice; a refresh/reconnect re-reads the
+// state and pays only the difference. A server restart wipes the
+// in-memory room state (the persisted tree row reloads with its
+// hungBy intact, so the diff still holds); a lower counted total
+// than the stored paid count means a fresh epoch (see
+// owedTreeHangs). Same profile scoping as QuestManager /
+// ChristmasLightsQuest. (Guests share the 'shared' owner —
+// pre-existing, same as v1.)
 function currentOwner() {
   try {
     const raw = localStorage.getItem('sidequest_profile');
@@ -107,14 +116,56 @@ function currentOwner() {
   }
 }
 
-function loadPaidTrees() {
+function loadPaidTreeCounts() {
   try {
-    const raw = localStorage.getItem('sidequest-tree-paid');
-    const parsed = raw ? JSON.parse(raw) : {};
-    return parsed && typeof parsed === 'object' ? parsed : {};
+    const raw = localStorage.getItem('sidequest-tree-paid-counts');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') return parsed;
+    }
+  } catch {}
+  // Migrate the v1 guard ('sidequest-tree-paid', { owner: [treeNums]
+  // } — paid +5 once per tree on completion): a v1 contributor on a
+  // tree had exactly one counted hang there, so each listed tree
+  // migrates to a count of 1.
+  try {
+    const old = JSON.parse(localStorage.getItem('sidequest-tree-paid') || '{}');
+    const migrated = {};
+    for (const [owner, trees] of Object.entries(old || {})) {
+      if (!Array.isArray(trees)) continue;
+      const counts = {};
+      for (const t of trees) {
+        const n = Number(t);
+        if (Number.isInteger(n) && n >= 1 && n <= 2) counts[n] = 1;
+      }
+      if (Object.keys(counts).length) migrated[owner] = counts;
+    }
+    return migrated;
   } catch {
     return {};
   }
+}
+
+function savePaidTreeCounts(paid) {
+  try { localStorage.setItem('sidequest-tree-paid-counts', JSON.stringify(paid)); } catch {}
+}
+
+/**
+ * Pure diff for the per-hang payment on one tree: how many of my
+ * counted hangs there are still unpaid, and what the paid count
+ * becomes. `myCounted` is my total hangs on that tree in the
+ * current room state (hungBy[me]); `paidCount` is how many I have
+ * already been paid for on that tree. A counted total LOWER than
+ * the paid count means the room state was wiped (server restart)
+ * and started over — a fresh epoch, so the paid count resets to 0
+ * and the current hangs pay in full. Returns { owed, newPaid }.
+ */
+export function owedTreeHangs(myCounted, paidCount) {
+  const counted = Math.max(0, Number(myCounted) || 0);
+  const paid = Math.max(0, Number(paidCount) || 0);
+  if (counted <= 0) return { owed: 0, newPaid: paid };
+  if (counted < paid) return { owed: counted, newPaid: counted };
+  return { owed: counted - paid, newPaid: counted };
 }
 
 export class TrimTreeQuest {
@@ -129,7 +180,6 @@ export class TrimTreeQuest {
     this._treeContainers = new Map(); // 'tree1' | 'tree2' -> Phaser container
     this._boxContainer = null;
     this._pendingHangTree = null; // tree number of my hang awaiting server confirm
-    this._pendingWasContributor = false;
     this._lastCheckMs = 0;
   }
 
@@ -168,19 +218,20 @@ export class TrimTreeQuest {
     const prev = this.state;
     const next = parseTreeState(payload);
     // My hang, confirmed: I am a contributor on the tree I hung on
-    // now, and I was not one before — my first ornament counted.
-    // A hang the server counted as an extra leaves this false (I
-    // was already a contributor), and a rejected hang never appears
-    // here at all. The pending flag clears either way.
+    // now — every hang counts (v1.2), so any confirmed pending hang
+    // means I counted on that tree. The pending flag clears either way.
     if (this._pendingHangTree != null) {
       const tree = next.trees[this._pendingHangTree - 1];
-      if (tree && tree.contributors.includes(this._myUserId()) && !this._pendingWasContributor) {
+      if (tree && tree.contributors.includes(this._myUserId())) {
         this.myCountedTrees.add(this._pendingHangTree);
       }
       this._pendingHangTree = null;
-      this._pendingWasContributor = false;
     }
-    // Tree(s) that just finished: pay + badge contributors, once.
+    // Per-hang payment (v1.2, `sq-christmas-multi-v1.2`): pay for
+    // any of my counted hangs not yet paid for — this also heals a
+    // missed broadcast after a refresh/reconnect.
+    this._payForCountedHangs(next);
+    // Tree(s) that just finished: badge contributors, once.
     for (let i = 0; i < TREE_MAX; i++) {
       if (next.trees[i]?.completed && !prev.trees[i]?.completed) {
         this._onTreeCompleted(i + 1, next.trees[i]);
@@ -189,6 +240,46 @@ export class TrimTreeQuest {
     this.state = next;
     this._drawAll();
     this._bumpHud();
+  }
+
+  /**
+   * Pay +5 coins per counted hang of mine not yet paid for (v1.2,
+   * `sq-christmas-multi-v1.2`), per tree. Reads my total hangs on
+   * each tree from the room state (hungBy[me]), diffs against the
+   * per-profile per-tree paid counts in localStorage, and pays only
+   * the difference — a duplicate broadcast pays nothing, and a
+   * refresh/reconnect pays exactly the hangs that landed while I
+   * was away. The paid counts are written BEFORE the async wallet
+   * call, so a crash mid-payment cannot double-pay either. Silent
+   * per hang: the coins just land in the wallet.
+   */
+  _payForCountedHangs(state) {
+    try {
+      const owner = currentOwner();
+      const paid = loadPaidTreeCounts();
+      const mine = paid[owner] && typeof paid[owner] === 'object' ? paid[owner] : {};
+      let totalOwed = 0;
+      let changed = false;
+      for (let i = 0; i < TREE_MAX; i++) {
+        const treeNum = i + 1;
+        const counted = Number(state?.trees?.[i]?.hungBy?.[this._myUserId()]) || 0;
+        if (counted <= 0) continue;
+        const { owed, newPaid } = owedTreeHangs(counted, mine[treeNum]);
+        if (owed <= 0) continue;
+        mine[treeNum] = newPaid;
+        totalOwed += owed;
+        changed = true;
+      }
+      if (!changed) return;
+      paid[owner] = mine;
+      savePaidTreeCounts(paid);
+      const coins = totalOwed * TREE_REWARD_COINS;
+      try {
+        import('./CoinWallet.js')
+          .then((m) => m.earnCoins(coins, 'trim-tree'))
+          .catch(() => {});
+      } catch {}
+    } catch {}
   }
 
   /** A tree just finished (maybe by me, maybe by the room). */
@@ -208,26 +299,10 @@ export class TrimTreeQuest {
       // Quest badges v1: helping finish a tree earns the Trim the
       // Tree badge, once ever — a later tree finishing does not
       // re-earn it. The server awards the same badge to every
-      // contributor, so both paths converge.
+      // contributor, so both paths converge. (Coins are NOT paid
+      // here any more — v1.2 pays +5 per counted hang as hangs
+      // land, in _payForCountedHangs.)
       try { this.scene?.questManager?.recordTreeCompletion?.(); } catch {}
-      const paid = loadPaidTrees();
-      const owner = currentOwner();
-      const paidTrees = Array.isArray(paid[owner]) ? paid[owner] : [];
-      if (!paidTrees.includes(treeNum)) {
-        // Pay once per tree: record it BEFORE the async wallet call,
-        // so a double broadcast can't pay twice.
-        paid[owner] = [...paidTrees, treeNum].slice(-10);
-        try { localStorage.setItem('sidequest-tree-paid', JSON.stringify(paid)); } catch {}
-        try {
-          import('./CoinWallet.js')
-            .then((m) => m.earnCoins(TREE_REWARD_COINS, `tree-${treeNum}`))
-            .catch(() => {});
-        } catch {}
-        this.scene?.questManager?.showToast?.(
-          `🎉 Tree ${treeNum} is fully trimmed! +${TREE_REWARD_COINS} coins.`,
-        );
-        return;
-      }
     }
     this.scene?.questManager?.showToast?.(
       treeNum === 1
@@ -243,7 +318,9 @@ export class TrimTreeQuest {
   // ---- taking + hanging ornaments -------------------------------------
 
   /** Take a free ornament from the box. You can only carry one at a
-   *  time — taking another while carrying does nothing (silent). */
+   *  time — and you can take another after hanging one, as many
+   *  times as you like (v1.2, `sq-christmas-multi-v1.2`: every hang
+   *  counts, no one-per-person limit). */
   takeOrnament() {
     if (!this.enabled) return { ok: false, reason: 'not-available' };
     if (this.state.active < 0) {
@@ -254,43 +331,25 @@ export class TrimTreeQuest {
       try { this.scene?.onSystemNotice?.("🎄 You're already holding an ornament — hang it on the tree first."); } catch {}
       return { ok: false, reason: 'already-carrying' };
     }
-    // One per person (`sq-carry-ornament-v1`): one counted ornament
-    // per tree. The server already counts only your first hang per
-    // tree (contributors); the box just stops handing out seconds.
-    // Contributors come from server state, so the limit survives a
-    // refresh; the pending check covers the ~1s before the server
-    // confirms my hang.
-    const treeNum = this.state.active + 1;
-    const tree = this.state.trees[this.state.active];
-    const alreadyCounted = tree?.contributors?.includes(this._myUserId())
-      || this._pendingHangTree === treeNum;
-    if (alreadyCounted) {
-      try { this.scene?.onSystemNotice?.("🎄 You've already hung your ornament on this tree — one per person!"); } catch {}
-      return { ok: false, reason: 'already-took' };
-    }
     this.carrying = true;
     this._updateCarryIndicator();
     try { this.scene?.onSystemNotice?.('🎄 You took an ornament from the box. Hang it on the tree!'); } catch {}
     return { ok: true };
   }
 
-  /** Hang the ornament I am carrying on the ACTIVE tree. The
-   *  feedback is IDENTICAL whether the hang counted or was an extra
-   *  (the hidden rule must not leak): the same toast either way. */
+  /** Hang the ornament I am carrying on the ACTIVE tree. */
   hangOrnament() {
     if (!this.enabled) return { ok: false, reason: 'not-available' };
     if (!this.carrying) return { ok: false, reason: 'no-ornament' };
     if (this.state.active < 0) return { ok: false, reason: 'all-done' };
     const treeNum = this.state.active + 1;
-    const tree = this.state.trees[this.state.active];
     this._pendingHangTree = treeNum;
-    this._pendingWasContributor = (tree?.contributors || []).includes(this._myUserId());
     this.carrying = false;
     this._updateCarryIndicator();
     const socket = this.scene?.socket;
     if (socket?.connected) {
-      // The server validates (first-only counting) and broadcasts
-      // the new state to the room; applyState confirms it.
+      // The server validates and broadcasts the new state to the
+      // room; applyState confirms it.
       try { socket.emit('tree_hang', { roomId: this.scene.roomId }); } catch {}
       try { this.scene?.onSystemNotice?.('🎄 You hung an ornament on the tree!'); } catch {}
       return { ok: true, pending: true };
@@ -299,6 +358,9 @@ export class TrimTreeQuest {
     const res = hangOrnament(this.state, this._myUserId());
     if (!res.ok) return res;
     if (res.counted) this.myCountedTrees.add(res.tree);
+    // v1.2 (`sq-christmas-multi-v1.2`): pay for this hang now, from
+    // the local state the hang just updated.
+    this._payForCountedHangs(this.state);
     this._afterLocalChange('🎄 You hung an ornament on the tree!');
     if (res.treeFinished) this._onTreeCompleted(res.tree, this.state.trees[res.tree - 1]);
     return { ok: true, counted: res.counted };
@@ -465,17 +527,10 @@ export class TrimTreeQuest {
         g.fillCircle(l.dx, l.dy, 3.5);
       }
     }
-    // Counted ornaments, in their slots, in find order. Extras
-    // render at the extra slots — same shapes and sizes, so the
-    // hidden rule stays hidden: nothing on the tree tells you
-    // which ornaments counted and which did not.
+    // Counted ornaments, in their slots, in hang order.
     for (let i = 0; i < Math.min(tree.counted, TREE_TOTAL); i++) {
       const slot = TREE_ORNAMENT_SLOTS[i];
       if (slot) this._drawOrnament(g, slot.dx, slot.dy, ornamentStyle(i));
-    }
-    for (let k = 0; k < tree.extras; k++) {
-      const slot = TREE_EXTRA_SLOTS[k % TREE_EXTRA_SLOTS.length];
-      this._drawOrnament(g, slot.dx, slot.dy, ornamentStyle(TREE_TOTAL + k));
     }
     // Gold star on top — only when the tree is complete (stage 5).
     if (stage >= 5) this._drawStar(g, 0, -292, 16, 0xfbbf24);

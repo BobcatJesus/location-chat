@@ -1,5 +1,7 @@
 // lightState.js — shared Christmas Lights rules (Christmas Lights v1,
-// `sq-christmas-lights-v1`).
+// `sq-christmas-lights-v1`; v1.1 `sq-christmas-lights-v1.1` — hang range
+// 170 -> 100, see LIGHTS_HANG_RANGE; v1.2 `sq-christmas-multi-v1.2` —
+// every hang counts, the one-per-person rule is gone).
 //
 // Pure logic, no Phaser and no Node APIs, so BOTH sides import it:
 //   - server/socket.js (canonical room state, validates every hang)
@@ -9,18 +11,21 @@
 // The quest: a box of FREE light strings sits in the south-east
 // corner of Agora. Take one, walk to the north wall above the
 // coffee bar, hang it. 25 counted strings light the room — the
-// bulbs appear along the walls as more people contribute. One
+// bulbs appear along the walls as more strings go up. One
 // room, one round: when the 25th counted string lands, the room
 // is fully lit (the counter-front strand switches on too) and the
 // quest is done for the venue until a server restart wipes the
 // in-memory state.
 //
-// HIDDEN RULE (never explained in the UI): a player can hang as
-// many strings as they like and the process always works, but only
-// their FIRST string counts toward the 25. Extras still render as
-// bulbs on the walls (the player sees their lights go up) — they
-// just do not advance the X/25 counter. So the room needs 25
-// DIFFERENT people to light up.
+// MULTI-HANG (v1.2, `sq-christmas-multi-v1.2` — user decision):
+// every hang counts toward the 25, no per-person cap. There are
+// not 25 users yet to finish a room the old way, so a few players
+// hanging several strings each can light the room. `contributors`
+// still lists everyone who hung at least once (the badge list);
+// `hungBy` counts each player's total hangs (the per-hang coin
+// payment reads it). There is no `extras` concept any more —
+// counted IS the total hangs, and every hang renders a counted
+// bulb in its slot.
 //
 // This mirrors Trim the Tree (treeState.js) exactly, minus the
 // second tree: the tree has two rounds per venue, the lights have
@@ -33,12 +38,19 @@ export const LIGHTS_MARKER_V1 = 'sq-christmas-lights-v1';
 export const LIGHTS_TOTAL = 25; // counted strings that light the room
 export const LIGHTS_REWARD_COINS = 5; // same as Trim the Tree / Group Puzzle
 export const LIGHTS_BOX_TAKE_RANGE = 140; // px from the box to take a string
-export const LIGHTS_HANG_RANGE = 170; // px from the hang spot to hang it
+// v1.1 (`sq-christmas-lights-v1.1`): was 170 — that covered the whole
+// coffee-bar front AND the nearby tables, so the hang prompt appeared
+// (and the hang landed) while the player was still out by the tables.
+// 100 covers standing at the bar front (~50-70px from the spot) and
+// excludes the tables (~150px+). Changeable. Single source: both the
+// E-key/mobile-button check (nearestHangSpot) and the click check
+// (hangTapAt) read this constant, so one change covers both paths.
+export const LIGHTS_HANG_RANGE = 100; // px from the hang spot to hang it
 
-// Fill stages for the room, by COUNTED strings (firsts only).
+// Fill stages for the room, by counted strings.
 // Stage 0 covers 0-1 counted: the first string alone leaves the
-// walls looking bare — the strands fill in only as more PEOPLE
-// contribute. Individual counted bulbs still render in their slots
+// walls looking bare — the strands fill in only as more strings
+// go up. Individual counted bulbs still render in their slots
 // from the first hang (that is the feedback that a hang worked);
 // the STAGE is what stays bare.
 export const LIGHTS_STAGE_THRESHOLDS = [2, 7, 13, 19, 25];
@@ -72,18 +84,6 @@ export const LIGHTS_BULB_SLOTS = [
   { x: 100, y: 480 }, { x: 110, y: 555 }, { x: 100, y: 630 }, { x: 110, y: 705 },
 ];
 
-// Extra slots for strings past a player's first: extras render as
-// bulbs too (same sizes — the hidden rule must not be visible), at
-// these positions, cycling if there are more extras than slots.
-// Counted and extra slots never overlap.
-export const LIGHTS_EXTRA_SLOTS = [
-  { x: 266, y: 106 }, { x: 533, y: 106 }, { x: 800, y: 106 }, { x: 1066, y: 106 }, { x: 1333, y: 106 },
-  { x: 1495, y: 223 }, { x: 1495, y: 396 }, { x: 1495, y: 570 }, { x: 1495, y: 656 },
-  { x: 105, y: 217 }, { x: 105, y: 367 }, { x: 105, y: 517 }, { x: 105, y: 667 },
-  { x: 400, y: 100 }, { x: 666, y: 112 }, { x: 933, y: 100 }, { x: 1200, y: 112 },
-  { x: 1490, y: 310 }, { x: 110, y: 442 }, { x: 1495, y: 483 },
-];
-
 // Bulb colours cycle so the strands are not 25 identical dots.
 export const LIGHTS_BULB_COLORS = [0xfef08a, 0xef4444, 0x3b82f6, 0x22c55e, 0xec4899, 0xf97316];
 
@@ -95,10 +95,9 @@ export function bulbColor(index) {
 
 export function createLightState() {
   return {
-    counted: 0, // first-strings hung (0..25) — the X/25 number
-    extras: 0, // hangs past a player's first — render only, never counted
-    contributors: [], // user ids whose FIRST string counted
-    hungBy: {}, // userId -> total hangs (enforces first-only)
+    counted: 0, // strings hung (0..25) — the X/25 number; every hang counts (v1.2)
+    contributors: [], // user ids who hung at least once (the badge list)
+    hungBy: {}, // userId -> total hangs (per-hang coin payment reads this)
     completed: false,
     completedAt: 0, // Date.now() when the 25th counted string landed
   };
@@ -124,7 +123,6 @@ export function serializeLightState(state) {
   const s = state || createLightState();
   return {
     counted: Math.max(0, Math.min(LIGHTS_TOTAL, Number(s.counted) || 0)),
-    extras: Math.max(0, Math.min(999, Number(s.extras) || 0)),
     contributors: [...new Set((s.contributors || []).map((u) => String(u)).filter(Boolean))].slice(0, 50),
     hungBy: Object.fromEntries(
       Object.entries(s.hungBy || {})
@@ -142,7 +140,8 @@ export function parseLightState(raw) {
   const s = createLightState();
   if (!raw || typeof raw !== 'object') return s;
   s.counted = Math.max(0, Math.min(LIGHTS_TOTAL, Number(raw.counted) || 0));
-  s.extras = Math.max(0, Math.min(999, Number(raw.extras) || 0));
+  // v1.2 (`sq-christmas-multi-v1.2`): `extras` no longer exists —
+  // a legacy row carrying it is simply ignored.
   if (Array.isArray(raw.contributors)) {
     s.contributors = [...new Set(raw.contributors.map((u) => String(u)).filter(Boolean))].slice(0, 50);
   }
@@ -164,11 +163,9 @@ export function parseLightState(raw) {
  * One player hung a light string on the wall. Returns
  * { ok, counted, finished, contributors }.
  *
- * HIDDEN RULE: only the player's FIRST hang counts toward the 25.
- * Later hangs by the same player still succeed (ok: true,
- * counted: false) and render as extra bulbs — the caller must show
- * the SAME feedback for a counted hang and an extra one, or the
- * rule leaks. The 25th counted string finishes the room.
+ * MULTI-HANG (v1.2, `sq-christmas-multi-v1.2`): every hang counts
+ * toward the 25 — no per-person cap, no extras. The 25th hang
+ * finishes the room. `counted` is always true on a successful hang.
  */
 export function hangLight(state, userId) {
   const s = state || createLightState();
@@ -176,19 +173,80 @@ export function hangLight(state, userId) {
   const uid = String(userId || '');
   if (!uid) return { ok: false, reason: 'bad-user' };
   s.hungBy[uid] = (Number(s.hungBy[uid]) || 0) + 1;
-  let counted = false;
-  if (!s.contributors.includes(uid)) {
-    s.contributors.push(uid);
-    s.counted += 1;
-    counted = true;
-  } else {
-    s.extras += 1;
-  }
+  if (!s.contributors.includes(uid)) s.contributors.push(uid);
+  s.counted += 1;
   let finished = false;
   if (s.counted >= LIGHTS_TOTAL) {
     s.completed = true;
     s.completedAt = Date.now();
     finished = true;
   }
-  return { ok: true, counted, finished, contributors: [...s.contributors] };
+  return { ok: true, counted: true, finished, contributors: [...s.contributors] };
+}
+
+// ---- per-hang coin payment (v1.2, `sq-christmas-multi-v1.2`) ----
+// Coins pay +5 per COUNTED hang, client-side, tracked per profile
+// in localStorage so a hang pays exactly once — including across a
+// refresh/reconnect (the client re-applies the server state and the
+// diff below pays only what is still unpaid). The key is NEW in
+// v1.2: v1 paid once per profile on completion under the boolean
+// guard `sidequest-lights-paid`; that guard is migrated below.
+export const LIGHTS_PAID_COUNTS_KEY = 'sidequest-lights-paid-counts';
+
+export function loadPaidLightCounts() {
+  try {
+    const raw = localStorage.getItem(LIGHTS_PAID_COUNTS_KEY);
+    if (!raw) return migratePaidLightsGuard({});
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+export function savePaidLightCounts(paid) {
+  try {
+    localStorage.setItem(LIGHTS_PAID_COUNTS_KEY, JSON.stringify(paid || {}));
+  } catch {}
+}
+
+/**
+ * One-time migration from the v1 boolean guard
+ * (`sidequest-lights-paid`: { owner: true } — paid once, on
+ * completion). A profile that was paid under v1 counted exactly
+ * one hang, so it starts v1.2 with a paid count of 1.
+ */
+export function migratePaidLightsGuard(paid) {
+  try {
+    const raw = localStorage.getItem('sidequest-lights-paid');
+    if (!raw) return paid;
+    const old = JSON.parse(raw);
+    if (!old || typeof old !== 'object') return paid;
+    const next = { ...(paid || {}) };
+    for (const [owner, wasPaid] of Object.entries(old)) {
+      if (wasPaid === true && next[owner] == null) next[owner] = 1;
+    }
+    return next;
+  } catch {
+    return paid;
+  }
+}
+
+/**
+ * Pure diff: how many of my counted hangs are still unpaid?
+ * Returns { owed, newPaid } — `owed` is what to pay now (×5
+ * coins), `newPaid` is the paid count to store. A counted total
+ * LOWER than the paid count means the room state was wiped (a
+ * server restart) and started over, so the paid count resets to
+ * 0 and the current hangs pay in full.
+ */
+export function owedLightHangs(myCounted, paidCount) {
+  const counted = Number(myCounted) || 0;
+  const paid = Number(paidCount) || 0;
+  if (counted <= paid) {
+    return counted > 0 && paid > counted
+      ? { owed: counted, newPaid: counted }
+      : { owed: 0, newPaid: paid };
+  }
+  return { owed: counted - paid, newPaid: counted };
 }

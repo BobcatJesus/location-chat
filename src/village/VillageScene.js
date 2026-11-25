@@ -33,6 +33,7 @@ import { badgeListFrom, normalizeBadgeMap, formatBadgeDate } from './badges.js';
 import { io } from 'socket.io-client';
 import { RoomLayout } from './RoomLayout.js';
 import { stuckDropCheck } from './movement.js';
+import { showHangPrompt } from './promptPriority.js'; // Christmas Quests v1.2 (`sq-christmas-multi-v1.2`)
 import { pickLayout } from './layoutPicker.js';
 import { RoomEditor } from './RoomEditor.js';
 import { OutdoorEditor } from './OutdoorEditor.js';
@@ -1505,6 +1506,14 @@ export class VillageScene extends Phaser.Scene {
     if (this.cafeCat?.nearestCat(this.player.gx, this.player.gy)) return 'cat';
     if (this.cafeCat?.nearestSleepingCat(this.player.gx, this.player.gy)) return 'cat-asleep';
     if (this.puzzleQuest?.nearestTable(this.player.gx, this.player.gy)) return 'puzzle-table';
+    // Christmas Lights v1.3 (`sq-christmas-lights-v1.3`): with a
+    // light string in hand, hanging it wins the E key over the
+    // tree — the east/west strands pass within the trees' 170px
+    // hang ranges, so at the south corner spots E would otherwise
+    // hang an ornament (or offer one from the box) instead of the
+    // lights. The item in hand decides. Without a string in hand
+    // the order below is unchanged.
+    if (this.christmasLightsQuest?.carrying && this.christmasLightsQuest?.nearestHangSpot(this.player.gx, this.player.gy)) return 'christmas-lights';
     if (this.trimTreeQuest?.nearestBox(this.player.gx, this.player.gy)) return 'tree-box';
     if (this.trimTreeQuest?.nearestTree(this.player.gx, this.player.gy)) return 'trim-tree';
     if (this.christmasLightsQuest?.nearestBox(this.player.gx, this.player.gy)) return 'lights-box';
@@ -3520,13 +3529,19 @@ export class VillageScene extends Phaser.Scene {
 
     // Trim the Tree: prompt near the ornament box (take one) or near
     // the active tree (hang the one you are carrying — or grab one
-    // from the box first). The hidden first-only rule is never
-    // hinted at here; the prompt only ever says what to do next.
+    // from the box first). Carrying wins (v1.2,
+    // `sq-christmas-multi-v1.2`): with an ornament in hand the hang
+    // prompt shows whenever you are at the tree, even if the pond,
+    // the cat, or a puzzle table is also near. v1.3
+    // (`sq-christmas-lights-v1.3`): it stays quiet while a light
+    // string is in hand — the south light corners sit inside the
+    // trees' ranges, and "Grab an ornament" over "Hang the lights"
+    // would contradict itself.
     const nearBox = this.trimTreeQuest?.nearestBox(this.player.gx, this.player.gy);
     const nearTree = this.trimTreeQuest?.nearestTree(this.player.gx, this.player.gy);
     if (nearBox && !nearPond && !nearCat && !nearTable) {
       this.treePrompt.setText(noE('🎄 Take an ornament [E]')).setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
-    } else if (nearTree && !nearPond && !nearCat && !nearTable) {
+    } else if (showHangPrompt({ nearHangSpot: nearTree, nearPond, nearCat, nearTable, carrying: this.trimTreeQuest?.carrying, otherCarrying: this.christmasLightsQuest?.carrying })) {
       this.treePrompt.setText(
         this.trimTreeQuest?.carrying ? noE('🎄 Hang the ornament [E]') : '🎄 Grab an ornament from the box first',
       ).setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
@@ -3535,13 +3550,22 @@ export class VillageScene extends Phaser.Scene {
     }
 
     // Christmas Lights: prompt near the lights box (take one) or
-    // near the north wall (hang the one you are carrying — or grab
-    // one from the box first). Same hidden-rule silence as the tree.
+    // near a hang spot (hang the one you are carrying — or grab
+    // one from the box first). Carrying wins (v1.2,
+    // `sq-christmas-multi-v1.2`): with a light string in hand the
+    // hang prompt shows whenever you are at a spot, even if the
+    // pond, the cat, or a puzzle table is also near — this was the
+    // reported bug (standing at the coffee bar with a string in
+    // hand and no "Hang the lights" prompt at all). v1.3
+    // (`sq-christmas-lights-v1.3`): it stays quiet while an ornament
+    // is in hand, for the same corner-overlap reason as the tree
+    // prompt above. "At a spot" is any of the five hang spots
+    // (bar wall + four corners) — nearestHangSpot decides.
     const nearLightsBox = this.christmasLightsQuest?.nearestBox(this.player.gx, this.player.gy);
     const nearLightsWall = this.christmasLightsQuest?.nearestHangSpot(this.player.gx, this.player.gy);
     if (nearLightsBox && !nearPond && !nearCat && !nearTable) {
       this.lightsPrompt.setText(noE('💡 Take a light string [E]')).setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
-    } else if (nearLightsWall && !nearPond && !nearCat && !nearTable) {
+    } else if (showHangPrompt({ nearHangSpot: nearLightsWall, nearPond, nearCat, nearTable, carrying: this.christmasLightsQuest?.carrying, otherCarrying: this.trimTreeQuest?.carrying })) {
       this.lightsPrompt.setText(
         this.christmasLightsQuest?.carrying ? noE('💡 Hang the lights [E]') : '💡 Grab a light string from the box first',
       ).setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);

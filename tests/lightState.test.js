@@ -1,13 +1,15 @@
-// lightState.test.js — Christmas Lights v1 (`sq-christmas-lights-v1`).
-// Pure logic only: hidden first-only counting, 25 to light the room,
+// lightState.test.js — Christmas Lights v1 (`sq-christmas-lights-v1`),
+// v1.1 (`sq-christmas-lights-v1.1` — hang range 170 -> 100),
+// v1.2 (`sq-christmas-multi-v1.2` — every hang counts).
+// Pure logic only: multi-hang counting, 25 to light the room,
 // one round per venue, fill stages, bulb slots, serialize / parse.
 
 import { describe, it, expect } from 'vitest';
 import {
   LIGHTS_MARKER_V1,
   LIGHTS_TOTAL,
+  LIGHTS_HANG_RANGE,
   LIGHTS_BULB_SLOTS,
-  LIGHTS_EXTRA_SLOTS,
   bulbColor,
   createLightState,
   isLightsComplete,
@@ -33,10 +35,16 @@ describe('lights constants', () => {
     expect(LIGHTS_TOTAL).toBe(25);
   });
 
-  it('has 25 bulb slots and 20 extra slots, all inside the room', () => {
+  it('hang range is 100 in v1.1 — bar front in, tables out', () => {
+    // v1.1 (`sq-christmas-lights-v1.1`): 170 covered the whole bar
+    // front AND the nearby tables (~150px from the spot); 100 covers
+    // standing at the bar front (~50-70px) and excludes the tables.
+    expect(LIGHTS_HANG_RANGE).toBe(100);
+  });
+
+  it('has 25 bulb slots, all inside the room', () => {
     expect(LIGHTS_BULB_SLOTS).toHaveLength(25);
-    expect(LIGHTS_EXTRA_SLOTS).toHaveLength(20);
-    for (const s of [...LIGHTS_BULB_SLOTS, ...LIGHTS_EXTRA_SLOTS]) {
+    for (const s of LIGHTS_BULB_SLOTS) {
       expect(s.x).toBeGreaterThanOrEqual(80);
       expect(s.x).toBeLessThanOrEqual(1520);
       expect(s.y).toBeGreaterThanOrEqual(80);
@@ -52,7 +60,7 @@ describe('lights constants', () => {
 });
 
 describe('fill stages', () => {
-  it('stays bare on the first string, fills in as more people hang', () => {
+  it('stays bare on the first string, fills in as more strings go up', () => {
     expect(lightsStage(0)).toBe(0);
     expect(lightsStage(1)).toBe(0);
     expect(lightsStage(2)).toBe(1);
@@ -63,21 +71,32 @@ describe('fill stages', () => {
   });
 });
 
-describe('hangLight — hidden first-only counting', () => {
-  it('counts only the first hang per player toward the 25', () => {
+describe('hangLight — every hang counts (v1.2)', () => {
+  it('counts every hang, including repeats by the same player', () => {
     const s = createLightState();
     const r1 = hangLight(s, 'alice');
     expect(r1).toMatchObject({ ok: true, counted: true, finished: false });
     expect(s.counted).toBe(1);
     const r2 = hangLight(s, 'alice');
-    expect(r2).toMatchObject({ ok: true, counted: false });
-    expect(s.counted).toBe(1);
-    expect(s.extras).toBe(1);
+    expect(r2).toMatchObject({ ok: true, counted: true });
+    expect(s.counted).toBe(2);
+    expect(s).not.toHaveProperty('extras');
     expect(s.contributors).toEqual(['alice']);
     expect(s.hungBy.alice).toBe(2);
   });
 
-  it('finishes the room on the 25th DIFFERENT player', () => {
+  it('finishes the room on the 25th hang — one player alone can do it', () => {
+    const s = createLightState();
+    let r;
+    for (let i = 0; i < 25; i++) r = hangLight(s, 'solo');
+    expect(r).toMatchObject({ ok: true, counted: true, finished: true });
+    expect(s.completed).toBe(true);
+    expect(isLightsComplete(s)).toBe(true);
+    expect(s.counted).toBe(25);
+    expect(r.contributors).toEqual(['solo']);
+  });
+
+  it('finishes the room on the 25th hang across players', () => {
     const s = createLightState();
     const users = Array.from({ length: 24 }, (_, i) => `user-${i}`);
     hangMany(s, users);
@@ -118,10 +137,10 @@ describe('serialize / parse', () => {
   it('round-trips a mid-progress room', () => {
     const s = createLightState();
     hangMany(s, ['alice', 'bob', 'carol']);
-    hangLight(s, 'alice'); // extra
+    hangLight(s, 'alice'); // second hang by alice — counts too (v1.2)
     const back = parseLightState(serializeLightState(s));
-    expect(back.counted).toBe(3);
-    expect(back.extras).toBe(1);
+    expect(back.counted).toBe(4);
+    expect(back).not.toHaveProperty('extras');
     expect(back.contributors).toEqual(['alice', 'bob', 'carol']);
     expect(back.hungBy.alice).toBe(2);
     expect(back.completed).toBe(false);
@@ -136,9 +155,10 @@ describe('serialize / parse', () => {
   it('repairs garbage input to a fresh room', () => {
     expect(parseLightState(null)).toEqual(createLightState());
     expect(parseLightState('nope')).toEqual(createLightState());
+    // A legacy row carrying `extras` is ignored (v1.2 has no extras).
     const back = parseLightState({ counted: -5, extras: 99999, contributors: 'alice' });
     expect(back.counted).toBe(0);
-    expect(back.extras).toBe(999);
+    expect(back).not.toHaveProperty('extras');
     expect(back.contributors).toEqual([]);
   });
 
