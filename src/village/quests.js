@@ -146,6 +146,24 @@ export const QUESTS = [
     rewardCoins: 4,
     emoji: '🗺️',
   },
+  // Gift Giver v1 (`sq-gift-giver-v1`): give 3 gifts — mail one
+  // (MailSystem counts it on the send confirm) or hand one over
+  // in person (GiftSystem counts it on the recipient's confirm).
+  // Either way counts; gifts need wrapping paper (2 coins a sheet
+  // at the Agora bar), so the quest is never free to grind.
+  // rewardCoins 5 is a builder default — the user never set the
+  // amount; say so if it should change.
+  {
+    id: 'gift-giver',
+    title: 'Gift Giver',
+    description: 'Give 3 gifts — mail one, or hand one to someone in person. (Gifts need wrapping paper.)',
+    roomId: '*',
+    kind: 'solo',
+    event: 'gift-given',
+    target: 3,
+    rewardCoins: 5,
+    emoji: '🎁',
+  },
   {
     id: 'bartenders-errand',
     title: "The Bartender's Errand",

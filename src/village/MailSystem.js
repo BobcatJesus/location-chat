@@ -542,6 +542,11 @@ export class MailSystem {
       try { spendWrappingSheet(); } catch {}
       const removed = removeItem(pending.itemId);
       if (removed) {
+        // Gift Giver v1 (`sq-gift-giver-v1`): a mailed gift counts
+        // on the send confirm — the gift is in their inbox now.
+        // Direct gifts count in GiftSystem, on the recipient's
+        // confirm. Either way, one gift.
+        try { this.scene?.questManager?.recordGlobalEvent('gift-given'); } catch {}
         const name = typeof payload.recipientName === 'string' && payload.recipientName.trim()
           ? payload.recipientName.trim()
           : 'them';

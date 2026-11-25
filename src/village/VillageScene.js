@@ -19,6 +19,7 @@ import { QuestManager } from './QuestManager.js';
 import { ItemsSystem } from './ItemsSystem.js';
 import { NoticeBoardSystem } from './NoticeBoardSystem.js';
 import { MailSystem } from './MailSystem.js';
+import { GiftSystem } from './GiftSystem.js';
 import { DecorSystem } from './DecorSystem.js';
 import { FloorLitterSystem } from './FloorLitterSystem.js';
 // Catch a Litterbug v1 (`sq-litterbug-quest-v1`): how long the
@@ -511,6 +512,10 @@ export class VillageScene extends Phaser.Scene {
     this.onOpenBreadShop = d.onOpenBreadShop ?? (() => {});
     // Quest badges v1: opens another player's badges panel (DOM).
     this.onOpenPlayerBadges = d.onOpenPlayerBadges ?? (() => {});
+    // Gift Giver v1 (`sq-gift-giver-v1`): a direct gift offer
+    // arrived (DOM prompt) / the prompt should close.
+    this.onGiftOffer = d.onGiftOffer ?? (() => {});
+    this.onGiftOfferGone = d.onGiftOfferGone ?? (() => {});
     this.preferredCameraMode = ['ultra-close-follow', 'close-follow', 'follow', 'wide-follow', 'overview'].includes(d.preferredCameraMode)
       ? d.preferredCameraMode
       : null;
@@ -717,6 +722,10 @@ export class VillageScene extends Phaser.Scene {
     // room.
     this.mailSystem = new MailSystem(this);
     this.mailSystem.refresh();
+    // Gift Giver v1 (`sq-gift-giver-v1`): hand a gift to another
+    // player in the same room — offer / accept / decline, with the
+    // item + wrapping sheet moving only on the recipient's confirm.
+    this.giftSystem = new GiftSystem(this);
     // Decoration Shop v1 (`sq-dec-shop-v1`): buy decorations at the
     // Agora bar, place them anywhere — server-synced, everyone in
     // the room sees them. Placing works in every room; the shop
@@ -2795,6 +2804,34 @@ export class VillageScene extends Phaser.Scene {
     socket.on('mail_arrived', (payload = {}) => {
       this.mailSystem?.onMailArrived(payload);
     });
+
+    // Gift Giver v1 (`sq-gift-giver-v1`): the direct-give
+    // handshake — offer in, answers out, receipt in. The gift
+    // moves only on the recipient's confirm (onGiftConfirmed).
+    socket.on('gift_offered', (payload = {}) => {
+      this.giftSystem?.onGiftOffered(payload);
+    });
+    socket.on('gift_offer_result', (payload = {}) => {
+      this.giftSystem?.onOfferResult(payload);
+    });
+    socket.on('gift_offer_accepted', (payload = {}) => {
+      this.giftSystem?.onGiftOfferAccepted(payload);
+    });
+    socket.on('gift_received', (payload = {}) => {
+      this.giftSystem?.onGiftReceived(payload);
+    });
+    socket.on('gift_confirmed', (payload = {}) => {
+      this.giftSystem?.onGiftConfirmed(payload);
+    });
+    socket.on('gift_declined', (payload = {}) => {
+      this.giftSystem?.onGiftDeclined(payload);
+    });
+    socket.on('gift_failed', (payload = {}) => {
+      this.giftSystem?.onGiftFailed(payload);
+    });
+    socket.on('gift_offer_gone', (payload = {}) => {
+      this.giftSystem?.onGiftOfferGone(payload);
+    });
     // The room finished the puzzle — re-ask for the canonical state
     // (the puzzle_state broadcast just before this carries it too;
     // this covers a missed broadcast). Completion handling itself
@@ -4052,6 +4089,8 @@ export class VillageScene extends Phaser.Scene {
     this.noticeBoardSystem = null;
     this.mailSystem?.destroy();
     this.mailSystem = null;
+    this.giftSystem?.destroy(); // Gift Giver v1 (`sq-gift-giver-v1`)
+    this.giftSystem = null;
     this.decorSystem?.destroy();
     this.decorSystem = null;
     this.floorLitterSystem?.destroy();

@@ -703,6 +703,10 @@ const QUEST_DEFS = {
   // player's drop, or a Shepherd Park NPC's cup. One catch
   // completes it; the badge is automatic like every quest.
   'litterbug': { target: 1, rewardCoins: 5 },
+  // Gift Giver v1 (`sq-gift-giver-v1`): give 3 gifts, mailed or
+  // handed over in person. Must be here or quest_progress for it
+  // is silently dropped and the badge is not a known id.
+  'gift-giver': { target: 3, rewardCoins: 5 },
 };
 // Quest badges (Quest Completions / Badges v1,
 // `sq-quest-badges-v1`): one badge per completed quest, per player,
@@ -880,6 +884,37 @@ const userMailInbox = {};
 function mailInboxFor(userId) {
   if (!userMailInbox[userId]) userMailInbox[userId] = createMailState();
   return userMailInbox[userId];
+}
+// Gift Giver v1 (`sq-gift-giver-v1`): live direct-gift offers —
+// giftOffers[offerId] = { fromSocketId, toSocketId, roomId, item,
+// fromName, createdAt }. In-memory only, like the room state: an
+// offer dies on a restart, a disconnect, or after GIFT_OFFER_TTL_MS
+// (the giver's client also times out at 60s and cancels). The
+// server holds the cleaned item from offer to accept, so the
+// recipient gets exactly what was offered — the giver's pocket is
+// the only copy until the recipient confirms receipt, when the
+// giver removes it (same pending pattern as mail_send).
+const giftOffers = new Map();
+const GIFT_OFFER_TTL_MS = 60000;
+/** Drop expired offers, telling both sides they are gone. */
+function sweepGiftOffers() {
+  const now = Date.now();
+  for (const [offerId, offer] of [...giftOffers.entries()]) {
+    if (now - offer.createdAt <= GIFT_OFFER_TTL_MS) continue;
+    giftOffers.delete(offerId);
+    try { io.to(offer.fromSocketId).emit('gift_offer_gone', { offerId }); } catch {}
+    try { io.to(offer.toSocketId).emit('gift_offer_gone', { offerId }); } catch {}
+  }
+}
+/** Drop every offer involving this socket (disconnect / leave) and
+ *  tell the other side, silently — the offer just expires. */
+function dropGiftOffersFor(socketId) {
+  for (const [offerId, offer] of [...giftOffers.entries()]) {
+    if (offer.fromSocketId !== socketId && offer.toSocketId !== socketId) continue;
+    giftOffers.delete(offerId);
+    const other = offer.fromSocketId === socketId ? offer.toSocketId : offer.fromSocketId;
+    try { io.to(other).emit('gift_offer_gone', { offerId }); } catch {}
+  }
 }
 const userMailInboxLoaded = new Set(); // userIds whose DB row has been read (or attempted)
 const userMailLoadPromises = {}; // userId -> in-flight load promise
@@ -2935,6 +2970,149 @@ io.on('connection', (socket) => {
     }
   });
 
+  // GIFT GIVER (Gift Giver v1, `sq-gift-giver-v1`). Hand a gift to
+  // another player in the SAME room: offer → accept/decline →
+  // recipient confirms receipt. The server relays and holds the
+  // offer (in-memory, giftOffers); the clients hold the inventory
+  // — the giver removes the item and spends the wrapping sheet
+  // only when the recipient confirms receipt (gift_received_confirm),
+  // the same pending pattern as mail_send. A raw socket emit cannot
+  // send an unwrapped gift (wrapped flag required, same as mail) or
+  // smuggle an unsendable item (cleanMailItem refuses puzzle
+  // pieces, the Santa hat, the mailbox key and wrapping paper).
+  // Honest limit, same trust boundary as mail and coins: the server
+  // verifies the wrapped flag, not the giver's sheet count — the
+  // inventory lives client-side. Offers die on disconnect, on
+  // cancel, or after 60s (sweepGiftOffers).
+  socket.on('gift_offer', ({ roomId, offerId, toSocketId, item, fromName, wrapped } = {}) => {
+    if (!roomId) return;
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    sweepGiftOffers();
+    const userId = socketUserMap[socket.id] || socket.id;
+    const rate = checkRateLimit(userId);
+    if (!rate.allowed) {
+      socket.emit('gift_offer_result', { offerId, ok: false, reason: 'rate-limited' });
+      return;
+    }
+    const cleanOfferId = String(offerId || '').trim();
+    if (!cleanOfferId) return;
+    const to = String(toSocketId || '').trim();
+    if (!to || to === socket.id) {
+      socket.emit('gift_offer_result', { offerId: cleanOfferId, ok: false, reason: 'self-give' });
+      return;
+    }
+    if (!rooms[roomId][to]) {
+      socket.emit('gift_offer_result', { offerId: cleanOfferId, ok: false, reason: 'not-in-room' });
+      return;
+    }
+    const cleanItem = cleanMailItem(item);
+    if (!cleanItem) {
+      socket.emit('gift_offer_result', { offerId: cleanOfferId, ok: false, reason: 'not-sendable' });
+      return;
+    }
+    if (wrapped !== true) {
+      socket.emit('gift_offer_result', { offerId: cleanOfferId, ok: false, reason: 'not-wrapped' });
+      return;
+    }
+    giftOffers.set(cleanOfferId, {
+      fromSocketId: socket.id,
+      toSocketId: to,
+      roomId,
+      item: cleanItem,
+      // sq-gift-giver-v1 — the emoji is display-only (the cleaned
+      // item carries no emoji); pass the giver's through, clamped,
+      // so the recipient's prompt shows the gift.
+      emoji: typeof item?.emoji === 'string' ? item.emoji.slice(0, 8) : null,
+      fromName: typeof fromName === 'string' && fromName.trim()
+        ? fromName.trim().slice(0, 80)
+        : (rooms[roomId][socket.id]?.name || 'Someone'),
+      createdAt: Date.now(),
+    });
+    socket.emit('gift_offer_result', { offerId: cleanOfferId, ok: true });
+    io.to(to).emit('gift_offered', {
+      offerId: cleanOfferId,
+      fromSocketId: socket.id,
+      fromName: giftOffers.get(cleanOfferId).fromName,
+      item: { type: cleanItem.type, label: cleanItem.label || null, emoji: giftOffers.get(cleanOfferId).emoji },
+    });
+  });
+
+  // The recipient accepted: hand them the gift (from the server's
+  // copy of the offer) and tell the giver it was accepted. The
+  // giver's item + sheet move only when the recipient confirms
+  // receipt (gift_received_confirm) — a full pocket on their side
+  // (gift_receive_failed) leaves everything with the giver.
+  socket.on('gift_accept', ({ roomId, offerId } = {}) => {
+    if (!roomId) return;
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    sweepGiftOffers();
+    const offer = giftOffers.get(String(offerId || ''));
+    if (!offer || offer.toSocketId !== socket.id || offer.roomId !== roomId) return;
+    if (!rooms[roomId][offer.fromSocketId]) {
+      giftOffers.delete(String(offerId || ''));
+      socket.emit('gift_offer_gone', { offerId: String(offerId || '') });
+      return;
+    }
+    io.to(socket.id).emit('gift_received', {
+      offerId: String(offerId || ''),
+      item: offer.item,
+      fromName: offer.fromName,
+    });
+    io.to(offer.fromSocketId).emit('gift_offer_accepted', {
+      offerId: String(offerId || ''),
+      toName: rooms[roomId][socket.id]?.name || 'them',
+    });
+  });
+
+  // The recipient declined: the offer dies, nothing moves.
+  socket.on('gift_decline', ({ roomId, offerId } = {}) => {
+    if (!roomId) return;
+    sweepGiftOffers();
+    const offer = giftOffers.get(String(offerId || ''));
+    if (!offer || offer.toSocketId !== socket.id || offer.roomId !== roomId) return;
+    giftOffers.delete(String(offerId || ''));
+    io.to(offer.fromSocketId).emit('gift_declined', { offerId: String(offerId || '') });
+  });
+
+  // The giver changed their mind before an answer: the offer dies,
+  // the recipient's prompt closes silently.
+  socket.on('gift_cancel', ({ roomId, offerId } = {}) => {
+    if (!roomId) return;
+    sweepGiftOffers();
+    const offer = giftOffers.get(String(offerId || ''));
+    if (!offer || offer.fromSocketId !== socket.id || offer.roomId !== roomId) return;
+    giftOffers.delete(String(offerId || ''));
+    io.to(offer.toSocketId).emit('gift_offer_gone', { offerId: String(offerId || '') });
+  });
+
+  // The recipient got the gift into their pocket: tell the giver to
+  // remove the item, spend the sheet, and count the gift.
+  socket.on('gift_received_confirm', ({ roomId, offerId } = {}) => {
+    if (!roomId) return;
+    sweepGiftOffers();
+    const offer = giftOffers.get(String(offerId || ''));
+    if (!offer || offer.toSocketId !== socket.id || offer.roomId !== roomId) return;
+    giftOffers.delete(String(offerId || ''));
+    io.to(offer.fromSocketId).emit('gift_confirmed', {
+      offerId: String(offerId || ''),
+      fromName: offer.fromName,
+    });
+  });
+
+  // The recipient's pocket was full after all: the gift stays with
+  // the giver — nothing spent, nothing counted.
+  socket.on('gift_receive_failed', ({ roomId, offerId } = {}) => {
+    if (!roomId) return;
+    sweepGiftOffers();
+    const offer = giftOffers.get(String(offerId || ''));
+    if (!offer || offer.toSocketId !== socket.id || offer.roomId !== roomId) return;
+    giftOffers.delete(String(offerId || ''));
+    io.to(offer.fromSocketId).emit('gift_failed', {
+      offerId: String(offerId || ''),
+      reason: 'inventory-full',
+    });
+  });
+
   // MAILBOX: ask for my own inbox (on connect, and on reconnect —
   // the first state with unread mail fires the login toast).
   // Mail persistence (`sq-mail-persist-v1`): load first, so a
@@ -3587,6 +3765,9 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     console.log(`❌ Client disconnected: ${socket.id}`);
     delete socketUserMap[socket.id];
+    // sq-gift-giver-v1 — any live gift offer involving this socket
+    // dies, and the other side's prompt/pending state clears.
+    dropGiftOffersFor(socket.id);
     removePresence(socket.id).catch(() => {});
     delete socketCreatorRooms[socket.id];
     Object.keys(rooms).forEach((roomId) => {

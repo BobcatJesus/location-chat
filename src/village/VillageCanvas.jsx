@@ -17,6 +17,9 @@ import PlayerBadgesPanel from './PlayerBadgesPanel.jsx';
 import InteriorSketchModal from './InteriorSketchModal.jsx';
 import ModQueuePanel from './ModQueuePanel.jsx';
 import { getCoins } from './CoinWallet.js';
+// Gift Giver v1 (`sq-gift-giver-v1`): the give picker needs to know
+// whether the giver holds a sheet of wrapping paper.
+import { hasWrappingPaper } from './items.js';
 // Agora Graphic-Novel Reskin v1 (`sq-agora-reskin-v1`): the comic
 // style test toggle — localStorage flag, default off (original look).
 import { isComicStyleOn, setComicStyleOn } from './comicStyle.js';
@@ -309,6 +312,11 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
   // Quest badges v1: another player's badges panel, opened by
   // clicking them ({ socketId } or null).
   const [openPlayerBadges, setOpenPlayerBadges] = useState(null);
+  // Gift Giver v1 (`sq-gift-giver-v1`): a direct gift offer from
+  // another player in this room ({ offerId, fromName, item } or
+  // null) — Accept / Decline. The scene calls onGiftOffer /
+  // onGiftOfferGone when one arrives / closes.
+  const [incomingGiftOffer, setIncomingGiftOffer] = useState(null);
   const [inventoryCount, setInventoryCount] = useState(null); // "n/cap" for the bottom-left button badge
 
   // Refresh coin balance when jukebox closes or every 5s
@@ -722,6 +730,11 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
       // counter bread panel (DOM) in a food-shop room.
       onOpenBreadShop: () => setOpenBreadShop(true),
       onOpenPlayerBadges: (info) => setOpenPlayerBadges(info),
+      // Gift Giver v1 (`sq-gift-giver-v1`): a direct gift offer
+      // arrived (show the Accept / Decline prompt) / the prompt
+      // should close (declined, accepted, expired, they left).
+      onGiftOffer: (offer) => setIncomingGiftOffer(offer),
+      onGiftOfferGone: () => setIncomingGiftOffer(null),
       onNearbyNpcChange: setNearbyNpc,
       onNpcConversationClear: ({ npcId } = {}) => {
         setMessages((prev) => prev.filter((msg) => msg.channel !== 'npc' || msg.npcId !== npcId));
@@ -1196,8 +1209,65 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
       {openPlayerBadges && (
         <PlayerBadgesPanel
           getState={() => gameRef.current?.scene?.getScene('VillageScene')?.getPlayerBadges?.(openPlayerBadges.socketId)}
+          // Gift Giver v1 (`sq-gift-giver-v1`): hand them a gift in
+          // person — pick a sendable pocket item, they accept or
+          // decline. The gift + wrapping sheet move only on accept.
+          getSendableItems={() => gameRef.current?.scene?.getScene('VillageScene')?.giftSystem?.getSendableItems?.() || []}
+          onOfferGift={(itemId) => gameRef.current?.scene?.getScene('VillageScene')?.giftSystem?.offerGift?.(openPlayerBadges.socketId, itemId) || { ok: false, reason: 'error' }}
+          isOfferPending={() => gameRef.current?.scene?.getScene('VillageScene')?.giftSystem?.isOfferPendingTo?.(openPlayerBadges.socketId) || false}
+          hasWrappingPaper={() => {
+            try { return hasWrappingPaper(); } catch { return true; }
+          }}
           onClose={() => setOpenPlayerBadges(null)}
         />
+      )}
+      {incomingGiftOffer && (
+        <div
+          style={{
+            position: 'absolute', inset: 0, zIndex: 1200,
+            background: 'rgba(15,23,42,0.72)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: 12,
+          }}
+        >
+          <div
+            style={{
+              background: '#fff7e6', color: '#1a4971', borderRadius: 12,
+              padding: 16, width: 'min(380px, calc(100vw - 24px))',
+              boxShadow: '0 4px 24px rgba(0,0,0,0.4)',
+            }}
+          >
+            <div style={{ fontWeight: 'bold', fontSize: 17 }}>🎁 A gift for you!</div>
+            <div style={{ fontSize: 14, marginTop: 8 }}>
+              {incomingGiftOffer.fromName} wants to give you {incomingGiftOffer.item?.emoji || '🎁'} {incomingGiftOffer.item?.label || 'a gift'}.
+            </div>
+            <div style={{ fontSize: 12.5, color: '#3d6a8a', marginTop: 6 }}>
+              Accept and it lands in your pocket, wrapped. Decline and nothing moves.
+            </div>
+            <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+              <button
+                onClick={() => gameRef.current?.scene?.getScene('VillageScene')?.giftSystem?.acceptOffer?.()}
+                style={{
+                  flex: 1, background: '#1a4971', color: '#fff', border: 'none',
+                  borderRadius: 8, padding: '10px 12px', cursor: 'pointer',
+                  fontSize: 14, fontWeight: 'bold',
+                }}
+              >
+                Accept 🎁
+              </button>
+              <button
+                onClick={() => gameRef.current?.scene?.getScene('VillageScene')?.giftSystem?.declineOffer?.()}
+                style={{
+                  flex: 1, background: 'transparent', color: '#1a4971',
+                  border: '1px solid #1a4971', borderRadius: 8, padding: '10px 12px',
+                  cursor: 'pointer', fontSize: 14, fontWeight: 'bold',
+                }}
+              >
+                Decline
+              </button>
+            </div>
+          </div>
+        </div>
       )}
       {systemNotice && (
         <div style={{
