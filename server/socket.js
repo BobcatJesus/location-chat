@@ -42,6 +42,12 @@ import {
   serializeLightState,
 } from '../src/village/lightState.js';
 import {
+  SNOW_MARKER_V1,
+  createSnowState,
+  addSnowball,
+  serializeSnowState,
+} from '../src/village/snowState.js';
+import {
   HAT_MARKER_V1,
   createHatState,
   findHat,
@@ -722,7 +728,7 @@ const QUEST_DEFS = {
 // completions can't be recovered: no persistent record of past
 // puzzle contributors exists anywhere (the puzzle state resets
 // every round).
-const BADGE_QUEST_IDS = new Set([...Object.keys(QUEST_DEFS), 'group-puzzle', 'trim-tree', 'christmas-lights', HUNGRY_CAT_QUEST_ID]);
+const BADGE_QUEST_IDS = new Set([...Object.keys(QUEST_DEFS), 'group-puzzle', 'trim-tree', 'christmas-lights', 'build-a-snowman', HUNGRY_CAT_QUEST_ID]);
 const userBadges = {};
 function badgeMapFor(userId) {
   if (!userBadges[userId]) userBadges[userId] = {};
@@ -1127,6 +1133,23 @@ const lightRooms = {};
 function lightRoom(roomId) {
   if (!lightRooms[roomId]) lightRooms[roomId] = { state: createLightState() };
   return lightRooms[roomId];
+}
+// Build a Snowman (Build a Snowman v1, `sq-build-snowman-v1`):
+// per-room state snowRooms[roomId] = { state }. Shepherd Park
+// only. The state is IN-MEMORY ONLY in v1 — a server restart
+// wipes the snowman, exactly like the lights/tree before their
+// persistence pieces. A persistence piece can follow the same
+// pattern later (a snowman_room_state table + lazy load + save on
+// add). Unlike the tree there is NO second round: 15 counted
+// snowballs build the snowman and the quest is done for the venue.
+// The server enforces multi-hang counting (addSnowball counts
+// every add), room membership, and rate limits; it does not verify
+// the pile take or the walk to the snowman — same trust level as
+// the lights' box take and the tree's box take.
+const snowRooms = {};
+function snowRoom(roomId) {
+  if (!snowRooms[roomId]) snowRooms[roomId] = { state: createSnowState() };
+  return snowRooms[roomId];
 }
 // Santa Hat (Santa Hat v1, `sq-santa-hat-v1`; persistence
 // `sq-hat-persist-v1`): ONE hat hidden behind the Christmas tree
@@ -2604,6 +2627,51 @@ io.on('connection', (socket) => {
     if (!roomId || roomId !== 'agora-houston') return;
     if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
     socket.emit('lights_state', serializeLightState(lightRoom(roomId).state));
+  });
+
+  // BUILD A SNOWMAN (Build a Snowman v1, `sq-build-snowman-v1`):
+  // one player added a snowball to the snowman in Shepherd Park.
+  // Every add counts toward the 15 (multi-hang from the start —
+  // the same user decision as the lights/tree), then the server
+  // broadcasts the new state to the room. When the 15th counted
+  // snowball lands, the snowman stands: everyone hears about it,
+  // and every counted contributor earns the Build a Snowman badge
+  // (once ever).
+  // In-memory only in v1 — a server restart wipes the snowman
+  // (see the snowRooms comment above).
+  socket.on('snow_add', ({ roomId } = {}) => {
+    if (!roomId || roomId !== 'shepherd-park') return;
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const userId = socketUserMap[socket.id] || socket.id;
+    const rate = checkRateLimit(userId);
+    if (!rate.allowed) return;
+    const room = snowRoom(roomId);
+    const res = addSnowball(room.state, userId);
+    if (!res.ok) return;
+    io.to(roomId).emit('snow_state', serializeSnowState(room.state));
+    if (res.finished) {
+      io.to(roomId).emit('snow_completed', {
+        contributors: [...res.contributors],
+      });
+      // Quest badges v1: every counted contributor earns the
+      // Build a Snowman badge, once ever — tell the room about
+      // each of them.
+      for (const contributorId of [...res.contributors]) {
+        if (awardBadge(contributorId, 'build-a-snowman', Date.now())) {
+          const sid = socketIdForUser(contributorId);
+          if (sid) {
+            io.to(roomId).emit('player_badges', { socketId: sid, userId: contributorId, badges: badgesArrayFor(contributorId) });
+          }
+        }
+      }
+    }
+  });
+
+  // BUILD A SNOWMAN STATE: the room's snowman, sent when you join (or ask).
+  socket.on('get_snowman', ({ roomId } = {}) => {
+    if (!roomId || roomId !== 'shepherd-park') return;
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    socket.emit('snow_state', serializeSnowState(snowRoom(roomId).state));
   });
 
   // SANTA HAT (Santa Hat v1, `sq-santa-hat-v1`): one hat hidden

@@ -82,6 +82,20 @@ export const CHRISTMAS_LIGHTS_BADGE = {
   emoji: '💡',
 };
 
+/** The Build a Snowman badge — Build a Snowman v1
+ *  (`sq-build-snowman-v1`): not a QuestManager quest either
+ *  (the snowman is a shared group quest like the tree and the
+ *  lights, so its def lives here). id must match what
+ *  SnowmanQuest and the server use ('build-a-snowman').
+ *  Earned once ever for helping build the snowman in Shepherd
+ *  Park. */
+export const BUILD_A_SNOWMAN_BADGE = {
+  id: 'build-a-snowman',
+  title: 'Build a Snowman',
+  description: 'Help build a snowman in Shepherd Park.',
+  emoji: '⛄',
+};
+
 /** The Hungry Cat badge — Hungry Cat v1 (`sq-hungry-cat-v1`): not
  *  a QuestManager quest either (the hunger quest is repeatable,
  *  twice a day, so it lives outside the one-time quest flow — see
@@ -101,6 +115,11 @@ export const BADGE_QUEST_IDS = [
   ...QUESTS.map((q) => q.id),
   GROUP_PUZZLE_BADGE.id,
   TRIM_TREE_BADGE.id,
+  // Lights badge display fix (sq-lights-badge-fix-v1): the def
+  // existed but this id was missing from the list (and from
+  // getBadgeDef below), so an earned lights badge never rendered.
+  CHRISTMAS_LIGHTS_BADGE.id,
+  BUILD_A_SNOWMAN_BADGE.id,
   HUNGRY_CAT_BADGE.id,
 ];
 
@@ -117,6 +136,8 @@ export function isBadgeQuestId(questId) {
 export function getBadgeDef(questId) {
   if (questId === GROUP_PUZZLE_BADGE.id) return { ...GROUP_PUZZLE_BADGE };
   if (questId === TRIM_TREE_BADGE.id) return { ...TRIM_TREE_BADGE };
+  if (questId === CHRISTMAS_LIGHTS_BADGE.id) return { ...CHRISTMAS_LIGHTS_BADGE };
+  if (questId === BUILD_A_SNOWMAN_BADGE.id) return { ...BUILD_A_SNOWMAN_BADGE };
   if (questId === HUNGRY_CAT_BADGE.id) return { ...HUNGRY_CAT_BADGE };
   const q = getQuest(questId);
   if (!q) return null;

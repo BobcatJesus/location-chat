@@ -7,6 +7,7 @@ import {
   BADGES_BACKFILL_MARKER_V1_1,
   GROUP_PUZZLE_BADGE,
   TRIM_TREE_BADGE,
+  CHRISTMAS_LIGHTS_BADGE,
   BADGE_QUEST_IDS,
   isBadgeQuestId,
   getBadgeDef,
@@ -37,6 +38,7 @@ describe('badge defs', () => {
     expect(BADGE_QUEST_IDS).toContain('bartenders-errand');
     expect(BADGE_QUEST_IDS).toContain('group-puzzle');
     expect(BADGE_QUEST_IDS).toContain('trim-tree');
+    expect(BADGE_QUEST_IDS).toContain('christmas-lights');
   });
 
   it('resolves the group puzzle def (not a QuestManager quest)', () => {
@@ -49,6 +51,16 @@ describe('badge defs', () => {
     const def = getBadgeDef('trim-tree');
     expect(def).toMatchObject({ id: 'trim-tree', emoji: '🎄' });
     expect(def.title).toBe(TRIM_TREE_BADGE.title);
+  });
+
+  // Lights badge display fix (sq-lights-badge-fix-v1): the def
+  // existed but the id was missing from BADGE_QUEST_IDS and
+  // getBadgeDef, so an earned lights badge never rendered.
+  it('resolves the christmas lights def (not a QuestManager quest)', () => {
+    const def = getBadgeDef('christmas-lights');
+    expect(def).toMatchObject({ id: 'christmas-lights', emoji: '💡' });
+    expect(def.title).toBe(CHRISTMAS_LIGHTS_BADGE.title);
+    expect(isBadgeQuestId('christmas-lights')).toBe(true);
   });
 
   it('resolves a solo quest def from quests.js', () => {

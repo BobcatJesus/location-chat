@@ -6,6 +6,7 @@ import { HiddenKey } from './HiddenKey.js';
 import { PuzzleQuest } from './PuzzleQuest.js';
 import { TrimTreeQuest } from './TrimTreeQuest.js';
 import { ChristmasLightsQuest } from './ChristmasLightsQuest.js'; // Christmas Lights v1 (`sq-christmas-lights-v1`)
+import { SnowmanQuest } from './SnowmanQuest.js'; // Build a Snowman v1 (`sq-build-snowman-v1`)
 import { SantaHatSystem } from './SantaHatSystem.js';
 // Temperature System v1 (`sq-temperature-v1`): seasonal cold/warm,
 // warm drinks (cocoa, coffee) and cold drinks (beer, iced coffee).
@@ -690,6 +691,10 @@ export class VillageScene extends Phaser.Scene {
     // box in the south-east corner.
     this.christmasLightsQuest = new ChristmasLightsQuest(this);
     this.christmasLightsQuest.refresh();
+    // Build a Snowman (Shepherd Park only — SnowmanQuest itself
+    // no-ops elsewhere): the free snow pile + the growing snowman.
+    this.snowmanQuest = new SnowmanQuest(this);
+    this.snowmanQuest.refresh();
     // Items + inventory v1 (Agora hidden search; ground litter also
     // by any pond): pocket/bag, trash, flyers, notes, diary, food,
     // cigarette box. Puzzle pieces live in this inventory too.
@@ -819,6 +824,14 @@ export class VillageScene extends Phaser.Scene {
 
     // Christmas Lights interaction (Agora): lights box / north wall.
     this.lightsPrompt = this.add.text(0, 0, '💡 Take a light string [E]', {
+      fontSize: '15px',
+      color: '#7c2d12',
+      backgroundColor: 'rgba(255,255,255,0.85)',
+      padding: { x: 8, y: 4 },
+    }).setOrigin(0.5, 1).setDepth(DEPTH.UI).setAlpha(0);
+
+    // Build a Snowman interaction (Shepherd Park): snow pile / snowman.
+    this.snowPrompt = this.add.text(0, 0, '⛄ Take a snowball [E]', {
       fontSize: '15px',
       color: '#7c2d12',
       backgroundColor: 'rgba(255,255,255,0.85)',
@@ -1042,6 +1055,12 @@ export class VillageScene extends Phaser.Scene {
       // acts on it.
       try { this.christmasLightsQuest?.boxTapAt(ptr.worldX, ptr.worldY); } catch {}
       try { this.christmasLightsQuest?.hangTapAt(ptr.worldX, ptr.worldY); } catch {}
+      // Build a Snowman v1: a click on the snow pile takes a
+      // snowball (free), a click on the snowman adds the one you
+      // are carrying. Tap-to-move still happens below, so clicking
+      // the pile or the snowman both walks you there and acts on it.
+      try { this.snowmanQuest?.pileTapAt(ptr.worldX, ptr.worldY); } catch {}
+      try { this.snowmanQuest?.addTapAt(ptr.worldX, ptr.worldY); } catch {}
       // Santa Hat v1: a click behind the Christmas tree counts as
       // one search tap (3 taps finds the hat). Silent unless it
       // finds it — no hint about where the hat hides. A FULL pocket
@@ -1446,6 +1465,12 @@ export class VillageScene extends Phaser.Scene {
     } else if (kind === 'christmas-lights') {
       // Christmas Lights v1: hang the light string I am carrying.
       this.christmasLightsQuest?.hangLight();
+    } else if (kind === 'snow-pile') {
+      // Build a Snowman v1: take a free snowball from the pile.
+      this.snowmanQuest?.takeSnowball();
+    } else if (kind === 'build-snowman') {
+      // Build a Snowman v1: add the snowball I am carrying.
+      this.snowmanQuest?.addSnowball();
     } else if (kind === 'notice-board') {
       // Notice board v1: open the pinned-flyers board.
       this.noticeBoardSystem?.openBoard();
@@ -1518,6 +1543,14 @@ export class VillageScene extends Phaser.Scene {
     if (this.trimTreeQuest?.nearestTree(this.player.gx, this.player.gy)) return 'trim-tree';
     if (this.christmasLightsQuest?.nearestBox(this.player.gx, this.player.gy)) return 'lights-box';
     if (this.christmasLightsQuest?.nearestHangSpot(this.player.gx, this.player.gy)) return 'christmas-lights';
+    // Build a Snowman v1 (`sq-build-snowman-v1`): with a snowball
+    // in hand, adding it wins the E key — same pattern as the
+    // lights' carrying line above. Shepherd Park and Agora never
+    // share a room, so this never fights the tree or the lights;
+    // the order is structural mirroring, not a live conflict.
+    if (this.snowmanQuest?.carrying && this.snowmanQuest?.nearestSnowman(this.player.gx, this.player.gy)) return 'build-snowman';
+    if (this.snowmanQuest?.nearestPile(this.player.gx, this.player.gy)) return 'snow-pile';
+    if (this.snowmanQuest?.nearestSnowman(this.player.gx, this.player.gy)) return 'build-snowman';
     if (this.noticeBoardSystem?.nearestBoard(this.player.gx, this.player.gy)) return 'notice-board';
     // Mailbox v1: the post box at the player's nearest park (or the
     // fallback public place) — after the board, before the chest.
@@ -2613,6 +2646,11 @@ export class VillageScene extends Phaser.Scene {
       this.christmasLightsQuest?.applyState(payload);
     });
 
+    // Build a Snowman state (Shepherd Park, shared for the whole room).
+    socket.on('snow_state', (payload = {}) => {
+      this.snowmanQuest?.applyState(payload);
+    });
+
     // Notice board state (shared for the whole room — one board
     // per room, in-memory on the server like the puzzle).
     socket.on('board_state', (payload = {}) => {
@@ -3450,6 +3488,7 @@ export class VillageScene extends Phaser.Scene {
     this.puzzleQuest?.update(delta);
     this.trimTreeQuest?.update(delta);
     this.christmasLightsQuest?.update(delta); // Christmas Lights v1 (`sq-christmas-lights-v1`)
+    this.snowmanQuest?.update(delta); // Build a Snowman v1 (`sq-build-snowman-v1`)
     this.santaHatSystem?.update(delta);
     // sq-temperature-v1: ticks the toast (1s) and the shiver /
     // sweat visuals (every frame, after player.sync()).
@@ -3571,6 +3610,28 @@ export class VillageScene extends Phaser.Scene {
       ).setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
     } else {
       this.lightsPrompt.setAlpha(0);
+    }
+
+    // Build a Snowman: prompt near the snow pile (take one) or
+    // near the snowman (add the one you are carrying — or grab one
+    // from the pile first). Carrying wins: with a snowball in hand
+    // the add prompt shows whenever you are at the snowman, even
+    // if the pond, the cat, or a puzzle table is also near — the
+    // same fix as the lights/tree hang prompts. It stays quiet
+    // while a light string or an ornament is in hand (the other
+    // quests' items decide, same as the tree/lights pair — the
+    // rooms never share, so this is structural, not a live
+    // conflict).
+    const nearSnowPile = this.snowmanQuest?.nearestPile(this.player.gx, this.player.gy);
+    const nearSnowman = this.snowmanQuest?.nearestSnowman(this.player.gx, this.player.gy);
+    if (nearSnowPile && !nearPond && !nearCat && !nearTable) {
+      this.snowPrompt.setText(noE('⛄ Take a snowball [E]')).setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
+    } else if (showHangPrompt({ nearHangSpot: nearSnowman, nearPond, nearCat, nearTable, carrying: this.snowmanQuest?.carrying, otherCarrying: this.christmasLightsQuest?.carrying || this.trimTreeQuest?.carrying })) {
+      this.snowPrompt.setText(
+        this.snowmanQuest?.carrying ? noE('⛄ Add the snowball [E]') : '⛄ Grab a snowball from the pile first',
+      ).setPosition(this.player.gx, this.player.gy - 60).setAlpha(1);
+    } else {
+      this.snowPrompt.setAlpha(0);
     }
 
     // Bookshelf: prompt near interactable shelves (duck prompt takes priority).
@@ -3918,6 +3979,8 @@ export class VillageScene extends Phaser.Scene {
     this.trimTreeQuest = null;
     this.christmasLightsQuest?.destroy(); // Christmas Lights v1 (`sq-christmas-lights-v1`)
     this.christmasLightsQuest = null;
+    this.snowmanQuest?.destroy(); // Build a Snowman v1 (`sq-build-snowman-v1`)
+    this.snowmanQuest = null;
     this.itemsSystem?.destroy();
     this.itemsSystem = null;
     this.noticeBoardSystem?.destroy();
@@ -3944,6 +4007,7 @@ export class VillageScene extends Phaser.Scene {
     this.puzzlePrompt?.destroy();
     this.treePrompt?.destroy();
     this.lightsPrompt?.destroy(); // Christmas Lights v1 (`sq-christmas-lights-v1`)
+    this.snowPrompt?.destroy(); // Build a Snowman v1 (`sq-build-snowman-v1`)
     this.decorPrompt?.destroy();
     this.mailPrompt?.destroy();
     this.halloween?.destroy();
@@ -3990,6 +4054,7 @@ export class VillageScene extends Phaser.Scene {
     this.puzzleQuest?.refresh();
     this.trimTreeQuest?.refresh();
     this.christmasLightsQuest?.refresh(); // Christmas Lights v1 (`sq-christmas-lights-v1`)
+    this.snowmanQuest?.refresh(); // Build a Snowman v1 (`sq-build-snowman-v1`)
     this.itemsSystem?.refresh();
     // Notice board everywhere v1: re-resolve the board for this
     // floor (upper floors have no board — _board goes null, so the

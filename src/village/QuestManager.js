@@ -75,6 +75,7 @@ import {
   GROUP_PUZZLE_BADGE,
   TRIM_TREE_BADGE,
   CHRISTMAS_LIGHTS_BADGE,
+  BUILD_A_SNOWMAN_BADGE,
   badgeListFrom,
   completionsFromSaved,
   mergeBadgeMaps,
@@ -438,6 +439,23 @@ export class QuestManager {
     entry.count = 1;
     entry.completedAt = Date.now();
     this.saved[CHRISTMAS_LIGHTS_BADGE.id] = entry;
+    saveSaved(this.saved);
+    this._bumpHud();
+    return true;
+  }
+
+  /** Record the Build a Snowman badge: I helped build the snowman
+   *  in Shepherd Park (SnowmanQuest calls this from
+   *  _onSnowmanCompleted). Once ever — the server awards the same
+   *  badge to every contributor, so both paths converge on one
+   *  entry. */
+  recordSnowmanCompletion() {
+    const entry = this.saved[BUILD_A_SNOWMAN_BADGE.id] || { count: 0, completed: false };
+    if (entry.completed) return false;
+    entry.completed = true;
+    entry.count = 1;
+    entry.completedAt = Date.now();
+    this.saved[BUILD_A_SNOWMAN_BADGE.id] = entry;
     saveSaved(this.saved);
     this._bumpHud();
     return true;
@@ -809,6 +827,18 @@ export class QuestManager {
         lights.completed
           ? '💡 Christmas Lights — Agora is fully lit! 🎉'
           : `💡 Christmas Lights  ${lights.counted}/${lights.total}`,
+      );
+    }
+    // Build a Snowman v1 (`sq-build-snowman-v1`): the shared
+    // snowman rides along under the room quest too — "⛄ Build a
+    // Snowman X/15". Only the count shows. A standing snowman reads
+    // as complete.
+    const snowman = this.scene?.snowmanQuest?.getProgress?.();
+    if (snowman) {
+      room.push(
+        snowman.completed
+          ? '⛄ Build a Snowman — a snowman stands in Shepherd Park! 🎉'
+          : `⛄ Build a Snowman  ${snowman.counted}/${snowman.total}`,
       );
     }
     for (const q of this.anywhereQuests()) {

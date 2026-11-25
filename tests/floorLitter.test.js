@@ -126,7 +126,12 @@ describe('shared floor litter v1', () => {
     for (let i = 0; i < 30; i++) addFloorLitter(state, entry({ id: `l${i}` }));
     const before = serializeFloorLitterState(state);
     expect(addFloorLitter(state, entry({ id: 'l31' })).ok).toBe(false);
-    expect(serializeFloorLitterState(state)).toEqual(before);
+    // Test fix (sq-floor-litter-test-fix-v1): serialize() carries a
+    // live `now` timestamp, so two serializes only match within the
+    // same millisecond — under load the clock ticks and this failed
+    // even though the state never changed. Compare the items, which
+    // are the state this test is about.
+    expect(serializeFloorLitterState(state).items).toEqual(before.items);
   });
 
   it('claim hides the entry; a second claim is told it is gone', () => {
