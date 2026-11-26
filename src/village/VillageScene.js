@@ -2440,6 +2440,17 @@ export class VillageScene extends Phaser.Scene {
       socket.emit('get_hat', { roomId: this.roomId });
       socket.emit('get_quest_state', { roomId: this.roomId });
       socket.emit('get_puzzle', { roomId: this.roomId });
+      // Fetch fix v1 (`sq-fetch-fix-v1`): re-request the Christmas
+      // lights, tree, and snowman state on (re)connect. The burst
+      // asked for every other room state but never these three, so
+      // a fresh joiner rendered bare strands even when the server
+      // had the saved state — the only get_lights / get_tree emits
+      // lived in the completion handlers, which only fire after a
+      // room finishes. Same precedent as the Decoration Shop v1.1
+      // and Shared Floor Litter v1 fixes.
+      socket.emit('get_lights', { roomId: this.roomId });
+      socket.emit('get_tree', { roomId: this.roomId });
+      socket.emit('get_snowman', { roomId: this.roomId });
       socket.emit('get_board', { roomId: this.roomId });
       socket.emit('get_home', { roomId: this.roomId });
       // Mailbox v1: re-request the inbox on (re)connect, so mail
