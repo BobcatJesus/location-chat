@@ -6,7 +6,7 @@ import { isYouTubeBlocked } from './YouTubePlayer.js';
 // whole room (3 coins, charged when the song is added). Below: what's
 // playing and the shared queue (vote / skip), plus a free title-only
 // wishlist for songs someone should add later.
-export default function JukeboxPanel({ roomId, onClose, getSocket }) {
+export default function JukeboxPanel({ roomId, onClose, getSocket, canManageVenue = false }) {
   const [nowPlaying, setNowPlaying] = useState(null);
   const [queue, setQueue] = useState([]);
   // Jukebox Solo Skip v1 (`sq-jukebox-solo-skip-v1`): room size from
@@ -124,6 +124,21 @@ export default function JukeboxPanel({ roomId, onClose, getSocket }) {
     if (socket?.connected) socket.emit('skip_song', { roomId });
   };
 
+  // Jukebox Guard v1 (`sq-jukebox-guard-v1`): moderator takedown —
+  // pull one queued song, or clear the whole queue (a song playing
+  // right now stops and the house song takes over). The buttons
+  // only render for moderators; the server re-checks the
+  // permission, so a forged emit from a non-moderator goes nowhere.
+  const removeSong = (songId) => {
+    const socket = getSocket?.();
+    if (socket?.connected) socket.emit('jukebox_remove_song', { roomId, songId });
+  };
+
+  const clearQueue = () => {
+    const socket = getSocket?.();
+    if (socket?.connected) socket.emit('jukebox_clear', { roomId });
+  };
+
   const panelStyle = {
     position: 'absolute',
     top: 48,
@@ -197,7 +212,7 @@ export default function JukeboxPanel({ roomId, onClose, getSocket }) {
         ▶ PLAY A YOUTUBE SONG · {JUKEBOX_YOUTUBE_REQUEST_COST} 🪙
       </div>
       <div style={{ fontSize: 11, color: '#8a8296', marginBottom: 8, lineHeight: 1.5 }}>
-        Paste any YouTube link — it'll play for <b style={{ color: '#cfc6b4' }}>everyone in the room</b> when
+        Paste a music video link — the jukebox only plays music videos under 10 minutes, and it'll play for <b style={{ color: '#cfc6b4' }}>everyone in the room</b> when
         its turn comes up. Works with youtube.com, youtu.be, and Shorts links.
         Videos that block embedding get skipped automatically. You're charged only when the song is added.
         Your balance: <b style={{ color: '#ffb02e' }}>{coins} 🪙</b>
@@ -278,7 +293,22 @@ export default function JukeboxPanel({ roomId, onClose, getSocket }) {
 
   const queueEl = (
     <div style={{ padding: '10px 16px' }}>
-      <div style={{ fontSize: 11, letterSpacing: '0.15em', color: '#35e0ff', marginBottom: 8 }}>📻 UP NEXT</div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <div style={{ fontSize: 11, letterSpacing: '0.15em', color: '#35e0ff' }}>📻 UP NEXT</div>
+        {canManageVenue && queue.length > 0 && (
+          <button
+            onClick={clearQueue}
+            style={{
+              padding: '3px 10px', fontSize: 11, cursor: 'pointer',
+              background: 'transparent', border: '2px solid #ff3da6', color: '#ff3da6',
+              borderRadius: 999, fontWeight: 700, fontFamily: 'inherit',
+            }}
+            title="Remove every queued song (moderator)"
+          >
+            Clear queue
+          </button>
+        )}
+      </div>
       {queue.length === 0 && (
         <div style={{ fontSize: 13, color: '#8a8296' }}>Nothing queued yet.</div>
       )}
@@ -313,6 +343,19 @@ export default function JukeboxPanel({ roomId, onClose, getSocket }) {
           >
             ▲ {song.votes || 0}
           </button>
+          {canManageVenue && (
+            <button
+              onClick={() => removeSong(song.id)}
+              style={{
+                padding: '4px 8px', fontSize: 12, cursor: 'pointer',
+                background: 'transparent', border: '2px solid #ff3da6', color: '#ff3da6',
+                borderRadius: 999, fontWeight: 700, fontFamily: 'inherit',
+              }}
+              title="Remove this song (moderator)"
+            >
+              ✕
+            </button>
+          )}
         </div>
       ))}
     </div>

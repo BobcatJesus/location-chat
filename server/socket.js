@@ -125,7 +125,16 @@ import {
   jukeboxRemainingMs,
   JUKEBOX_MIN_REMAINING_MS,
   shouldSkipSong,
+  takeJukeboxSong,
+  clearJukeboxState,
 } from './jukeboxPersist.js';
+// sq-jukebox-guard-v1: the YouTube video check (Music category,
+// under 10 minutes, not age-restricted) lives in the pure module
+// ./youtubeCheck.js so it stays unit-testable.
+import {
+  checkYouTubeVideo,
+  YOUTUBE_REFUSAL_MESSAGES,
+} from './youtubeCheck.js';
 // sq-head-moderator-v1: pure moderator/permission helpers (see
 // ./moderators.js). socket.js starts listening on import, so the
 // predicate lives there to stay unit-testable.
@@ -1751,6 +1760,20 @@ async function saveJukeboxSong(roomId, song) {
 async function markSongPlayed(songId) {
   if (!pool) return;
   await pool.query('UPDATE jukebox_songs SET played = TRUE WHERE id = $1', [songId]);
+}
+
+// sq-jukebox-guard-v1: moderator takedown — delete one queued
+// song's row so a restart cannot resurrect it.
+async function deleteJukeboxSong(songId) {
+  if (!pool) return;
+  await pool.query('DELETE FROM jukebox_songs WHERE id = $1', [songId]);
+}
+
+// sq-jukebox-guard-v1: moderator takedown — delete every unplayed
+// queued song's row for a room.
+async function deleteJukeboxSongsForRoom(roomId) {
+  if (!pool) return;
+  await pool.query('DELETE FROM jukebox_songs WHERE room_id = $1 AND played = FALSE', [roomId]);
 }
 
 function broadcastJukebox(roomId) {
@@ -3770,6 +3793,20 @@ io.on('connection', (socket) => {
       socket.emit('song_error', { message: "That doesn't look like a YouTube link." });
       return;
     }
+    if (youtubeVideoId) {
+      // sq-jukebox-guard-v1: check the video BEFORE it goes in —
+      // Music category, under 10 minutes, not age-restricted.
+      // Fails closed: no key, a missing video, or any API error
+      // all refuse. A refused add never reaches the queue, so the
+      // client never charges coins for it (it only spends on
+      // 'song_added'). Title-only requests skip this entirely —
+      // they are wishlist-only and never play.
+      const check = await checkYouTubeVideo(youtubeVideoId, { apiKey: process.env.YOUTUBE_API_KEY });
+      if (!check.ok) {
+        socket.emit('song_error', { message: YOUTUBE_REFUSAL_MESSAGES[check.reason] || YOUTUBE_REFUSAL_MESSAGES['api-error'] });
+        return;
+      }
+    }
     const st = await loadJukebox(roomId);
     const song = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
@@ -3852,6 +3889,51 @@ io.on('connection', (socket) => {
       // vote changed the restored snapshot — save it, or a restart
       // would forget the first vote and the song would need two
       // fresh ones to skip.
+      persistJukebox(roomId);
+    }
+  });
+
+  // JUKEBOX GUARD v1 (`sq-jukebox-guard-v1`): moderator takedown.
+  // Remove one song from the queue — or the song playing right now.
+  // Moderator-only, same check as remove_decoration; a
+  // non-moderator is refused silently.
+  socket.on('jukebox_remove_song', async ({ roomId, songId }) => {
+    if (!roomId || !rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const userId = socketUserMap[socket.id] || socket.id;
+    const permissions = getVenuePermissions(roomId, userId);
+    if (!permissions.canManage) return;
+    const st = await loadJukebox(roomId);
+    const { removed, wasNowPlaying } = takeJukeboxSong(st, songId);
+    if (!removed) return;
+    await deleteJukeboxSong(removed.id);
+    if (wasNowPlaying) {
+      // It was playing right now — advance so the room hears the
+      // next song (or the house song) instead of silence. The
+      // house song itself just comes back when the queue is dry,
+      // which is what "queue dry" already means.
+      advanceJukebox(roomId);
+    } else {
+      broadcastJukebox(roomId);
+      persistJukebox(roomId);
+    }
+  });
+
+  // JUKEBOX GUARD v1 (`sq-jukebox-guard-v1`): moderator takedown.
+  // Clear the whole queue. A song playing right now stops and the
+  // house song takes over. Moderator-only, refused silently for
+  // anyone else.
+  socket.on('jukebox_clear', async ({ roomId }) => {
+    if (!roomId || !rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const userId = socketUserMap[socket.id] || socket.id;
+    const permissions = getVenuePermissions(roomId, userId);
+    if (!permissions.canManage) return;
+    const st = await loadJukebox(roomId);
+    const { hadNowPlaying } = clearJukeboxState(st);
+    await deleteJukeboxSongsForRoom(roomId);
+    if (hadNowPlaying) {
+      advanceJukebox(roomId);
+    } else {
+      broadcastJukebox(roomId);
       persistJukebox(roomId);
     }
   });
@@ -4757,6 +4839,12 @@ async function start() {
     console.log(`🚀 2D Spatial MVP Server is Live!`);
     console.log(`📡 Port: ${PORT}`);
     console.log(`💾 Persistence: ${pool ? 'Postgres' : 'in-memory'}`);
+    // sq-jukebox-guard-v1: the jukebox guard fails closed — with no
+    // YouTube API key, every YouTube add is refused. Say so loudly
+    // at boot so a missing key is obvious in the Railway logs.
+    if (!process.env.YOUTUBE_API_KEY) {
+      console.warn('⚠️ YOUTUBE_API_KEY is not set — YouTube jukebox adds will be refused until it is added (Railway → Variables).');
+    }
     console.log(`===========================================\n`);
   });
 }

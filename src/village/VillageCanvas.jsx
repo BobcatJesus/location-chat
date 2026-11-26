@@ -1142,6 +1142,9 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
           roomId={roomId}
           onClose={() => setOpenJukebox(null)}
           getSocket={() => gameRef.current?.scene?.getScene('VillageScene')?.socket}
+          // sq-jukebox-guard-v1: the moderator remove/clear buttons
+          // only render when canManageVenue is true.
+          canManageVenue={canManageVenue}
         />
       )}
       {openPuzzle && (

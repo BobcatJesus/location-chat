@@ -126,6 +126,46 @@ export function shouldSkipSong({ skipVotes, roomSize, isAdder }) {
   return Number(skipVotes) >= votesNeededToSkip(roomSize);
 }
 
+// Jukebox Guard v1 (`sq-jukebox-guard-v1`): moderator takedown.
+// The live room state is { queue: [...], nowPlaying, timer, ... };
+// these helpers mutate that state in place (the socket handler
+// then deletes the DB row, persists, and broadcasts).
+
+/**
+ * Take one song out of a jukebox room state by id — from the
+ * queue, or the now-playing slot. Returns { removed, wasNowPlaying }.
+ * When the song was now playing, nowPlaying is cleared to null so
+ * the caller can advance to the next song (or the house song).
+ * Unknown id: { removed: null, wasNowPlaying: false }, state untouched.
+ */
+export function takeJukeboxSong(state, songId) {
+  if (!state || !songId) return { removed: null, wasNowPlaying: false };
+  if (state.nowPlaying && state.nowPlaying.id === songId) {
+    const removed = state.nowPlaying;
+    state.nowPlaying = null;
+    return { removed, wasNowPlaying: true };
+  }
+  const queue = Array.isArray(state.queue) ? state.queue : [];
+  const idx = queue.findIndex((s) => s && s.id === songId);
+  if (idx === -1) return { removed: null, wasNowPlaying: false };
+  const [removed] = queue.splice(idx, 1);
+  return { removed, wasNowPlaying: false };
+}
+
+/**
+ * Empty a jukebox room state: the queue and whatever is playing.
+ * Returns { hadNowPlaying, removedCount }. The caller advances
+ * afterwards, which lands on the house song when the queue is dry.
+ */
+export function clearJukeboxState(state) {
+  if (!state) return { hadNowPlaying: false, removedCount: 0 };
+  const removedCount = Array.isArray(state.queue) ? state.queue.length : 0;
+  const hadNowPlaying = Boolean(state.nowPlaying);
+  state.queue = [];
+  state.nowPlaying = null;
+  return { hadNowPlaying, removedCount };
+}
+
 /** Fresh jukebox room state: nothing playing, no cooldown, no votes. */
 export function createJukeboxRoomState() {
   return { nowPlaying: null, defaultCooldownUntil: null, votedBy: {} };

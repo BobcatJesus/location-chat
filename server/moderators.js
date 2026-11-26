@@ -15,6 +15,10 @@
 // sq-hat-reset-v1: this file is also shipped in the hat-reset kit —
 // socket.js imports it, so the kit is self-contained even if the
 // head-moderator kit was never extracted. No logic change here.
+//
+// sq-jukebox-guard-v1: also shipped in the jukebox-guard kit for
+// the same reason — the jukebox remove/clear handlers gate on
+// getVenuePermissions from this file. No logic change here.
 
 // The app owner (Thomas Kelleher). This is his public client-facing
 // contact email; it is normalized the same way as env-var emails, so
