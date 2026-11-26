@@ -124,6 +124,15 @@ import {
   JUKEBOX_MIN_REMAINING_MS,
   shouldSkipSong,
 } from './jukeboxPersist.js';
+// sq-head-moderator-v1: pure moderator/permission helpers (see
+// ./moderators.js). socket.js starts listening on import, so the
+// predicate lives there to stay unit-testable.
+import {
+  buildModeratorEmails,
+  normalizeActorId,
+  isGlobalModerator as isGlobalModeratorPure,
+  getVenuePermissions as getVenuePermissionsPure,
+} from './moderators.js';
 import {
   NOTICE_BOARD_MAX_FLYERS,
   createNoticeBoardState,
@@ -1889,12 +1898,11 @@ const changeRates = {};
 const creatorRates = {}; // keyed by `${userId}:${roomId}`
 const socketCreatorRooms = {}; // socketId → Set<roomId>
 const socketUserMap = {};
-const moderatorEmails = new Set(
-  String(process.env.MODERATOR_EMAILS || '')
-    .split(',')
-    .map((email) => email.trim().toLowerCase())
-    .filter(Boolean)
-);
+// sq-head-moderator-v1: the global moderator set is the MODERATOR_EMAILS
+// env var PLUS the app owner's email (see ./moderators.js), so the
+// owner is a head moderator in every room even when the env var is
+// unset. Env-var parsing is unchanged.
+const moderatorEmails = buildModeratorEmails(process.env.MODERATOR_EMAILS);
 if (moderatorEmails.size > 0) {
   console.log(`🛡️ Global moderators configured: ${moderatorEmails.size} account(s)`);
 }
@@ -1996,12 +2004,11 @@ async function clearApprovedLayout(roomId, reviewer) {
   return cleared;
 }
 
+// sq-head-moderator-v1: the permission helpers live in ./moderators.js
+// (pure, unit-testable). These wrappers keep the local names and
+// signatures so every existing call site is untouched.
 function isGlobalModerator(actorId) {
-  return moderatorEmails.has(normalizeActorId(actorId));
-}
-
-function normalizeActorId(value) {
-  return String(value || '').trim().toLowerCase();
+  return isGlobalModeratorPure(actorId, moderatorEmails);
 }
 
 function getVenueOwnerId(roomId) {
@@ -2010,10 +2017,7 @@ function getVenueOwnerId(roomId) {
 }
 
 function getVenuePermissions(roomId, actorId) {
-  const actor = normalizeActorId(actorId);
-  const isModerator = moderatorEmails.has(actor);
-  const isOwner = Boolean(actor && actor === getVenueOwnerId(roomId));
-  return { isModerator, isOwner, canManage: isModerator || isOwner };
+  return getVenuePermissionsPure(roomId, actorId, moderatorEmails, getVenueOwnerId);
 }
 
 // Daily add/delete cap for non-creators, separate from the burst limiter above.
