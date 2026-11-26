@@ -19,7 +19,8 @@ export default function App() {
         <div className="overworld-container">
           <header>
             <h1>SIDE QUEST</h1>
-            <h2>The Lost Overworld</h2>
+            {/* Remove "overworld" v1 (`sq-remove-overworld-v1`): subtitle was "The Lost Overworld". */}
+            <h2>The Lost</h2>
           </header>
 
           <div className="realm-selection">

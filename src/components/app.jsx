@@ -1369,7 +1369,9 @@ function App() {
     }
   };
   const visibleRoomName = osmRoom?.name || activeRoom?.name || '';
-  const worldTitle = visibleRoomName ? `${visibleRoomName} overworld` : 'The Lost overworld';
+  // Remove "overworld" v1 (`sq-remove-overworld-v1`): the heading is
+  // just the room name now ("Agora"), fallback "The Lost".
+  const worldTitle = visibleRoomName ? visibleRoomName : 'The Lost';
   const activeRoomSummary = selectedRoom === 'your-room'
     ? 'You are now standing inside your own room.'
     : roomMatch?.room?.id === selectedRoom
