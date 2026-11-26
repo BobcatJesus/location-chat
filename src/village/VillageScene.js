@@ -1281,7 +1281,9 @@ export class VillageScene extends Phaser.Scene {
         : FOLLOW_ZOOM;
     // Portrait fill v1 (`sq-portrait-fill-v1`): resolve the zoom for this
     // viewport — a portrait phone zooms out so a useful slice of the room
-    // stays visible — and keep the avatar the same size on screen.
+    // stays visible. Avatar shrink v1 (`sq-avatar-shrink-zoom-v1`): the
+    // avatar scale is the mode's base scale now, so the avatar shrinks
+    // on screen as the zoom drops.
     this._resolvedCamera = resolveFollowCamera({
       viewportW: this.scale.width,
       viewportH: this.scale.height,
@@ -1297,9 +1299,10 @@ export class VillageScene extends Phaser.Scene {
     this._applyAvatarVisualScale();
   }
 
-  // Base (desktop) avatar visual scale for the current follow mode —
-  // the portrait fill multiplies this by baseZoom/zoom so the avatar
-  // keeps its on-screen size when the zoom drops.
+  // Base (desktop) avatar visual scale for the current follow mode.
+  // Avatar shrink v1 (`sq-avatar-shrink-zoom-v1`): this is the scale
+  // the avatar is drawn at — no zoom compensation, so it shrinks on
+  // screen as the zoom drops.
   _baseAvatarScale() {
     if (this.cameraMode === 'ultra-close-follow') return ULTRA_CLOSE_AVATAR_SCALE;
     if (this.cameraMode === 'close-follow') return CLOSE_AVATAR_SCALE;
@@ -1308,10 +1311,10 @@ export class VillageScene extends Phaser.Scene {
   }
 
   _currentAvatarScale() {
-    // Portrait fill v1 (`sq-portrait-fill-v1`): the resolved camera (set
-    // by _applyCameraMode) carries the compensated avatar scale, so the
-    // avatar stays the same size on screen when the zoom drops on a
-    // portrait phone. Before the first resolve, fall back to the mode's
+    // Avatar shrink v1 (`sq-avatar-shrink-zoom-v1`): the resolved camera
+    // (set by _applyCameraMode) carries the mode's base avatar scale —
+    // no zoom compensation, so the avatar shrinks on screen when the
+    // zoom drops. Before the first resolve, fall back to the mode's
     // base scale.
     if (this.cameraMode === 'overview') {
       return this._resolvedCamera?.avatarScale ?? OVERVIEW_AVATAR_SCALE;

@@ -2,8 +2,10 @@
 // Pure camera math for the VillageScene: the zoom adapts to the real
 // viewport once the canvas stops being a fixed 1600x900 FIT box.
 // Desktop 16:9 must resolve to the exact old constants; a portrait
-// phone zooms out so a useful slice of the room stays visible, and the
-// avatar scale compensates so the avatar stays the same size on screen.
+// phone zooms out so a useful slice of the room stays visible.
+// Avatar shrink v1 (`sq-avatar-shrink-zoom-v1`): the avatar scale is
+// the mode's base scale — no zoom compensation — so the avatar shrinks
+// on screen as the zoom drops, like everything else in the room.
 
 import { describe, it, expect } from 'vitest';
 import {
@@ -38,21 +40,27 @@ describe('resolveFollowCamera', () => {
     }
   });
 
-  it('portrait phone 390x844 zooms out to a 330-wide slice, avatar stays screen-sized', () => {
+  it('portrait phone 390x844 zooms out to a 330-wide slice, avatar shrinks with the zoom', () => {
     const c = resolveFollowCamera({ viewportW: 390, viewportH: 844, baseZoom: 1.9, baseAvatarScale: 1, ...AGORA });
     expect(c.zoom).toBeCloseTo(390 / 330, 5);
     expect(390 / c.zoom).toBeCloseTo(330, 5);
     expect(844 / c.zoom).toBeCloseTo(714, 0);
-    // Avatar on screen: 48 * avatarScale * zoom == desktop follow's 48 * 1 * 1.9.
-    expect(48 * c.avatarScale * c.zoom).toBeCloseTo(48 * 1.9, 5);
+    // Avatar scale is the base now — no compensation — so on screen it
+    // is 48 * 1 * (390/330), smaller than desktop follow's 48 * 1 * 1.9.
+    expect(c.avatarScale).toBe(1);
+    expect(48 * c.avatarScale * c.zoom).toBeCloseTo(48 * (390 / 330), 5);
+    expect(48 * c.avatarScale * c.zoom).toBeLessThan(48 * 1.9);
   });
 
   it('portrait phone applies the same zoom to every follow mode', () => {
     for (const [baseZoom, baseAvatarScale] of [[2.85, 1.3], [2.35, 1.18], [1.45, 1.3]]) {
       const c = resolveFollowCamera({ viewportW: 390, viewportH: 844, baseZoom, baseAvatarScale, ...AGORA });
       expect(c.zoom).toBeCloseTo(390 / 330, 5);
-      // Each mode keeps its own on-screen avatar size.
-      expect(48 * c.avatarScale * c.zoom).toBeCloseTo(48 * baseAvatarScale * baseZoom, 5);
+      // Each mode's avatarScale is its base scale; on screen it scales
+      // with the zoom (48 * baseAvatarScale * zoom), not the desktop size.
+      expect(c.avatarScale).toBe(baseAvatarScale);
+      expect(48 * c.avatarScale * c.zoom).toBeCloseTo(48 * baseAvatarScale * (390 / 330), 5);
+      expect(48 * c.avatarScale * c.zoom).toBeLessThan(48 * baseAvatarScale * baseZoom);
     }
   });
 
@@ -60,7 +68,9 @@ describe('resolveFollowCamera', () => {
     const c = resolveFollowCamera({ viewportW: 844, viewportH: 390, baseZoom: 1.9, baseAvatarScale: 1, ...AGORA });
     expect(c.zoom).toBeCloseTo(390 / 450, 5);
     expect(390 / c.zoom).toBeCloseTo(450, 5);
-    expect(48 * c.avatarScale * c.zoom).toBeCloseTo(48 * 1.9, 5);
+    // Avatar scale is the base now, so on screen it is 48 * 1 * (390/450).
+    expect(c.avatarScale).toBe(1);
+    expect(48 * c.avatarScale * c.zoom).toBeCloseTo(48 * (390 / 450), 5);
   });
 
   it('ultrawide short window never shows past the room bounds', () => {
@@ -79,7 +89,9 @@ describe('resolveFollowCamera', () => {
   it('small desktop window zooms out to keep the minimum slice', () => {
     const c = resolveFollowCamera({ viewportW: 800, viewportH: 450, baseZoom: 1.9, baseAvatarScale: 1, ...AGORA });
     expect(c.zoom).toBe(1);
-    expect(c.avatarScale).toBeCloseTo(1.9, 5);
+    // Avatar scale is the base now (1), not the compensated 1.9.
+    expect(c.avatarScale).toBe(1);
+    expect(48 * c.avatarScale * c.zoom).toBe(48);
   });
 
   it('never zooms in past the base zoom on a huge monitor', () => {
@@ -127,14 +139,17 @@ describe('resolveOverviewAvatarScale', () => {
     expect(resolveOverviewAvatarScale({ fitZoom: 1.2, baseAvatarScale: 1.42 })).toBeCloseTo(1.42, 5);
   });
 
-  it('portrait overview scales the avatar up so it stays findable', () => {
+  it('portrait overview keeps the base avatar scale, so it shrinks with the fit zoom', () => {
     const fitZoom = Math.min(390 / 1600, 844 / 900) * 1.2;
     const s = resolveOverviewAvatarScale({ fitZoom, baseAvatarScale: 1.42 });
-    // Same on-screen avatar size as desktop overview: 48 * 1.42 * 1.2.
-    expect(48 * s * fitZoom).toBeCloseTo(48 * 1.42 * 1.2, 5);
+    // No compensation: on screen it is 48 * 1.42 * fitZoom, smaller
+    // than desktop overview's 48 * 1.42 * 1.2.
+    expect(s).toBe(1.42);
+    expect(48 * s * fitZoom).toBeLessThan(48 * 1.42 * 1.2);
   });
 
-  it('caps the scale so a tiny fit zoom does not make a blurry giant', () => {
-    expect(resolveOverviewAvatarScale({ fitZoom: 0.1, baseAvatarScale: 1.42 })).toBe(6);
+  it('scale is the base regardless of fit zoom', () => {
+    expect(resolveOverviewAvatarScale({ fitZoom: 0.1, baseAvatarScale: 1.42 })).toBe(1.42);
+    expect(resolveOverviewAvatarScale({ fitZoom: 2.4, baseAvatarScale: 1.42 })).toBe(1.42);
   });
 });

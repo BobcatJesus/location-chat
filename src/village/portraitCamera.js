@@ -21,17 +21,13 @@ export const MIN_VISIBLE_WORLD_H = 450;
 export const LEGACY_GAME_H = 900;
 
 // Overview fits the whole room; on desktop a 1600x900 room on a
-// 1600x900 viewport fits at zoom 1.2 — the reference the overview
-// avatar scale is calibrated against (see resolveOverviewAvatarScale).
+// 1600x900 viewport fits at zoom 1.2 — the reference
+// resolveOverviewZoom multiplies the raw fit by.
 export const OVERVIEW_REFERENCE_ZOOM = 1.2;
 // Overview never zooms in past this (same ceiling as the old clamp) and
 // never below what fits the room.
 export const OVERVIEW_MAX_ZOOM = 2.4;
 export const OVERVIEW_MIN_ZOOM = 0.95;
-
-// How far the avatar scale may be pushed to keep its on-screen size
-// when the zoom drops (overview on a tiny screen).
-export const MAX_AVATAR_SCALE = 6;
 
 function finite(n, fallback) {
   return Number.isFinite(n) ? n : fallback;
@@ -41,8 +37,10 @@ function finite(n, fallback) {
  * Follow-mode camera for an arbitrary viewport.
  * viewportW/viewportH in CSS px, baseZoom/baseAvatarScale for the camera
  * mode, boundsW/boundsH = the camera bounds in world units.
- * Returns { zoom, avatarScale } — avatarScale compensates the zoom so
- * the avatar stays the same size on screen as on desktop.
+ * Returns { zoom, avatarScale } — avatarScale is the mode's base scale.
+ * Avatar shrink v1 (`sq-avatar-shrink-zoom-v1`): no zoom compensation,
+ * so the avatar shrinks on screen as the zoom drops, like everything
+ * else in the room.
  */
 export function resolveFollowCamera({ viewportW, viewportH, baseZoom, baseAvatarScale, boundsW, boundsH }) {
   const w = Math.max(1, finite(viewportW, 1600));
@@ -65,7 +63,9 @@ export function resolveFollowCamera({ viewportW, viewportH, baseZoom, baseAvatar
   // letterboxed it before.
   zoom = Math.min(zoom, base);
   zoom = Math.max(0.2, zoom);
-  const avatarScale = Math.min(MAX_AVATAR_SCALE, Math.max(0.1, finite(baseAvatarScale, 1) * base / zoom));
+  // sq-avatar-shrink-zoom-v1: no zoom compensation on the avatar scale —
+  // the avatar shrinks on screen as the zoom drops.
+  const avatarScale = Math.max(0.1, finite(baseAvatarScale, 1));
   return { zoom, avatarScale };
 }
 
@@ -84,12 +84,12 @@ export function resolveOverviewZoom({ viewportW, viewportH, boundsW, boundsH }) 
 }
 
 /**
- * Overview avatar scale: keep the avatar the same size on screen as on
- * desktop overview (baseAvatarScale at the reference zoom), so you can
- * still find yourself when the room is fitted small on a portrait phone.
+ * Overview avatar scale: the mode's base scale, uncompensated.
+ * Avatar shrink v1 (`sq-avatar-shrink-zoom-v1`): the avatar shrinks on
+ * screen with the fit zoom, like everything else — fitZoom is accepted
+ * for call-site compatibility but no longer affects the scale.
  */
 export function resolveOverviewAvatarScale({ fitZoom, baseAvatarScale }) {
-  const z = Math.max(0.05, finite(fitZoom, OVERVIEW_REFERENCE_ZOOM));
-  const base = Math.max(0.1, finite(baseAvatarScale, 1));
-  return Math.min(MAX_AVATAR_SCALE, base * OVERVIEW_REFERENCE_ZOOM / z);
+  void fitZoom;
+  return Math.max(0.1, finite(baseAvatarScale, 1));
 }
