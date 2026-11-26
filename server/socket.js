@@ -55,6 +55,8 @@ import {
   slipHat,
   pickupHat,
   releaseHat,
+  resetHat,
+  returnCarriedHat,
   serializeHatState,
 } from '../src/village/hatState.js';
 // Santa's Lost Present v1.1 (`sq-santas-lost-present-v1.1`): one
@@ -1387,6 +1389,30 @@ async function ensureHatLoaded(roomId) {
   }
   return hatLoadPromises[roomId];
 }
+// Santa Hat reset (`sq-hat-reset-v1`): the carrier left the Agora
+// (disconnect or room switch) with the hat in their pocket — the
+// hat goes back to hidden behind the tree instead of staying
+// "carried" by someone who is gone. `excludeSocketId` is the socket
+// that just left (already out of the rooms on disconnect; still in
+// the Agora map on a room switch, where it has moved to the new
+// room). A second tab of the same player still in the Agora keeps
+// the hat carried. No-op unless the hat is carried by this player.
+async function returnHatForLeavingUser(roomId, userId, excludeSocketId) {
+  try {
+    await ensureHatLoaded(roomId);
+    const room = hatRoom(roomId);
+    if (room.state.status !== 'carried') return;
+    const carrierStillHere = Object.entries(rooms[roomId] || {}).some(
+      ([sid, p]) => sid !== excludeSocketId && p && p.id === userId
+    );
+    const res = returnCarriedHat(room.state, userId, carrierStillHere);
+    if (!res.ok) return;
+    await persistHat(roomId, room.state);
+    io.to(roomId).emit('hat_state', serializeHatState(room.state));
+  } catch (e) {
+    console.warn('⚠️ hat return on leave failed:', e && e.message);
+  }
+}
 // Notice board (Notice Board v1, `sq-notice-board-v1`; persistence
 // `sq-notice-board-persist-v1`): per-room pinned flyers, EVERY
 // room. The state is persisted to Postgres (notice_board_state)
@@ -2247,6 +2273,15 @@ io.on('connection', (socket) => {
     // another room (or offline — the inbox is per-player, not
     // per-room).
     registerMailCode(userId);
+    // sq-hat-reset-v1: joining a room other than the Agora means
+    // the player left the Agora — if they were carrying the Santa
+    // hat, it goes back to hidden behind the tree instead of
+    // staying "carried" by someone who is gone. (The joining socket
+    // is still in the Agora map here, so it is excluded from the
+    // still-here check — it has moved to the new room.)
+    if (roomId !== 'agora-houston') {
+      await returnHatForLeavingUser('agora-houston', userId, socket.id);
+    }
     await removeDuplicatePresenceByUser({ roomId, userId, keepSocketId: socket.id });
     await upsertPresence({
       socketId: socket.id,
@@ -2950,6 +2985,31 @@ io.on('connection', (socket) => {
     await ensureHatLoaded(roomId);
     const room = hatRoom(roomId);
     const res = releaseHat(room.state, userId);
+    if (!res.ok) return;
+    await persistHat(roomId, room.state);
+    io.to(roomId).emit('hat_state', serializeHatState(room.state));
+  });
+
+  // SANTA HAT RESET (`sq-hat-reset-v1`): a moderator puts the hat
+  // back behind the tree, from ANY status — carried, on the cat, or
+  // on the floor. Fixes a hat stuck in someone's pocket (the carrier
+  // left with it) and gives moderators a reset they can press
+  // whenever. Moderator-only, same gate as remove_decoration
+  // (getVenuePermissions().canManage); a non-moderator is refused
+  // silently, like the other hat handlers. The hat_state broadcast
+  // updates everyone, so no reply is needed — the hat is findable
+  // again right away via the normal 3-click search.
+  socket.on('hat_reset', async ({ roomId } = {}) => {
+    if (!roomId || roomId !== 'agora-houston') return;
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const userId = socketUserMap[socket.id] || socket.id;
+    const permissions = getVenuePermissions(roomId, userId);
+    if (!permissions.canManage) return;
+    const rate = checkRateLimit(userId);
+    if (!rate.allowed) return;
+    await ensureHatLoaded(roomId);
+    const room = hatRoom(roomId);
+    const res = resetHat(room.state);
     if (!res.ok) return;
     await persistHat(roomId, room.state);
     io.to(roomId).emit('hat_state', serializeHatState(room.state));
@@ -3960,8 +4020,11 @@ io.on('connection', (socket) => {
   });
 
   // DISCONNECT
-  socket.on('disconnect', () => {
+  socket.on('disconnect', async () => {
     console.log(`❌ Client disconnected: ${socket.id}`);
+    // sq-hat-reset-v1: capture the userId BEFORE the map entry is
+    // deleted — the hat return below needs to know who left.
+    const userId = socketUserMap[socket.id] || socket.id;
     delete socketUserMap[socket.id];
     // sq-gift-giver-v1 — any live gift offer involving this socket
     // dies, and the other side's prompt/pending state clears.
@@ -3974,6 +4037,12 @@ io.on('connection', (socket) => {
         io.in(roomId).emit('player_left', { socketId: socket.id });
       }
     });
+    // sq-hat-reset-v1: if the disconnecting player was carrying the
+    // Santa hat out of the Agora, the hat goes back to hidden behind
+    // the tree instead of staying "carried" by someone who is gone.
+    // (Checked after the socket is out of the rooms, so a second tab
+    // still in the Agora keeps the hat carried.)
+    await returnHatForLeavingUser('agora-houston', userId, socket.id);
     broadcastRoomCounts();
   });
 });

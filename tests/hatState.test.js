@@ -1,13 +1,17 @@
 // hatState.test.js — Santa Hat v1 (`sq-santa-hat-v1`).
 // Pure logic only: one hat per room, find -> carry -> place on the
 // cat -> slip off to the ground -> pick up -> place again; slip
-// timing; release safety valve; serialize / parse.
+// timing; release safety valve; serialize / parse. Hat reset v1
+// (`sq-hat-reset-v1`): a moderator can reset the hat to hidden from
+// any status, and a carrier who leaves the Agora with the hat in
+// their pocket sends it back behind the tree on their own.
 
 import { describe, it, expect } from 'vitest';
 // sq-santa-hat-v1.2: slip-off widened from 4 minutes to 30 minutes.
 import {
   HAT_MARKER_V1,
   HAT_MARKER_V11,
+  HAT_RESET_MARKER,
   HAT_REWARD_COINS,
   HAT_SLIP_MS,
   HAT_SEARCH_CLICKS,
@@ -20,6 +24,8 @@ import {
   slipHat,
   pickupHat,
   releaseHat,
+  resetHat,
+  returnCarriedHat,
   serializeHatState,
   parseHatState,
 } from '../src/village/hatState.js';
@@ -166,6 +172,103 @@ describe('releaseHat', () => {
   it('refuses when nothing is carried', () => {
     expect(releaseHat(createHatState(), 'alice'))
       .toEqual({ ok: false, reason: 'not-carried' });
+  });
+});
+
+describe('resetHat', () => {
+  it('carries the reset marker', () => {
+    expect(HAT_RESET_MARKER).toBe('sq-hat-reset-v1');
+  });
+
+  it('resets to hidden from carried, and it can be found again', () => {
+    const s = createHatState();
+    findHat(s, 'alice');
+    expect(resetHat(s)).toEqual({ ok: true });
+    expect(s.status).toBe('hidden');
+    expect(s.carriedBy).toBe(null);
+    expect(findHat(s, 'bob')).toEqual({ ok: true });
+  });
+
+  it('resets to hidden from onCat, clearing the slip time', () => {
+    const s = createHatState();
+    findHat(s, 'alice');
+    placeHat(s, 'alice', 1000);
+    expect(s.status).toBe('onCat');
+    expect(s.slipAt).toBe(1000 + HAT_SLIP_MS);
+    expect(resetHat(s)).toEqual({ ok: true });
+    expect(s.status).toBe('hidden');
+    expect(s.wornAt).toBe(0);
+    expect(s.slipAt).toBe(0);
+    expect(findHat(s, 'bob')).toEqual({ ok: true });
+  });
+
+  it('resets to hidden from the ground, clearing the spot', () => {
+    const s = createHatState();
+    findHat(s, 'alice');
+    placeHat(s, 'alice', 1000);
+    slipHat(s, 600, 300, 1000 + HAT_SLIP_MS);
+    expect(s.status).toBe('ground');
+    expect(resetHat(s)).toEqual({ ok: true });
+    expect(s.status).toBe('hidden');
+    expect(s.groundX).toBe(0);
+    expect(s.groundY).toBe(0);
+    expect(findHat(s, 'bob')).toEqual({ ok: true });
+  });
+
+  it('is a no-op on an already hidden hat', () => {
+    const s = createHatState();
+    expect(resetHat(s)).toEqual({ ok: true });
+    expect(s.status).toBe('hidden');
+  });
+
+  it('refuses a bad state', () => {
+    expect(resetHat(null)).toEqual({ ok: false, reason: 'bad-state' });
+  });
+});
+
+describe('returnCarriedHat', () => {
+  it('returns the hat to hidden when the carrier leaves', () => {
+    const s = createHatState();
+    findHat(s, 'alice');
+    expect(returnCarriedHat(s, 'alice', false)).toEqual({ ok: true });
+    expect(s.status).toBe('hidden');
+    expect(s.carriedBy).toBe(null);
+    // And it can be found again.
+    expect(findHat(s, 'bob')).toEqual({ ok: true });
+  });
+
+  it('changes nothing when someone else leaves', () => {
+    const s = createHatState();
+    findHat(s, 'alice');
+    expect(returnCarriedHat(s, 'bob', false))
+      .toEqual({ ok: false, reason: 'not-yours' });
+    expect(s.status).toBe('carried');
+    expect(s.carriedBy).toBe('alice');
+  });
+
+  it('changes nothing when the carrier still has a socket in the room', () => {
+    const s = createHatState();
+    findHat(s, 'alice');
+    expect(returnCarriedHat(s, 'alice', true))
+      .toEqual({ ok: false, reason: 'still-here' });
+    expect(s.status).toBe('carried');
+    expect(s.carriedBy).toBe('alice');
+  });
+
+  it('changes nothing when the hat is not carried', () => {
+    expect(returnCarriedHat(createHatState(), 'alice', false))
+      .toEqual({ ok: false, reason: 'not-carried' });
+    const s = createHatState();
+    findHat(s, 'alice');
+    placeHat(s, 'alice', 1000);
+    expect(returnCarriedHat(s, 'alice', false))
+      .toEqual({ ok: false, reason: 'not-carried' });
+    expect(s.status).toBe('onCat');
+  });
+
+  it('refuses a bad state', () => {
+    expect(returnCarriedHat(null, 'alice', false))
+      .toEqual({ ok: false, reason: 'bad-state' });
   });
 });
 

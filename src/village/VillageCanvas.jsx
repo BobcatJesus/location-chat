@@ -877,6 +877,21 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
     } catch { /* scene not ready yet — flag still flipped */ }
   };
 
+  // Santa Hat reset (`sq-hat-reset-v1`): a moderator puts the hat
+  // back behind the tree. The button only shows when canManageVenue
+  // is true; the server re-checks the moderator gate. The hat_state
+  // broadcast after a reset updates everyone, so no reply handling
+  // is needed here — the hat is findable again right away.
+  const resetHat = () => {
+    try {
+      const scene = gameRef.current?.scene?.getScene('VillageScene');
+      const socket = scene?.socket;
+      if (socket?.connected) {
+        socket.emit('hat_reset', { roomId });
+      }
+    } catch { /* scene not ready yet — nothing to reset */ }
+  };
+
   const topBarButtons = (
     <>
       {/* Leave rename v1 (sq-leave-rename-v1): the button says what it
@@ -946,6 +961,30 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
       >
         {editorActive ? 'Done' : (outdoorMode ? 'Outdoor Edit' : 'Edit')}
       </button>
+      {/* Santa Hat reset (`sq-hat-reset-v1`): moderators only. Puts
+          the Santa hat back behind the tree — fixes a hat stuck in
+          someone's pocket, on the cat, or on the floor. The server
+          re-checks the moderator gate; the hat_state broadcast after
+          a reset updates everyone. */}
+      {canManageVenue && (
+        <button
+          onClick={() => { setShowMenu(false); resetHat(); }}
+          title="Put the Santa hat back behind the tree"
+          style={{
+            background: 'rgba(0,0,0,0.55)', color: '#fff', border: 'none',
+            borderRadius: 8,
+            padding: '6px 14px',
+            minHeight: 44,
+            display: 'flex', alignItems: 'center',
+            cursor: 'pointer',
+            fontSize: 14,
+            flexShrink: 0,
+            whiteSpace: 'nowrap',
+          }}
+        >
+          🎅 Reset hat
+        </button>
+      )}
       <button
         onClick={() => { setShowMenu(false); setShowInteriorSketch(true); }}
         title="Sketch the interior layout of this place"

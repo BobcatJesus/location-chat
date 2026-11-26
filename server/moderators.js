@@ -11,6 +11,10 @@
 // exactly as before, and nothing else is granted (in particular never
 // 'guest': every guest shares one id, so granting it would make every
 // guest a moderator).
+//
+// sq-hat-reset-v1: this file is also shipped in the hat-reset kit —
+// socket.js imports it, so the kit is self-contained even if the
+// head-moderator kit was never extracted. No logic change here.
 
 // The app owner (Thomas Kelleher). This is his public client-facing
 // contact email; it is normalized the same way as env-var emails, so

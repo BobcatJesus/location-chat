@@ -39,6 +39,7 @@ import { DEPTH } from './depth.js';
 import {
   HAT_MARKER_V1,
   HAT_MARKER_V11,
+  HAT_PICKUP_PROMPT,
   HAT_REWARD_COINS,
   HAT_SLIP_MS,
   HAT_SEARCH_CLICKS,
@@ -251,6 +252,10 @@ export class SantaHatSystem {
     if (next.status !== 'onCat') this._slipEmittedFor = 0;
 
     // ---- one notice per transition (never two for the same event) ----
+    // sq-hat-reset-v1: when *I* pick the hat up — found behind the tree,
+    // picked up off the ground, or a late pickup confirm — the notice is
+    // the pickup prompt "🎅 Santa hat for cats!". Just a message: it
+    // never places the hat.
     if (next.status === 'onCat' && String(next.placedBy || '') === me) {
       // I put it on her — pay +3 the FIRST time ever (localStorage
       // guard, puzzle/tree pattern), plain notice after that.
@@ -273,7 +278,7 @@ export class SantaHatSystem {
       this._setHatNotice('🎅 The cat is wearing the Santa hat!');
     } else if (next.status === 'carried' && prev.status === 'hidden'
       && String(next.carriedBy || '') === me && !foundFailedFull) {
-      this._setHatNotice('🎅 You found a Santa hat behind the Christmas tree!');
+      this._setHatNotice(HAT_PICKUP_PROMPT);
     } else if (next.status === 'carried' && prev.status === 'hidden'
       && String(next.carriedBy || '')) {
       this._setHatNotice('🎅 Someone found the Santa hat behind the Christmas tree!');
@@ -281,12 +286,12 @@ export class SantaHatSystem {
       this._setHatNotice('🎅 The Santa hat slipped off the cat!');
     } else if (next.status === 'carried' && prev.status === 'ground'
       && String(next.carriedBy || '') === me && !pickFailedFull) {
-      this._setHatNotice('🎅 You picked up the Santa hat!');
+      this._setHatNotice(HAT_PICKUP_PROMPT);
     } else if (next.status === 'carried' && prev.status === 'ground'
       && String(next.carriedBy || '')) {
       this._setHatNotice('🎅 Someone picked up the Santa hat.');
     } else if (pickedConfirmed) {
-      this._setHatNotice('🎅 You picked up the Santa hat!');
+      this._setHatNotice(HAT_PICKUP_PROMPT);
     }
 
     this._drawAll();

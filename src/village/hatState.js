@@ -15,15 +15,26 @@
 // each player does it (once ever per player — later placements are
 // just for fun, so the loop cannot be farmed).
 //
-// The hat is a SHARED room item with server state (in-memory per
-// room, like the puzzle / tree / board). A server restart wipes it:
-// the hat hides behind the tree again. The hiding spot is spent
-// once the hat is found — after that it circulates cat -> ground ->
-// pocket -> cat, and never hides again until a restart. Later there
-// may be more hats to find, or hats sold in a shop — NOT in v1.
+// The hat is a SHARED room item with server state, persisted to
+// Postgres (hat_room_state) so a restart restores it wherever it
+// was. After the first find it circulates cat -> ground -> pocket
+// -> cat. Two ways back to hidden: a moderator can reset it
+// (resetHat), and if the carrier leaves the Agora or disconnects
+// with it in their pocket it goes back behind the tree on its own
+// (returnCarriedHat) — otherwise a hat in an absent player's
+// pocket would be gone for everyone. Later there may be more hats
+// to find, or hats sold in a shop — NOT in v1.
 
 export const HAT_MARKER_V1 = 'sq-santa-hat-v1';
 export const HAT_MARKER_V11 = 'sq-santa-hat-v1-1'; // v1.1: hiding spot moved to the foot of the tree
+export const HAT_RESET_MARKER = 'sq-hat-reset-v1'; // v1 reset: moderator reset + return when the carrier leaves
+// sq-hat-reset-v1 — pickup prompt: the exact notice shown when the local
+// player picks up the hat, on EITHER pickup path (found behind the tree
+// or picked up off the ground after a slip). Just a message — it never
+// places the hat; the player still has to walk to the cat and use
+// "Put on the cat" in the pocket. Shown on every pickup (first-time-only
+// would be a one-line change here if the user asks for it).
+export const HAT_PICKUP_PROMPT = '🎅 Santa hat for cats!';
 export const HAT_REWARD_COINS = 3; // a few coins, first placement only
 export const HAT_SLIP_MS = 30 * 60 * 1000; // 30 minutes on the cat, then it slips off
 // sq-santa-hat-v1.2: slip-off widened from 4 minutes to 30 minutes.
@@ -166,6 +177,43 @@ export function releaseHat(state, userId) {
   const uid = String(userId || '');
   if (state.status !== 'carried') return { ok: false, reason: 'not-carried' };
   if (uid && String(state.carriedBy || '') !== uid) return { ok: false, reason: 'not-yours' };
+  state.status = 'hidden';
+  state.carriedBy = null;
+  return { ok: true };
+}
+
+/**
+ * Reset the hat to hidden behind the tree, from ANY status.
+ * Moderator tool (hat_reset): fixes a hat stuck in someone's
+ * pocket, on the cat, or on the floor. The hat is findable again
+ * right away via the normal 3-click search. Returns { ok }.
+ */
+export function resetHat(state) {
+  if (!state) return { ok: false, reason: 'bad-state' };
+  state.status = 'hidden';
+  state.carriedBy = null;
+  state.placedBy = null;
+  state.groundX = 0;
+  state.groundY = 0;
+  state.wornAt = 0;
+  state.slipAt = 0;
+  return { ok: true };
+}
+
+/**
+ * The carrier left the Agora with the hat in their pocket — the
+ * hat goes back to hidden behind the tree instead of staying
+ * "carried" by someone who is gone. Only the carrier's leaving
+ * returns it; anyone else leaving changes nothing. `carrierStillHere`
+ * is true when the carrier still has another socket in the room
+ * (e.g. a second tab) — then the hat stays carried.
+ * Returns { ok, reason? } — 'not-carried' / 'not-yours' / 'still-here'.
+ */
+export function returnCarriedHat(state, userId, carrierStillHere = false) {
+  if (!state) return { ok: false, reason: 'bad-state' };
+  if (state.status !== 'carried') return { ok: false, reason: 'not-carried' };
+  if (String(state.carriedBy || '') !== String(userId || '')) return { ok: false, reason: 'not-yours' };
+  if (carrierStillHere) return { ok: false, reason: 'still-here' };
   state.status = 'hidden';
   state.carriedBy = null;
   return { ok: true };
