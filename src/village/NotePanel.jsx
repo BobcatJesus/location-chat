@@ -51,6 +51,19 @@ const REPORT_REASON_TEXT = {
   error: 'Something went wrong — try again.',
 };
 
+// Notes Strike System v1.1 (`sq-notes-strikes-v1.1`): strike refusal
+// words — the server re-checks every one of these, so these are
+// only the client-side answers before anything is emitted.
+const STRIKE_REASON_TEXT = {
+  'not-found': 'That note is already gone.',
+  'not-allowed': 'Only a moderator can strike a note.',
+  'own-note': 'You can’t strike your own note.',
+  offline: 'You seem to be offline — try again when you’re connected.',
+  'not-available': 'There are no notes in this room.',
+  'not-joined': 'You’re not in the room yet — try again in a moment.',
+  error: 'Something went wrong — try again.',
+};
+
 function fadeLabel(expiresAt, now) {
   const ms = (Number(expiresAt) || 0) - (Number(now) || Date.now());
   if (ms <= 0) return 'fading away now';
@@ -62,11 +75,16 @@ function fadeLabel(expiresAt, now) {
   return 'fades away in ~48h';
 }
 
-export default function NotePanel({ getState, onDelete, onReport, isModerator, noteId, onClose }) {
+export default function NotePanel({ getState, onDelete, onReport, onStrike, isModerator, noteId, onClose }) {
   const [state, setState] = useState(() => {
     try { return getState ? getState() : null; } catch { return null; }
   });
   const [notice, setNotice] = useState('');
+  // Notes Strike System v1.1 (`sq-notes-strikes-v1.1`): a strike is a
+  // real consequence, so the button asks twice — first tap arms it,
+  // second tap strikes. One note in this popup, so a boolean is
+  // enough (the flagged panel needs an id because it has many rows).
+  const [confirmStrike, setConfirmStrike] = useState(false);
 
   useEffect(() => {
     const t = setInterval(() => {
@@ -119,6 +137,32 @@ export default function NotePanel({ getState, onDelete, onReport, isModerator, n
       return;
     }
     setNotice(REPORT_REASON_TEXT[res?.reason] || REPORT_REASON_TEXT.error);
+    refresh();
+  };
+
+  // Notes Strike System v1.1 (`sq-notes-strikes-v1.1`): take this
+  // note down AND strike its author — moderators only, from the
+  // read popup itself, so a bad note you open on the floor can be
+  // struck without hunting for it in the flagged list (and a note
+  // nobody flagged yet is strikable at all). Same two-tap confirm
+  // as the flagged panel. The server removes the note first, so a
+  // strike can never land on an already-gone note.
+  const runStrike = () => {
+    if (!note) return;
+    if (!confirmStrike) {
+      setConfirmStrike(true);
+      setNotice('Tap again to strike — this takes the note down and records a strike against its author.');
+      return;
+    }
+    setConfirmStrike(false);
+    let res = { ok: false, reason: 'error' };
+    try { res = onStrike ? onStrike(note.id) : res; } catch { res = { ok: false, reason: 'error' }; }
+    if (res && res.ok) {
+      setNotice('Taking it down and recording the strike…');
+      refresh();
+      return;
+    }
+    setNotice(STRIKE_REASON_TEXT[res?.reason] || STRIKE_REASON_TEXT.error);
     refresh();
   };
 
@@ -185,6 +229,23 @@ export default function NotePanel({ getState, onDelete, onReport, isModerator, n
                   style={{ ...btnStyle, background: 'transparent', color: '#92400e', border: '1px solid #92400e' }}
                 >
                   Take down
+                </button>
+              )}
+              {/* sq-notes-strikes-v1.1: strike from the read popup.
+                  Moderators only — a writer can't strike their own
+                  note, and the server refuses it anyway. Two taps:
+                  first arms it ("Strike them?"), second strikes. */}
+              {isModerator && (
+                <button
+                  onClick={runStrike}
+                  style={{
+                    ...btnStyle,
+                    background: confirmStrike ? '#92400e' : 'transparent',
+                    color: confirmStrike ? '#fff' : '#92400e',
+                    border: '1px solid #92400e',
+                  }}
+                >
+                  {confirmStrike ? 'Strike them?' : 'Take down + strike'}
                 </button>
               )}
               {/* sq-notes-moderation-v1: report. Not yours, not a

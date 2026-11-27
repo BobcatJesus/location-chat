@@ -1249,6 +1249,10 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
           // Notes Moderation v1 (`sq-notes-moderation-v1`): report
           // a note from the read popup.
           onReport={(noteId) => gameRef.current?.scene?.getScene('VillageScene')?.noteSystem?.reportNote?.(noteId) || { ok: false, reason: 'error' }}
+          // Notes Strike System v1.1 (`sq-notes-strikes-v1.1`): strike
+          // from the read popup — moderators only, same strikeNote
+          // the flagged panel uses.
+          onStrike={(noteId) => gameRef.current?.scene?.getScene('VillageScene')?.noteSystem?.strikeNote?.(noteId) || { ok: false, reason: 'error' }}
           isModerator={isModerator}
           noteId={openNote}
           onClose={() => setOpenNote(null)}
