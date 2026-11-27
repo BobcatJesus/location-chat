@@ -121,11 +121,13 @@ const REASON_TEXT = {
   offline: 'You seem to be offline — try again when you’re connected.',
   'not-available': 'The notice board is only in Agora.',
   'not-found': 'That item is no longer in your pocket.',
+  // Pick-Up Notes v1 (`sq-pickup-notes-v1`): the note had no words.
+  'empty-note': 'A note needs some words first.',
   error: 'Something went wrong — try again.',
 };
 
 export default function InventoryPanel({
-  getState, onUse, onEat, onDrop, onDispose, onBuyBag, onMakeFlyer, onPinFlyer, onPlaceDecoration, onPutHatOnCat, onSendMail, onGoToMailboxRoom, onOpenPuzzle, getBadges, onClose,
+  getState, onUse, onEat, onDrop, onDispose, onBuyBag, onMakeFlyer, onPinFlyer, onPlaceDecoration, onPutHatOnCat, onSendMail, onGoToMailboxRoom, onOpenPuzzle, getBadges, onClose, onWriteNote,
 }) {
   const [state, setState] = useState(() => {
     try { return getState ? getState() : null; } catch { return null; }
@@ -155,6 +157,9 @@ export default function InventoryPanel({
   const [flyerTitle, setFlyerTitle] = useState('');
   const [flyerText, setFlyerText] = useState('');
   const [showFlyerForm, setShowFlyerForm] = useState(false);
+  // Pick-Up Notes v1 (`sq-pickup-notes-v1`): the note being written.
+  const [noteText, setNoteText] = useState('');
+  const [showNoteForm, setShowNoteForm] = useState(false);
   // Mailbox v1 (`sq-mailbox-v1`): which item is being sent, and the
   // recipient's code typed so far.
   const [sendTarget, setSendTarget] = useState(null);
@@ -726,6 +731,64 @@ export default function InventoryPanel({
                     </button>
                     <button
                       onClick={() => { setShowFlyerForm(false); setNotice(''); }}
+                      style={{ ...btnStyle, background: 'transparent' }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Pick-Up Notes v1 (`sq-pickup-notes-v1`): leave a note
+                on the floor where you are standing — free, and it
+                takes no pocket slot. Anonymous: no name is ever
+                shown, and it fades away after 48 hours. */}
+            <div style={{ marginTop: 14 }}>
+              {!showNoteForm ? (
+                <button
+                  onClick={() => setShowNoteForm(true)}
+                  style={btnStyle}
+                >
+                  📝 Write a note · free
+                </button>
+              ) : (
+                <div style={{
+                  padding: 10, borderRadius: 8, background: '#fffdf5',
+                  border: '1px solid #e2b46c',
+                }}>
+                  <div style={{ fontWeight: 'bold', fontSize: 14 }}>📝 Write a note</div>
+                  <div style={{ fontSize: 12.5, color: '#3d6a8a', marginTop: 2 }}>
+                    Free. It lands on the floor where you’re standing —
+                    anyone here can read it, no name is shown, and it
+                    fades away after 48 hours.
+                  </div>
+                  <textarea
+                    value={noteText}
+                    onChange={(e) => setNoteText(e.target.value)}
+                    placeholder="Leave a note for whoever finds it…"
+                    maxLength={280}
+                    rows={3}
+                    style={{ ...inputStyle, resize: 'vertical' }}
+                  />
+                  <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
+                    {noteText.length}/280
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                    <button
+                      onClick={() => {
+                        const ok = run(
+                          () => onWriteNote && onWriteNote(noteText),
+                          '📝 Note left — anyone here can read it!',
+                        );
+                        if (ok) { setNoteText(''); setShowNoteForm(false); }
+                      }}
+                      style={btnStyle}
+                    >
+                      Leave it here
+                    </button>
+                    <button
+                      onClick={() => { setShowNoteForm(false); setNotice(''); }}
                       style={{ ...btnStyle, background: 'transparent' }}
                     >
                       Cancel

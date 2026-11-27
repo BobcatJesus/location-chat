@@ -108,6 +108,14 @@ import {
   saveNoticeBoardState,
   loadNoticeBoardState,
 } from './noticeBoardPersist.js';
+// Pick-Up Notes v1 (`sq-pickup-notes-v1`): per-room notes on the
+// floor, persisted so a restart restores them with their original
+// createdAt (the 48h fade survives a restart).
+import {
+  NOTES_ROOM_STATE_TABLE_SQL,
+  saveNoteState,
+  loadNoteState,
+} from './notePersist.js';
 import {
   DECOR_ROOM_STATE_TABLE_SQL,
   saveDecorState,
@@ -151,6 +159,17 @@ import {
   removeFlyer,
   serializeNoticeBoardState,
 } from '../src/village/noticeBoardState.js';
+// Pick-Up Notes v1 (`sq-pickup-notes-v1`): shared notes on the
+// floor — anyone can read one, the writer or a moderator can take
+// it down, and it fades after 48h. Anonymous: the wire state
+// carries no authorId and no authorName.
+import {
+  createNoteState,
+  dropNote,
+  removeNote,
+  pruneExpiredNotes,
+  serializeNoteState,
+} from '../src/village/noteState.js';
 import {
   createDecorState,
   placeDecoration,
@@ -498,6 +517,15 @@ async function initDb() {
   // which is excluded).
   await pool.query(NOTICE_BOARD_STATE_TABLE_SQL);
   console.log('✅ Postgres notice_board_state table ready');
+  // Pick-Up Notes v1 (`sq-pickup-notes-v1`): one row per room
+  // holding the serialized notes state, so a server restart
+  // restores the notes instead of wiping the floor clean — and a
+  // note's 48 hours are counted from when it was left, restart or
+  // not. NOTE for the Dec 19 reset: the deliberate reset clears
+  // this table — the notes ARE room state (unlike mail, which is
+  // excluded).
+  await pool.query(NOTES_ROOM_STATE_TABLE_SQL);
+  console.log('✅ Postgres room_notes_state table ready');
   // Placed decorations persistence (`sq-decor-persist-v1`): one
   // row per room holding the serialized decor state, so a server
   // restart restores the placed decorations instead of wiping
@@ -1470,6 +1498,76 @@ async function ensureNoticeBoardLoaded(roomId) {
     })();
   }
   return noticeBoardLoadPromises[roomId];
+}
+// Pick-Up Notes v1 (`sq-pickup-notes-v1`): shared notes on the
+// floor, EVERY room. The state is persisted to Postgres
+// (room_notes_state) on every drop and removal and loaded back
+// lazily, so a server restart restores the notes instead of
+// wiping the floor clean — and each note's 48 hours are counted
+// from when it was left, restart or not. Without a DB the notes
+// stay in-memory only, exactly as before.
+// noteRooms[roomId] = { state }.
+const noteRooms = {};
+const noteRoomsLoaded = new Set(); // roomIds whose DB row has been read (or attempted)
+const noteLoadPromises = {}; // roomId -> in-flight load promise
+function noteRoom(roomId) {
+  if (!noteRooms[roomId]) noteRooms[roomId] = { state: createNoteState() };
+  return noteRooms[roomId];
+}
+// Save one room's notes state, never crashing the caller: a failed
+// save warns and the live broadcast still goes out (the in-memory
+// state is the live truth; the next drop/removal retries the save).
+async function persistNotes(roomId) {
+  try {
+    await saveNoteState(pool, roomId, noteRoom(roomId).state);
+  } catch (e) {
+    console.warn('⚠️ notes persist failed:', e && e.message);
+  }
+}
+// Prune a room's expired notes and persist when anything faded.
+// Called after every load and before every drop / removal / read,
+// so an expired note never survives a server touch — and the
+// client also filters expired notes on render, so a dead note
+// never shows on the floor while the server is quiet.
+function pruneNotes(roomId) {
+  const room = noteRoom(roomId);
+  const pruned = pruneExpiredNotes(room.state);
+  if (pruned > 0) persistNotes(roomId);
+  return pruned;
+}
+// Load a room's notes from Postgres the first time it is touched.
+// Concurrent touches share one in-flight load, so a drop can never
+// land on the default empty floor while the real row is still
+// being read. A missing row, a down DB, or a bad row all leave the
+// default empty floor in place. Expired notes are pruned on load,
+// so a note whose 48 hours ran out while the server was down does
+// not come back.
+async function ensureNotesLoaded(roomId) {
+  if (noteRoomsLoaded.has(roomId)) return noteRoom(roomId);
+  if (!noteLoadPromises[roomId]) {
+    noteLoadPromises[roomId] = (async () => {
+      const room = noteRoom(roomId);
+      try {
+        const loaded = await loadNoteState(pool, roomId);
+        if (loaded) room.state = loaded;
+      } catch (e) {
+        console.warn('⚠️ notes load failed:', e && e.message);
+      }
+      pruneNotes(roomId);
+      noteRoomsLoaded.add(roomId);
+      return room;
+    })();
+  }
+  return noteLoadPromises[roomId];
+}
+// The room's notes, anonymous on the wire (no authorId, no
+// authorName) plus the server's clock, so the client's fade
+// countdown is judged against server time.
+function notesWireState(roomId) {
+  return { ...serializeNoteState(noteRoom(roomId).state), now: Date.now() };
+}
+function broadcastNotes(roomId) {
+  io.to(roomId).emit('notes_state', notesWireState(roomId));
 }
 // Decoration Shop v1 (`sq-dec-shop-v1`; persistence
 // `sq-decor-persist-v1`): per-room placed decorations, EVERY room
@@ -3152,6 +3250,81 @@ io.on('connection', (socket) => {
     // the real row is still being read.
     await ensureNoticeBoardLoaded(roomId);
     socket.emit('board_state', serializeNoticeBoardState(noticeBoardRoom(roomId).state));
+  });
+
+  // PICK-UP NOTES (Pick-Up Notes v1, `sq-pickup-notes-v1`).
+  // Leave a note on the floor where you are standing: the server
+  // validates the text (non-empty, up to 280 chars — overlong text
+  // is trimmed, never refused) and broadcasts the floor so every
+  // player in the room sees it. Writing is free and takes no
+  // pocket slot. There is NO per-room cap (user decision) — a room
+  // holds as many notes as people leave. The dropper gets a
+  // note_drop_result answer (the pending-drop pattern, same as
+  // pinning a flyer); the note itself is anonymous on the wire.
+  socket.on('note_drop', async ({ roomId, id, text, x, y } = {}) => {
+    if (!roomId) return;
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const userId = socketUserMap[socket.id] || socket.id;
+    const rate = checkRateLimit(userId);
+    if (!rate.allowed) {
+      socket.emit('note_drop_result', { id, ok: false, reason: 'rate-limited' });
+      return;
+    }
+    await ensureNotesLoaded(roomId);
+    pruneNotes(roomId);
+    const room = noteRoom(roomId);
+    const res = dropNote(room.state, {
+      id,
+      text,
+      authorId: userId,
+      x,
+      y,
+    });
+    if (!res.ok) {
+      socket.emit('note_drop_result', { id, ok: false, reason: res.reason });
+      return;
+    }
+    broadcastNotes(roomId);
+    persistNotes(roomId);
+    socket.emit('note_drop_result', { id: res.note.id, ok: true });
+  });
+
+  // PICK-UP NOTES REMOVAL: your own note, or any note if you are
+  // a moderator (same canManage check as remove_decoration and
+  // the jukebox takedown). The server re-checks authorship — the
+  // wire state never says who wrote a note, so a bad client
+  // cannot claim one. The broadcast carries the result.
+  socket.on('note_delete', async ({ roomId, noteId } = {}) => {
+    if (!roomId) return;
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const userId = socketUserMap[socket.id] || socket.id;
+    const rate = checkRateLimit(userId);
+    if (!rate.allowed) {
+      socket.emit('note_delete_result', { noteId, ok: false, reason: 'rate-limited' });
+      return;
+    }
+    await ensureNotesLoaded(roomId);
+    pruneNotes(roomId);
+    const room = noteRoom(roomId);
+    const res = removeNote(room.state, noteId, userId, getVenuePermissions(roomId, userId).canManage);
+    if (!res.ok) {
+      socket.emit('note_delete_result', { noteId, ok: false, reason: res.reason });
+      return;
+    }
+    broadcastNotes(roomId);
+    persistNotes(roomId);
+    socket.emit('note_delete_result', { noteId, ok: true });
+  });
+
+  // PICK-UP NOTES STATE: the room's notes, sent when you join (or
+  // ask). Expired notes are pruned first, so a joiner never sees
+  // a note whose 48 hours already ran out.
+  socket.on('get_notes', async ({ roomId } = {}) => {
+    if (!roomId) return;
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    await ensureNotesLoaded(roomId);
+    pruneNotes(roomId);
+    socket.emit('notes_state', notesWireState(roomId));
   });
 
   // MAILBOX (Mailbox v1, `sq-mailbox-v1`). Send a pocket item to

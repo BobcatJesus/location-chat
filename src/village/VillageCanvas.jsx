@@ -11,6 +11,9 @@ import DecorShopPanel from './DecorShopPanel.jsx';
 // panel in food-shop rooms.
 import BreadShopPanel from './BreadShopPanel.jsx';
 import NoticeBoardPanel from './NoticeBoardPanel.jsx';
+// Pick-Up Notes v1 (`sq-pickup-notes-v1`): the read popup for one
+// note on the floor.
+import NotePanel from './NotePanel.jsx';
 import MailboxPanel from './MailboxPanel.jsx';
 import HomeStoragePanel from './HomeStoragePanel.jsx';
 import PlayerBadgesPanel from './PlayerBadgesPanel.jsx';
@@ -291,6 +294,9 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
   const [openPuzzle, setOpenPuzzle] = useState(false);
   const [openInventory, setOpenInventory] = useState(false);
   const [openNoticeBoard, setOpenNoticeBoard] = useState(false);
+  // Pick-Up Notes v1 (`sq-pickup-notes-v1`): the id of the note
+  // being read, or null.
+  const [openNote, setOpenNote] = useState(null);
   // Mailbox v1 (`sq-mailbox-v1`): the mailbox overlay + how many
   // unread packages are waiting (the envelope dot on the 🎒 button).
   const [openMailbox, setOpenMailbox] = useState(false);
@@ -418,6 +424,9 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
     key: ['🔑', 'Pick up the golden key'],
     'puzzle-table': ['🧩', 'Open the puzzle table'],
     'notice-board': ['📌', 'Read the notice board'],
+    // Pick-Up Notes v1 (`sq-pickup-notes-v1`): read a note on the
+    // floor.
+    note: ['📝', 'Read the note'],
     // Mailbox v1 (`sq-mailbox-v1`): open your mailbox at the park.
     mailbox: ['📬', 'Open your mailbox'],
     'storage-chest': ['📦', 'Open your storage chest'],
@@ -717,6 +726,9 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
       onOpenPuzzle: () => setOpenPuzzle(true),
       onOpenInventory: () => setOpenInventory(true),
       onOpenNoticeBoard: () => setOpenNoticeBoard(true),
+      // Pick-Up Notes v1 (`sq-pickup-notes-v1`): opens the read
+      // popup for one note on the floor.
+      onOpenNote: (noteId) => setOpenNote(noteId),
       // Mailbox v1 (`sq-mailbox-v1`): opens the mailbox overlay.
       onOpenMailbox: () => setOpenMailbox(true),
       // Mailbox v1 (`sq-mailbox-v1`): every room the app knows
@@ -1180,6 +1192,10 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
           onDispose={(id) => gameRef.current?.scene?.getScene('VillageScene')?.itemsSystem?.disposeTrash?.(id) || { ok: false, reason: 'error' }}
           onBuyBag={() => gameRef.current?.scene?.getScene('VillageScene')?.itemsSystem?.buyBag?.() || { ok: false, reason: 'error' }}
           onMakeFlyer={(title, text) => gameRef.current?.scene?.getScene('VillageScene')?.itemsSystem?.makeFlyer?.(title, text) || { ok: false, reason: 'error' }}
+          // Pick-Up Notes v1 (`sq-pickup-notes-v1`): leave a note on
+          // the floor where you are standing — free, and it takes
+          // no pocket slot (a note is a world object, not an item).
+          onWriteNote={(text) => gameRef.current?.scene?.getScene('VillageScene')?.noteSystem?.dropNote?.(text) || { ok: false, reason: 'error' }}
           onPinFlyer={(id) => gameRef.current?.scene?.getScene('VillageScene')?.itemsSystem?.pinFlyerToBoard?.(id) || { ok: false, reason: 'error' }}
           onPlaceDecoration={(id) => gameRef.current?.scene?.getScene('VillageScene')?.decorSystem?.placeDecoration?.(id) || { ok: false, reason: 'error' }}
           onPutHatOnCat={(id) => gameRef.current?.scene?.getScene('VillageScene')?.santaHatSystem?.placeOnCat?.(id) || { ok: false, reason: 'error' }}
@@ -1203,6 +1219,19 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
           onRemove={(flyerId) => gameRef.current?.scene?.getScene('VillageScene')?.noticeBoardSystem?.removeFlyer?.(flyerId) || { ok: false, reason: 'error' }}
           isModerator={isModerator}
           onClose={() => setOpenNoticeBoard(false)}
+        />
+      )}
+      {/* Pick-Up Notes v1 (`sq-pickup-notes-v1`): read one note on
+          the floor — text and fade time only, anonymous. The Delete
+          button shows only for the writer or a moderator; the
+          server re-validates either way. */}
+      {openNote && (
+        <NotePanel
+          getState={() => gameRef.current?.scene?.getScene('VillageScene')?.noteSystem?.getState?.()}
+          onDelete={(noteId) => gameRef.current?.scene?.getScene('VillageScene')?.noteSystem?.deleteNote?.(noteId) || { ok: false, reason: 'error' }}
+          isModerator={isModerator}
+          noteId={openNote}
+          onClose={() => setOpenNote(null)}
         />
       )}
       {/* Mailbox v1 (`sq-mailbox-v1`): your packages at your nearest

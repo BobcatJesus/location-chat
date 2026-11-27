@@ -19,6 +19,7 @@ import { HungerSystem } from './HungerSystem.js';
 import { QuestManager } from './QuestManager.js';
 import { ItemsSystem } from './ItemsSystem.js';
 import { NoticeBoardSystem } from './NoticeBoardSystem.js';
+import { NoteSystem } from './NoteSystem.js';
 import { MailSystem } from './MailSystem.js';
 import { GiftSystem } from './GiftSystem.js';
 import { DecorSystem } from './DecorSystem.js';
@@ -498,6 +499,9 @@ export class VillageScene extends Phaser.Scene {
     this.onOpenPuzzle = d.onOpenPuzzle ?? (() => {});
     this.onOpenInventory = d.onOpenInventory ?? (() => {});
     this.onOpenNoticeBoard = d.onOpenNoticeBoard ?? (() => {});
+    // Pick-Up Notes v1 (`sq-pickup-notes-v1`): opens the read
+    // popup for one note on the floor.
+    this.onOpenNote = d.onOpenNote ?? (() => {});
     // Mailbox v1 (`sq-mailbox-v1`): opens the mailbox overlay.
     this.onOpenMailbox = d.onOpenMailbox ?? (() => {});
     // Mailbox v1 (`sq-mailbox-v1`): every room the app knows about
@@ -716,6 +720,11 @@ export class VillageScene extends Phaser.Scene {
     // Each room's board is separate.
     this.noticeBoardSystem = new NoticeBoardSystem(this);
     this.noticeBoardSystem.refresh();
+    // Pick-Up Notes v1 (`sq-pickup-notes-v1`): notes on the floor
+    // anyone in the room can pick up and read, server-synced.
+    // Each room's floor is separate.
+    this.noteSystem = new NoteSystem(this);
+    this.noteSystem.refresh();
     // Mailbox v1 (`sq-mailbox-v1`): the post box at the player's
     // nearest park (or the nearest public place when no park is
     // close) + sending and collecting mail. Renders only in the
@@ -1156,6 +1165,15 @@ export class VillageScene extends Phaser.Scene {
         const br = this.noticeBoardSystem?.boardTapAt(ptr.worldX, ptr.worldY);
         if (br && br.opened) return;
       } catch {}
+      // Pick-Up Notes v1 (`sq-pickup-notes-v1`): a click on a note
+      // on the floor opens it to read (if you are standing close
+      // enough) — same scene-level pointerdown pattern as the
+      // notice board. A click that only MISSES a note falls through
+      // to tap-to-move below.
+      try {
+        const nr = this.noteSystem?.noteTapAt(ptr.worldX, ptr.worldY);
+        if (nr && nr.opened) return;
+      } catch {}
       // Mailbox v1 (`sq-mailbox-v1`): a click on the mailbox itself
       // opens it (if you are standing close enough and the key is
       // in your pocket) — same scene-level pointerdown pattern as
@@ -1569,6 +1587,10 @@ export class VillageScene extends Phaser.Scene {
     } else if (kind === 'notice-board') {
       // Notice board v1: open the pinned-flyers board.
       this.noticeBoardSystem?.openBoard();
+    } else if (kind === 'note') {
+      // Pick-Up Notes v1 (`sq-pickup-notes-v1`): read the nearest
+      // note on the floor.
+      this.noteSystem?.readNearest();
     } else if (kind === 'mailbox') {
       // Mailbox v1: open your mailbox (the key must be in your
       // pocket — MailSystem says so when it is not).
@@ -1647,6 +1669,11 @@ export class VillageScene extends Phaser.Scene {
     if (this.snowmanQuest?.nearestPile(this.player.gx, this.player.gy)) return 'snow-pile';
     if (this.snowmanQuest?.nearestSnowman(this.player.gx, this.player.gy)) return 'build-snowman';
     if (this.noticeBoardSystem?.nearestBoard(this.player.gx, this.player.gy)) return 'notice-board';
+    // Pick-Up Notes v1 (`sq-pickup-notes-v1`): a note on the floor
+    // wins over the mailbox and the litter — it is a distinct
+    // readable thing, and standing on it should read it, not open
+    // the box behind it.
+    if (this.noteSystem?.nearestNote(this.player.gx, this.player.gy)) return 'note';
     // Mailbox v1: the post box at the player's nearest park (or the
     // fallback public place) — after the board, before the chest.
     if (this.mailSystem?.nearestMailbox(this.player.gx, this.player.gy)) return 'mailbox';
@@ -2455,6 +2482,11 @@ export class VillageScene extends Phaser.Scene {
       socket.emit('get_tree', { roomId: this.roomId });
       socket.emit('get_snowman', { roomId: this.roomId });
       socket.emit('get_board', { roomId: this.roomId });
+      // Pick-Up Notes v1 (`sq-pickup-notes-v1`): re-request the
+      // room's notes on (re)connect, so a note left during a
+      // disconnect window comes back — and one whose 48 hours ran
+      // out does not.
+      socket.emit('get_notes', { roomId: this.roomId });
       socket.emit('get_home', { roomId: this.roomId });
       // Mailbox v1: re-request the inbox on (re)connect, so mail
       // sent during a disconnect window comes back — and the login
@@ -2761,6 +2793,25 @@ export class VillageScene extends Phaser.Scene {
     // per room, in-memory on the server like the puzzle).
     socket.on('board_state', (payload = {}) => {
       this.noticeBoardSystem?.applyState(payload);
+    });
+
+    // Pick-Up Notes state (shared for the whole room — one floor
+    // of notes per room, in-memory on the server like the notice
+    // board, persisted to Postgres).
+    socket.on('notes_state', (payload = {}) => {
+      this.noteSystem?.applyState(payload);
+    });
+
+    // Pick-Up Notes drop answer (per drop): ok → the note is mine
+    // now; fail → it never landed, with the reason.
+    socket.on('note_drop_result', (payload = {}) => {
+      this.noteSystem?.onDropResult(payload);
+    });
+
+    // Pick-Up Notes removal answer (per removal): ok is confirmed
+    // by the broadcast; fail says why.
+    socket.on('note_delete_result', (payload = {}) => {
+      this.noteSystem?.onDeleteResult(payload);
     });
 
     // Placed decorations (shared for the whole room — one set per
@@ -4135,6 +4186,8 @@ export class VillageScene extends Phaser.Scene {
     this.itemsSystem = null;
     this.noticeBoardSystem?.destroy();
     this.noticeBoardSystem = null;
+    this.noteSystem?.destroy(); // Pick-Up Notes v1 (`sq-pickup-notes-v1`)
+    this.noteSystem = null;
     this.mailSystem?.destroy();
     this.mailSystem = null;
     this.giftSystem?.destroy(); // Gift Giver v1 (`sq-gift-giver-v1`)
@@ -4212,6 +4265,9 @@ export class VillageScene extends Phaser.Scene {
     // floor (upper floors have no board — _board goes null, so the
     // ground-floor board cannot be opened from upstairs).
     this.noticeBoardSystem?.refresh();
+    // Pick-Up Notes v1 (`sq-pickup-notes-v1`): re-resolve the
+    // room's notes for this floor (notes re-draw after the switch).
+    this.noteSystem?.refresh();
     // Mailbox v1: re-resolve the mailbox for this floor (upper
     // floors have no mailbox — _mailbox goes null, so the
     // ground-floor box cannot be opened from upstairs).
