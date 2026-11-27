@@ -6,6 +6,11 @@
 // original createdAt — and a note left Monday at noon still fades
 // Wednesday at noon, restart or not.
 //
+// Notes Moderation v1 (`sq-notes-moderation-v1`): the stored row
+// also carries each note's flaggedBy and hidden, so a restart
+// never un-hides a flagged note or forgets who already flagged
+// it — the round-trip test below pins that.
+//
 // These tests cover the persistence layer
 // (server/notePersist.js) against a fake in-memory pool — no real
 // Postgres needed. The socket.js wiring (ensureNotesLoaded /
@@ -16,6 +21,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   NOTE_PERSIST_MARKER,
+  NOTE_MODERATION_PERSIST_MARKER,
   NOTES_ROOM_STATE_TABLE,
   NOTES_ROOM_STATE_TABLE_SQL,
   saveNoteState,
@@ -25,6 +31,8 @@ import {
   NOTE_TTL_MS,
   createNoteState,
   dropNote,
+  flagNote,
+  serializeNoteState,
   serializeNoteStateForStorage,
 } from '../src/village/noteState.js';
 
@@ -63,6 +71,10 @@ function note(n, by = `user-${n}`, createdAt = NOW) {
     x: 100 + n,
     y: 200 + n,
     createdAt,
+    // sq-notes-moderation-v1: the stored shape carries the
+    // moderation fields too (empty by default).
+    flaggedBy: [],
+    hidden: false,
   };
 }
 
@@ -78,6 +90,9 @@ function midNoteState() {
 describe('constants', () => {
   it('carries the v1 marker and the table name', () => {
     expect(NOTE_PERSIST_MARKER).toBe('sq-pickup-notes-v1');
+    // sq-notes-moderation-v1: the row also carries flaggedBy and
+    // hidden per note.
+    expect(NOTE_MODERATION_PERSIST_MARKER).toBe('sq-notes-moderation-v1');
     expect(NOTES_ROOM_STATE_TABLE).toBe('room_notes_state');
   });
 
@@ -99,7 +114,7 @@ describe('save/load round-trip', () => {
     expect(loaded.notes).toEqual([]);
   });
 
-  it('restores notes in order, all fields kept — including authorId', async () => {
+  it('restores notes in order, all fields kept — including authorId, flaggedBy and hidden', async () => {
     const pool = makeFakePool();
     const before = midNoteState();
     await saveNoteState(pool, ROOM, before);
@@ -111,6 +126,25 @@ describe('save/load round-trip', () => {
     // state still never carries it (see noteState.test.js).
     expect(loaded.notes[0].authorId).toBe('user-1');
     expect(loaded.notes[2]).toEqual(note(3));
+  });
+
+  it('a flagged, hidden note survives the round-trip still hidden — a restart never un-hides it', async () => {
+    const pool = makeFakePool();
+    const before = midNoteState();
+    // Flag note-1 up to the auto-hide threshold, as three
+    // different players would.
+    for (const who of ['alice@example.com', 'bob@example.com', 'carol@example.com']) {
+      expect(flagNote(before, 'note-1', who).ok).toBe(true);
+    }
+    expect(before.notes[0].hidden).toBe(true);
+    await saveNoteState(pool, ROOM, before);
+    const loaded = await loadNoteState(pool, ROOM);
+    expect(loaded.notes[0].hidden).toBe(true);
+    expect(loaded.notes[0].flaggedBy).toEqual([
+      'alice@example.com', 'bob@example.com', 'carol@example.com',
+    ]);
+    // And the reloaded state still hides it from the wire.
+    expect(serializeNoteState(loaded).notes.map((n) => n.id)).toEqual(['note-2', 'note-3']);
   });
 
   it('load drops notes whose 48 hours ran out while the server was down', async () => {

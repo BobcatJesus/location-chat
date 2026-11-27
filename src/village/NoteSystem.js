@@ -103,6 +103,13 @@ export class NoteSystem {
     this._dropTimer = null;
     this._pendingRemoval = null; // { noteId } awaiting the broadcast that confirms it
     this._myNoteIds = this._loadMyNoteIds();
+    // Notes Moderation v1 (`sq-notes-moderation-v1`): ids this
+    // profile has reported (one flag per player — the server
+    // re-checks, this just keeps the button honest), and the last
+    // moderator-only flagged list fetched for this room.
+    this._reportedIds = new Set();
+    this._flaggedList = []; // moderator-only review list for this room
+    this._flaggedRoomId = '';
     this._pendingTimeoutMs = null; // test seam: tests set this to a few ms
     this._lastCheckMs = 0;
   }
@@ -140,12 +147,16 @@ export class NoteSystem {
   /** Plain-data state for the read panel (polls this ~2x/sec).
    * `mine` is per-note, computed client-side from the ids this
    * profile dropped — the wire state is anonymous, so the server
-   * never tells us. `now` is server-synced, for the fade countdown. */
+   * never tells us. `reported` is the same idea for flags: this
+   * profile already reported this note (the server re-checks one
+   * flag per player; this just keeps the Report button honest).
+   * `now` is server-synced, for the fade countdown. */
   getState() {
     return {
       notes: (this.state.notes || []).map((n) => ({
         ...n,
         mine: this._myNoteIds.has(String(n.id)),
+        reported: this._reportedIds.has(String(n.id)),
       })),
       count: (this.state.notes || []).length,
       myUserId: this._myUserId(),
@@ -288,14 +299,19 @@ export class NoteSystem {
 
   /** The server answered a drop: ok → the note is mine now (or it
    * already is, via the broadcast — settling is idempotent);
-   * fail → it never landed, with the reason. */
+   * fail → it never landed, with the reason. A refusal spends
+   * NOTHING: _settleDropTarget (the only place a sheet is spent)
+   * is never called here, so a content refusal, a rate limit, or
+   * any other refusal costs no paper. The server may send the
+   * exact refusal words in `message` (the Perspective refusal
+   * does) — those win over the local reason text. */
   onDropResult(payload = {}) {
     const id = String(payload.id || '');
     if (!id || !this._pendingDrop || this._pendingDrop.id !== id) return;
     this._clearDropTimer();
     if (!payload.ok) {
       this._pendingDrop = null;
-      this._setNoteNotice(this._dropReasonText(payload.reason));
+      this._setNoteNotice(String(payload.message || '') || this._dropReasonText(payload.reason));
       return;
     }
     this._settleDrop(id);
@@ -311,6 +327,11 @@ export class NoteSystem {
       // answer with the same reason — same words either way.
       case 'no-note-paper': return '📝 You need note paper to leave a note — buy some at the Agora bar.';
       case 'already-pending': return '📝 That note is still being left — give it a second.';
+      // Notes Moderation v1 (`sq-notes-moderation-v1`): the
+      // Perspective refusal. The server sends the exact words in
+      // the payload's `message`, so this is only the fallback
+      // when a message is missing — same words either way.
+      case 'content-refused': return '📝 That note looks hurtful — try writing something kinder.';
       default: return '📝 The room didn’t take that — try again.';
     }
   }
@@ -365,6 +386,126 @@ export class NoteSystem {
     this._setNoteNotice(payload.reason === 'not-allowed'
       ? '📝 You can only take down your own notes.'
       : '📝 That note is already gone.');
+  }
+
+  // ---- reporting + moderator review (`sq-notes-moderation-v1`) -------------
+
+  /** Report a note (NotePanel's "🚩 Report"). One flag per
+   * player, and never your own note — both are refused here so
+   * the button stays honest, and the server re-checks either
+   * way. Reporting never reveals the author: the panel shows no
+   * name, and the report carries only the note id. Returns
+   * { ok, pending?, reason? }. */
+  reportNote(noteId) {
+    if (!this.enabled) return { ok: false, reason: 'not-available' };
+    const note = (this.state.notes || []).find((n) => n.id === String(noteId));
+    if (!note) return { ok: false, reason: 'not-found' };
+    if (this._myNoteIds.has(String(note.id))) return { ok: false, reason: 'own-note' };
+    if (this._reportedIds.has(String(note.id))) return { ok: false, reason: 'already-flagged' };
+    if (!this.scene?.socket?.connected) return { ok: false, reason: 'offline' };
+    if (this.scene?.isRoomJoined?.() === false) return { ok: false, reason: 'not-joined' };
+    try {
+      this.scene.socket.emit('note_report', { roomId: this.scene.roomId, noteId: note.id });
+    } catch {
+      return { ok: false, reason: 'error' };
+    }
+    return { ok: true, pending: true };
+  }
+
+  /** The server answered a report. ok → it is flagged (and the
+   * note may have just auto-hidden — the broadcast carries the
+   * floor without it). fail says why. */
+  onReportResult(payload = {}) {
+    const noteId = String(payload.noteId || '');
+    if (!noteId) return;
+    if (!payload.ok) {
+      const reason = String(payload.reason || '');
+      this._setNoteNotice(reason === 'own-note'
+        ? '🚩 You can’t report your own note.'
+        : reason === 'already-flagged'
+          ? '🚩 You already reported this note.'
+          : reason === 'not-found'
+            ? '🚩 That note is already gone.'
+            : '🚩 The report didn’t go through — try again.');
+      return;
+    }
+    this._reportedIds.add(noteId);
+    this._setNoteNotice(payload.hidden
+      ? '🚩 Reported — enough flags hid this note until a moderator looks at it.'
+      : '🚩 Reported — a moderator will take a look.');
+  }
+
+  /** Ask the server for this room's flagged/hidden notes
+   * (moderator-only). The answer lands in onFlaggedListResult
+   * and is read by getFlaggedState (the review panel polls it).
+   * A non-moderator's request is refused by the server. */
+  requestFlaggedList() {
+    if (!this.enabled) return { ok: false, reason: 'not-available' };
+    if (!this.scene?.socket?.connected) return { ok: false, reason: 'offline' };
+    try {
+      this.scene.socket.emit('note_flagged_list', { roomId: this.scene.roomId });
+    } catch {
+      return { ok: false, reason: 'error' };
+    }
+    return { ok: true, pending: true };
+  }
+
+  /** The server answered a flagged-list request. The list is
+   * moderator-only data (it carries author ids) and is kept
+   * here, never merged into the floor state. */
+  onFlaggedListResult(payload = {}) {
+    if (!payload.ok) {
+      this._flaggedList = [];
+      return;
+    }
+    this._flaggedList = Array.isArray(payload.notes) ? payload.notes : [];
+    this._flaggedRoomId = String(payload.roomId || this.scene?.roomId || '');
+  }
+
+  /** Plain-data state for the moderator review panel (polls this
+   * while open). Each entry carries the text, the room, the flag
+   * count, and the author id — moderators only, by construction:
+   * only a moderator can open the panel, and only the server's
+   * moderator-gated answer ever fills this list. */
+  getFlaggedState() {
+    return {
+      notes: this._flaggedList.map((n) => ({ ...n })),
+      count: this._flaggedList.length,
+      roomId: this._flaggedRoomId,
+      roomName: this.scene?.roomId || '',
+    };
+  }
+
+  /** Restore a flagged/hidden note (moderator-only, from the
+   * review panel). Its flags are cleared and it is back on the
+   * floor; the broadcast confirms it. Returns { ok, pending?,
+   * reason? }. */
+  restoreFlaggedNote(noteId) {
+    if (!this.enabled) return { ok: false, reason: 'not-available' };
+    if (!this.scene?.socket?.connected) return { ok: false, reason: 'offline' };
+    if (this.scene?.isRoomJoined?.() === false) return { ok: false, reason: 'not-joined' };
+    try {
+      this.scene.socket.emit('note_restore', { roomId: this.scene.roomId, noteId: String(noteId) });
+    } catch {
+      return { ok: false, reason: 'error' };
+    }
+    return { ok: true, pending: true };
+  }
+
+  /** The server answered a restore. ok → the note is back on
+   * the floor (the broadcast confirms it) and the review list is
+   * re-requested so the row disappears at once. */
+  onRestoreResult(payload = {}) {
+    const noteId = String(payload.noteId || '');
+    if (!noteId) return;
+    if (!payload.ok) {
+      this._setNoteNotice(payload.reason === 'not-allowed'
+        ? '🚩 Only a moderator can restore a note.'
+        : '🚩 That note is already gone.');
+      return;
+    }
+    this._setNoteNotice('🚩 Note restored — it’s back on the floor.');
+    this.requestFlaggedList();
   }
 
   // ---- reading -------------------------------------------------------------
@@ -472,6 +613,9 @@ export class NoteSystem {
     this._pendingDrop = null;
     this._unconfirmedDrop = null;
     this._pendingRemoval = null;
+    this._reportedIds = new Set();
+    this._flaggedList = [];
+    this._flaggedRoomId = '';
     this.scene = null;
   }
 }

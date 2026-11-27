@@ -14,6 +14,9 @@ import NoticeBoardPanel from './NoticeBoardPanel.jsx';
 // Pick-Up Notes v1 (`sq-pickup-notes-v1`): the read popup for one
 // note on the floor.
 import NotePanel from './NotePanel.jsx';
+// Notes Moderation v1 (`sq-notes-moderation-v1`): the
+// moderator-only review list for flagged/hidden notes.
+import FlaggedNotesPanel from './FlaggedNotesPanel.jsx';
 import MailboxPanel from './MailboxPanel.jsx';
 import HomeStoragePanel from './HomeStoragePanel.jsx';
 import PlayerBadgesPanel from './PlayerBadgesPanel.jsx';
@@ -297,6 +300,9 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
   // Pick-Up Notes v1 (`sq-pickup-notes-v1`): the id of the note
   // being read, or null.
   const [openNote, setOpenNote] = useState(null);
+  // Notes Moderation v1 (`sq-notes-moderation-v1`): the
+  // moderator-only flagged-notes review panel, or false.
+  const [openFlaggedNotes, setOpenFlaggedNotes] = useState(false);
   // Mailbox v1 (`sq-mailbox-v1`): the mailbox overlay + how many
   // unread packages are waiting (the envelope dot on the 🎒 button).
   const [openMailbox, setOpenMailbox] = useState(false);
@@ -998,6 +1004,29 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
           🎅 Reset hat
         </button>
       )}
+      {/* Notes Moderation v1 (`sq-notes-moderation-v1`): moderators
+          only, next to Reset hat. Opens the flagged-notes review
+          list for this room — restore a note or take it down. The
+          server re-checks the moderator gate on every request. */}
+      {canManageVenue && (
+        <button
+          onClick={() => { setShowMenu(false); setOpenFlaggedNotes(true); }}
+          title="Review notes players reported in this room"
+          style={{
+            background: 'rgba(0,0,0,0.55)', color: '#fff', border: 'none',
+            borderRadius: 8,
+            padding: '6px 14px',
+            minHeight: 44,
+            display: 'flex', alignItems: 'center',
+            cursor: 'pointer',
+            fontSize: 14,
+            flexShrink: 0,
+            whiteSpace: 'nowrap',
+          }}
+        >
+          🚩 Flagged
+        </button>
+      )}
       <button
         onClick={() => { setShowMenu(false); setShowInteriorSketch(true); }}
         title="Sketch the interior layout of this place"
@@ -1211,9 +1240,26 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
         <NotePanel
           getState={() => gameRef.current?.scene?.getScene('VillageScene')?.noteSystem?.getState?.()}
           onDelete={(noteId) => gameRef.current?.scene?.getScene('VillageScene')?.noteSystem?.deleteNote?.(noteId) || { ok: false, reason: 'error' }}
+          // Notes Moderation v1 (`sq-notes-moderation-v1`): report
+          // a note from the read popup.
+          onReport={(noteId) => gameRef.current?.scene?.getScene('VillageScene')?.noteSystem?.reportNote?.(noteId) || { ok: false, reason: 'error' }}
           isModerator={isModerator}
           noteId={openNote}
           onClose={() => setOpenNote(null)}
+        />
+      )}
+      {/* Notes Moderation v1 (`sq-notes-moderation-v1`): the
+          moderator-only flagged-notes review list for this room.
+          Restore puts a note back on the floor, Take down uses
+          the same moderator-gated delete as the read popup. */}
+      {openFlaggedNotes && (
+        <FlaggedNotesPanel
+          getState={() => gameRef.current?.scene?.getScene('VillageScene')?.noteSystem?.getFlaggedState?.()}
+          onRefresh={() => gameRef.current?.scene?.getScene('VillageScene')?.noteSystem?.requestFlaggedList?.() || { ok: false, reason: 'error' }}
+          onRestore={(noteId) => gameRef.current?.scene?.getScene('VillageScene')?.noteSystem?.restoreFlaggedNote?.(noteId) || { ok: false, reason: 'error' }}
+          onDelete={(noteId) => gameRef.current?.scene?.getScene('VillageScene')?.noteSystem?.deleteNote?.(noteId) || { ok: false, reason: 'error' }}
+          roomName={normalizedRoom?.name || roomId}
+          onClose={() => setOpenFlaggedNotes(false)}
         />
       )}
       {/* Mailbox v1 (`sq-mailbox-v1`): your packages at your nearest
@@ -1409,6 +1455,31 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
         >
           Zoom: {zoomLabel}
         </button>
+        {/* sq-exit-place-furniture-v1: Done on the top bar while
+            placing furniture. The menu's Place furniture / Done
+            button is hidden inside the menu popup while you are
+            placing, so exiting took opening the menu first. This
+            button shows only while edit mode is active AND the
+            menu is closed — when the menu opens it disappears and
+            the menu's own Done is the exit — so there is always
+            exactly one Done visible. Same toggleEditor, no
+            setShowMenu (the menu is already closed). Amber, like
+            the active Place furniture button, so it reads as the
+            exit. */}
+        {editorActive && !showMenu && (
+          <button
+            onClick={() => toggleEditor()}
+            style={{
+              background: '#fbbf24', color: '#000', border: 'none',
+              borderRadius: 8, padding: '6px 14px',
+              minHeight: 44, display: 'flex', alignItems: 'center',
+              cursor: 'pointer', fontSize: 14, fontWeight: 'bold',
+              flexShrink: 0, whiteSpace: 'nowrap',
+            }}
+          >
+            Done
+          </button>
+        )}
       </div>
 
       {/* Menu popup (`sq-mobile-move-v1`, desktop in

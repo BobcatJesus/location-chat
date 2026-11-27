@@ -2814,6 +2814,22 @@ export class VillageScene extends Phaser.Scene {
       this.noteSystem?.onDeleteResult(payload);
     });
 
+    // Notes Moderation v1 (`sq-notes-moderation-v1`): report
+    // answer, flagged-list answer (moderator-only), and restore
+    // answer — all routed to NoteSystem, same as the drop and
+    // delete answers above.
+    socket.on('note_report_result', (payload = {}) => {
+      this.noteSystem?.onReportResult(payload);
+    });
+
+    socket.on('note_flagged_list_result', (payload = {}) => {
+      this.noteSystem?.onFlaggedListResult(payload);
+    });
+
+    socket.on('note_restore_result', (payload = {}) => {
+      this.noteSystem?.onRestoreResult(payload);
+    });
+
     // Placed decorations (shared for the whole room — one set per
     // room, in-memory on the server like the notice board).
     socket.on('decor_state', (payload = {}) => {

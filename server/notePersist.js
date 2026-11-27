@@ -46,6 +46,14 @@ import {
 
 // sq-pickup-notes-v1 — marker for the v1 landing check.
 export const NOTE_PERSIST_MARKER = 'sq-pickup-notes-v1';
+// sq-notes-moderation-v1 — marker for the moderation landing
+// check. The row stores the STORAGE serialization, which now
+// also carries each note's flaggedBy and hidden — a restart must
+// never un-hide a flagged note or forget who already flagged it.
+// The wire serialization still strips all three (authorId,
+// flaggedBy, hidden), so the row's moderation state never
+// reaches a non-moderator client.
+export const NOTE_MODERATION_PERSIST_MARKER = 'sq-notes-moderation-v1';
 
 export const NOTES_ROOM_STATE_TABLE = 'room_notes_state';
 

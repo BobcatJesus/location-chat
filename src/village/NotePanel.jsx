@@ -21,6 +21,8 @@
 //     (NoteSystem.getState)
 //   onDelete(noteId) — returns { ok, reason? }
 //     (NoteSystem.deleteNote)
+//   onReport(noteId) — returns { ok, reason? }
+//     (NoteSystem.reportNote; `sq-notes-moderation-v1`)
 //   isModerator — whether this player is a moderator (VillageCanvas
 //     prop); moderators can take down any note, everyone else only
 //     their own. The server re-validates either way.
@@ -37,6 +39,18 @@ const REASON_TEXT = {
   error: 'Something went wrong — try again.',
 };
 
+// Notes Moderation v1 (`sq-notes-moderation-v1`): report refusal
+// words — the server re-checks every one of these, so these are
+// only the client-side answers before anything is emitted.
+const REPORT_REASON_TEXT = {
+  'not-found': 'That note is already gone.',
+  'own-note': 'You can’t report your own note.',
+  'already-flagged': 'You already reported this note.',
+  offline: 'You seem to be offline — try again when you’re connected.',
+  'not-available': 'There are no notes in this room.',
+  error: 'Something went wrong — try again.',
+};
+
 function fadeLabel(expiresAt, now) {
   const ms = (Number(expiresAt) || 0) - (Number(now) || Date.now());
   if (ms <= 0) return 'fading away now';
@@ -48,7 +62,7 @@ function fadeLabel(expiresAt, now) {
   return 'fades away in ~48h';
 }
 
-export default function NotePanel({ getState, onDelete, isModerator, noteId, onClose }) {
+export default function NotePanel({ getState, onDelete, onReport, isModerator, noteId, onClose }) {
   const [state, setState] = useState(() => {
     try { return getState ? getState() : null; } catch { return null; }
   });
@@ -85,6 +99,26 @@ export default function NotePanel({ getState, onDelete, isModerator, noteId, onC
       return;
     }
     setNotice(REASON_TEXT[res?.reason] || REASON_TEXT.error);
+    refresh();
+  };
+
+  // Notes Moderation v1 (`sq-notes-moderation-v1`): report this
+  // note. The button shows only when the note is not yours and
+  // you are not a moderator (moderators take a note down
+  // directly; you cannot report your own). Reporting never
+  // reveals the author — the panel shows no name, and the report
+  // carries only the note id. Enough flags from different
+  // players hide the note until a moderator looks at it.
+  const runReport = () => {
+    if (!note) return;
+    let res = { ok: false, reason: 'error' };
+    try { res = onReport ? onReport(note.id) : res; } catch { res = { ok: false, reason: 'error' }; }
+    if (res && res.ok) {
+      setNotice('🚩 Reported — a moderator will take a look.');
+      refresh();
+      return;
+    }
+    setNotice(REPORT_REASON_TEXT[res?.reason] || REPORT_REASON_TEXT.error);
     refresh();
   };
 
@@ -153,6 +187,25 @@ export default function NotePanel({ getState, onDelete, isModerator, noteId, onC
                   Take down
                 </button>
               )}
+              {/* sq-notes-moderation-v1: report. Not yours, not a
+                  moderator, not already reported — otherwise the
+                  button is not there (or it says Reported). */}
+              {!note.mine && !isModerator && !note.reported && (
+                <button
+                  onClick={runReport}
+                  style={{ ...btnStyle, background: 'transparent', color: '#92400e', border: '1px solid #92400e' }}
+                >
+                  🚩 Report
+                </button>
+              )}
+              {!note.mine && !isModerator && note.reported && (
+                <button
+                  disabled
+                  style={{ ...btnStyle, background: 'transparent', color: '#92400e', border: '1px solid #92400e', opacity: 0.6, cursor: 'default' }}
+                >
+                  🚩 Reported
+                </button>
+              )}
             </div>
           </>
         )}
@@ -164,6 +217,8 @@ export default function NotePanel({ getState, onDelete, isModerator, noteId, onC
         <div style={{ fontSize: 12, marginTop: 12, color: '#64748b' }}>
           Tip: notes are anonymous — no name is ever shown. Yours fade
           away after 48 hours, and a moderator can take any note down.
+          If a note is hurtful, 🚩 Report it — enough reports hide it
+          until a moderator looks at it.
         </div>
       </div>
     </div>

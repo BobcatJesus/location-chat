@@ -163,13 +163,28 @@ import {
 // floor — anyone can read one, the writer or a moderator can take
 // it down, and it fades after 48h. Anonymous: the wire state
 // carries no authorId and no authorName.
+// Notes Moderation v1 (`sq-notes-moderation-v1`): report +
+// auto-hide at NOTE_FLAG_HIDE_THRESHOLD flags, a moderator-only
+// flagged list, and a Perspective content check on every drop.
 import {
+  NOTE_TEXT_MAX,
   createNoteState,
   dropNote,
   removeNote,
+  flagNote,
+  restoreNote,
   pruneExpiredNotes,
   serializeNoteState,
+  serializeFlaggedNotes,
 } from '../src/village/noteState.js';
+// sq-notes-moderation-v1: the Perspective content check lives in
+// the pure module ./perspectiveCheck.js so it stays
+// unit-testable. It FAILS OPEN (no key / API error / timeout all
+// place the note unchecked) — the report system is the backstop.
+import {
+  checkPerspectiveText,
+  PERSPECTIVE_REFUSAL_MESSAGE,
+} from './perspectiveCheck.js';
 import {
   createDecorState,
   placeDecoration,
@@ -3272,6 +3287,33 @@ io.on('connection', (socket) => {
     }
     await ensureNotesLoaded(roomId);
     pruneNotes(roomId);
+    // NOTES MODERATION — PERSPECTIVE CHECK
+    // (`sq-notes-moderation-v1`): ask Perspective whether this
+    // text is hurtful BEFORE the note is placed. A refusal goes
+    // through the SAME refusal path as every other drop refusal
+    // (note_drop_result ok:false with reason 'content-refused')
+    // — the client's pending drop clears and NO paper sheet is
+    // spent, because the client only spends a sheet on a server
+    // confirm. The exact refusal words travel in the payload
+    // (message), so the client never hardcodes its own copy.
+    // Fail open: no key, an API error, a 429, a timeout, or a
+    // weird response all place the note unchecked and log a
+    // warning — the report system is the backstop.
+    const cleanText = String(text || '').trim().slice(0, NOTE_TEXT_MAX);
+    if (cleanText) {
+      const check = await checkPerspectiveText(cleanText, {
+        apiKey: process.env.PERSPECTIVE_API_KEY,
+      });
+      if (check.skipped) {
+        console.warn(`⚠️ Perspective note check skipped (${check.skipped}) — placing the note unchecked.`);
+      }
+      if (!check.ok) {
+        socket.emit('note_drop_result', {
+          id, ok: false, reason: 'content-refused', message: PERSPECTIVE_REFUSAL_MESSAGE,
+        });
+        return;
+      }
+    }
     const room = noteRoom(roomId);
     const res = dropNote(room.state, {
       id,
@@ -3314,6 +3356,92 @@ io.on('connection', (socket) => {
     broadcastNotes(roomId);
     persistNotes(roomId);
     socket.emit('note_delete_result', { noteId, ok: true });
+  });
+
+  // NOTES MODERATION — REPORT (`sq-notes-moderation-v1`): any
+  // player can flag a note (one flag per player; the author
+  // cannot flag their own). At NOTE_FLAG_HIDE_THRESHOLD flags
+  // from different players the note hides itself — the broadcast
+  // below carries the floor without it, so it vanishes from
+  // every player's floor at once and cannot be read by
+  // non-moderators. It stays in storage for moderator review.
+  // The answer carries the new flag count and whether the note
+  // just hid, so the reporter knows what happened.
+  socket.on('note_report', async ({ roomId, noteId } = {}) => {
+    if (!roomId) return;
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const userId = socketUserMap[socket.id] || socket.id;
+    const rate = checkRateLimit(userId);
+    if (!rate.allowed) {
+      socket.emit('note_report_result', { noteId, ok: false, reason: 'rate-limited' });
+      return;
+    }
+    await ensureNotesLoaded(roomId);
+    pruneNotes(roomId);
+    const room = noteRoom(roomId);
+    const res = flagNote(room.state, noteId, userId);
+    if (!res.ok) {
+      socket.emit('note_report_result', { noteId, ok: false, reason: res.reason });
+      return;
+    }
+    persistNotes(roomId);
+    broadcastNotes(roomId);
+    socket.emit('note_report_result', {
+      noteId, ok: true, hidden: res.hidden, flagCount: res.flagCount,
+    });
+  });
+
+  // NOTES MODERATION — FLAGGED LIST (`sq-notes-moderation-v1`):
+  // the moderator-only review list for THIS room: every flagged
+  // or hidden note, with its text, flag count, and author id.
+  // The author id is shown to moderators ONLY — this response
+  // goes to the requesting moderator alone, never to the room,
+  // and the wire state never carries it. A non-moderator is
+  // refused silently with a not-allowed answer.
+  socket.on('note_flagged_list', async ({ roomId } = {}) => {
+    if (!roomId) return;
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const userId = socketUserMap[socket.id] || socket.id;
+    if (!getVenuePermissions(roomId, userId).canManage) {
+      socket.emit('note_flagged_list_result', { ok: false, reason: 'not-allowed' });
+      return;
+    }
+    await ensureNotesLoaded(roomId);
+    pruneNotes(roomId);
+    const room = noteRoom(roomId);
+    socket.emit('note_flagged_list_result', {
+      ...serializeFlaggedNotes(room.state, roomId),
+      now: Date.now(),
+    });
+  });
+
+  // NOTES MODERATION — RESTORE (`sq-notes-moderation-v1`): a
+  // moderator puts a flagged/hidden note back on the floor. Its
+  // flags are cleared, so it can be flagged again from scratch
+  // if it is still a problem. The broadcast below carries the
+  // floor with the note back in it, so every player sees it
+  // again at once. Deleting a flagged note uses the existing
+  // note_delete path (moderators can delete any note).
+  socket.on('note_restore', async ({ roomId, noteId } = {}) => {
+    if (!roomId) return;
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const userId = socketUserMap[socket.id] || socket.id;
+    const rate = checkRateLimit(userId);
+    if (!rate.allowed) {
+      socket.emit('note_restore_result', { noteId, ok: false, reason: 'rate-limited' });
+      return;
+    }
+    await ensureNotesLoaded(roomId);
+    pruneNotes(roomId);
+    const room = noteRoom(roomId);
+    const res = restoreNote(room.state, noteId, userId, getVenuePermissions(roomId, userId).canManage);
+    if (!res.ok) {
+      socket.emit('note_restore_result', { noteId, ok: false, reason: res.reason });
+      return;
+    }
+    persistNotes(roomId);
+    broadcastNotes(roomId);
+    socket.emit('note_restore_result', { noteId, ok: true });
   });
 
   // PICK-UP NOTES STATE: the room's notes, sent when you join (or
@@ -5017,6 +5145,15 @@ async function start() {
     // at boot so a missing key is obvious in the Railway logs.
     if (!process.env.YOUTUBE_API_KEY) {
       console.warn('⚠️ YOUTUBE_API_KEY is not set — YouTube jukebox adds will be refused until it is added (Railway → Variables).');
+    }
+    // sq-notes-moderation-v1: the Perspective note check fails
+    // OPEN — with no key, notes are placed unchecked and the
+    // report system is the backstop. Say so at boot so a missing
+    // key is obvious in the Railway logs. Enable the Perspective
+    // API in the Google Cloud "SideQuest" project and add
+    // PERSPECTIVE_API_KEY to Railway Variables to turn it on.
+    if (!process.env.PERSPECTIVE_API_KEY) {
+      console.warn('⚠️ PERSPECTIVE_API_KEY is not set — notes will be placed without a content check (fail open); reports are the backstop. Add it in Railway → Variables.');
     }
     console.log(`===========================================\n`);
   });

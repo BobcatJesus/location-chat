@@ -36,20 +36,49 @@
 //   - Writing is free (no coins). Notes are world objects, NOT
 //     inventory items — writing one takes no pocket slot, and a
 //     note never goes into anyone's pocket.
+//
+// NOTES MODERATION v1 (`sq-notes-moderation-v1`): notes are public
+// and anonymous, so they are the easiest place in the game to be
+// nasty. Two guards:
+//   (1) REPORT + AUTO-HIDE: any player can flag a note (the
+//       author cannot flag their own, one flag per player). At
+//       NOTE_FLAG_HIDE_THRESHOLD flags from different players the
+//       note hides itself — it leaves the floor and cannot be read
+//       by non-moderators — and waits in storage for a moderator
+//       to restore (flags cleared, back on the floor) or delete.
+//       Moderators see flagged/hidden notes in a review list that
+//       DOES show the author id (moderators only — the wire state
+//       never carries it).
+//   (2) PERSPECTIVE CHECK: the server asks Google Perspective
+//       whether the text is toxic before it is placed (see
+//       server/perspectiveCheck.js) and refuses hurtful text.
+//       That check fails OPEN with no key or a down API; the
+//       report system is the backstop.
+//   - NOTE_FLAG_HIDE_THRESHOLD = 3 flags from 3 different players
+//     (builder default — change it here and the server follows).
 
 export const NOTE_MARKER = 'sq-pickup-notes-v1';
+export const NOTE_MODERATION_MARKER = 'sq-notes-moderation-v1';
+export const NOTE_FLAG_HIDE_THRESHOLD = 3;
 export const NOTE_TEXT_MAX = 280;
 // 48 hours, in ms. A note left Monday at noon is gone by
 // Wednesday at noon, even if the server restarted in between.
 export const NOTE_TTL_MS = 48 * 60 * 60 * 1000;
 
-/** A note: { id, text, authorId, x, y, createdAt }.
+/** A note: { id, text, authorId, x, y, createdAt, flaggedBy, hidden }.
  * `authorId` is the writer's user id (their email, or their
  * socket id for a guest — never 'guest' itself, since every guest
  * shares that id). It lives ONLY in the server's canonical state
  * and in the storage serialization; the wire serialization strips
  * it, so no reader can ever learn who wrote a note. `expiresAt`
- * is derived (createdAt + NOTE_TTL_MS) wherever it is needed. */
+ * is derived (createdAt + NOTE_TTL_MS) wherever it is needed.
+ * `flaggedBy` (sq-notes-moderation-v1) is the list of player ids
+ * who reported this note — one flag per player, the author never
+ * included. `hidden` is true once the note reached
+ * NOTE_FLAG_HIDE_THRESHOLD flags: it leaves the floor and cannot
+ * be read by non-moderators until a moderator restores it. Both
+ * live in the storage serialization and in the moderator-only
+ * flagged list; the wire state carries neither. */
 export function createNoteState() {
   return {
     notes: [], // oldest first
@@ -89,6 +118,15 @@ export function cleanNote(raw = {}) {
     x: numOr(r.x, 800),
     y: numOr(r.y, 450),
     createdAt: numOr(r.createdAt, Date.now()),
+    // sq-notes-moderation-v1: flags and hidden survive a restart
+    // through the storage serialization (parseNoteState below) —
+    // a restart must never un-hide a flagged note. flaggedBy is
+    // deduped here, so a stored row can never carry the same
+    // player twice.
+    flaggedBy: Array.isArray(r.flaggedBy)
+      ? [...new Set(r.flaggedBy.map((v) => String(v)).filter(Boolean))]
+      : [],
+    hidden: Boolean(r.hidden),
   };
 }
 
@@ -130,6 +168,56 @@ export function removeNote(state, noteId, userId, isModerator) {
   return { ok: true, note };
 }
 
+// ---- notes moderation (`sq-notes-moderation-v1`) -------------------------
+
+/** How many different players have flagged this note. */
+export function noteFlagCount(note) {
+  return Array.isArray(note?.flaggedBy) ? note.flaggedBy.length : 0;
+}
+
+/**
+ * Report a note. Returns { ok, note?, flagCount?, hidden?, reason? }.
+ * Reasons: 'not-found', 'own-note' (the author cannot report
+ * their own note — reporting yourself would be a way to hide your
+ * own note on demand), 'already-flagged' (one flag per player).
+ * On success the player's id joins flaggedBy; when the count
+ * reaches NOTE_FLAG_HIDE_THRESHOLD the note hides itself. A note
+ * that is already hidden can still be flagged (more evidence for
+ * the moderator) — hidden stays true.
+ */
+export function flagNote(state, noteId, userId) {
+  const list = state.notes || (state.notes = []);
+  const note = list.find((n) => n.id === String(noteId));
+  if (!note) return { ok: false, reason: 'not-found' };
+  const uid = String(userId || '');
+  if (!uid) return { ok: false, reason: 'not-allowed' };
+  if (String(note.authorId) === uid) return { ok: false, reason: 'own-note' };
+  if (!Array.isArray(note.flaggedBy)) note.flaggedBy = [];
+  if (note.flaggedBy.some((v) => String(v) === uid)) {
+    return { ok: false, reason: 'already-flagged' };
+  }
+  note.flaggedBy.push(uid);
+  if (noteFlagCount(note) >= NOTE_FLAG_HIDE_THRESHOLD) note.hidden = true;
+  return { ok: true, note, flagCount: noteFlagCount(note), hidden: Boolean(note.hidden) };
+}
+
+/**
+ * Restore a flagged/hidden note (moderator only). Clears every
+ * flag and unhides it, so it is back on the floor and can be
+ * flagged again from scratch. Returns { ok, note?, reason? } —
+ * reason is 'not-found' or 'not-allowed'. Idempotent: restoring
+ * a note with nothing to clear still succeeds.
+ */
+export function restoreNote(state, noteId, userId, isModerator) {
+  if (!isModerator) return { ok: false, reason: 'not-allowed' };
+  const list = state.notes || (state.notes = []);
+  const note = list.find((n) => n.id === String(noteId));
+  if (!note) return { ok: false, reason: 'not-found' };
+  note.flaggedBy = [];
+  note.hidden = false;
+  return { ok: true, note };
+}
+
 /** Drop every note whose 48 hours are up. Returns how many were
  * pruned. The caller persists afterwards when the count is > 0. */
 export function pruneExpiredNotes(state, now = Date.now()) {
@@ -142,11 +230,16 @@ export function pruneExpiredNotes(state, now = Date.now()) {
 
 /** Plain JSON copy safe to send over the socket — ANONYMOUS: no
  * authorId, no authorName, nothing that says who wrote it. The
- * client shows only the text and how long until it fades. */
+ * client shows only the text and how long until it fades.
+ * sq-notes-moderation-v1: a HIDDEN note is left out entirely —
+ * it is not on the floor and cannot be read by non-moderators —
+ * and flaggedBy never goes over the wire either. `count` is the
+ * visible count, matching the list. */
 export function serializeNoteState(state) {
   const s = state || createNoteState();
+  const visible = (s.notes || []).filter((n) => !n.hidden);
   return {
-    notes: (s.notes || []).map((n) => ({
+    notes: visible.map((n) => ({
       id: String(n.id),
       text: String(n.text || ''),
       x: Number(n.x) || 0,
@@ -154,13 +247,16 @@ export function serializeNoteState(state) {
       createdAt: Number(n.createdAt) || 0,
       expiresAt: noteExpiresAt(n),
     })),
-    count: (s.notes || []).length,
+    count: visible.length,
   };
 }
 
 /** Storage serialization: the same notes WITH authorId, so a
  * restart restores who may delete each note. Only the persist
- * layer uses this — it never goes over the socket. */
+ * layer uses this — it never goes over the socket.
+ * sq-notes-moderation-v1: flaggedBy and hidden are stored too —
+ * a restart must never un-hide a flagged note or forget who
+ * already flagged it. */
 export function serializeNoteStateForStorage(state) {
   const s = state || createNoteState();
   return {
@@ -171,15 +267,43 @@ export function serializeNoteStateForStorage(state) {
       x: Number(n.x) || 0,
       y: Number(n.y) || 0,
       createdAt: Number(n.createdAt) || 0,
+      flaggedBy: Array.isArray(n.flaggedBy) ? [...n.flaggedBy] : [],
+      hidden: Boolean(n.hidden),
     })),
     count: (s.notes || []).length,
   };
 }
 
+/** Moderator-only review list (sq-notes-moderation-v1): every
+ * note that has been flagged at least once, or is hidden. This
+ * is the ONE place the author id is ever sent to a client — the
+ * response goes only to a moderator (the server gates the
+ * request), never to the room. Sorted most-flagged first, then
+ * oldest first, so the worst note is on top. */
+export function serializeFlaggedNotes(state, roomId) {
+  const s = state || createNoteState();
+  const flagged = (s.notes || [])
+    .filter((n) => noteFlagCount(n) > 0 || n.hidden)
+    .map((n) => ({
+      id: String(n.id),
+      text: String(n.text || ''),
+      authorId: String(n.authorId || ''),
+      flagCount: noteFlagCount(n),
+      hidden: Boolean(n.hidden),
+      createdAt: Number(n.createdAt) || 0,
+      expiresAt: noteExpiresAt(n),
+    }))
+    .sort((a, b) => (b.flagCount - a.flagCount) || (a.createdAt - b.createdAt));
+  return { roomId: String(roomId || ''), notes: flagged, count: flagged.length };
+}
+
 /** Validate an incoming state object (never trust the wire or the
  * row). Expired notes are dropped here too, so a load and a
  * broadcast both prune. authorId is preserved when present (the
- * storage shape) and empty otherwise (the wire shape). */
+ * storage shape) and empty otherwise (the wire shape).
+ * sq-notes-moderation-v1: flaggedBy and hidden are preserved the
+ * same way — cleanNote carries them — so a restart restores a
+ * flagged note exactly as it was. */
 export function parseNoteState(raw, now = Date.now()) {
   const s = createNoteState();
   if (!raw || typeof raw !== 'object' || !Array.isArray(raw.notes)) return s;
