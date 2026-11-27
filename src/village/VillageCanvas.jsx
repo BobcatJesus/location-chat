@@ -971,7 +971,8 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
           whiteSpace: 'nowrap',
         }}
       >
-        {editorActive ? 'Done' : (outdoorMode ? 'Outdoor Edit' : 'Edit')}
+        {/* sq-rename-edit-place-furniture-v1: the button says what it does now. */}
+        {editorActive ? 'Done' : 'Place furniture'}
       </button>
       {/* Santa Hat reset (`sq-hat-reset-v1`): moderators only. Puts
           the Santa hat back behind the tree — fixes a hat stuck in
