@@ -2830,6 +2830,27 @@ export class VillageScene extends Phaser.Scene {
       this.noteSystem?.onRestoreResult(payload);
     });
 
+    // Notes Strike System v1 (`sq-notes-strikes-v1`): my mute
+    // status, the answer to a strike or a clear, and the notice
+    // the server sends me when I am struck (or my strikes are
+    // cleared) — all routed to NoteSystem, same as the drop and
+    // delete answers above.
+    socket.on('my_note_status', (payload = {}) => {
+      this.noteSystem?.onMyNoteStatusResult(payload);
+    });
+
+    socket.on('note_strike_result', (payload = {}) => {
+      this.noteSystem?.onStrikeResult(payload);
+    });
+
+    socket.on('note_clear_strikes_result', (payload = {}) => {
+      this.noteSystem?.onClearStrikesResult(payload);
+    });
+
+    socket.on('note_strike_notice', (payload = {}) => {
+      this.noteSystem?.onStrikeNotice(payload);
+    });
+
     // Placed decorations (shared for the whole room — one set per
     // room, in-memory on the server like the notice board).
     socket.on('decor_state', (payload = {}) => {

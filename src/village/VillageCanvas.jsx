@@ -1207,6 +1207,12 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
           // the floor where you are standing — free, and it takes
           // no pocket slot (a note is a world object, not an item).
           onWriteNote={(text) => gameRef.current?.scene?.getScene('VillageScene')?.noteSystem?.dropNote?.(text) || { ok: false, reason: 'error' }}
+          // Notes Strike System v1 (`sq-notes-strikes-v1`): my own
+          // mute state, so the write form can show it fresh and
+          // refuse the drop client-side (the server still
+          // enforces it).
+          getNoteStatus={() => gameRef.current?.scene?.getScene('VillageScene')?.noteSystem?.getMyNoteStatus?.() || null}
+          onRequestNoteStatus={() => gameRef.current?.scene?.getScene('VillageScene')?.noteSystem?.requestMyNoteStatus?.() || { ok: false, reason: 'error' }}
           onPinFlyer={(id) => gameRef.current?.scene?.getScene('VillageScene')?.itemsSystem?.pinFlyerToBoard?.(id) || { ok: false, reason: 'error' }}
           onPlaceDecoration={(id) => gameRef.current?.scene?.getScene('VillageScene')?.decorSystem?.placeDecoration?.(id) || { ok: false, reason: 'error' }}
           onPutHatOnCat={(id) => gameRef.current?.scene?.getScene('VillageScene')?.santaHatSystem?.placeOnCat?.(id) || { ok: false, reason: 'error' }}
@@ -1251,13 +1257,18 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
       {/* Notes Moderation v1 (`sq-notes-moderation-v1`): the
           moderator-only flagged-notes review list for this room.
           Restore puts a note back on the floor, Take down uses
-          the same moderator-gated delete as the read popup. */}
+          the same moderator-gated delete as the read popup.
+          Notes Strike System v1 (`sq-notes-strikes-v1`): Take
+          down + strike records a strike against the note's
+          author, and Clear strikes forgives them all. */}
       {openFlaggedNotes && (
         <FlaggedNotesPanel
           getState={() => gameRef.current?.scene?.getScene('VillageScene')?.noteSystem?.getFlaggedState?.()}
           onRefresh={() => gameRef.current?.scene?.getScene('VillageScene')?.noteSystem?.requestFlaggedList?.() || { ok: false, reason: 'error' }}
           onRestore={(noteId) => gameRef.current?.scene?.getScene('VillageScene')?.noteSystem?.restoreFlaggedNote?.(noteId) || { ok: false, reason: 'error' }}
           onDelete={(noteId) => gameRef.current?.scene?.getScene('VillageScene')?.noteSystem?.deleteNote?.(noteId) || { ok: false, reason: 'error' }}
+          onStrike={(noteId) => gameRef.current?.scene?.getScene('VillageScene')?.noteSystem?.strikeNote?.(noteId) || { ok: false, reason: 'error' }}
+          onClearStrikes={(playerId) => gameRef.current?.scene?.getScene('VillageScene')?.noteSystem?.clearStrikes?.(playerId) || { ok: false, reason: 'error' }}
           roomName={normalizedRoom?.name || roomId}
           onClose={() => setOpenFlaggedNotes(false)}
         />

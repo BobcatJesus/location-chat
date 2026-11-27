@@ -57,6 +57,11 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 
+// Notes Strike System v1 (`sq-notes-strikes-v1`): the plain-words
+// wait for a mutedUntil ("in ~2 days"), shared with the server
+// so the form and the refusal say the same thing.
+import { muteUntilLabel } from './strikeState.js';
+
 // Mailbox v1.2 (`sq-mailbox-v1.2`): the pocket line naming where
 // your mailbox(es) are — the real room name(s), never a generic
 // "at the park".
@@ -128,11 +133,20 @@ const REASON_TEXT = {
   // bar); a second drop while one is still pending is refused.
   'no-note-paper': 'You need note paper to leave a note — buy some at the Agora bar.',
   'already-pending': 'That note is still being left — give it a second.',
+  // Notes Strike System v1 (`sq-notes-strikes-v1`): muted from
+  // writing notes. The panel shows the fuller line with the
+  // wait (see the form below); this is the fallback when the
+  // mute state has not loaded yet.
+  muted: 'You can’t leave notes right now — your notes were removed for breaking the rules.',
   error: 'Something went wrong — try again.',
 };
 
 export default function InventoryPanel({
   getState, onUse, onEat, onDrop, onDispose, onBuyBag, onMakeFlyer, onPinFlyer, onPlaceDecoration, onPutHatOnCat, onSendMail, onGoToMailboxRoom, onOpenPuzzle, getBadges, onClose, onWriteNote,
+  // Notes Strike System v1 (`sq-notes-strikes-v1`): my own mute
+  // state, so the write form can show it fresh and refuse the
+  // drop client-side (the server still enforces it).
+  getNoteStatus, onRequestNoteStatus,
 }) {
   const [state, setState] = useState(() => {
     try { return getState ? getState() : null; } catch { return null; }
@@ -165,6 +179,29 @@ export default function InventoryPanel({
   // Pick-Up Notes v1 (`sq-pickup-notes-v1`): the note being written.
   const [noteText, setNoteText] = useState('');
   const [showNoteForm, setShowNoteForm] = useState(false);
+  // Notes Strike System v1 (`sq-notes-strikes-v1`): my mute
+  // state, polled while the write form is open. Asking the server
+  // once when the form opens keeps it fresh; the 500ms poll
+  // below keeps the "until" line live while the form stays open.
+  const [noteStatus, setNoteStatus] = useState(null);
+  useEffect(() => {
+    if (!showNoteForm) return undefined;
+    try { onRequestNoteStatus?.(); } catch {}
+    const t = setInterval(() => {
+      try {
+        const next = getNoteStatus ? getNoteStatus() : null;
+        if (next) setNoteStatus(next);
+      } catch {}
+    }, 500);
+    return () => clearInterval(t);
+  }, [showNoteForm, getNoteStatus, onRequestNoteStatus]);
+  // Muted right now? (mutedUntil in the future, judged against
+  // the server-synced `now` the status carries.)
+  const noteMuted = Boolean(noteStatus?.muted)
+    && Number(noteStatus.mutedUntil) > Number(noteStatus.now || Date.now());
+  const noteMuteLabel = noteMuted
+    ? muteUntilLabel(Number(noteStatus.mutedUntil), Number(noteStatus.now || Date.now()))
+    : '';
   // Pick-Up Notes v1.1 (`sq-pickup-notes-v1.1`): sheets of note
   // paper in the pocket, read off the described items (the stack
   // carries its sheetsLeft, same as wrapping paper).
@@ -774,22 +811,36 @@ export default function InventoryPanel({
                   border: '1px solid #e2b46c',
                 }}>
                   <div style={{ fontWeight: 'bold', fontSize: 14 }}>📝 Write a note</div>
-                  <div style={{ fontSize: 12.5, color: '#3d6a8a', marginTop: 2 }}>
-                    Costs one sheet of note paper — 2 coins for 3 sheets at the Agora bar.
-                    {notePaperSheets > 0
-                      ? ` You have ${notePaperSheets} ${notePaperSheets === 1 ? 'sheet' : 'sheets'}.`
-                      : ` You have no note paper — buy some at the Agora bar first.`}
-                    {' '}It lands on the floor where you’re standing —
-                    anyone here can read it, no name is shown, and it
-                    fades away after 48 hours.
-                  </div>
+                  {/* sq-notes-strikes-v1: muted from writing notes
+                      — say so plainly, with the wait, and disable
+                      the form. The mute is note-writing only; the
+                      rest of the pocket still works. The server
+                      still enforces it, so this is display, not
+                      the gate. */}
+                  {noteMuted ? (
+                    <div style={{ fontSize: 13, color: '#92400e', marginTop: 6 }}>
+                      🚫 You can’t leave notes right now — your notes were removed for breaking the rules.
+                      Try again {noteMuteLabel}.
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 12.5, color: '#3d6a8a', marginTop: 2 }}>
+                      Costs one sheet of note paper — 2 coins for 3 sheets at the Agora bar.
+                      {notePaperSheets > 0
+                        ? ` You have ${notePaperSheets} ${notePaperSheets === 1 ? 'sheet' : 'sheets'}.`
+                        : ` You have no note paper — buy some at the Agora bar first.`}
+                      {' '}It lands on the floor where you’re standing —
+                      anyone here can read it, no name is shown, and it
+                      fades away after 48 hours.
+                    </div>
+                  )}
                   <textarea
                     value={noteText}
                     onChange={(e) => setNoteText(e.target.value)}
                     placeholder="Leave a note for whoever finds it…"
                     maxLength={280}
                     rows={3}
-                    style={{ ...inputStyle, resize: 'vertical' }}
+                    disabled={noteMuted}
+                    style={{ ...inputStyle, resize: 'vertical', opacity: noteMuted ? 0.6 : 1 }}
                   />
                   <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
                     {noteText.length}/280
@@ -803,7 +854,8 @@ export default function InventoryPanel({
                         );
                         if (ok) { setNoteText(''); setShowNoteForm(false); }
                       }}
-                      style={btnStyle}
+                      disabled={noteMuted}
+                      style={{ ...btnStyle, opacity: noteMuted ? 0.6 : 1, cursor: noteMuted ? 'default' : 'pointer' }}
                     >
                       Leave it here
                     </button>

@@ -69,6 +69,15 @@ import {
   hasNotePaper,
   spendNotePaperSheet,
 } from './items.js';
+// Notes Strike System v1 (`sq-notes-strikes-v1`): graduated
+// strikes — the pure mute math, shared with the server. The
+// client gates the drop and shows the mute, but the server
+// still enforces it (never trust the client).
+import {
+  STRIKE_MARKER,
+  computeNoteMute,
+  mutedRefusalMessage,
+} from './strikeState.js';
 
 // Pick-Up Notes v1 (`sq-pickup-notes-v1`): how long a pending
 // drop waits for the server's answer before giving up with a
@@ -92,6 +101,8 @@ export class NoteSystem {
     this.scene = scene;
     // sq-pickup-notes-v1 — marker for the v1 landing check.
     this.marker = NOTE_MARKER;
+    // sq-notes-strikes-v1 — marker for the strikes landing check.
+    this.strikeMarker = STRIKE_MARKER;
     this.state = createNoteState();
     this._textObjs = new Map(); // note id -> Phaser text object
     // Server-time offset (ms): the notes_state broadcast carries
@@ -110,6 +121,12 @@ export class NoteSystem {
     this._reportedIds = new Set();
     this._flaggedList = []; // moderator-only review list for this room
     this._flaggedRoomId = '';
+    // Notes Strike System v1 (`sq-notes-strikes-v1`): my own
+    // mute state, from the server's get_my_note_status answer —
+    // null until the first answer. The write form reads it
+    // (getMyNoteStatus) and the drop gate checks it; the server
+    // still enforces the mute, this just keeps the form honest.
+    this._myNoteStatus = null;
     this._pendingTimeoutMs = null; // test seam: tests set this to a few ms
     this._lastCheckMs = 0;
   }
@@ -268,6 +285,17 @@ export class NoteSystem {
     if (!this.enabled) return { ok: false, reason: 'not-available' };
     const clean = String(text || '').trim().slice(0, NOTE_TEXT_MAX);
     if (!clean) return { ok: false, reason: 'empty-note' };
+    // sq-notes-strikes-v1 — the mute gate: a muted player cannot
+    // leave notes. This is the client-side check only (the form
+    // stays honest); the server re-checks in note_drop and
+    // refuses with the same words, so a bad client cannot write
+    // anyway. The mute state comes from get_my_note_status and
+    // is refreshed when the pocket opens.
+    const mute = this._myNoteStatus;
+    if (mute && mute.muted && Number(mute.mutedUntil) > this._now()) {
+      this._setNoteNotice(mutedRefusalMessage(mute.mutedUntil, this._now()));
+      return { ok: false, reason: 'muted' };
+    }
     // sq-pickup-notes-v1.1 — the paper gate: no sheet, no note.
     if (!hasNotePaper()) return { ok: false, reason: 'no-note-paper' };
     if (this._pendingDrop) return { ok: false, reason: 'already-pending' };
@@ -311,13 +339,13 @@ export class NoteSystem {
     this._clearDropTimer();
     if (!payload.ok) {
       this._pendingDrop = null;
-      this._setNoteNotice(String(payload.message || '') || this._dropReasonText(payload.reason));
+      this._setNoteNotice(String(payload.message || '') || this._dropReasonText(payload.reason, payload));
       return;
     }
     this._settleDrop(id);
   }
 
-  _dropReasonText(reason) {
+  _dropReasonText(reason, payload = {}) {
     switch (reason) {
       case 'empty-note': return '📝 A note needs some words first.';
       case 'duplicate': return '📝 That note already landed — try again.';
@@ -332,6 +360,11 @@ export class NoteSystem {
       // the payload's `message`, so this is only the fallback
       // when a message is missing — same words either way.
       case 'content-refused': return '📝 That note looks hurtful — try writing something kinder.';
+      // Notes Strike System v1 (`sq-notes-strikes-v1`): muted.
+      // The server sends the exact words in the payload's
+      // `message` (with the real mutedUntil), so this is only the
+      // fallback when a message is missing.
+      case 'muted': return mutedRefusalMessage(payload.mutedUntil, this._now());
       default: return '📝 The room didn’t take that — try again.';
     }
   }
@@ -508,6 +541,141 @@ export class NoteSystem {
     this.requestFlaggedList();
   }
 
+  // ---- strikes (`sq-notes-strikes-v1`) ------------------------------------
+
+  /** Ask the server for my own mute state (get_my_note_status).
+   * No moderator gate — it is my own status. The answer lands
+   * in onMyNoteStatusResult and is read by getMyNoteStatus (the
+   * write form polls it). Called when the pocket opens, so the
+   * form shows a fresh mute instead of a stale one. */
+  requestMyNoteStatus() {
+    if (!this.enabled) return { ok: false, reason: 'not-available' };
+    if (!this.scene?.socket?.connected) return { ok: false, reason: 'offline' };
+    try {
+      this.scene.socket.emit('get_my_note_status', {});
+    } catch {
+      return { ok: false, reason: 'error' };
+    }
+    return { ok: true, pending: true };
+  }
+
+  /** The server answered my mute status. Kept here (never in
+   * the floor state) — the write form reads it, and the drop
+   * gate checks it. A missing or malformed answer clears the
+   * state, so a stale mute can never linger. */
+  onMyNoteStatusResult(payload = {}) {
+    if (!payload || payload.ok !== true) {
+      this._myNoteStatus = null;
+      return;
+    }
+    const mutedUntil = Number(payload.mutedUntil) || 0;
+    this._myNoteStatus = {
+      muted: Boolean(payload.muted) && mutedUntil > this._now(),
+      mutedUntil,
+      activeCount: Number(payload.activeCount) || 0,
+    };
+  }
+
+  /** Plain-data mute state for the write form (polls this while
+   * the form is open). { muted, mutedUntil, activeCount, now } —
+   * null until the first server answer. */
+  getMyNoteStatus() {
+    if (!this._myNoteStatus) return null;
+    const s = this._myNoteStatus;
+    return {
+      muted: Boolean(s.muted) && Number(s.mutedUntil) > this._now(),
+      mutedUntil: Number(s.mutedUntil) || 0,
+      activeCount: Number(s.activeCount) || 0,
+      now: this._now(),
+    };
+  }
+
+  /** Take a flagged note down AND strike its author
+   * (moderator-only, from the review panel). The server removes
+   * the note first — a strike can never be recorded against a
+   * note that is already gone — then records the strike and
+   * tells the struck player if they are online. Returns
+   * { ok, pending?, reason? }. */
+  strikeNote(noteId) {
+    if (!this.enabled) return { ok: false, reason: 'not-available' };
+    if (!this.scene?.socket?.connected) return { ok: false, reason: 'offline' };
+    if (this.scene?.isRoomJoined?.() === false) return { ok: false, reason: 'not-joined' };
+    try {
+      this.scene.socket.emit('note_strike', { roomId: this.scene.roomId, noteId: String(noteId) });
+    } catch {
+      return { ok: false, reason: 'error' };
+    }
+    return { ok: true, pending: true };
+  }
+
+  /** The server answered a strike. ok → the note is gone (the
+   * broadcast confirms it), the strike is recorded, and the
+   * review list is re-requested so the row disappears at once
+   * and the author's new strike count shows on their other
+   * rows. */
+  onStrikeResult(payload = {}) {
+    const noteId = String(payload.noteId || '');
+    if (!noteId) return;
+    if (!payload.ok) {
+      this._setNoteNotice(payload.reason === 'not-allowed'
+        ? '🚩 Only a moderator can strike a note.'
+        : payload.reason === 'own-note'
+          ? '🚩 You can’t strike your own note.'
+          : '🚩 That note is already gone.');
+      return;
+    }
+    const n = Number(payload.strikeCount) || 1;
+    this._setNoteNotice(payload.muted
+      ? `🚩 Note taken down, strike ${n} recorded — they can’t leave notes for ${n >= 3 ? '7 days' : '24 hours'}.`
+      : `🚩 Note taken down, strike ${n} recorded — a warning, no mute yet.`);
+    this.requestFlaggedList();
+  }
+
+  /** Clear every strike for one player — forgive / undo a
+   * mistaken strike (moderator-only, from the review panel).
+   * Lifts any note-writing mute at once. Returns
+   * { ok, pending?, reason? }. */
+  clearStrikes(playerId) {
+    if (!this.enabled) return { ok: false, reason: 'not-available' };
+    if (!this.scene?.socket?.connected) return { ok: false, reason: 'offline' };
+    if (this.scene?.isRoomJoined?.() === false) return { ok: false, reason: 'not-joined' };
+    try {
+      this.scene.socket.emit('note_clear_strikes', { playerId: String(playerId) });
+    } catch {
+      return { ok: false, reason: 'error' };
+    }
+    return { ok: true, pending: true };
+  }
+
+  /** The server answered a clear-strikes. ok → the player's
+   * strikes are gone and the review list is re-requested so
+   * their strike counts update at once. */
+  onClearStrikesResult(payload = {}) {
+    const playerId = String(payload.playerId || '');
+    if (!playerId) return;
+    if (!payload.ok) {
+      this._setNoteNotice(payload.reason === 'not-allowed'
+        ? '🚩 Only a moderator can clear strikes.'
+        : '🚩 The strikes couldn’t be cleared — try again.');
+      return;
+    }
+    this._setNoteNotice('🚩 Strikes cleared — they can leave notes again.');
+    this.requestFlaggedList();
+  }
+
+  /** The server told ME I was struck (or my strikes were
+   * cleared). The exact words travel in the payload's `message`
+   * — the server owns the wording, so the client never
+   * hardcodes its own copy. Shown as a system notice. */
+  onStrikeNotice(payload = {}) {
+    const msg = String(payload.message || '');
+    if (msg) this._setNoteNotice(msg);
+    // A strike may have muted me: refresh my status so the
+    // write form shows it without waiting for the pocket to
+    // reopen.
+    this.requestMyNoteStatus();
+  }
+
   // ---- reading -------------------------------------------------------------
 
   /** Open the read popup for one note (DOM panel, NotePanel.jsx). */
@@ -616,6 +784,9 @@ export class NoteSystem {
     this._reportedIds = new Set();
     this._flaggedList = [];
     this._flaggedRoomId = '';
+    // sq-notes-strikes-v1: my mute state is server data — a
+    // stale one must never linger after a room switch.
+    this._myNoteStatus = null;
     this.scene = null;
   }
 }

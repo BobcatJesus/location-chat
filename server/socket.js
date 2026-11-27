@@ -185,6 +185,25 @@ import {
   checkPerspectiveText,
   PERSPECTIVE_REFUSAL_MESSAGE,
 } from './perspectiveCheck.js';
+// Notes Strike System v1 (`sq-notes-strikes-v1`): graduated
+// strikes for pick-up notes — the pure mute math lives in
+// ../src/village/strikeState.js (both sides import it) and the
+// rows live in player_strikes (./strikePersist.js). A strike is
+// moderator-decided, never automatic: auto-hide hides a note but
+// does not strike its author.
+import {
+  STRIKE_EXPIRE_MS,
+  computeNoteMute,
+  mutedRefusalMessage,
+  strikeNoticeMessage,
+  STRIKES_CLEARED_MESSAGE,
+} from '../src/village/strikeState.js';
+import {
+  PLAYER_STRIKES_TABLE_SQL,
+  addStrike,
+  listStrikesForPlayer,
+  clearStrikesForPlayer,
+} from './strikePersist.js';
 import {
   createDecorState,
   placeDecoration,
@@ -541,6 +560,15 @@ async function initDb() {
   // excluded).
   await pool.query(NOTES_ROOM_STATE_TABLE_SQL);
   console.log('✅ Postgres room_notes_state table ready');
+  // Notes Strike System v1 (`sq-notes-strikes-v1`): one row per
+  // strike (player_strikes), so a server restart never forgives
+  // a strike early and a mute survives a redeploy. NOTE for the
+  // Dec 19 reset: strikes are player discipline, NOT room state
+  // — unlike notes, which ARE room state and are cleared by that
+  // reset. Leave this table alone unless the reset explicitly
+  // says otherwise.
+  await pool.query(PLAYER_STRIKES_TABLE_SQL);
+  console.log('✅ Postgres player_strikes table ready');
   // Placed decorations persistence (`sq-decor-persist-v1`): one
   // row per room holding the serialized decor state, so a server
   // restart restores the placed decorations instead of wiping
@@ -1583,6 +1611,100 @@ function notesWireState(roomId) {
 }
 function broadcastNotes(roomId) {
   io.to(roomId).emit('notes_state', notesWireState(roomId));
+}
+// Notes Strike System v1 (`sq-notes-strikes-v1`): graduated
+// strikes, keyed by authorId. The cache below is the working set
+// (like noteRooms): strikes are loaded lazily per player from
+// Postgres the first time they are needed, and every add/clear
+// writes through to the DB — so a strike survives a restart and
+// a mute survives a redeploy. Without a DB the cache still works
+// in-memory for the session, exactly like notes without a pool.
+// GUEST LIMITATION: for a guest the authorId is their socket id,
+// which changes on reconnect, so a guest can dodge a strike by
+// leaving and coming back. Removal and the Perspective check are
+// still the main levers for guests. There is NO IP-based banning.
+const strikeCache = {}; // playerId -> [strike, ...] (all, incl. expired)
+const strikeLoadPromises = {}; // playerId -> in-flight load promise
+const strikeCacheLoaded = new Set(); // playerIds whose rows have been read (or attempted)
+async function ensureStrikesLoaded(playerId) {
+  const safePlayer = String(playerId || '');
+  if (!safePlayer) return [];
+  if (strikeCacheLoaded.has(safePlayer)) return strikeCache[safePlayer] || [];
+  if (!strikeLoadPromises[safePlayer]) {
+    strikeLoadPromises[safePlayer] = (async () => {
+      try {
+        const listed = await listStrikesForPlayer(pool, safePlayer);
+        strikeCache[safePlayer] = Array.isArray(listed) ? listed : [];
+      } catch (e) {
+        console.warn('⚠️ strikes load failed:', e && e.message);
+        strikeCache[safePlayer] = strikeCache[safePlayer] || [];
+      }
+      strikeCacheLoaded.add(safePlayer);
+      return strikeCache[safePlayer];
+    })();
+  }
+  return strikeLoadPromises[safePlayer];
+}
+// The player's CURRENT mute (pure math over their loaded
+// strikes). Call ensureStrikesLoaded first — this reads the
+// cache only and never touches the DB.
+function noteMuteFor(playerId, now = Date.now()) {
+  const strikes = strikeCache[String(playerId || '')] || [];
+  return computeNoteMute(strikes, now);
+}
+// Record a strike for a player: cache first (the live truth),
+// then the DB (a failed save warns and the in-memory strike
+// still counts for the session; the next strike retries it).
+async function recordStrike({ playerId, noteId, struckBy }) {
+  const now = Date.now();
+  const strike = {
+    playerId: String(playerId || ''),
+    noteId: noteId ? String(noteId) : null,
+    struckBy: String(struckBy || ''),
+    struckAt: now,
+    expiresAt: now + STRIKE_EXPIRE_MS,
+  };
+  if (!strike.playerId) return null;
+  await ensureStrikesLoaded(strike.playerId);
+  const list = strikeCache[strike.playerId] || (strikeCache[strike.playerId] = []);
+  list.push(strike);
+  try {
+    await addStrike(pool, strike);
+  } catch (e) {
+    console.warn('⚠️ strike persist failed:', e && e.message);
+  }
+  return strike;
+}
+// Clear every strike for a player (forgive / undo): cache and DB.
+async function clearStrikes(playerId) {
+  const safePlayer = String(playerId || '');
+  if (!safePlayer) return 0;
+  await ensureStrikesLoaded(safePlayer);
+  const had = (strikeCache[safePlayer] || []).length;
+  strikeCache[safePlayer] = [];
+  try {
+    await clearStrikesForPlayer(pool, safePlayer);
+  } catch (e) {
+    console.warn('⚠️ strike clear failed:', e && e.message);
+  }
+  return had;
+}
+// Tell a player something, if they are online right now: every
+// socket whose userId is theirs gets the event. A player with
+// two tabs open gets it twice (once per tab) — each tab shows
+// the same notice, which is fine. Returns how many sockets were
+// told. Offline players see the consequence when they next try
+// to write a note (the mute is enforced in note_drop).
+function notifyPlayer(playerId, event, payload) {
+  const safePlayer = String(playerId || '');
+  if (!safePlayer) return 0;
+  let told = 0;
+  for (const [sid, uid] of Object.entries(socketUserMap || {})) {
+    if (String(uid) === safePlayer) {
+      try { io.to(sid).emit(event, payload); told++; } catch {}
+    }
+  }
+  return told;
 }
 // Decoration Shop v1 (`sq-dec-shop-v1`; persistence
 // `sq-decor-persist-v1`): per-room placed decorations, EVERY room
@@ -3287,6 +3409,25 @@ io.on('connection', (socket) => {
     }
     await ensureNotesLoaded(roomId);
     pruneNotes(roomId);
+    // NOTES STRIKES (`sq-notes-strikes-v1`): a muted player
+    // cannot leave notes — checked BEFORE the Perspective call,
+    // so a muted drop never burns an API call. The refusal goes
+    // through the SAME refusal path as every other drop refusal
+    // (note_drop_result ok:false with reason 'muted') — the
+    // client's pending drop clears and NO paper sheet is spent,
+    // because the client only spends a sheet on a server confirm.
+    // The exact refusal words travel in the payload (message),
+    // so the client never hardcodes its own copy.
+    await ensureStrikesLoaded(userId);
+    const mute = noteMuteFor(userId);
+    if (mute.muted) {
+      socket.emit('note_drop_result', {
+        id, ok: false, reason: 'muted',
+        message: mutedRefusalMessage(mute.mutedUntil),
+        mutedUntil: mute.mutedUntil,
+      });
+      return;
+    }
     // NOTES MODERATION — PERSPECTIVE CHECK
     // (`sq-notes-moderation-v1`): ask Perspective whether this
     // text is hurtful BEFORE the note is placed. A refusal goes
@@ -3409,8 +3550,18 @@ io.on('connection', (socket) => {
     await ensureNotesLoaded(roomId);
     pruneNotes(roomId);
     const room = noteRoom(roomId);
+    // sq-notes-strikes-v1: each flagged entry also carries its
+    // author's ACTIVE strike count, so the moderator can see a
+    // repeat offender before deciding whether this note earns
+    // another strike. Moderator-only data, like the author id.
+    const authors = [...new Set((room.state.notes || []).map((n) => String(n.authorId || '')).filter(Boolean))];
+    const strikeCounts = {};
+    for (const authorId of authors) {
+      await ensureStrikesLoaded(authorId);
+      strikeCounts[authorId] = noteMuteFor(authorId).activeCount;
+    }
     socket.emit('note_flagged_list_result', {
-      ...serializeFlaggedNotes(room.state, roomId),
+      ...serializeFlaggedNotes(room.state, roomId, strikeCounts),
       now: Date.now(),
     });
   });
@@ -3442,6 +3593,125 @@ io.on('connection', (socket) => {
     persistNotes(roomId);
     broadcastNotes(roomId);
     socket.emit('note_restore_result', { noteId, ok: true });
+  });
+
+  // NOTES STRIKES — TAKE DOWN + STRIKE (`sq-notes-strikes-v1`):
+  // a moderator takes a flagged note down AND records a strike
+  // against its author, in one action. Graduated and
+  // moderator-decided, NEVER automatic: auto-hide hides a note
+  // but does not strike — this event is the only way a strike is
+  // recorded. Strike 1 is a warning (no mute); strike 2 mutes
+  // note-writing for 24h; strike 3+ mutes it for 7 days (see
+  // strikeState.js). The note is removed first, so a strike can
+  // never be recorded against a note that is already gone. The
+  // struck player is told at once if they are online
+  // (note_strike_notice); if they are offline they see the mute
+  // when they next try to write a note. Refused when the note is
+  // gone ('not-found'), when the moderator IS the author
+  // ('own-note' — a moderator cannot strike themself), or when
+  // the caller is not a moderator ('not-allowed').
+  socket.on('note_strike', async ({ roomId, noteId } = {}) => {
+    if (!roomId) return;
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const userId = socketUserMap[socket.id] || socket.id;
+    const rate = checkRateLimit(userId);
+    if (!rate.allowed) {
+      socket.emit('note_strike_result', { noteId, ok: false, reason: 'rate-limited' });
+      return;
+    }
+    if (!getVenuePermissions(roomId, userId).canManage) {
+      socket.emit('note_strike_result', { noteId, ok: false, reason: 'not-allowed' });
+      return;
+    }
+    await ensureNotesLoaded(roomId);
+    pruneNotes(roomId);
+    const room = noteRoom(roomId);
+    const note = (room.state.notes || []).find((n) => n.id === String(noteId));
+    if (!note) {
+      socket.emit('note_strike_result', { noteId, ok: false, reason: 'not-found' });
+      return;
+    }
+    const targetId = String(note.authorId || '');
+    if (!targetId) {
+      // A note with no author (legacy, before authorId was
+      // stored) has nobody to strike — nothing to do.
+      socket.emit('note_strike_result', { noteId, ok: false, reason: 'not-found' });
+      return;
+    }
+    if (targetId === String(userId)) {
+      socket.emit('note_strike_result', { noteId, ok: false, reason: 'own-note' });
+      return;
+    }
+    const removed = removeNote(room.state, noteId, userId, true);
+    if (!removed.ok) {
+      socket.emit('note_strike_result', { noteId, ok: false, reason: removed.reason });
+      return;
+    }
+    await recordStrike({ playerId: targetId, noteId, struckBy: userId });
+    const mute = noteMuteFor(targetId);
+    persistNotes(roomId);
+    broadcastNotes(roomId);
+    socket.emit('note_strike_result', {
+      noteId, ok: true,
+      targetId, strikeCount: mute.activeCount,
+      muted: mute.muted, mutedUntil: mute.mutedUntil,
+    });
+    notifyPlayer(targetId, 'note_strike_notice', {
+      noteId, strikeCount: mute.activeCount,
+      muted: mute.muted, mutedUntil: mute.mutedUntil,
+      message: strikeNoticeMessage(mute),
+    });
+  });
+
+  // NOTES STRIKES — CLEAR STRIKES (`sq-notes-strikes-v1`):
+  // forgive / undo a mistaken strike. A moderator clears EVERY
+  // strike for one player (expired ones included — they do not
+  // count anyway, and a clear is a clean slate), which lifts
+  // any note-writing mute at once. The cleared player is told
+  // if they are online.
+  socket.on('note_clear_strikes', async ({ playerId } = {}) => {
+    // No room in this payload — clearing strikes is a
+    // player-level action, not a room action. The moderator gate
+    // below (the Agora, which every moderator can manage) is the
+    // only gate.
+    const userId = socketUserMap[socket.id] || socket.id;
+    const rate = checkRateLimit(userId);
+    if (!rate.allowed) {
+      socket.emit('note_clear_strikes_result', { playerId, ok: false, reason: 'rate-limited' });
+      return;
+    }
+    const targetId = String(playerId || '');
+    if (!targetId) {
+      socket.emit('note_clear_strikes_result', { playerId, ok: false, reason: 'not-found' });
+      return;
+    }
+    // The gate is venue-wide, not per room: clearing strikes is
+    // a player action, not a room action. Any room the moderator
+    // can manage will do — the Agora is the one every moderator
+    // can manage, so it is the gate.
+    if (!getVenuePermissions('agora-houston', userId).canManage) {
+      socket.emit('note_clear_strikes_result', { playerId, ok: false, reason: 'not-allowed' });
+      return;
+    }
+    const cleared = await clearStrikes(targetId);
+    socket.emit('note_clear_strikes_result', { playerId: targetId, ok: true, cleared });
+    notifyPlayer(targetId, 'note_strike_notice', {
+      cleared: true, strikeCount: 0, muted: false, mutedUntil: 0,
+      message: STRIKES_CLEARED_MESSAGE,
+    });
+  });
+
+  // NOTES STRIKES — MY NOTE STATUS (`sq-notes-strikes-v1`): your
+  // own mute state, so the write form can show it fresh. No
+  // moderator gate — it is your own status, and the answer goes
+  // only to you. { muted, mutedUntil, activeCount }.
+  socket.on('get_my_note_status', async () => {
+    const userId = socketUserMap[socket.id] || socket.id;
+    await ensureStrikesLoaded(userId);
+    const mute = noteMuteFor(userId);
+    socket.emit('my_note_status', {
+      ok: true, muted: mute.muted, mutedUntil: mute.mutedUntil, activeCount: mute.activeCount,
+    });
   });
 
   // PICK-UP NOTES STATE: the room's notes, sent when you join (or

@@ -59,6 +59,8 @@
 
 export const NOTE_MARKER = 'sq-pickup-notes-v1';
 export const NOTE_MODERATION_MARKER = 'sq-notes-moderation-v1';
+// sq-notes-strikes-v1 — marker for the strikes landing check.
+export const NOTE_STRIKES_MARKER = 'sq-notes-strikes-v1';
 export const NOTE_FLAG_HIDE_THRESHOLD = 3;
 export const NOTE_TEXT_MAX = 280;
 // 48 hours, in ms. A note left Monday at noon is gone by
@@ -279,9 +281,19 @@ export function serializeNoteStateForStorage(state) {
  * is the ONE place the author id is ever sent to a client — the
  * response goes only to a moderator (the server gates the
  * request), never to the room. Sorted most-flagged first, then
- * oldest first, so the worst note is on top. */
-export function serializeFlaggedNotes(state, roomId) {
+ * oldest first, so the worst note is on top.
+ * sq-notes-strikes-v1: `strikeCountsByAuthor` is an optional map
+ * authorId -> ACTIVE strike count (the server fills it from the
+ * strikes store). Each entry carries `strikeCount` so the
+ * moderator can see a repeat offender before deciding whether
+ * this note earns another strike. It is 0 when the map has no
+ * entry for the author — and it is moderator-only data, like
+ * the author id itself. */
+export function serializeFlaggedNotes(state, roomId, strikeCountsByAuthor = {}) {
   const s = state || createNoteState();
+  const counts = strikeCountsByAuthor && typeof strikeCountsByAuthor === 'object'
+    ? strikeCountsByAuthor
+    : {};
   const flagged = (s.notes || [])
     .filter((n) => noteFlagCount(n) > 0 || n.hidden)
     .map((n) => ({
@@ -290,6 +302,7 @@ export function serializeFlaggedNotes(state, roomId) {
       authorId: String(n.authorId || ''),
       flagCount: noteFlagCount(n),
       hidden: Boolean(n.hidden),
+      strikeCount: Number(counts[String(n.authorId || '')]) || 0,
       createdAt: Number(n.createdAt) || 0,
       expiresAt: noteExpiresAt(n),
     }))
