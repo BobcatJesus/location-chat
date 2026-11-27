@@ -61,6 +61,29 @@ export const NOTE_MARKER = 'sq-pickup-notes-v1';
 export const NOTE_MODERATION_MARKER = 'sq-notes-moderation-v1';
 // sq-notes-strikes-v1 — marker for the strikes landing check.
 export const NOTE_STRIKES_MARKER = 'sq-notes-strikes-v1';
+// sq-notes-guest-block-v1 — marker for the guest-block landing check.
+export const NOTE_GUEST_BLOCK_MARKER = 'sq-notes-guest-block-v1';
+// Notes Guest Block v1 (`sq-notes-guest-block-v1`): guests cannot
+// leave notes — only signed-in players can. The exact words the
+// user wrote, used everywhere a guest is told so: the pocket panel
+// shows it, the server sends it verbatim in the note_drop refusal
+// payload, and the client-side drop gate shows it — so the client
+// never hardcodes its own copy.
+export const GUEST_NOTE_MESSAGE = 'you need an account before you can post notes';
+/** Whether an app profile belongs to a guest (no email). The
+ * profile shape is { profile: { email }, mode } (VillageScene's
+ * this.profile). A guest is a player whose join payload has no
+ * email — never a string heuristic on the userId (every guest
+ * shares the id 'guest', and a socket id is not an email
+ * either). The scene always carries a profile object in the real
+ * app (VillageScene sets this.profile = d.profile ?? {}); a
+ * missing profile object only happens in test stubs, where this
+ * fails OPEN (returns false) — the server is the real gate, so a
+ * missing profile never blocks a real player. */
+export function isGuestProfile(profile) {
+  if (!profile || typeof profile !== 'object') return false;
+  return !String(profile?.profile?.email || '').trim();
+}
 export const NOTE_FLAG_HIDE_THRESHOLD = 3;
 export const NOTE_TEXT_MAX = 280;
 // 48 hours, in ms. A note left Monday at noon is gone by

@@ -168,6 +168,7 @@ import {
 // flagged list, and a Perspective content check on every drop.
 import {
   NOTE_TEXT_MAX,
+  GUEST_NOTE_MESSAGE,
   createNoteState,
   dropNote,
   removeNote,
@@ -2182,6 +2183,14 @@ const changeRates = {};
 const creatorRates = {}; // keyed by `${userId}:${roomId}`
 const socketCreatorRooms = {}; // socketId → Set<roomId>
 const socketUserMap = {};
+// Notes Guest Block v1 (`sq-notes-guest-block-v1`): per-socket
+// guest flag, set at join time alongside socketUserMap. A guest
+// is a player whose join payload has NO email (a signed-in
+// player always sends one) — never a string heuristic on the
+// userId. Deleted on disconnect, same cleanup as socketUserMap.
+// The flag is the server-side source of truth for the note_drop
+// guest refusal below.
+const socketIsGuest = {};
 // sq-head-moderator-v1: the global moderator set is the MODERATOR_EMAILS
 // env var PLUS the app owner's email (see ./moderators.js), so the
 // owner is a head moderator in every room even when the env var is
@@ -2526,6 +2535,11 @@ io.on('connection', (socket) => {
 
     rooms[roomId][socket.id] = playerState;
     socketUserMap[socket.id] = userId;
+    // Notes Guest Block v1 (`sq-notes-guest-block-v1`): a guest
+    // is a player whose join payload has no email — set the
+    // per-socket flag here, at join time, so note_drop can refuse
+    // guests without any string heuristic on the userId.
+    socketIsGuest[socket.id] = !String(user?.email || '').trim();
     // Mailbox v1 (`sq-mailbox-v1`): register this player's mailbox
     // code, so a friend can send them mail even while they are in
     // another room (or offline — the inbox is per-player, not
@@ -3402,6 +3416,24 @@ io.on('connection', (socket) => {
     if (!roomId) return;
     if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
     const userId = socketUserMap[socket.id] || socket.id;
+    // NOTES GUEST BLOCK (`sq-notes-guest-block-v1`): guests cannot
+    // leave notes — only signed-in players can. Checked FIRST,
+    // before the rate limit, the mute check, and the Perspective
+    // check, so a guest drop never burns a Perspective API call
+    // and never touches strikes. The refusal goes through the
+    // SAME refusal path as every other drop refusal
+    // (note_drop_result ok:false with reason 'guest') — the
+    // client's pending drop clears and NO paper sheet is spent,
+    // because the client only spends a sheet on a server confirm.
+    // The exact refusal words travel in the payload (message) —
+    // the user's own words, so the client never hardcodes its own
+    // copy. Guests can still READ notes; only writing is blocked.
+    if (socketIsGuest[socket.id]) {
+      socket.emit('note_drop_result', {
+        id, ok: false, reason: 'guest', message: GUEST_NOTE_MESSAGE,
+      });
+      return;
+    }
     const rate = checkRateLimit(userId);
     if (!rate.allowed) {
       socket.emit('note_drop_result', { id, ok: false, reason: 'rate-limited' });
@@ -4679,6 +4711,9 @@ io.on('connection', (socket) => {
     // deleted — the hat return below needs to know who left.
     const userId = socketUserMap[socket.id] || socket.id;
     delete socketUserMap[socket.id];
+    // Notes Guest Block v1 (`sq-notes-guest-block-v1`): clear the
+    // per-socket guest flag with the user map, same cleanup.
+    delete socketIsGuest[socket.id];
     // sq-gift-giver-v1 — any live gift offer involving this socket
     // dies, and the other side's prompt/pending state clears.
     dropGiftOffersFor(socket.id);

@@ -54,6 +54,8 @@ import { DEPTH } from './depth.js';
 import {
   NOTE_MARKER,
   NOTE_TEXT_MAX,
+  GUEST_NOTE_MESSAGE,
+  isGuestProfile,
   createNoteState,
   parseNoteState,
   noteExpiresAt,
@@ -283,6 +285,19 @@ export class NoteSystem {
    * less than one sheet. Returns { ok, pending?, reason? }. */
   dropNote(text) {
     if (!this.enabled) return { ok: false, reason: 'not-available' };
+    // sq-notes-guest-block-v1 — the guest gate: a guest cannot
+    // leave notes. This is the client-side check only (the pocket
+    // hides the write form from guests too); the server re-checks
+    // in note_drop and refuses with the same words, so a bad
+    // client cannot write anyway. The source of truth is the
+    // scene's profile email — no email means guest (see
+    // isGuestProfile in noteState.js). Checked first, before the
+    // mute and paper gates, so a guest never starts a pending
+    // drop and never spends a sheet.
+    if (isGuestProfile(this.scene?.profile)) {
+      this._setNoteNotice(GUEST_NOTE_MESSAGE);
+      return { ok: false, reason: 'guest' };
+    }
     const clean = String(text || '').trim().slice(0, NOTE_TEXT_MAX);
     if (!clean) return { ok: false, reason: 'empty-note' };
     // sq-notes-strikes-v1 — the mute gate: a muted player cannot
@@ -365,6 +380,11 @@ export class NoteSystem {
       // `message` (with the real mutedUntil), so this is only the
       // fallback when a message is missing.
       case 'muted': return mutedRefusalMessage(payload.mutedUntil, this._now());
+      // Notes Guest Block v1 (`sq-notes-guest-block-v1`): guest.
+      // The server sends the exact words in the payload's
+      // `message`, so this is only the fallback when a message
+      // is missing — same words either way.
+      case 'guest': return GUEST_NOTE_MESSAGE;
       default: return '📝 The room didn’t take that — try again.';
     }
   }

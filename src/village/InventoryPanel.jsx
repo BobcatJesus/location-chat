@@ -62,6 +62,12 @@ import React, { useEffect, useRef, useState } from 'react';
 // so the form and the refusal say the same thing.
 import { muteUntilLabel } from './strikeState.js';
 
+// Notes Guest Block v1 (`sq-notes-guest-block-v1`): the exact
+// words a guest sees instead of the write-a-note form — the
+// user's own words, shared with the server so the panel and the
+// refusal say the same thing.
+import { GUEST_NOTE_MESSAGE } from './noteState.js';
+
 // Mailbox v1.2 (`sq-mailbox-v1.2`): the pocket line naming where
 // your mailbox(es) are — the real room name(s), never a generic
 // "at the park".
@@ -147,6 +153,12 @@ export default function InventoryPanel({
   // state, so the write form can show it fresh and refuse the
   // drop client-side (the server still enforces it).
   getNoteStatus, onRequestNoteStatus,
+  // Notes Guest Block v1 (`sq-notes-guest-block-v1`): a guest
+  // cannot leave notes — the write button and form are not shown
+  // to guests at all; they see the guest message instead. The
+  // rest of the pocket still works. Passed from VillageCanvas
+  // (no email on the profile = guest).
+  isGuest,
 }) {
   const [state, setState] = useState(() => {
     try { return getState ? getState() : null; } catch { return null; }
@@ -798,7 +810,15 @@ export default function InventoryPanel({
                 costs one sheet of note paper (2 coins for a pack
                 of 3 at the Agora bar). */}
             <div style={{ marginTop: 14 }}>
-              {!showNoteForm ? (
+              {/* sq-notes-guest-block-v1: a guest cannot leave
+                  notes — no write button, no form, just the
+                  message (the user's own words). The rest of the
+                  pocket still works. */}
+              {isGuest ? (
+                <div style={{ fontSize: 13, color: '#92400e', marginTop: 2 }}>
+                  {GUEST_NOTE_MESSAGE}
+                </div>
+              ) : !showNoteForm ? (
                 <button
                   onClick={() => setShowNoteForm(true)}
                   style={btnStyle}

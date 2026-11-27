@@ -1213,6 +1213,11 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
           // enforces it).
           getNoteStatus={() => gameRef.current?.scene?.getScene('VillageScene')?.noteSystem?.getMyNoteStatus?.() || null}
           onRequestNoteStatus={() => gameRef.current?.scene?.getScene('VillageScene')?.noteSystem?.requestMyNoteStatus?.() || { ok: false, reason: 'error' }}
+          // Notes Guest Block v1 (`sq-notes-guest-block-v1`): a
+          // guest cannot leave notes — no email on the profile
+          // means guest, so the pocket hides the write-a-note
+          // form and shows the guest message instead.
+          isGuest={!profile?.profile?.email}
           onPinFlyer={(id) => gameRef.current?.scene?.getScene('VillageScene')?.itemsSystem?.pinFlyerToBoard?.(id) || { ok: false, reason: 'error' }}
           onPlaceDecoration={(id) => gameRef.current?.scene?.getScene('VillageScene')?.decorSystem?.placeDecoration?.(id) || { ok: false, reason: 'error' }}
           onPutHatOnCat={(id) => gameRef.current?.scene?.getScene('VillageScene')?.santaHatSystem?.placeOnCat?.(id) || { ok: false, reason: 'error' }}
