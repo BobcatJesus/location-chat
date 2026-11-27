@@ -1012,25 +1012,6 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
       >
         🏠 Build layout
       </button>
-      <button
-        onClick={() => { setShowMenu(false); toggleZoom(); }}
-        style={{
-          background: 'rgba(0,0,0,0.55)',
-          color: '#fff',
-          border: 'none',
-          borderRadius: 8,
-          padding: '6px 14px',
-          minHeight: 44,
-          display: 'flex', alignItems: 'center',
-          cursor: 'pointer',
-          fontSize: 14,
-          fontWeight: 'bold',
-          flexShrink: 0,
-          whiteSpace: 'nowrap',
-        }}
-      >
-        Zoom: {zoomLabel}
-      </button>
       <div
         title="Your coins — earn 10 daily, 5 for new places"
         style={{
@@ -1411,6 +1392,22 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
           }}
         >
           ☰ Menu
+        </button>
+        {/* sq-zoom-outside-menu-v1: Zoom lives on the top bar now, next
+            to Menu, so it's one tap away instead of buried in the menu.
+            Same toggleZoom, same label — it just isn't in topBarButtons
+            any more, so it doesn't show in the menu popup. */}
+        <button
+          onClick={() => toggleZoom()}
+          style={{
+            background: 'rgba(0,0,0,0.55)', color: '#fff', border: 'none',
+            borderRadius: 8, padding: '6px 14px',
+            minHeight: 44, display: 'flex', alignItems: 'center',
+            cursor: 'pointer', fontSize: 14, fontWeight: 'bold',
+            flexShrink: 0, whiteSpace: 'nowrap',
+          }}
+        >
+          Zoom: {zoomLabel}
         </button>
       </div>
 
