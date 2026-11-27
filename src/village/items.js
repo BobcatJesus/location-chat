@@ -93,6 +93,21 @@ export const WRAPPING_PAPER_SHOP = {
   blurb: 'One sheet wraps one gift you send by mail. Stacks in your pocket — buy as many as you like.',
   price: WRAPPING_PAPER_PRICE_COINS,
 };
+// Pick-Up Notes v1.1 (`sq-pickup-notes-v1.1`): note paper is
+// bought in packs — 2 coins for 3 sheets, the user-set price /
+// bundle. One sheet leaves one note on the floor. Same shape as
+// the wrapping-paper pack above: a pack is one shop row, and a
+// bought pack adds its sheets to the pocket stack.
+export const NOTE_PAPER_PRICE_COINS = 2;
+export const NOTE_PAPER_SHEETS_PER_PACK = 3;
+export const NOTE_PAPER_MARKER_V1_1 = 'sq-pickup-notes-v1.1';
+export const NOTE_PAPER_SHOP = {
+  kind: 'note-paper',
+  emoji: '📝',
+  label: 'Note Paper',
+  blurb: 'Three sheets for writing notes to leave on the floor. One sheet leaves one note — buy more at the Agora bar.',
+  price: NOTE_PAPER_PRICE_COINS,
+};
 
 // --- item types -----------------------------------------------------------
 export const ITEM_TYPES = {
@@ -120,6 +135,12 @@ export const ITEM_TYPES = {
   // in ONE pocket slot with a count (see sheetsLeft), like food's
   // feeds. Cannot be sent itself (it is the supply, not a gift).
   WRAPPING_PAPER: 'wrapping-paper',
+  // Pick-Up Notes v1.1 (`sq-pickup-notes-v1.1`): a consumable
+  // supply, bought at the Agora bar in packs of 3 sheets for 2
+  // coins. One sheet leaves one note on the floor. Stacks in ONE
+  // pocket slot with a count (see sheetsLeft), same as wrapping
+  // paper. Cannot be sent itself (it is the supply, not a gift).
+  NOTE_PAPER: 'note-paper',
 };
 
 // label / emoji / one-line blurb per type. `readable` items open a
@@ -200,6 +221,15 @@ export const ITEM_DEFS = {
   [ITEM_TYPES.WRAPPING_PAPER]: {
     emoji: '🎁', label: 'Gift Wrapping Paper',
     blurb: 'Pretty paper for wrapping a gift. You need one sheet to send anything by mail — buy more at the Agora bar.',
+    readable: false, usable: false, disposable: false,
+  },
+  // Pick-Up Notes v1.1 (`sq-pickup-notes-v1.1`): a consumable
+  // supply, not a gift — it can never be sent (see
+  // MAIL_UNSENDABLE_TYPES in mailState.js). One sheet leaves one
+  // note on the floor. Stacks in one pocket slot (see sheetsLeft).
+  [ITEM_TYPES.NOTE_PAPER]: {
+    emoji: '📝', label: 'Note Paper',
+    blurb: 'Paper for writing notes to leave on the floor. One sheet leaves one note — buy more at the Agora bar.',
     readable: false, usable: false, disposable: false,
   },
 };
@@ -369,8 +399,12 @@ function describeItem(item) {
     usesLeft: item?.type === ITEM_TYPES.FOOD ? foodUsesLeft(item) : null,
     // Gift Wrapping Paper v1 (`sq-gift-wrap-v1`): a stack shows
     // its sheet count; legacy paper without a sheetsLeft field
-    // counts as one sheet (see wrappingPaperSheets).
-    sheetsLeft: item?.type === ITEM_TYPES.WRAPPING_PAPER ? wrappingPaperSheets(item) : null,
+    // counts as one sheet (see wrappingPaperSheets). Pick-Up
+    // Notes v1.1 (`sq-pickup-notes-v1.1`): note paper stacks the
+    // same way (see notePaperSheets).
+    sheetsLeft: item?.type === ITEM_TYPES.WRAPPING_PAPER ? wrappingPaperSheets(item)
+      : item?.type === ITEM_TYPES.NOTE_PAPER ? notePaperSheets(item)
+      : null,
     emoji: kindDef?.emoji || def.emoji || '📦',
     label: item.label || kindDef?.label || def.label || 'Item',
     blurb: item.blurb || kindDef?.blurb || def.blurb || '',
@@ -443,8 +477,13 @@ export function addItem(item, inv = getInventory()) {
       : null,
     // Gift Wrapping Paper v1 (`sq-gift-wrap-v1`): a stack carries
     // its sheet count; a supplied count below 1 counts as one
-    // sheet. Non-paper keeps null.
+    // sheet. Non-paper keeps null. Pick-Up Notes v1.1
+    // (`sq-pickup-notes-v1.1`): note paper stacks the same way.
     sheetsLeft: item.type === ITEM_TYPES.WRAPPING_PAPER
+      ? (Number.isFinite(Number(item.sheetsLeft)) && Number(item.sheetsLeft) >= 1
+        ? Math.floor(Number(item.sheetsLeft))
+        : 1)
+      : item.type === ITEM_TYPES.NOTE_PAPER
       ? (Number.isFinite(Number(item.sheetsLeft)) && Number(item.sheetsLeft) >= 1
         ? Math.floor(Number(item.sheetsLeft))
         : 1)
@@ -598,6 +637,93 @@ export function spendWrappingSheet(inv = getInventory()) {
   const idx = inv.items.findIndex((it) => it.id === stack.id);
   if (idx < 0) return { ok: false, reason: 'no-paper' };
   const left = wrappingPaperSheets(stack) - 1;
+  if (left <= 0) {
+    inv.items.splice(idx, 1);
+  } else {
+    inv.items[idx] = { ...inv.items[idx], sheetsLeft: left };
+  }
+  saveInventory(inv);
+  return { ok: true, sheetsLeft: Math.max(0, left), removed: left <= 0, itemId: stack.id };
+}
+
+// --- note paper (Pick-Up Notes v1.1, `sq-pickup-notes-v1.1`) ---------------
+// Same shape as gift wrapping paper above, but sold in packs:
+// 2 coins buys 3 sheets (the user-set price / bundle). One sheet
+// leaves one note on the floor. Sheets STACK in a single pocket
+// slot with a count (sheetsLeft), like wrapping paper — buying
+// more packs never eats a second slot. Paper granted before this
+// kit has no sheetsLeft field: it counts as one sheet, never
+// stranded.
+
+/** Sheet count on a note-paper item (null for anything else).
+ *  Legacy paper without a sheetsLeft field counts as one. */
+export function notePaperSheets(item) {
+  if (!item || item.type !== ITEM_TYPES.NOTE_PAPER) return null;
+  const n = Number(item?.sheetsLeft);
+  if (!Number.isFinite(n) || n < 1) return 1;
+  return Math.floor(n);
+}
+
+/** The note-paper stack in the pocket, or null. */
+export function findNotePaper(inv = getInventory()) {
+  return (inv.items || []).find((it) => it?.type === ITEM_TYPES.NOTE_PAPER) || null;
+}
+
+/** Does the pocket hold at least one sheet? */
+export function hasNotePaper(inv = getInventory()) {
+  return notePaperCount(inv) >= 1;
+}
+
+/** Total sheets in the pocket (0 when there is no stack). */
+export function notePaperCount(inv = getInventory()) {
+  const stack = findNotePaper(inv);
+  return stack ? notePaperSheets(stack) : 0;
+}
+
+/**
+ * Buy a pack of note paper at the Agora bar: 2 coins for 3
+ * sheets. A stack already in the pocket just grows by three —
+ * no new slot, so a full pocket never blocks topping up. Without
+ * a stack the pocket-full check comes FIRST, so a full pocket
+ * never takes your coins. A failed add after paying refunds the
+ * coins (same shape as buyWrappingPaper). Returns
+ * { ok, item?, price?, reason? } — 'not-enough-coins',
+ * 'inventory-full'.
+ */
+export function buyNotePaper(inv = getInventory()) {
+  const stack = findNotePaper(inv);
+  if (!stack && inv.items.length >= capacity(inv)) return { ok: false, reason: 'inventory-full' };
+  if (getCoins() < NOTE_PAPER_PRICE_COINS) return { ok: false, reason: 'not-enough-coins' };
+  if (!spendCoins(NOTE_PAPER_PRICE_COINS)) return { ok: false, reason: 'not-enough-coins' };
+  if (stack) {
+    const idx = inv.items.findIndex((it) => it.id === stack.id);
+    if (idx < 0) {
+      try { earnCoins(NOTE_PAPER_PRICE_COINS, 'paper-refund'); } catch {}
+      return { ok: false, reason: 'error' };
+    }
+    inv.items[idx] = { ...inv.items[idx], sheetsLeft: notePaperSheets(stack) + NOTE_PAPER_SHEETS_PER_PACK };
+    saveInventory(inv);
+    return { ok: true, item: describeItem(inv.items[idx]), price: NOTE_PAPER_PRICE_COINS };
+  }
+  const res = addItem({ type: ITEM_TYPES.NOTE_PAPER, sheetsLeft: NOTE_PAPER_SHEETS_PER_PACK }, getInventory());
+  if (!res.ok) {
+    try { earnCoins(NOTE_PAPER_PRICE_COINS, 'paper-refund'); } catch {}
+    return { ok: false, reason: res.reason || 'error' };
+  }
+  return { ok: true, item: res.item, price: NOTE_PAPER_PRICE_COINS };
+}
+
+/** Spend ONE sheet of note paper — the single sheet-spending
+ *  helper the note drop goes through. Returns { ok, sheetsLeft?,
+ *  removed?, itemId?, reason? } — reason is 'no-note-paper'
+ *  when the pocket holds no paper. At 0 sheets the stack leaves
+ *  the pocket. */
+export function spendNotePaperSheet(inv = getInventory()) {
+  const stack = findNotePaper(inv);
+  if (!stack) return { ok: false, reason: 'no-note-paper' };
+  const idx = inv.items.findIndex((it) => it.id === stack.id);
+  if (idx < 0) return { ok: false, reason: 'no-note-paper' };
+  const left = notePaperSheets(stack) - 1;
   if (left <= 0) {
     inv.items.splice(idx, 1);
   } else {

@@ -123,6 +123,11 @@ const REASON_TEXT = {
   'not-found': 'That item is no longer in your pocket.',
   // Pick-Up Notes v1 (`sq-pickup-notes-v1`): the note had no words.
   'empty-note': 'A note needs some words first.',
+  // Pick-Up Notes v1.1 (`sq-pickup-notes-v1.1`): a note costs
+  // one sheet of note paper (2 coins for 3 sheets at the Agora
+  // bar); a second drop while one is still pending is refused.
+  'no-note-paper': 'You need note paper to leave a note — buy some at the Agora bar.',
+  'already-pending': 'That note is still being left — give it a second.',
   error: 'Something went wrong — try again.',
 };
 
@@ -160,6 +165,14 @@ export default function InventoryPanel({
   // Pick-Up Notes v1 (`sq-pickup-notes-v1`): the note being written.
   const [noteText, setNoteText] = useState('');
   const [showNoteForm, setShowNoteForm] = useState(false);
+  // Pick-Up Notes v1.1 (`sq-pickup-notes-v1.1`): sheets of note
+  // paper in the pocket, read off the described items (the stack
+  // carries its sheetsLeft, same as wrapping paper).
+  const notePaperSheets = (() => {
+    const stack = (state?.items || []).find((it) => it?.type === 'note-paper');
+    const n = Number(stack?.sheetsLeft);
+    return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 0;
+  })();
   // Mailbox v1 (`sq-mailbox-v1`): which item is being sent, and the
   // recipient's code typed so far.
   const [sendTarget, setSendTarget] = useState(null);
@@ -741,16 +754,19 @@ export default function InventoryPanel({
             </div>
 
             {/* Pick-Up Notes v1 (`sq-pickup-notes-v1`): leave a note
-                on the floor where you are standing — free, and it
-                takes no pocket slot. Anonymous: no name is ever
-                shown, and it fades away after 48 hours. */}
+                on the floor where you are standing — it takes no
+                pocket slot. Anonymous: no name is ever shown, and
+                it fades away after 48 hours.
+                Pick-Up Notes v1.1 (`sq-pickup-notes-v1.1`): a note
+                costs one sheet of note paper (2 coins for a pack
+                of 3 at the Agora bar). */}
             <div style={{ marginTop: 14 }}>
               {!showNoteForm ? (
                 <button
                   onClick={() => setShowNoteForm(true)}
                   style={btnStyle}
                 >
-                  📝 Write a note · free
+                  📝 Write a note · 1 sheet{notePaperSheets > 0 ? ` (${notePaperSheets} in your pocket)` : ''}
                 </button>
               ) : (
                 <div style={{
@@ -759,7 +775,11 @@ export default function InventoryPanel({
                 }}>
                   <div style={{ fontWeight: 'bold', fontSize: 14 }}>📝 Write a note</div>
                   <div style={{ fontSize: 12.5, color: '#3d6a8a', marginTop: 2 }}>
-                    Free. It lands on the floor where you’re standing —
+                    Costs one sheet of note paper — 2 coins for 3 sheets at the Agora bar.
+                    {notePaperSheets > 0
+                      ? ` You have ${notePaperSheets} ${notePaperSheets === 1 ? 'sheet' : 'sheets'}.`
+                      : ` You have no note paper — buy some at the Agora bar first.`}
+                    {' '}It lands on the floor where you’re standing —
                     anyone here can read it, no name is shown, and it
                     fades away after 48 hours.
                   </div>

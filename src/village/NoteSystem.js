@@ -13,13 +13,17 @@
 //
 // WRITING (from the pocket — InventoryPanel's "Write a note"):
 // the player types up to 280 characters and leaves it where they
-// are standing. Writing is free and takes no pocket slot — a note
-// is a world object, not an inventory item. The note leaves
-// nothing behind in the pocket; the client generates the note id
-// and keeps a pending drop, settled when the notes_state
-// broadcast shows that id (or the note_drop_result answers ok).
-// If the drop never lands (offline, rate-limited), nothing is
-// lost — the note was never an item.
+// are standing. Pick-Up Notes v1.1 (`sq-pickup-notes-v1.1`): a
+// note costs one sheet of note paper (2 coins for a pack of 3 at
+// the Agora bar) — the sheet is spent only when the server
+// confirms the drop landed, never on a refusal or a timeout. A
+// note is a world object, not an inventory item: the paper is the
+// only thing that ever leaves the pocket. The note leaves nothing
+// else behind; the client generates the note id and keeps a
+// pending drop, settled when the notes_state broadcast shows
+// that id (or the note_drop_result answers ok). If the drop never
+// lands (offline, rate-limited), nothing is lost — no sheet is
+// spent and the note was never an item.
 //
 // READING (tap the 📝 on the floor, or E near it): anyone's note
 // is readable, as many times as anyone likes. The read popup
@@ -57,6 +61,13 @@ import {
 import {
   LITTER_PICKUP_RANGE,
   LITTER_CLICK_RANGE,
+  // Pick-Up Notes v1.1 (`sq-pickup-notes-v1.1`): leaving a note
+  // costs one sheet of note paper (2 coins for 3 sheets at the
+  // Agora bar). The sheet is spent only on the server's confirm
+  // of the drop — never on a refusal or a timeout — the same
+  // rule as wrapping paper on a mail send.
+  hasNotePaper,
+  spendNotePaperSheet,
 } from './items.js';
 
 // Pick-Up Notes v1 (`sq-pickup-notes-v1`): how long a pending
@@ -220,19 +231,35 @@ export class NoteSystem {
     if (this._unconfirmedDrop?.id === target.id) this._unconfirmedDrop = null;
     this._myNoteIds.add(String(target.id));
     this._saveMyNoteIds();
+    // Pick-Up Notes v1.1 (`sq-pickup-notes-v1.1`): the sheet is
+    // spent HERE, on the server's confirm, and only here — this
+    // is the single settle point for both confirm paths (the
+    // direct answer and the broadcast recheck), so a landed note
+    // costs exactly one sheet, and a refused or timed-out drop
+    // costs nothing. A failed spend (paper vanished in another
+    // tab) never blocks the settle: the note already landed
+    // server-side.
+    try { spendNotePaperSheet(); } catch {}
     this._setNoteNotice('📝 Note left — anyone here can read it. It fades away in 48 hours.');
     return true;
   }
 
   // ---- writing -------------------------------------------------------------
 
-  /** Leave a note on the floor where you are standing. Free, and
-   * takes no pocket slot — a note is a world object, not an
-   * inventory item. Returns { ok, pending?, reason? }. */
+  /** Leave a note on the floor where you are standing. Pick-Up
+   * Notes v1.1 (`sq-pickup-notes-v1.1`): a note costs one sheet
+   * of note paper — the gate is checked here, before anything is
+   * emitted, and the sheet itself is spent only on the server's
+   * confirm (see _settleDropTarget). A second drop while one is
+   * still pending is refused, so one landed note can never cost
+   * less than one sheet. Returns { ok, pending?, reason? }. */
   dropNote(text) {
     if (!this.enabled) return { ok: false, reason: 'not-available' };
     const clean = String(text || '').trim().slice(0, NOTE_TEXT_MAX);
     if (!clean) return { ok: false, reason: 'empty-note' };
+    // sq-pickup-notes-v1.1 — the paper gate: no sheet, no note.
+    if (!hasNotePaper()) return { ok: false, reason: 'no-note-paper' };
+    if (this._pendingDrop) return { ok: false, reason: 'already-pending' };
     if (!this.scene?.socket?.connected) return { ok: false, reason: 'offline' };
     if (this.scene?.isRoomJoined?.() === false) return { ok: false, reason: 'not-joined' };
     const player = this.scene?.player;
@@ -279,6 +306,11 @@ export class NoteSystem {
       case 'empty-note': return '📝 A note needs some words first.';
       case 'duplicate': return '📝 That note already landed — try again.';
       case 'rate-limited': return '📝 You’re leaving notes too fast — try again in a bit.';
+      // Pick-Up Notes v1.1 (`sq-pickup-notes-v1.1`): the paper
+      // gate is client-side (dropNote), but the server could
+      // answer with the same reason — same words either way.
+      case 'no-note-paper': return '📝 You need note paper to leave a note — buy some at the Agora bar.';
+      case 'already-pending': return '📝 That note is still being left — give it a second.';
       default: return '📝 The room didn’t take that — try again.';
     }
   }

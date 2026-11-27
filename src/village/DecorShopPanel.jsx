@@ -21,7 +21,8 @@
 //   getState() — () => { items: [{ kind, emoji, label, blurb,
 //     price }], breads: [{ kind, emoji, label, blurb, price }],
 //     supplies: [{ kind, emoji, label, blurb, price }],
-//     hasPaper, paperSheets, coins, full, roomId }
+//     hasPaper, paperSheets, hasNotePaper, notePaperSheets, coins,
+//     full, roomId }
 //     (DecorSystem.getShopState)
 //   onBuyCoffee() — returns { ok, reason? } (the instant coffee
 //     buy, same as pressing E at the bar used to do)
@@ -40,6 +41,11 @@
 //   onClose()
 
 import React, { useEffect, useState } from 'react';
+
+// Pick-Up Notes v1.1 (`sq-pickup-notes-v1.1`): the supplies rows
+// are per-kind now (wrapping paper + note paper) — the kind tells
+// the panel which pocket stack and bought message to use.
+import { NOTE_PAPER_SHOP } from './items.js';
 
 const REASON_TEXT = {
   'inventory-full': 'Your pocket is full — use, drop, or throw something away to make room first.',
@@ -142,7 +148,8 @@ export default function DecorShopPanel({ getState, onBuyCoffee, onBuyDecoration,
           A coffee, or a decoration for your place — or a park tree,
           or anywhere. Decorations go into your pocket; place them
           from the 🎒 panel and everyone here will see them. Gift
-          wrapping paper wraps one gift you send by mail.
+          wrapping paper wraps one gift you send by mail. Note paper
+          leaves a note on the floor — one sheet per note.
         </div>
 
         <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -302,7 +309,18 @@ export default function DecorShopPanel({ getState, onBuyCoffee, onBuyDecoration,
               already have (only a first sheet needs room). */}
           {supplies.map((item) => {
             const afford = coins >= item.price;
-            const blocked = (state.full && !state.hasPaper) || !afford;
+            // Pick-Up Notes v1.1 (`sq-pickup-notes-v1.1`): each
+            // supply row reads its own pocket stack — note paper
+            // has its own stack and count, separate from wrapping
+            // paper. A full pocket never blocks topping up a stack
+            // you already have (only a first pack needs room).
+            const isNotePaper = item.kind === NOTE_PAPER_SHOP.kind;
+            const hasStack = isNotePaper ? state.hasNotePaper : state.hasPaper;
+            const sheets = isNotePaper ? state.notePaperSheets : state.paperSheets;
+            const boughtText = isNotePaper
+              ? `📝 Note paper bought — 2 coins for 3 sheets. One sheet leaves one note!`
+              : `🎁 Gift wrapping paper bought — 2 coins. You need one sheet to send a gift by mail!`;
+            const blocked = (state.full && !hasStack) || !afford;
             return (
               <div
                 key={item.kind}
@@ -315,7 +333,7 @@ export default function DecorShopPanel({ getState, onBuyCoffee, onBuyDecoration,
                 <div>
                   <div style={{ fontWeight: 'bold', fontSize: 14 }}>
                     {item.emoji} {item.label}
-                    {state.hasPaper ? ` · ${state.paperSheets || 0} ${(state.paperSheets || 0) === 1 ? 'sheet' : 'sheets'} in your pocket` : ''}
+                    {hasStack ? ` · ${sheets || 0} ${(sheets || 0) === 1 ? 'sheet' : 'sheets'} in your pocket` : ''}
                   </div>
                   <div style={{ fontSize: 12.5, color: '#3d6a8a', marginTop: 2 }}>
                     {item.blurb}
@@ -324,10 +342,10 @@ export default function DecorShopPanel({ getState, onBuyCoffee, onBuyDecoration,
                 <button
                   onClick={() => runBuy(
                     () => onBuySupply && onBuySupply(item.kind),
-                    `🎁 Gift wrapping paper bought — 2 coins. You need one sheet to send a gift by mail!`,
+                    boughtText,
                   )}
                   disabled={blocked}
-                  title={state.full && !state.hasPaper
+                  title={state.full && !hasStack
                     ? 'Your pocket is full — make room first'
                     : !afford ? `Need ${item.price} coins` : `Buy a ${item.label} for ${item.price} coins`}
                   style={{

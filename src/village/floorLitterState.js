@@ -75,6 +75,9 @@ export const FLOOR_LITTER_EMOJI_BY_TYPE = {
   // Gift Wrapping Paper v1 (`sq-gift-wrap-v1`): dropped paper
   // shows as a gift box on the floor.
   'wrapping-paper': '🎁',
+  // Pick-Up Notes v1.1 (`sq-pickup-notes-v1.1`): dropped note
+  // paper shows as a note on the floor.
+  'note-paper': '📝',
 };
 
 // The never-drop list, inlined as plain strings so this module
@@ -145,7 +148,9 @@ export function cleanFloorLitterEntry(raw = {}) {
     // Gift Wrapping Paper v1 (`sq-gift-wrap-v1`): dropped paper
     // keeps its sheet count; non-paper keeps null. Paper without
     // a usable count arrives as one sheet (addItem defaults it).
-    sheetsLeft: type === 'wrapping-paper' && Number.isFinite(Number(item.sheetsLeft ?? r.sheetsLeft)) && Number(item.sheetsLeft ?? r.sheetsLeft) >= 1
+    // Pick-Up Notes v1.1 (`sq-pickup-notes-v1.1`): note paper
+    // keeps its count the same way.
+    sheetsLeft: (type === 'wrapping-paper' || type === 'note-paper') && Number.isFinite(Number(item.sheetsLeft ?? r.sheetsLeft)) && Number(item.sheetsLeft ?? r.sheetsLeft) >= 1
       ? Math.floor(Number(item.sheetsLeft ?? r.sheetsLeft))
       : null,
     emoji: FLOOR_LITTER_EMOJI_BY_TYPE[type] || '📦',

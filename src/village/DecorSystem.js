@@ -69,6 +69,13 @@ import {
   buyWrappingPaper,
   hasWrappingPaper,
   wrappingPaperCount,
+  // Pick-Up Notes v1.1 (`sq-pickup-notes-v1.1`): the shop also
+  // sells note paper (a supply, not a decoration) — 2 coins for
+  // a pack of 3 sheets.
+  NOTE_PAPER_SHOP,
+  buyNotePaper,
+  hasNotePaper,
+  notePaperCount,
 } from './items.js';
 // Bread Shop v1 (`sq-bread-shop-v1`): the stock table lives in
 // breadShop.js — one function keyed by shop type.
@@ -169,9 +176,14 @@ export class DecorSystem {
       // never be placed). `hasPaper` lets the panel keep the Buy
       // button live when the pocket is full but a stack already
       // exists: topping up a stack needs no new slot.
-      supplies: [{ ...WRAPPING_PAPER_SHOP }],
+      // Pick-Up Notes v1.1 (`sq-pickup-notes-v1.1`): the bar also
+      // sells note paper — 2 coins for a pack of 3 sheets, same
+      // stacking rule (`hasNotePaper` / `notePaperSheets`).
+      supplies: [{ ...WRAPPING_PAPER_SHOP }, { ...NOTE_PAPER_SHOP }],
       hasPaper: hasWrappingPaper(),
       paperSheets: wrappingPaperCount(),
+      hasNotePaper: hasNotePaper(),
+      notePaperSheets: notePaperCount(),
       coins: getCoins(),
       full: isFull(),
       roomId: this.scene?.roomId || '',
@@ -381,17 +393,34 @@ export class DecorSystem {
    *  pocket — one sheet wraps one gift you send by mail. A kind
    *  that is not wrapping paper is refused ('bad-kind'); topping
    *  up an existing stack works even with a full pocket (no new
-   *  slot needed — see items.buyWrappingPaper). */
+   *  slot needed — see items.buyWrappingPaper).
+   *
+   *  Pick-Up Notes v1.1 (`sq-pickup-notes-v1.1`): the same
+   *  buy also sells note paper — 2 coins for a pack of 3 sheets,
+   *  one sheet leaves one note on the floor. The kind dispatches
+   *  here; anything else is 'bad-kind'. */
   buySupply(kind) {
     if (!this.shopEnabled) return { ok: false, reason: 'not-available' };
-    if (String(kind || '').trim() !== WRAPPING_PAPER_SHOP.kind) return { ok: false, reason: 'bad-kind' };
-    const res = buyWrappingPaper();
-    if (res && res.ok) {
-      try {
-        this.scene?.onSystemNotice?.(`🎁 You bought gift wrapping paper for ${res.price} coins — it's in your pocket. You need one sheet to send a gift by mail!`);
-      } catch {}
+    const k = String(kind || '').trim();
+    if (k === WRAPPING_PAPER_SHOP.kind) {
+      const res = buyWrappingPaper();
+      if (res && res.ok) {
+        try {
+          this.scene?.onSystemNotice?.(`🎁 You bought gift wrapping paper for ${res.price} coins — it's in your pocket. You need one sheet to send a gift by mail!`);
+        } catch {}
+      }
+      return res;
     }
-    return res;
+    if (k === NOTE_PAPER_SHOP.kind) {
+      const res = buyNotePaper();
+      if (res && res.ok) {
+        try {
+          this.scene?.onSystemNotice?.(`📝 You bought note paper for ${res.price} coins — 3 sheets in your pocket. One sheet leaves one note!`);
+        } catch {}
+      }
+      return res;
+    }
+    return { ok: false, reason: 'bad-kind' };
   }
 
   /** Buy a hot cocoa or an iced coffee at the Agora bar

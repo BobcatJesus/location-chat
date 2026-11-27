@@ -177,7 +177,11 @@ export function isValidMailboxCode(code) {
 // your only key would lock you out of your own mail) and gift
 // wrapping paper (Gift Wrapping Paper v1, `sq-gift-wrap-v1` — the
 // supply, not a gift; sending it would double-charge).
-export const MAIL_UNSENDABLE_TYPES = new Set(['puzzle-piece', 'santa-hat', 'mailbox-key', 'wrapping-paper']);
+export const MAIL_UNSENDABLE_TYPES = new Set(['puzzle-piece', 'santa-hat', 'mailbox-key', 'wrapping-paper',
+// Pick-Up Notes v1.1 (`sq-pickup-notes-v1.1`): note paper is a
+// supply, not a gift — it can never be sent, same as wrapping
+// paper.
+'note-paper']);
 
 /** May this item type travel by mail at all? */
 export function isSendableItemType(type) {

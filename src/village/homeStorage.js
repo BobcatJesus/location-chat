@@ -169,6 +169,10 @@ export const HOME_ITEM_TYPES = [
   // in the chest — its sheet count rides along (see sheetsLeft
   // below), so a stored stack comes back whole.
   'wrapping-paper',
+  // Pick-Up Notes v1.1 (`sq-pickup-notes-v1.1`): note paper can
+  // be left in the chest too — its sheet count rides along the
+  // same way, so a stored stack comes back whole.
+  'note-paper',
 ];
 
 const HOME_ITEM_TYPE_SET = new Set(HOME_ITEM_TYPES);
@@ -472,7 +476,9 @@ export function normalizeFloorItems(input) {
       // Gift Wrapping Paper v1 (`sq-gift-wrap-v1`): paper dropped
       // on the home floor keeps its sheet count, same as the chest
       // store — a stack picked back up is still a stack.
-      sheetsLeft: type === 'wrapping-paper' && Number.isFinite(Number(raw.sheetsLeft)) && Number(raw.sheetsLeft) >= 1
+      // Pick-Up Notes v1.1 (`sq-pickup-notes-v1.1`): note paper
+      // keeps its count the same way.
+      sheetsLeft: (type === 'wrapping-paper' || type === 'note-paper') && Number.isFinite(Number(raw.sheetsLeft)) && Number(raw.sheetsLeft) >= 1
         ? Math.floor(Number(raw.sheetsLeft))
         : null,
       x: Math.max(0, Math.min(HOME_FLOOR_W, x)),
@@ -545,7 +551,9 @@ export function normalizeHomeItems(input) {
       // Gift Wrapping Paper v1 (`sq-gift-wrap-v1`): paper stored
       // in the chest keeps its sheet count (a stack taken back out
       // is still a stack, same as food's feeds above).
-      sheetsLeft: type === 'wrapping-paper' && Number.isFinite(Number(raw.sheetsLeft)) && Number(raw.sheetsLeft) >= 1
+      // Pick-Up Notes v1.1 (`sq-pickup-notes-v1.1`): note paper
+      // keeps its count the same way.
+      sheetsLeft: (type === 'wrapping-paper' || type === 'note-paper') && Number.isFinite(Number(raw.sheetsLeft)) && Number(raw.sheetsLeft) >= 1
         ? Math.floor(Number(raw.sheetsLeft))
         : null,
       createdAt: Number.isFinite(Number(raw.createdAt)) && Number(raw.createdAt) > 0

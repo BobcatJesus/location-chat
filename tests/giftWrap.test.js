@@ -222,12 +222,16 @@ describe('gift wrapping paper: the Agora bar sells it', () => {
     };
   }
 
-  it('getShopState lists one supply at 2 coins', () => {
+  it('getShopState lists two supplies, wrapping paper first at 2 coins', () => {
     const decor = new DecorSystem(makeScene());
     const shop = decor.getShopState();
-    expect(shop.supplies).toHaveLength(1);
+    // Pick-Up Notes v1.1 (`sq-pickup-notes-v1.1`): the bar also
+    // sells note paper now — two supplies, wrapping paper first.
+    expect(shop.supplies).toHaveLength(2);
     expect(shop.supplies[0].kind).toBe('wrapping-paper');
     expect(shop.supplies[0].price).toBe(2);
+    expect(shop.supplies[1].kind).toBe('note-paper');
+    expect(shop.supplies[1].price).toBe(2);
     expect(shop.hasPaper).toBe(false);
   });
 
