@@ -2454,32 +2454,20 @@ io.on('connection', (socket) => {
 
     socket.join(roomId);
 
-    // A new player walking in wakes a sleeping cafe cat back up.
-    // Cat State Persistence v1 (`sq-cat-persist-v1`): load the
-    // room's cat row first, so the wake check reads the real
-    // persisted state — a cat asleep before the restart still
-    // wakes when someone walks in, and the woken state is saved.
-    await ensureCatLoaded(roomId);
-    if (catState[roomId]?.asleep) {
-      catState[roomId] = { pets: 0, asleep: false };
-      io.to(roomId).emit('cat_state', { pets: 0, asleep: false });
-      persistCat(roomId);
-      // Hungry Cat v1 (`sq-hungry-cat-v1`): hunger waits while she
-      // sleeps — if she wakes inside a window she is hungry again
-      // right away (the tick would catch it within 30s, but the
-      // bubble should come back with the wake, not half a minute
-      // later). refreshRoomHunger already broadcasts when the flag
-      // flips; the extra emit below covers the case where hunger
-      // was already true while she slept (no flip, no broadcast)
-      // and the room still needs to hear she is hungry again.
-      if (roomId === 'agora-houston') {
-        const woken = await refreshRoomHunger(roomId);
-        if (!woken.changed && woken.state.hungry) {
-          io.to(roomId).emit('cat_hunger', serializeCatHunger(woken.state));
-        }
-      }
-    }
-
+    // Join Race Fix v1 (`sq-join-race-fix-v1`): register this
+    // socket in the room BEFORE any await below. join_room used
+    // to await the cat load and the hunger refresh first, and
+    // while it yielded, the client's join-burst get_* calls
+    // (get_lights, get_tree, get_notes, get_hat, get_puzzle)
+    // were processed and dropped — their handlers require
+    // rooms[roomId][socket.id] to exist, and it was not set
+    // yet. The client never re-asks, so the joiner saw bare
+    // strands, no notes, no hat, no puzzle, even though the
+    // state was in the database and the moderator (who joined
+    // after the cat was cached, so his awaits resolved fast)
+    // saw it fine. Nothing below depends on the cat or the
+    // hunger state, so the whole membership block moves up
+    // here, synchronously, before the first await.
     if (!rooms[roomId]) {
       rooms[roomId] = {};
     }
@@ -2552,6 +2540,33 @@ io.on('connection', (socket) => {
     // another room (or offline — the inbox is per-player, not
     // per-room).
     registerMailCode(userId);
+
+    // A new player walking in wakes a sleeping cafe cat back up.
+    // Cat State Persistence v1 (`sq-cat-persist-v1`): load the
+    // room's cat row first, so the wake check reads the real
+    // persisted state — a cat asleep before the restart still
+    // wakes when someone walks in, and the woken state is saved.
+    await ensureCatLoaded(roomId);
+    if (catState[roomId]?.asleep) {
+      catState[roomId] = { pets: 0, asleep: false };
+      io.to(roomId).emit('cat_state', { pets: 0, asleep: false });
+      persistCat(roomId);
+      // Hungry Cat v1 (`sq-hungry-cat-v1`): hunger waits while she
+      // sleeps — if she wakes inside a window she is hungry again
+      // right away (the tick would catch it within 30s, but the
+      // bubble should come back with the wake, not half a minute
+      // later). refreshRoomHunger already broadcasts when the flag
+      // flips; the extra emit below covers the case where hunger
+      // was already true while she slept (no flip, no broadcast)
+      // and the room still needs to hear she is hungry again.
+      if (roomId === 'agora-houston') {
+        const woken = await refreshRoomHunger(roomId);
+        if (!woken.changed && woken.state.hungry) {
+          io.to(roomId).emit('cat_hunger', serializeCatHunger(woken.state));
+        }
+      }
+    }
+
     // sq-hat-reset-v1: joining a room other than the Agora means
     // the player left the Agora — if they were carrying the Santa
     // hat, it goes back to hidden behind the tree instead of
