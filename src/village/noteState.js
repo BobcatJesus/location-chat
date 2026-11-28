@@ -70,18 +70,27 @@ export const NOTE_GUEST_BLOCK_MARKER = 'sq-notes-guest-block-v1';
 // payload, and the client-side drop gate shows it — so the client
 // never hardcodes its own copy.
 export const GUEST_NOTE_MESSAGE = 'you need an account before you can post notes';
-/** Whether an app profile belongs to a guest (no email). The
- * profile shape is { profile: { email }, mode } (VillageScene's
- * this.profile). A guest is a player whose join payload has no
- * email — never a string heuristic on the userId (every guest
- * shares the id 'guest', and a socket id is not an email
- * either). The scene always carries a profile object in the real
- * app (VillageScene sets this.profile = d.profile ?? {}); a
- * missing profile object only happens in test stubs, where this
- * fails OPEN (returns false) — the server is the real gate, so a
- * missing profile never blocks a real player. */
+/** Whether an app profile belongs to a guest. The profile shape
+ * is { profile: { email, guestMode }, mode } (VillageScene's
+ * this.profile). A guest is a player in guest mode — `mode`
+ * 'guest' on the auth profile, or `guestMode` true on the inner
+ * profile — or with no email at all. The mode is the real
+ * signal: guests are GIVEN a fake email (`guest_XXXX@side.quest`,
+ * set in app.jsx's quickStart guest flow), so "no email" alone
+ * never catches a real guest — that was the v1 hole. Never a
+ * string heuristic on the userId (every guest shares the id
+ * 'guest', and a socket id is not an email either). The scene
+ * always carries a profile object in the real app (VillageScene
+ * sets this.profile = d.profile ?? {}); a missing profile object
+ * only happens in test stubs, where this fails OPEN (returns
+ * false) — the server is the real gate, so a missing profile
+ * never blocks a real player.
+ * (sq-notes-guest-block-v1.1: mode/guestMode check added — v1
+ * checked email only and a guest's fake email defeated it.) */
 export function isGuestProfile(profile) {
   if (!profile || typeof profile !== 'object') return false;
+  if (profile?.mode === 'guest') return true;
+  if (profile?.profile?.guestMode === true) return true;
   return !String(profile?.profile?.email || '').trim();
 }
 export const NOTE_FLAG_HIDE_THRESHOLD = 3;

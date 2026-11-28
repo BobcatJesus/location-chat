@@ -2427,6 +2427,14 @@ export class VillageScene extends Phaser.Scene {
         user: {
           id: userId,
           email: this.profile?.profile?.email || '',
+          // Notes Guest Block v1.1 (`sq-notes-guest-block-v1.1`):
+          // tell the server explicitly whether this player is a
+          // guest. The email alone cannot say it — a guest carries
+          // a fake `guest_XXXX@side.quest` email (app.jsx), so the
+          // server's "no email" check never fired. The server also
+          // treats an @side.quest email as a guest, as a backstop
+          // for older clients that do not send this flag.
+          guestMode: this.profile?.mode === 'guest' || Boolean(this.profile?.profile?.guestMode),
           name: userName,
           firstName,
           isCreator,

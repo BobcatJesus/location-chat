@@ -14,6 +14,10 @@ import NoticeBoardPanel from './NoticeBoardPanel.jsx';
 // Pick-Up Notes v1 (`sq-pickup-notes-v1`): the read popup for one
 // note on the floor.
 import NotePanel from './NotePanel.jsx';
+// Notes Guest Block v1.1 (`sq-notes-guest-block-v1.1`): the guest
+// check for the pocket panel — mode/guestMode, not email alone
+// (a guest carries a fake @side.quest email).
+import { isGuestProfile } from './noteState.js';
 // Notes Moderation v1 (`sq-notes-moderation-v1`): the
 // moderator-only review list for flagged/hidden notes.
 import FlaggedNotesPanel from './FlaggedNotesPanel.jsx';
@@ -1213,11 +1217,13 @@ export default function VillageCanvas({ room, profile, onLeave, location, venueE
           // enforces it).
           getNoteStatus={() => gameRef.current?.scene?.getScene('VillageScene')?.noteSystem?.getMyNoteStatus?.() || null}
           onRequestNoteStatus={() => gameRef.current?.scene?.getScene('VillageScene')?.noteSystem?.requestMyNoteStatus?.() || { ok: false, reason: 'error' }}
-          // Notes Guest Block v1 (`sq-notes-guest-block-v1`): a
-          // guest cannot leave notes — no email on the profile
-          // means guest, so the pocket hides the write-a-note
-          // form and shows the guest message instead.
-          isGuest={!profile?.profile?.email}
+          // Notes Guest Block v1.1 (`sq-notes-guest-block-v1.1`): a
+          // guest cannot leave notes. The check is the mode, not
+          // the email — a guest carries a fake @side.quest email,
+          // so "no email" alone never caught a real guest. The
+          // pocket hides the write-a-note form and shows the
+          // guest message instead.
+          isGuest={isGuestProfile(profile)}
           onPinFlyer={(id) => gameRef.current?.scene?.getScene('VillageScene')?.itemsSystem?.pinFlyerToBoard?.(id) || { ok: false, reason: 'error' }}
           onPlaceDecoration={(id) => gameRef.current?.scene?.getScene('VillageScene')?.decorSystem?.placeDecoration?.(id) || { ok: false, reason: 'error' }}
           onPutHatOnCat={(id) => gameRef.current?.scene?.getScene('VillageScene')?.santaHatSystem?.placeOnCat?.(id) || { ok: false, reason: 'error' }}

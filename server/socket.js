@@ -2535,11 +2535,18 @@ io.on('connection', (socket) => {
 
     rooms[roomId][socket.id] = playerState;
     socketUserMap[socket.id] = userId;
-    // Notes Guest Block v1 (`sq-notes-guest-block-v1`): a guest
-    // is a player whose join payload has no email — set the
-    // per-socket flag here, at join time, so note_drop can refuse
-    // guests without any string heuristic on the userId.
-    socketIsGuest[socket.id] = !String(user?.email || '').trim();
+    // Notes Guest Block v1.1 (`sq-notes-guest-block-v1.1`): a guest
+    // is a player in guest mode — set the per-socket flag here, at
+    // join time, so note_drop can refuse guests. v1 checked "no
+    // email" only, which never fired: a guest carries a fake
+    // `guest_XXXX@side.quest` email (app.jsx quickStart guest
+    // flow), so the email is always non-empty for a real guest.
+    // The flag the client sends (`user.guestMode`) is the primary
+    // signal; a missing email or an @side.quest email are the
+    // backstops (older clients, and any path that builds a guest
+    // without the flag).
+    const _guestEmail = String(user?.email || '').trim().toLowerCase();
+    socketIsGuest[socket.id] = user?.guestMode === true || !_guestEmail || _guestEmail.endsWith('@side.quest');
     // Mailbox v1 (`sq-mailbox-v1`): register this player's mailbox
     // code, so a friend can send them mail even while they are in
     // another room (or offline — the inbox is per-player, not

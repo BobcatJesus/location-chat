@@ -85,6 +85,19 @@ describe('guest detection (noteState.js)', () => {
     expect(isGuestProfile({ mode: 'guest' })).toBe(true);
   });
 
+  // sq-notes-guest-block-v1.1: a guest WITH a fake email is still
+  // a guest — v1 checked email only and a real guest's fake
+  // guest_XXXX@side.quest email defeated it.
+  it('a guest WITH a fake email is still a guest (the v1 hole)', () => {
+    // Real guests are GIVEN a fake email (guest_XXXX@side.quest,
+    // app.jsx quickStart guest flow), so "no email" alone never
+    // caught one — v1 let every real guest through. The mode is
+    // the signal.
+    expect(isGuestProfile({ mode: 'guest', profile: { email: 'guest_1234@side.quest' } })).toBe(true);
+    expect(isGuestProfile({ profile: { email: 'guest_1234@side.quest', guestMode: true } })).toBe(true);
+    expect(isGuestProfile({ mode: 'guest', profile: { email: 'guest_9999@side.quest', guestMode: true } })).toBe(true);
+  });
+
   it('a profile with an email is not a guest', () => {
     expect(isGuestProfile({ profile: { email: ALICE } })).toBe(false);
     expect(isGuestProfile({ profile: { email: '  alice@example.com  ' } })).toBe(false);
@@ -121,6 +134,20 @@ describe('NoteSystem: guest drop gate', () => {
     const res = notes.dropNote('hello there');
     expect(res).toEqual({ ok: false, reason: 'guest' });
     expect(emits).toEqual([]);
+  });
+
+  it('a guest with a fake email cannot drop either (the v1 hole)', () => {
+    // A real guest carries guest_XXXX@side.quest as their email —
+    // v1 checked email only, so this guest sailed through the gate.
+    const emits = [];
+    const notices = [];
+    const notes = new NoteSystem(makeNoteScene({ emits, notices, profile: { mode: 'guest', profile: { email: 'guest_1234@side.quest' } } }));
+    buyNotePaper();
+    const res = notes.dropNote('hello there');
+    expect(res).toEqual({ ok: false, reason: 'guest' });
+    expect(emits).toEqual([]);
+    expect(notices.join(' ')).toContain(GUEST_WORDS);
+    expect(notePaperCount()).toBe(3);
   });
 
   it('a signed-in player can still drop a note (no regression)', () => {
