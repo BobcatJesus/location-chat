@@ -28,7 +28,7 @@ import { FloorLitterSystem } from './FloorLitterSystem.js';
 // 🚨 LITTERBUG! label rides above the litterer.
 import { LITTERBUG_LABEL_MS } from './litterbugState.js';
 import { HomeStorageSystem } from './HomeStorageSystem.js';
-import { hasBag as inventoryHasBag, INVENTORY_FULL_MESSAGE, getInventory, findFoodItem, spendFoodCharge, NO_FOOD_MESSAGE } from './items.js';
+import { hasBag as inventoryHasBag, setHasBagFromServer, INVENTORY_FULL_MESSAGE, getInventory, findFoodItem, spendFoodCharge, NO_FOOD_MESSAGE } from './items.js';
 // Bread Shop v1 (`sq-bread-shop-v1`): the stock table — one
 // function keyed by shop type — decides whether this room sells
 // bread at all, and which kinds.
@@ -2440,11 +2440,11 @@ export class VillageScene extends Phaser.Scene {
           isCreator,
           ...this.avatarState,
           // Bag upgrade (Items + Inventory v1): sent so other players'
-          // clients can draw the bag on this avatar. NOTE: the server
-          // builds playerState from a fixed whitelist (server/socket.js
-          // join_room) that does NOT include hasBag yet — other players
-          // will only see the bag once that one line lands (see the kit
-          // report). Your own avatar shows it immediately.
+          // clients can draw the bag on this avatar. Bag Persistence
+          // v1 (`sq-bag-persist-v1`): the server now relays `hasBag`
+          // in playerState (the one-liner landed), merged with the
+          // account's stored bag — your own avatar shows it
+          // immediately.
           hasBag: (() => { try { return inventoryHasBag(); } catch { return false; } })(),
           // Quest badges v1: my own local completions record, so the
           // server can put my badges in playerState and the room
@@ -2476,6 +2476,11 @@ export class VillageScene extends Phaser.Scene {
       // Santa Hat v1: re-request the hat's state on (re)connect, so
       // a hat placed / slipped during a disconnect window comes back.
       socket.emit('get_hat', { roomId: this.roomId });
+      // Bag Persistence v1 (`sq-bag-persist-v1`): re-request my own
+      // bag record on (re)connect, with my local claim so the server
+      // can merge — a bag bought on another device (or lost from
+      // this browser's localStorage) comes back from the account.
+      socket.emit('get_bag', { roomId: this.roomId, hasBag: (() => { try { return inventoryHasBag(); } catch { return false; } })() });
       socket.emit('get_quest_state', { roomId: this.roomId });
       socket.emit('get_puzzle', { roomId: this.roomId });
       // Fetch fix v1 (`sq-fetch-fix-v1`): re-request the Christmas
@@ -2902,6 +2907,21 @@ export class VillageScene extends Phaser.Scene {
     // in-memory on the server like the puzzle).
     socket.on('hat_state', (payload = {}) => {
       this.santaHatSystem?.applyState(payload);
+    });
+
+    // Bag Persistence v1 (`sq-bag-persist-v1`): the server's answer
+    // to get_bag — my account's bag record, merged with my local
+    // claim. If it restores a bag this browser didn't have, put it
+    // on the avatar right away (same as buying it) and say so.
+    socket.on('bag_state', (payload = {}) => {
+      try {
+        const hadBag = inventoryHasBag();
+        const nowHas = setHasBagFromServer(Boolean(payload?.hasBag));
+        if (nowHas && !hadBag) {
+          this.itemsSystem?._applyBagToAvatar?.();
+          this.onSystemNotice?.('🎒 Your bag is back — restored from your account.');
+        }
+      } catch {}
     });
 
     // Santa's Lost Present state (Agora, per player per Chicago

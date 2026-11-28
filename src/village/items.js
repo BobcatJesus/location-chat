@@ -821,6 +821,26 @@ export function buyBag(inv = getInventory()) {
   return { ok: true, capacity: BAG_CAPACITY };
 }
 
+// --- bag persistence --------------------------------------------------------
+/**
+ * Bag Persistence v1 (`sq-bag-persist-v1`): apply the server's bag
+ * record on join (the bag_state answer to get_bag). The server is
+ * the source of truth once it has a record — a bag bought on
+ * another device (or lost from this browser's localStorage by a
+ * restart/clear) comes back. This only ever ADDS a bag, never
+ * removes one: a server "no record" (false) keeps the local value,
+ * so a bag bought before this kit (or while offline) is never
+ * wiped by a stale server reply. Returns the resulting hasBag.
+ */
+export function setHasBagFromServer(serverHasBag) {
+  const inv = getInventory();
+  if (serverHasBag && !inv.hasBag) {
+    inv.hasBag = true;
+    saveInventory(inv);
+  }
+  return Boolean(getInventory().hasBag);
+}
+
 // --- flyers -----------------------------------------------------------------
 /**
  * Make a flyer: write a title + text, pay 5 coins, and the flyer goes

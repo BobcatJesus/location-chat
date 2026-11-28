@@ -205,6 +205,15 @@ import {
   listStrikesForPlayer,
   clearStrikesForPlayer,
 } from './strikePersist.js';
+// Bag Persistence v1 (`sq-bag-persist-v1`): the bought bag flag,
+// per player, so a restart restores the bag and it follows the
+// account across devices/browsers.
+import {
+  PLAYER_BAGS_TABLE_SQL,
+  loadBag,
+  saveBag,
+  mergeBagState,
+} from './bagPersist.js';
 import {
   createDecorState,
   placeDecoration,
@@ -596,6 +605,15 @@ async function initDb() {
   // — the jukebox IS room state (unlike mail, which is excluded).
   await pool.query(JUKEBOX_ROOM_STATE_TABLE_SQL);
   console.log('✅ Postgres jukebox_room_state table ready');
+  // Bag Persistence v1 (`sq-bag-persist-v1`): one row per player
+  // holding the bought-bag flag, so a server restart restores the
+  // bag and it follows the account across devices/browsers. The
+  // pocket ITEMS are not persisted — only the hasBag flag. NOTE
+  // for the Dec 19 reset: the deliberate reset does NOT clear this
+  // table — the bag is a purchase tied to the account (like mail,
+  // which is excluded), not room state.
+  await pool.query(PLAYER_BAGS_TABLE_SQL);
+  console.log('✅ Postgres player_bags table ready');
   await authService.init();
 }
 
@@ -1094,6 +1112,36 @@ function registerMailCode(userId) {
     const code = mailboxCodeFor(userId);
     if (code) userMailCode.set(code, String(userId));
   } catch {}
+}
+
+// Bag Persistence v1 (`sq-bag-persist-v1`): merge one player's
+// claimed bag with the bag the server already recorded for that
+// account, and record a newly-claimed bag. Returns the merged flag
+// (stored OR claimed) — once a bag, always a bag. A fresh browser
+// claiming hasBag false never un-buys a bag bought on another
+// device, and a bag bought before this kit is recorded the first
+// time the client joins with it. Never throws: a DB failure warns
+// and the caller's claim is used, so a bag never blocks a join or
+// a bag lookup. Used by join_room (so playerState carries the
+// merged value) and by get_bag (so the client learns it back).
+async function syncBagForPlayer(userId, claimedHasBag) {
+  const safePlayer = String(userId || '');
+  if (!safePlayer) return Boolean(claimedHasBag);
+  let stored = false;
+  try {
+    stored = await loadBag(pool, safePlayer);
+  } catch (e) {
+    console.warn('⚠️ bag load failed:', e && e.message);
+  }
+  const finalBag = mergeBagState(stored, claimedHasBag);
+  if (finalBag && !stored) {
+    try {
+      await saveBag(pool, safePlayer, true);
+    } catch (e) {
+      console.warn('⚠️ bag save failed:', e && e.message);
+    }
+  }
+  return finalBag;
 }
 async function userIdForMailCode(code) {
   if (!pool) return null;
@@ -2503,6 +2551,13 @@ io.on('connection', (socket) => {
       footwear: user?.footwear || 'sneakers',
       glasses: Boolean(user?.glasses),
       hasScythe: Boolean(user?.hasScythe),
+      // Bag Persistence v1 (`sq-bag-persist-v1`): the one-liner —
+      // hasBag is in the whitelist now, so other players see the
+      // bag on the avatar. The value here is the client's claim;
+      // syncBagForPlayer just below corrects it to the
+      // stored-or-claimed merge, so a stale claim never hides a
+      // bag the server already recorded.
+      hasBag: Boolean(user?.hasBag),
       isModerator: moderatorEmails.has(normalizeActorId(user?.email || userId)),
       x: 640 + spawnOffsetX,
       y: 400 + spawnOffsetY,
@@ -2511,9 +2566,9 @@ io.on('connection', (socket) => {
     // Quest badges v1: restore this player's own local completions
     // record (sent in the join payload) into the server's per-player
     // badge store, then carry it in playerState so the room sees
-    // their badges on join. NOTE: hasBag is NOT in this whitelist
-    // yet (see the inventory kit report) — badges ARE, because the
-    // whole point is other players seeing them.
+    // their badges on join. Bag Persistence v1 (`sq-bag-persist-v1`):
+    // hasBag IS in the whitelist now — the one-liner landed in this
+    // kit, so other players see the bag on the avatar.
     mergeClientBadges(userId, user?.badges);
     // Quest badges v1.1 backfill: also award badges from the
     // server's own quest-progress store, for completions the
@@ -2540,6 +2595,19 @@ io.on('connection', (socket) => {
     // another room (or offline — the inbox is per-player, not
     // per-room).
     registerMailCode(userId);
+
+    // Bag Persistence v1 (`sq-bag-persist-v1`): merge the bag the
+    // client claims with the bag the server already recorded for
+    // this account — once a bag, always a bag. A fresh browser
+    // claiming hasBag false must never un-buy a bag bought on
+    // another device, and a bag bought before this kit is recorded
+    // the first time the client joins with it. The merged value
+    // lands in playerState (the same object the room map holds),
+    // so the room_state emit and the player_joined broadcast below
+    // both carry it. Runs after membership is set (join race fix)
+    // and before the room_state emit — never throws, so a DB
+    // failure falls back to the client's claim.
+    playerState.hasBag = await syncBagForPlayer(userId, user?.hasBag);
 
     // A new player walking in wakes a sleeping cafe cat back up.
     // Cat State Persistence v1 (`sq-cat-persist-v1`): load the
@@ -3307,6 +3375,26 @@ io.on('connection', (socket) => {
     if (!res.ok) return;
     await persistHat(roomId, room.state);
     io.to(roomId).emit('hat_state', serializeHatState(room.state));
+  });
+
+  // BAG STATE (Bag Persistence v1, `sq-bag-persist-v1`): the
+  // joining player asks for their own bag record. The join burst
+  // sends get_bag with the client's local claim, so the server can
+  // merge it with the recorded bag — once a bag, always a bag. The
+  // answer is bag_state { hasBag }, which the client applies to
+  // its localStorage (setHasBagFromServer), restoring a bag bought
+  // on another device or lost from this browser. Per-player, any
+  // room — the gate is room membership only. If the merge finds a
+  // bag this socket's playerState did not carry yet (claimed via
+  // get_bag after join), the room map entry is corrected too, so
+  // other players see the bag.
+  socket.on('get_bag', async ({ roomId, hasBag } = {}) => {
+    if (!roomId) return;
+    if (!rooms[roomId] || !rooms[roomId][socket.id]) return;
+    const userId = socketUserMap[socket.id] || socket.id;
+    const finalBag = await syncBagForPlayer(userId, hasBag);
+    if (finalBag && rooms[roomId][socket.id]) rooms[roomId][socket.id].hasBag = true;
+    socket.emit('bag_state', { hasBag: finalBag });
   });
 
   // SANTA HAT STATE: the room's hat, sent when you join (or ask).
